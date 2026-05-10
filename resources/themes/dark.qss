@@ -1,0 +1,59 @@
+/* DeskTodoSeq — Dark Theme */
+
+QMainWindow {
+    background-color: #1e1e2e;
+}
+
+QMenuBar {
+    background-color: #2a2a3c;
+    border-bottom: 1px solid #3a3a4c;
+    padding: 2px;
+    color: #d4d4d4;
+}
+QMenuBar::item:selected {
+    background-color: #3a3a4c;
+    border-radius: 4px;
+}
+
+QMenu {
+    background-color: #2a2a3c;
+    border: 1px solid #3a3a4c;
+    padding: 4px;
+    color: #d4d4d4;
+}
+QMenu::item {
+    padding: 6px 24px 6px 12px;
+    border-radius: 4px;
+}
+QMenu::item:selected {
+    background-color: #0078d4;
+    color: #ffffff;
+}
+
+QToolBar {
+    background-color: #2a2a3c;
+    border-bottom: 1px solid #3a3a4c;
+    padding: 2px 6px;
+    spacing: 4px;
+}
+
+QStatusBar {
+    background-color: #2a2a3c;
+    border-top: 1px solid #3a3a4c;
+    padding: 2px 8px;
+    color: #888888;
+}
+
+QSplitter::handle {
+    background-color: #3a3a4c;
+}
+
+QLabel {
+    color: #d4d4d4;
+}
+
+/* Sidebar */
+QWidget#sidebar {
+    background-color: #252538;
+    border-right: 1px solid #3a3a4c;
+}

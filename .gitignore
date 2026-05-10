@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Data (user-generated)
+data/
+
+# OS
+.DS_Store
+Thumbs.db
