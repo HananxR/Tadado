@@ -15,6 +15,9 @@ build/
 # Data (user-generated)
 data/
 
+# Claude (local only)
+.claude/settings.local.json
+
 # OS
 .DS_Store
 Thumbs.db
