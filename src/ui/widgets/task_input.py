@@ -63,11 +63,15 @@ class TaskInputWidget(QWidget):
         self._signal_bus.task_created.emit(task)
         self._input.clear()
 
+    def focus_input(self) -> None:
+        """Focus and select all text in the input field."""
+        self._input.setFocus()
+        self._input.selectAll()
+
     def _flash_error(self) -> None:
         self._input.setStyleSheet(
             "QLineEdit { border: 1px solid #e74c3c; background: #fdf0ef; }"
         )
-        # Reset after brief delay
         from PySide6.QtCore import QTimer
 
         QTimer.singleShot(800, lambda: self._input.setStyleSheet(""))

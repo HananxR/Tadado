@@ -273,6 +273,10 @@ class MainWindow(QMainWindow):
         elif preset == "overdue":
             self._filter_bar.filter_changed.emit(TaskFilter(overdue_only=True))
 
+    def _on_new_task(self) -> None:
+        """Focus the Markdown input widget for quick task entry."""
+        self._input.focus_input()
+
     # ------------------------------------------------------------------
     # Slots: import / export
     # ------------------------------------------------------------------
