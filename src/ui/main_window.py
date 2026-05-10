@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -20,6 +22,7 @@ from ..config import AppConfig
 from ..models.repository import TaskRepository
 from ..models.task_status import TaskStatus
 from ..utils.signal_bus import get_signal_bus
+from .calendar_heatmap.calendar_heatmap_widget import CalendarHeatmapWidget
 from .dialogs.about_dialog import AboutDialog
 from .dialogs.task_dialog import TaskDialog
 from .task_list.task_list_panel import TaskListPanel
@@ -102,10 +105,10 @@ class MainWindow(QMainWindow):
         self._task_list_panel = TaskListPanel(self._repository)
         self._stack.addWidget(self._task_list_panel)
 
-        # Page 1: placeholder for heatmap (Sprint 4)
-        heatmap_placeholder = QLabel("日历热力图区域\n(Sprint 4 实现)")
-        heatmap_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._stack.addWidget(heatmap_placeholder)
+        # Page 1: Calendar heatmap
+        self._heatmap_widget = CalendarHeatmapWidget(self._repository, self._config)
+        self._heatmap_widget.date_selected.connect(self._on_date_selected)
+        self._stack.addWidget(self._heatmap_widget)
 
         splitter.addWidget(self._stack)
         splitter.setSizes([220, 880])
@@ -186,6 +189,9 @@ class MainWindow(QMainWindow):
         self._status_due.setText(f"{len(due)} 个今日到期")
         self._status_overdue.setText(f"{len(overdue)} 个已逾期")
         self._update_sidebar_status_counts()
+        # Refresh heatmap if visible
+        if hasattr(self, '_heatmap_widget') and self._stack.currentIndex() == 1:
+            self._heatmap_widget.refresh()
 
     def _update_sidebar_status_counts(self) -> None:
         try:
@@ -225,7 +231,16 @@ class MainWindow(QMainWindow):
 
     def _on_toggle_heatmap(self) -> None:
         current = self._stack.currentIndex()
-        self._stack.setCurrentIndex(1 if current == 0 else 0)
+        target = 1 if current == 0 else 0
+        self._stack.setCurrentIndex(target)
+        if target == 1 and hasattr(self, '_heatmap_widget'):
+            self._heatmap_widget.refresh()
+
+    def _on_date_selected(self, selected_date: date) -> None:
+        """Switch to task list and filter by the selected date."""
+        self._stack.setCurrentIndex(0)
+        if hasattr(self, '_task_list_panel'):
+            self._task_list_panel.apply_date_filter(selected_date)
 
     def _on_about(self) -> None:
         dialog = AboutDialog(parent=self)
