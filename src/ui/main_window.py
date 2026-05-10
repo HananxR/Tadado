@@ -1,18 +1,19 @@
-"""Main window — top-level QMainWindow with sidebar, task list, and heatmap."""
+"""Main window — Todoseq-style: input+filter at top, task list left, editor right."""
 
 from __future__ import annotations
 
+import datetime as dt
 from datetime import date
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenuBar,
     QMessageBox,
+    QPushButton,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 from ..config import AppConfig
 from ..models.repository import TaskRepository
 from ..models.task import Task
+from ..models.task_filter import TaskFilter
 from ..models.task_status import TaskStatus
 from ..services.md_formatter import MarkdownTaskFormatter
 from ..services.md_parser import MarkdownTaskParser
@@ -31,12 +33,15 @@ from ..utils.signal_bus import get_signal_bus
 from .calendar_heatmap.calendar_heatmap_widget import CalendarHeatmapWidget
 from .dialogs.about_dialog import AboutDialog
 from .dialogs.settings_dialog import SettingsDialog
-from .dialogs.task_dialog import TaskDialog
-from .task_list.task_list_panel import TaskListPanel
+from .task_list.task_edit_panel import TaskEditPanel
+from .task_list.task_list_model import TaskListModel
+from .task_list.task_list_view import TaskListView
+from .widgets.filter_bar import FilterBar
+from .widgets.task_input import TaskInputWidget
 
 
 class MainWindow(QMainWindow):
-    """Top-level application window."""
+    """Todoseq-style layout: input bar, filter bar, task list + edit panel."""
 
     def __init__(self, config: AppConfig, repository: TaskRepository) -> None:
         super().__init__()
@@ -45,7 +50,7 @@ class MainWindow(QMainWindow):
         self._signal_bus = get_signal_bus()
 
         self.setWindowTitle("DeskTodoSeq")
-        self.resize(1100, 700)
+        self.resize(1050, 680)
 
         self._setup_menu_bar()
         self._setup_tool_bar()
@@ -71,7 +76,7 @@ class MainWindow(QMainWindow):
         view_menu = menu_bar.addMenu("视图(&V)")
         view_menu.addAction("刷新(&R)", self._on_refresh)
         view_menu.addSeparator()
-        view_menu.addAction("切换热力图(&H)", self._on_toggle_heatmap)
+        view_menu.addAction("热力图(&H)", self._on_toggle_heatmap)
 
         help_menu = menu_bar.addMenu("帮助(&H)")
         help_menu.addAction("关于(&A)", self._on_about)
@@ -85,72 +90,98 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
-        toolbar.addAction("新建", self._on_new_task)
         toolbar.addAction("刷新", self._on_refresh)
-        toolbar.addSeparator()
         toolbar.addAction("热力图", self._on_toggle_heatmap)
+        toolbar.addSeparator()
+        toolbar.addAction("导入", self._on_import)
+        toolbar.addAction("导出", self._on_export)
+        toolbar.addSeparator()
+        toolbar.addAction("设置", self._on_settings)
 
     # ------------------------------------------------------------------
     # Central widget
     # ------------------------------------------------------------------
 
     def _setup_central_widget(self) -> None:
+        # Stacked widget to switch between task view and heatmap
+        self._stack = QStackedWidget()
+
+        # --- Page 0: Task view (input + filter + [task list | edit panel]) ---
+        task_page = QWidget()
+        task_layout = QVBoxLayout(task_page)
+        task_layout.setContentsMargins(8, 8, 8, 8)
+        task_layout.setSpacing(6)
+
+        # Quick actions row: input + quick filter buttons
+        input_row = QHBoxLayout()
+        input_row.setSpacing(6)
+
+        self._input = TaskInputWidget(self._repository)
+        input_row.addWidget(self._input, 1)
+
+        filters = [
+            ("全部", "all"),
+            ("今日", "today"),
+            ("本周", "week"),
+            ("逾期", "overdue"),
+        ]
+        for label, preset in filters:
+            btn = QPushButton(label)
+            btn.setFixedWidth(50)
+            btn.setStyleSheet(
+                "QPushButton { padding: 4px 6px; font-size: 12px;"
+                " border: 1px solid #ccc; border-radius: 4px; }"
+                "QPushButton:hover { background: #e0e0e0; }"
+            )
+            btn.clicked.connect(lambda checked=False, p=preset: self._on_preset_filter(p))
+            input_row.addWidget(btn)
+
+        task_layout.addLayout(input_row)
+
+        # Filter bar
+        self._filter_bar = FilterBar()
+        task_layout.addWidget(self._filter_bar)
+
+        # Split: task list (left) + edit panel (right)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
 
-        sidebar = self._build_sidebar()
-        splitter.addWidget(sidebar)
+        # Left: task list
+        self._task_model = TaskListModel()
+        self._task_view = TaskListView(self._repository)
+        self._task_view.set_model(self._task_model)
+        self._task_view.task_selected.connect(self._on_task_selected)
+        splitter.addWidget(self._task_view)
 
-        self._stack = QStackedWidget()
+        # Right: edit panel + status counts
+        right_panel = QWidget()
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
 
-        # Page 0: Task list panel
-        self._task_list_panel = TaskListPanel(self._repository)
-        self._stack.addWidget(self._task_list_panel)
+        self._edit_panel = TaskEditPanel(self._repository)
+        right_layout.addWidget(self._edit_panel)
 
-        # Page 1: Calendar heatmap
+        # Status counts
+        self._status_label = QLabel("(加载中...)")
+        self._status_label.setStyleSheet("color: #888; font-size: 11px; padding: 4px;")
+        right_layout.addWidget(self._status_label)
+
+        splitter.addWidget(right_panel)
+        splitter.setSizes([700, 300])
+
+        task_layout.addWidget(splitter, 1)
+        self._stack.addWidget(task_page)
+
+        # --- Page 1: Calendar heatmap ---
         self._heatmap_widget = CalendarHeatmapWidget(self._repository, self._config)
         self._heatmap_widget.date_selected.connect(self._on_date_selected)
         self._stack.addWidget(self._heatmap_widget)
 
-        splitter.addWidget(self._stack)
-        splitter.setSizes([220, 880])
+        self.setCentralWidget(self._stack)
 
-        self.setCentralWidget(splitter)
-
-    def _build_sidebar(self) -> QWidget:
-        sidebar = QWidget()
-        sidebar.setObjectName("sidebar")
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
-
-        layout.addWidget(QLabel("快捷筛选"))
-        self._btn_all = self._make_sidebar_button("全部任务")
-        self._btn_today = self._make_sidebar_button("今日待办")
-        self._btn_week = self._make_sidebar_button("本周任务")
-        self._btn_overdue = self._make_sidebar_button("已逾期")
-        layout.addWidget(self._btn_all)
-        layout.addWidget(self._btn_today)
-        layout.addWidget(self._btn_week)
-        layout.addWidget(self._btn_overdue)
-
-        layout.addSpacing(16)
-        layout.addWidget(QLabel("状态统计"))
-        self._status_list_label = QLabel("(加载中...)")
-        layout.addWidget(self._status_list_label)
-
-        layout.addStretch()
-        return sidebar
-
-    def _make_sidebar_button(self, text: str) -> QWidget:
-        btn = QLabel(text)
-        btn.setStyleSheet(
-            "QLabel { padding: 4px 8px; border-radius: 4px; }"
-            "QLabel:hover { background-color: rgba(128,128,128,0.15); }"
-        )
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.mousePressEvent = lambda e, t=text: self._on_quick_filter(t)  # type: ignore[attr-defined]
-        return btn
+        # Initial load
+        self._refresh_task_list()
 
     # ------------------------------------------------------------------
     # Status bar
@@ -171,8 +202,9 @@ class MainWindow(QMainWindow):
         bus.scan_completed.connect(self._on_data_changed)
         bus.task_created.connect(self._on_data_changed)
         bus.task_updated.connect(self._on_data_changed)
-        bus.task_deleted.connect(self._on_data_changed)
+        bus.task_deleted.connect(self._on_task_deleted)
         bus.task_status_changed.connect(self._on_data_changed)
+        self._filter_bar.filter_changed.connect(self._on_filter_changed)
 
     # ------------------------------------------------------------------
     # Slots: data
@@ -183,48 +215,63 @@ class MainWindow(QMainWindow):
             all_tasks = self._repository.get_all()
             due = self._repository.get_due_today()
             overdue = self._repository.get_overdue()
+            counts = self._repository.get_status_counts()
         except Exception:
             return
         self._status_total.setText(f"{len(all_tasks)} 个任务")
         self._status_due.setText(f"{len(due)} 个今日到期")
         self._status_overdue.setText(f"{len(overdue)} 个已逾期")
-        self._update_sidebar_status_counts()
-        if hasattr(self, '_heatmap_widget') and self._stack.currentIndex() == 1:
-            self._heatmap_widget.refresh()
+        self._update_status_counts(counts)
+        self._refresh_task_list()
 
-    def _update_sidebar_status_counts(self) -> None:
-        try:
-            counts = self._repository.get_status_counts()
-        except Exception:
-            return
+    def _on_task_deleted(self, task_id: str) -> None:
+        # If the deleted task is currently being edited, clear the editor
+        if self._edit_panel.current_task() and self._edit_panel.current_task().id == task_id:
+            self._edit_panel.clear()
+        self._on_data_changed()
+
+    def _update_status_counts(self, counts: dict[TaskStatus, int]) -> None:
         parts = []
-        for status in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
-            c = counts.get(status, 0)
+        for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+            c = counts.get(s, 0)
             if c > 0:
-                parts.append(f"{status.display_name}: {c}")
+                parts.append(f"{s.display_name}: {c}")
         if not parts:
-            self._status_list_label.setText("暂无任务")
+            self._status_label.setText("暂无任务")
         else:
-            self._status_list_label.setText("  ".join(parts))
+            self._status_label.setText("  ".join(parts))
+
+    def _refresh_task_list(self) -> None:
+        filter_ = self._filter_bar.build_filter()
+        tasks = self._repository.search(filter_)
+        self._task_model.load_tasks(tasks)
 
     # ------------------------------------------------------------------
-    # Slots: task
+    # Slots: task interaction
     # ------------------------------------------------------------------
 
-    def _on_new_task(self) -> None:
-        dialog = TaskDialog(self._repository, parent=self)
-        dialog.exec()
+    def _on_filter_changed(self, filter_) -> None:
+        self._refresh_task_list()
+        self._edit_panel.clear()
 
-    def _on_quick_filter(self, label: str) -> None:
-        preset_map = {
-            "全部任务": "all",
-            "今日待办": "today",
-            "本周任务": "week",
-            "已逾期": "overdue",
-        }
-        preset = preset_map.get(label, "all")
-        if hasattr(self, '_task_list_panel'):
-            self._task_list_panel.apply_preset_filter(preset)
+    def _on_task_selected(self, task: Task) -> None:
+        self._edit_panel.load_task(task)
+
+    def _on_preset_filter(self, preset: str) -> None:
+        today = date.today()
+        self._filter_bar.reset()
+
+        if preset == "all":
+            self._filter_bar.filter_changed.emit(TaskFilter())
+        elif preset == "today":
+            self._filter_bar.filter_changed.emit(TaskFilter(date_from=today, date_to=today))
+        elif preset == "week":
+            weekday = today.isoweekday()
+            monday = today - dt.timedelta(days=weekday - 1)
+            sunday = monday + dt.timedelta(days=6)
+            self._filter_bar.filter_changed.emit(TaskFilter(date_from=monday, date_to=sunday))
+        elif preset == "overdue":
+            self._filter_bar.filter_changed.emit(TaskFilter(overdue_only=True))
 
     # ------------------------------------------------------------------
     # Slots: import / export
@@ -236,7 +283,6 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
-
         try:
             with open(path, "r", encoding="utf-8") as f:
                 text = f.read()
@@ -282,10 +328,7 @@ class MainWindow(QMainWindow):
 
         tasks = self._repository.get_all()
         formatter = MarkdownTaskFormatter()
-        lines = []
-        for task in tasks:
-            if not task.archived:
-                lines.append(formatter.format(task))
+        lines = [formatter.format(t) for t in tasks if not t.archived]
 
         try:
             with open(path, "w", encoding="utf-8") as f:
@@ -310,14 +353,12 @@ class MainWindow(QMainWindow):
 
     def _on_refresh(self) -> None:
         self._on_data_changed()
-        if hasattr(self, '_task_list_panel'):
-            self._task_list_panel.refresh()
 
     def _on_toggle_heatmap(self) -> None:
         current = self._stack.currentIndex()
         target = 1 if current == 0 else 0
         self._stack.setCurrentIndex(target)
-        if target == 1 and hasattr(self, '_heatmap_widget'):
+        if target == 1:
             self._heatmap_widget.refresh()
 
     def _on_about(self) -> None:
@@ -326,5 +367,9 @@ class MainWindow(QMainWindow):
 
     def _on_date_selected(self, selected_date: date) -> None:
         self._stack.setCurrentIndex(0)
-        if hasattr(self, '_task_list_panel'):
-            self._task_list_panel.apply_date_filter(selected_date)
+        self._filter_bar.blockSignals(True)
+        self._filter_bar.reset()
+        self._filter_bar.blockSignals(False)
+        self._filter_bar.filter_changed.emit(
+            TaskFilter(date_from=selected_date, date_to=selected_date)
+        )

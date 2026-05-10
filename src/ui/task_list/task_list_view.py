@@ -78,6 +78,7 @@ class TaskListView(QTableView):
     def set_model(self, model: TaskListModel) -> None:
         self.setModel(model)
         model.task_checked.connect(self._on_checkbox_toggled)
+        self.selectionModel().selectionChanged.connect(self._on_selection_changed)
 
     # ------------------------------------------------------------------
     # Context menu
@@ -126,6 +127,15 @@ class TaskListView(QTableView):
             task: Task | None = index.data(Qt.ItemDataRole.UserRole)
             if task:
                 self._toggle_task_status(task)
+        else:
+            task = self.selected_task()
+            if task:
+                self.task_selected.emit(task)
+
+    def _on_selection_changed(self) -> None:
+        task = self.selected_task()
+        if task:
+            self.task_selected.emit(task)
 
     def _on_double_clicked(self, index: QModelIndex) -> None:
         task: Task | None = index.data(Qt.ItemDataRole.UserRole)
