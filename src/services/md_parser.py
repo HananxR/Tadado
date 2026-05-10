@@ -141,7 +141,7 @@ class MarkdownTaskParser:
                 break
 
         # Extract priority
-        pri_match = re.match(r"\[#([ABC])\]\s*", remaining)
+        pri_match = re.match(r"\[#([ABC])\]\s*", remaining, re.IGNORECASE)
         if pri_match:
             priority = Priority.from_string(pri_match.group(1))
             remaining = remaining[pri_match.end():].strip()

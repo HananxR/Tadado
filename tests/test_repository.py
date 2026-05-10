@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime
 
 from src.models.priority import Priority
@@ -12,7 +13,7 @@ from src.models.task_status import TaskStatus
 
 
 def _make_task(
-    task_id: str = "1",
+    task_id: str | None = None,
     title: str = "测试任务",
     status: TaskStatus = TaskStatus.TODO,
     priority: Priority = Priority.NONE,
@@ -23,7 +24,7 @@ def _make_task(
 ) -> Task:
     now = datetime.now()
     return Task(
-        id=task_id,
+        id=task_id or str(uuid.uuid4()),
         raw_md=f"- [{'x' if status == TaskStatus.DONE else ' '}] {status.value} {title}",
         title=title,
         status=status,

@@ -18,7 +18,11 @@ from PySide6.QtWidgets import (
 
 from ..config import AppConfig
 from ..models.repository import TaskRepository
+from ..models.task_status import TaskStatus
 from ..utils.signal_bus import get_signal_bus
+from .dialogs.about_dialog import AboutDialog
+from .dialogs.task_dialog import TaskDialog
+from .task_list.task_list_panel import TaskListPanel
 
 
 class MainWindow(QMainWindow):
@@ -94,10 +98,9 @@ class MainWindow(QMainWindow):
         # Right content area: stacked widget (task list / heatmap)
         self._stack = QStackedWidget()
 
-        # Page 0: placeholder for task list (Sprint 3)
-        task_list_placeholder = QLabel("任务列表区域\n(Sprint 3 实现)")
-        task_list_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._stack.addWidget(task_list_placeholder)
+        # Page 0: Task list panel
+        self._task_list_panel = TaskListPanel(self._repository)
+        self._stack.addWidget(self._task_list_panel)
 
         # Page 1: placeholder for heatmap (Sprint 4)
         heatmap_placeholder = QLabel("日历热力图区域\n(Sprint 4 实现)")
@@ -111,6 +114,7 @@ class MainWindow(QMainWindow):
 
     def _build_sidebar(self) -> QWidget:
         sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
@@ -127,8 +131,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(self._btn_overdue)
 
         layout.addSpacing(16)
-        layout.addWidget(QLabel("状态"))
-        self._status_list_label = QLabel("(Sprint 3)")
+        layout.addWidget(QLabel("状态统计"))
+        self._status_list_label = QLabel("(加载中...)")
         layout.addWidget(self._status_list_label)
 
         layout.addStretch()
@@ -159,29 +163,48 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status_bar)
 
     def _connect_signals(self) -> None:
-        self._signal_bus.scan_completed.connect(self._on_data_changed)
-        self._signal_bus.task_created.connect(self._on_data_changed)
-        self._signal_bus.task_updated.connect(self._on_data_changed)
-        self._signal_bus.task_deleted.connect(self._on_data_changed)
+        bus = self._signal_bus
+        bus.scan_completed.connect(self._on_data_changed)
+        bus.task_created.connect(self._on_data_changed)
+        bus.task_updated.connect(self._on_data_changed)
+        bus.task_deleted.connect(self._on_data_changed)
+        bus.task_status_changed.connect(self._on_data_changed)
 
     # ------------------------------------------------------------------
-    # Slot stubs (wired in later sprints)
+    # Slots
     # ------------------------------------------------------------------
 
     def _on_data_changed(self, *args) -> None:
-        """Refresh status bar counts after data changes."""
+        """Refresh status bar and sidebar counts."""
         try:
+            all_tasks = self._repository.get_all()
             due = self._repository.get_due_today()
             overdue = self._repository.get_overdue()
-            all_tasks = self._repository.get_all()
         except Exception:
             return
         self._status_total.setText(f"{len(all_tasks)} 个任务")
         self._status_due.setText(f"{len(due)} 个今日到期")
         self._status_overdue.setText(f"{len(overdue)} 个已逾期")
+        self._update_sidebar_status_counts()
+
+    def _update_sidebar_status_counts(self) -> None:
+        try:
+            counts = self._repository.get_status_counts()
+        except Exception:
+            return
+        parts = []
+        for status in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+            c = counts.get(status, 0)
+            if c > 0:
+                parts.append(f"{status.display_name}: {c}")
+        if not parts:
+            self._status_list_label.setText("暂无任务")
+        else:
+            self._status_list_label.setText("  ".join(parts))
 
     def _on_new_task(self) -> None:
-        pass  # Sprint 3
+        dialog = TaskDialog(self._repository, parent=self)
+        dialog.exec()
 
     def _on_import(self) -> None:
         pass  # Sprint 5
@@ -197,13 +220,24 @@ class MainWindow(QMainWindow):
 
     def _on_refresh(self) -> None:
         self._on_data_changed()
+        if hasattr(self, '_task_list_panel'):
+            self._task_list_panel.refresh()
 
     def _on_toggle_heatmap(self) -> None:
         current = self._stack.currentIndex()
         self._stack.setCurrentIndex(1 if current == 0 else 0)
 
     def _on_about(self) -> None:
-        pass  # Sprint 5
+        dialog = AboutDialog(parent=self)
+        dialog.exec()
 
     def _on_quick_filter(self, label: str) -> None:
-        pass  # Sprint 3
+        preset_map = {
+            "全部任务": "all",
+            "今日待办": "today",
+            "本周任务": "week",
+            "已逾期": "overdue",
+        }
+        preset = preset_map.get(label, "all")
+        if hasattr(self, '_task_list_panel'):
+            self._task_list_panel.apply_preset_filter(preset)

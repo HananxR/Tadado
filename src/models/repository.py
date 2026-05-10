@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS notification_log (
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
-    raw_md, title, notes, tags, content='tasks'
+    raw_md, title, notes, tags, content='tasks', tokenize='unicode61'
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -220,12 +220,14 @@ class TaskRepository:
         if not filter_.show_archived:
             where_clauses.append("archived = 0")
 
-        # Full-text search
+        # Full-text search (FTS5 + LIKE fallback for CJK)
         if filter_.search_text:
+            text = filter_.search_text
             where_clauses.append(
-                "id IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH ?)"
+                "(rowid IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH ?)"
+                " OR raw_md LIKE ? OR title LIKE ?)"
             )
-            params.append(filter_.search_text)
+            params.extend([text, f"%{text}%", f"%{text}%"])
 
         # Status filter
         if filter_.statuses is not None:
@@ -419,11 +421,7 @@ class TaskRepository:
     def _update_fts(self, task: Task) -> None:
         """Sync the FTS5 index for a single task."""
         self.conn.execute(
-            "DELETE FROM tasks_fts WHERE rowid = (SELECT rowid FROM tasks WHERE id=?)",
-            (task.id,),
-        )
-        self.conn.execute(
-            "INSERT INTO tasks_fts(rowid, raw_md, title, notes, tags) "
+            "INSERT OR REPLACE INTO tasks_fts(rowid, raw_md, title, notes, tags) "
             "SELECT rowid, raw_md, title, notes, tags FROM tasks WHERE id=?",
             (task.id,),
         )
