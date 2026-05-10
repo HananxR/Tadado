@@ -11,20 +11,24 @@ from PySide6.QtWidgets import QApplication
 
 from .config import AppConfig
 from .models.repository import TaskRepository
+from .services.archiver import TaskArchiver
+from .services.notifier import TaskNotifier
+from .services.recurrence import TaskRecurrence
+from .services.scheduler import TaskScheduler
 from .ui.main_window import MainWindow
 from .ui.system_tray import SystemTrayManager
 from .utils.signal_bus import get_signal_bus
 
 
 class DeskTodoSeqApp(QApplication):
-    """Main application — owns config, repository, and top-level UI."""
+    """Main application — owns config, repository, services, and top-level UI."""
 
     def __init__(self, argv: list[str]) -> None:
         super().__init__(argv)
         self.setApplicationName("DeskTodoSeq")
         self.setApplicationVersion("0.1.0")
         self.setOrganizationName("DeskTodoSeq")
-        self.setQuitOnLastWindowClosed(False)  # 关闭窗口时最小化到托盘
+        self.setQuitOnLastWindowClosed(False)
 
         # Core services
         self._config = AppConfig()
@@ -37,10 +41,20 @@ class DeskTodoSeqApp(QApplication):
         # Signal bus
         self._signal_bus = get_signal_bus()
         self._signal_bus.application_quit.connect(self._on_quit)
+        self._signal_bus.config_changed.connect(self._on_config_changed)
 
         # UI
         self._main_window = MainWindow(self._config, self._repository)
         self._tray = SystemTrayManager(self._main_window, self._config)
+
+        # Background services
+        self._scheduler = TaskScheduler(self._repository, self._config)
+        self._notifier = TaskNotifier(self._tray, self._config)
+        self._archiver = TaskArchiver(self._repository, self._config)
+        self._recurrence = TaskRecurrence(self._repository)
+
+        self._scheduler.start()
+        self._archiver.start()
 
         self._main_window.show()
 
@@ -78,7 +92,6 @@ class DeskTodoSeqApp(QApplication):
     # ------------------------------------------------------------------
 
     def _resource_path(self, *parts: str) -> Path | None:
-        """Locate a resource file. Tries the source tree first, then PyInstaller _MEIPASS."""
         base = getattr(sys, "_MEIPASS", None)
         if base:
             path = Path(base) / "resources" / Path(*parts)
@@ -108,5 +121,10 @@ class DeskTodoSeqApp(QApplication):
     # ------------------------------------------------------------------
 
     def _on_quit(self) -> None:
+        self._scheduler.stop()
+        self._archiver.stop()
         self._repository.close()
         self.quit()
+
+    def _on_config_changed(self) -> None:
+        self._load_theme()

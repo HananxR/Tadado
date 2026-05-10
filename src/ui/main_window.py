@@ -6,10 +6,13 @@ from datetime import date
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QDialog,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenuBar,
+    QMessageBox,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -20,10 +23,14 @@ from PySide6.QtWidgets import (
 
 from ..config import AppConfig
 from ..models.repository import TaskRepository
+from ..models.task import Task
 from ..models.task_status import TaskStatus
+from ..services.md_formatter import MarkdownTaskFormatter
+from ..services.md_parser import MarkdownTaskParser
 from ..utils.signal_bus import get_signal_bus
 from .calendar_heatmap.calendar_heatmap_widget import CalendarHeatmapWidget
 from .dialogs.about_dialog import AboutDialog
+from .dialogs.settings_dialog import SettingsDialog
 from .dialogs.task_dialog import TaskDialog
 from .task_list.task_list_panel import TaskListPanel
 
@@ -53,7 +60,6 @@ class MainWindow(QMainWindow):
     def _setup_menu_bar(self) -> None:
         menu_bar = self.menuBar()
 
-        # File menu
         file_menu = menu_bar.addMenu("文件(&F)")
         file_menu.addAction("导入 Markdown...(&I)", self._on_import)
         file_menu.addAction("导出 Markdown...(&E)", self._on_export)
@@ -62,13 +68,11 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction("退出(&Q)", self._on_quit)
 
-        # View menu
         view_menu = menu_bar.addMenu("视图(&V)")
         view_menu.addAction("刷新(&R)", self._on_refresh)
         view_menu.addSeparator()
         view_menu.addAction("切换热力图(&H)", self._on_toggle_heatmap)
 
-        # Help menu
         help_menu = menu_bar.addMenu("帮助(&H)")
         help_menu.addAction("关于(&A)", self._on_about)
 
@@ -94,11 +98,9 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.setHandleWidth(1)
 
-        # Left sidebar
         sidebar = self._build_sidebar()
         splitter.addWidget(sidebar)
 
-        # Right content area: stacked widget (task list / heatmap)
         self._stack = QStackedWidget()
 
         # Page 0: Task list panel
@@ -122,7 +124,6 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        # Quick filters
         layout.addWidget(QLabel("快捷筛选"))
         self._btn_all = self._make_sidebar_button("全部任务")
         self._btn_today = self._make_sidebar_button("今日待办")
@@ -174,11 +175,10 @@ class MainWindow(QMainWindow):
         bus.task_status_changed.connect(self._on_data_changed)
 
     # ------------------------------------------------------------------
-    # Slots
+    # Slots: data
     # ------------------------------------------------------------------
 
     def _on_data_changed(self, *args) -> None:
-        """Refresh status bar and sidebar counts."""
         try:
             all_tasks = self._repository.get_all()
             due = self._repository.get_due_today()
@@ -189,7 +189,6 @@ class MainWindow(QMainWindow):
         self._status_due.setText(f"{len(due)} 个今日到期")
         self._status_overdue.setText(f"{len(overdue)} 个已逾期")
         self._update_sidebar_status_counts()
-        # Refresh heatmap if visible
         if hasattr(self, '_heatmap_widget') and self._stack.currentIndex() == 1:
             self._heatmap_widget.refresh()
 
@@ -208,18 +207,103 @@ class MainWindow(QMainWindow):
         else:
             self._status_list_label.setText("  ".join(parts))
 
+    # ------------------------------------------------------------------
+    # Slots: task
+    # ------------------------------------------------------------------
+
     def _on_new_task(self) -> None:
         dialog = TaskDialog(self._repository, parent=self)
         dialog.exec()
 
+    def _on_quick_filter(self, label: str) -> None:
+        preset_map = {
+            "全部任务": "all",
+            "今日待办": "today",
+            "本周任务": "week",
+            "已逾期": "overdue",
+        }
+        preset = preset_map.get(label, "all")
+        if hasattr(self, '_task_list_panel'):
+            self._task_list_panel.apply_preset_filter(preset)
+
+    # ------------------------------------------------------------------
+    # Slots: import / export
+    # ------------------------------------------------------------------
+
     def _on_import(self) -> None:
-        pass  # Sprint 5
+        path, _ = QFileDialog.getOpenFileName(
+            self, "导入 Markdown", "", "Markdown 文件 (*.md);;所有文件 (*)"
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                text = f.read()
+        except OSError as e:
+            QMessageBox.warning(self, "导入失败", f"无法读取文件：{e}")
+            return
+
+        parser = MarkdownTaskParser()
+        results = parser.parse_batch(text)
+        imported = 0
+        errors = 0
+        for parsed, raw_line, err in results:
+            if parsed is not None:
+                task = Task(
+                    id="",
+                    raw_md=raw_line,
+                    title=parsed.title,
+                    status=parsed.status,
+                    priority=parsed.priority,
+                    tags=parsed.tags,
+                    scheduled_date=parsed.scheduled_date,
+                    deadline_date=parsed.deadline_date,
+                )
+                self._repository.insert(task)
+                imported += 1
+                self._signal_bus.task_created.emit(task)
+            else:
+                errors += 1
+
+        msg = f"成功导入 {imported} 个任务。"
+        if errors:
+            msg += f"\n{errors} 行解析失败。"
+        QMessageBox.information(self, "导入完成", msg)
+        self._signal_bus.scan_completed.emit(imported)
 
     def _on_export(self) -> None:
-        pass  # Sprint 5
+        default_name = f"tasks_{date.today().isoformat()}.md"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出 Markdown", default_name, "Markdown 文件 (*.md)"
+        )
+        if not path:
+            return
+
+        tasks = self._repository.get_all()
+        formatter = MarkdownTaskFormatter()
+        lines = []
+        for task in tasks:
+            if not task.archived:
+                lines.append(formatter.format(task))
+
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines))
+        except OSError as e:
+            QMessageBox.warning(self, "导出失败", f"无法写入文件：{e}")
+            return
+
+        QMessageBox.information(self, "导出完成", f"成功导出 {len(lines)} 个任务。")
+
+    # ------------------------------------------------------------------
+    # Slots: navigation
+    # ------------------------------------------------------------------
 
     def _on_settings(self) -> None:
-        pass  # Sprint 5
+        dialog = SettingsDialog(self._config, parent=self)
+        dialog.exec()
+        self._signal_bus.config_changed.emit()
 
     def _on_quit(self) -> None:
         self._signal_bus.application_quit.emit()
@@ -236,23 +320,11 @@ class MainWindow(QMainWindow):
         if target == 1 and hasattr(self, '_heatmap_widget'):
             self._heatmap_widget.refresh()
 
-    def _on_date_selected(self, selected_date: date) -> None:
-        """Switch to task list and filter by the selected date."""
-        self._stack.setCurrentIndex(0)
-        if hasattr(self, '_task_list_panel'):
-            self._task_list_panel.apply_date_filter(selected_date)
-
     def _on_about(self) -> None:
         dialog = AboutDialog(parent=self)
         dialog.exec()
 
-    def _on_quick_filter(self, label: str) -> None:
-        preset_map = {
-            "全部任务": "all",
-            "今日待办": "today",
-            "本周任务": "week",
-            "已逾期": "overdue",
-        }
-        preset = preset_map.get(label, "all")
+    def _on_date_selected(self, selected_date: date) -> None:
+        self._stack.setCurrentIndex(0)
         if hasattr(self, '_task_list_panel'):
-            self._task_list_panel.apply_preset_filter(preset)
+            self._task_list_panel.apply_date_filter(selected_date)
