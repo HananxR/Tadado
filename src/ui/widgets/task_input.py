@@ -28,7 +28,7 @@ class TaskInputWidget(QWidget):
 
         self._input = QLineEdit()
         self._input.setObjectName("taskInput")
-        self._input.setPlaceholderText("输入任务 Markdown（Enter 创建）")
+        self._input.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 任务标题 #标签 (Enter 创建)")
         self._input.returnPressed.connect(self._on_text_entered)
         layout.addWidget(self._input)
 

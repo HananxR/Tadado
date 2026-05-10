@@ -55,6 +55,7 @@ class TaskListPanel(QWidget):
         self._signal_bus.task_created.connect(self._on_task_created)
         self._signal_bus.task_updated.connect(self._on_task_updated)
         self._signal_bus.task_deleted.connect(self._on_task_deleted)
+        self._signal_bus.task_status_changed.connect(self._on_task_updated)
         self._signal_bus.scan_completed.connect(self._on_data_changed)
 
         # Initial load

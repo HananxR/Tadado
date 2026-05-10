@@ -11,11 +11,11 @@ from ...models.priority import Priority
 from ...models.task import Task
 from ...models.task_status import TaskStatus
 
-_COLUMN_HEADERS = ["", "状态", "优先级", "标题", "截止日", "标签"]
+_COLUMN_HEADERS = ["", "", "", "Markdown", "", ""]
 
 
 class TaskListModel(QAbstractTableModel):
-    """6-column table model: checkbox, status, priority, title, deadline, tags."""
+    """6-column table model: checkbox, status, priority, raw_md, deadline, tags."""
 
     task_checked = Signal(str)  # task_id when checkbox toggled
 
@@ -48,11 +48,19 @@ class TaskListModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ForegroundRole:
             return self._foreground_color(task, col)
 
+        if role == Qt.ItemDataRole.FontRole and col == 3:
+            from PySide6.QtGui import QFont
+            font = QFont("Consolas", 10)
+            return font
+
         if role == Qt.ItemDataRole.UserRole:
             return task
 
         if role == Qt.ItemDataRole.TextAlignmentRole:
             return self._alignment(col)
+
+        if role == Qt.ItemDataRole.ToolTipRole and col == 3:
+            return task.raw_md
 
         return None
 
@@ -132,7 +140,7 @@ class TaskListModel(QAbstractTableModel):
         if col == 2:
             return task.priority.display_tag
         if col == 3:
-            return task.title
+            return task.raw_md
         if col == 4:
             return task.deadline_date.isoformat() if task.deadline_date else ""
         if col == 5:

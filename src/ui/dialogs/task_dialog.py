@@ -1,18 +1,14 @@
-"""Task creation / editing dialog with real-time Markdown preview."""
+"""Task editor — Markdown-first: edit raw_md directly with live parsed preview."""
 
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox,
-    QDateEdit,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -26,11 +22,12 @@ from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...models.task_status import TaskStatus
 from ...services.md_formatter import MarkdownTaskFormatter
+from ...services.md_parser import MarkdownTaskParser
 from ...utils.signal_bus import get_signal_bus
 
 
 class TaskDialog(QDialog):
-    """Dialog for creating or editing a task."""
+    """Markdown-first task editor — one text input for raw_md with live preview."""
 
     def __init__(
         self,
@@ -41,89 +38,70 @@ class TaskDialog(QDialog):
         super().__init__(parent)
         self._repository = repository
         self._task = task
+        self._parser = MarkdownTaskParser()
         self._formatter = MarkdownTaskFormatter()
         self._signal_bus = get_signal_bus()
         self._editing = task is not None
 
         self.setWindowTitle("编辑任务" if self._editing else "新建任务")
         self.setObjectName("taskDialog")
-        self.resize(480, 500)
-        self.setMinimumSize(400, 400)
+        self.resize(520, 280)
+        self.setMinimumSize(420, 220)
 
         self._build_ui()
-        if self._editing:
-            self._populate_from_task()
+        if self._editing and self._task:
+            self._md_edit.setText(self._task.raw_md)
+            self._notes_edit.setText(self._task.notes or "")
+            if self._task.recurrence_rule:
+                self._recurrence_edit.setText(self._task.recurrence_rule)
         self._update_preview()
 
     # ------------------------------------------------------------------
-    # UI construction
+    # UI
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setSpacing(12)
+        root.setSpacing(10)
 
-        form = QFormLayout()
-        form.setSpacing(8)
+        # Markdown input
+        root.addWidget(QLabel("Markdown 任务："))
+        hint = QLabel(
+            '格式：<tt>- [ ] TODO [#A] &lt;2026-05-20&gt; 任务标题 #标签</tt>'
+        )
+        hint.setStyleSheet("color: #888; font-size: 11px;")
+        root.addWidget(hint)
 
-        self._title_edit = QLineEdit()
-        self._title_edit.setPlaceholderText("任务标题")
-        self._title_edit.textChanged.connect(self._update_preview)
-        form.addRow("标题", self._title_edit)
+        self._md_edit = QLineEdit()
+        self._md_edit.setObjectName("mdEdit")
+        self._md_edit.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 任务标题 #标签")
+        self._md_edit.setStyleSheet(
+            "QLineEdit { font-family: 'Consolas', 'Courier New', monospace;"
+            " font-size: 13px; padding: 6px; }"
+        )
+        self._md_edit.textChanged.connect(self._update_preview)
+        root.addWidget(self._md_edit)
 
-        self._status_combo = QComboBox()
-        for s in TaskStatus:
-            self._status_combo.addItem(s.display_name, s)
-        self._status_combo.currentIndexChanged.connect(self._update_preview)
-        form.addRow("状态", self._status_combo)
-
-        self._priority_combo = QComboBox()
-        for p in Priority:
-            self._priority_combo.addItem(p.display_tag if p != Priority.NONE else "无", p)
-        self._priority_combo.currentIndexChanged.connect(self._update_preview)
-        form.addRow("优先级", self._priority_combo)
-
-        self._deadline_date = QDateEdit()
-        self._deadline_date.setCalendarPopup(True)
-        self._deadline_date.setDisplayFormat("yyyy-MM-dd")
-        self._deadline_date.setSpecialValueText("无")
-        self._deadline_date.setDate(self._deadline_date.minimumDate())
-        self._deadline_date.dateChanged.connect(self._update_preview)
-        form.addRow("截止日", self._deadline_date)
-
-        self._scheduled_date = QDateEdit()
-        self._scheduled_date.setCalendarPopup(True)
-        self._scheduled_date.setDisplayFormat("yyyy-MM-dd")
-        self._scheduled_date.setSpecialValueText("无")
-        self._scheduled_date.setDate(self._scheduled_date.minimumDate())
-        self._scheduled_date.dateChanged.connect(self._update_preview)
-        form.addRow("计划日", self._scheduled_date)
-
-        self._tags_edit = QLineEdit()
-        self._tags_edit.setPlaceholderText("tag1 tag2")
-        self._tags_edit.textChanged.connect(self._update_preview)
-        form.addRow("标签", self._tags_edit)
-
-        self._recurrence_edit = QLineEdit()
-        self._recurrence_edit.setPlaceholderText('如：+1d、+1w、+1m、+1y')
-        form.addRow("循环规则", self._recurrence_edit)
-
-        self._notes_edit = QTextEdit()
-        self._notes_edit.setMaximumHeight(80)
-        self._notes_edit.setPlaceholderText("备注...")
-        form.addRow("备注", self._notes_edit)
-
-        root.addLayout(form)
-
-        # Preview
-        preview_label = QLabel("Markdown 预览：")
-        root.addWidget(preview_label)
+        # Live preview
+        root.addWidget(QLabel("解析预览："))
         self._preview = QLineEdit()
         self._preview.setReadOnly(True)
         self._preview.setStyleSheet(
-            "QLineEdit { font-family: 'Consolas', 'Courier New', monospace; }"
+            "QLineEdit { font-family: 'Consolas', 'Courier New', monospace;"
+            " color: #555; background: #f8f8f8; padding: 4px; }"
         )
         root.addWidget(self._preview)
+
+        # Recurrence (optional)
+        self._recurrence_edit = QLineEdit()
+        self._recurrence_edit.setPlaceholderText("循环规则（如 +1d、+1w、+1m、+1y，可选）")
+        root.addWidget(self._recurrence_edit)
+
+        # Notes (optional)
+        self._notes_edit = QTextEdit()
+        self._notes_edit.setMaximumHeight(50)
+        self._notes_edit.setPlaceholderText("备注（可选）...")
+        root.addWidget(self._notes_edit)
 
         # Buttons
         buttons = QDialogButtonBox(
@@ -138,72 +116,73 @@ class TaskDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _update_preview(self) -> None:
-        status = self._status_combo.currentData() or TaskStatus.TODO
-        priority = self._priority_combo.currentData() or Priority.NONE
-        deadline = self._date_or_none(self._deadline_date)
-        scheduled = self._date_or_none(self._scheduled_date)
-        title = self._title_edit.text() or "(标题)"
-        tags_str = self._tags_edit.text().strip()
-        tags = [t.lstrip("#") for t in tags_str.split()] if tags_str else None
-        raw_md = self._formatter.format_fields(
-            status=status,
-            priority=priority,
-            scheduled_date=scheduled,
-            deadline_date=deadline,
-            title=title,
-            tags=tags,
-        )
-        self._preview.setText(raw_md)
+        text = self._md_edit.text().strip()
+        if not text:
+            self._preview.setText("(空)")
+            return
+        try:
+            parsed = self._parser.parse(text)
+            parts = [
+                f"状态={parsed.status.display_name}",
+                f"优先级={parsed.priority.display_tag or '无'}",
+            ]
+            if parsed.scheduled_date:
+                parts.append(f"计划={parsed.scheduled_date.isoformat()}")
+            if parsed.deadline_date:
+                parts.append(f"截止={parsed.deadline_date.isoformat()}")
+            parts.append(f"标题=\"{parsed.clean_title}\"")
+            if parsed.tags:
+                parts.append(f"标签={parsed.tags}")
+            self._preview.setText(" | ".join(parts))
+        except ValueError:
+            self._preview.setText("⚠ 解析失败，请检查格式")
 
     def _on_accept(self) -> None:
-        title = self._title_edit.text().strip()
-        if not title:
-            QMessageBox.warning(self, "输入错误", "标题不能为空。")
+        text = self._md_edit.text().strip()
+        if not text:
+            QMessageBox.warning(self, "输入错误", "Markdown 任务不能为空。")
             return
 
-        status: TaskStatus = self._status_combo.currentData() or TaskStatus.TODO
-        priority: Priority = self._priority_combo.currentData() or Priority.NONE
-        deadline = self._date_or_none(self._deadline_date)
-        scheduled = self._date_or_none(self._scheduled_date)
-        tags_str = self._tags_edit.text().strip()
-        tags = [t.lstrip("#") for t in tags_str.split()] if tags_str else []
-        recurrence = self._recurrence_edit.text().strip() or None
-        notes = self._notes_edit.toPlainText().strip() or None
+        try:
+            parsed = self._parser.parse(text)
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                "解析失败",
+                "无法解析 Markdown 格式。\n\n"
+                "正确格式示例：\n"
+                "- [ ] TODO [#A] <2026-05-20> 标题 #标签",
+            )
+            return
 
-        raw_md = self._formatter.format_fields(
-            status=status,
-            priority=priority,
-            scheduled_date=scheduled,
-            deadline_date=deadline,
-            title=title,
-            tags=tags,
-        )
+        notes = self._notes_edit.toPlainText().strip() or None
+        recurrence = self._recurrence_edit.text().strip() or None
 
         if self._editing and self._task:
-            self._task.title = title
-            self._task.status = status
-            self._task.priority = priority
-            self._task.deadline_date = deadline
-            self._task.scheduled_date = scheduled
-            self._task.tags = tags
-            self._task.raw_md = raw_md
-            self._task.recurrence_rule = recurrence
+            self._task.raw_md = text
+            self._task.title = parsed.clean_title
+            self._task.status = parsed.status
+            self._task.priority = parsed.priority
+            self._task.tags = parsed.tags
+            self._task.scheduled_date = parsed.scheduled_date
+            self._task.deadline_date = parsed.deadline_date
             self._task.notes = notes
+            self._task.recurrence_rule = recurrence
             self._task.updated_at = datetime.now()
             self._repository.update(self._task)
             self._signal_bus.task_updated.emit(self._task)
         else:
             task = Task(
                 id=str(uuid.uuid4()),
-                raw_md=raw_md,
-                title=title,
-                status=status,
-                priority=priority,
-                tags=tags,
-                scheduled_date=scheduled,
-                deadline_date=deadline,
-                recurrence_rule=recurrence,
+                raw_md=text,
+                title=parsed.clean_title,
+                status=parsed.status,
+                priority=parsed.priority,
+                tags=parsed.tags,
+                scheduled_date=parsed.scheduled_date,
+                deadline_date=parsed.deadline_date,
                 notes=notes,
+                recurrence_rule=recurrence,
                 created_at=datetime.now(),
                 updated_at=datetime.now(),
             )
@@ -211,41 +190,3 @@ class TaskDialog(QDialog):
             self._signal_bus.task_created.emit(task)
 
         self.accept()
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    def _populate_from_task(self) -> None:
-        if not self._task:
-            return
-        t = self._task
-        self._title_edit.setText(t.title)
-
-        for i in range(self._status_combo.count()):
-            if self._status_combo.itemData(i) == t.status:
-                self._status_combo.setCurrentIndex(i)
-                break
-
-        for i in range(self._priority_combo.count()):
-            if self._priority_combo.itemData(i) == t.priority:
-                self._priority_combo.setCurrentIndex(i)
-                break
-
-        if t.deadline_date:
-            self._deadline_date.setDate(t.deadline_date)
-        if t.scheduled_date:
-            self._scheduled_date.setDate(t.scheduled_date)
-        if t.tags:
-            self._tags_edit.setText(" ".join(t.tags))
-        if t.recurrence_rule:
-            self._recurrence_edit.setText(t.recurrence_rule)
-        if t.notes:
-            self._notes_edit.setText(t.notes)
-
-    @staticmethod
-    def _date_or_none(edit: QDateEdit) -> date | None:
-        d = edit.date()
-        if d == edit.minimumDate():
-            return None
-        return date(d.year(), d.month(), d.day())
