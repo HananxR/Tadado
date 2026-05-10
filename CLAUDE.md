@@ -69,7 +69,7 @@ SQLite（raw_md 原文 + 解析后的结构化列 + FTS5 索引）
 - **`MarkdownTaskFormatter.format()` 输出稳定** — 相同字段总是生成相同的 raw_md 字符串。`test_md_formatter.py::TestRoundTrip` 中的往返测试验证了这一不变性。
 - **FTS5 全文搜索** 作用于 `raw_md, title, notes, tags` 列 — 全文查询走虚拟表而非 `LIKE` 扫描。
 - **SignalBus 解耦各模块** — 服务和 UI 组件通过 Qt 信号（`task_created`、`task_updated`、`task_deleted`、`reminder_fired` 等）通信，而非模块间直接调用。
-- **Phase 2/3 的服务模块尚未实现** — `scheduler.py`、`notifier.py`、`archiver.py`、`recurrence.py` 仅存在于计划中。
+- **后台服务已实现** — `scheduler.py`（APScheduler 定时检查到期任务）、`notifier.py`（托盘提醒，尊重安静时段）、`archiver.py`（每日自动归档已完成任务）、`recurrence.py`（循环任务自动创建下一实例）。
 
 ### 任务状态循环
 
@@ -103,8 +103,14 @@ LATER → TODO → DOING → DONE
 
 ## 当前进度
 
-**已完成（Sprint 1）**：models 全部（`Task`、`TaskStatus`、`Priority`、`TaskFilter`）、`TaskRepository`（完整 CRUD + 搜索 + 聚合）、`MarkdownTaskParser`（严格模式 + 容错回退）、`MarkdownTaskFormatter`、`SignalBus`、`date_utils`、测试套件（parser、formatter、repository 共 3 个文件）。
+**已完成（全部 Sprint）**：
 
-**尚未实现（Sprint 2-5）**：`src/ui/` 下全部文件（main_window、system_tray、task_input、task_list/*、calendar_heatmap/*、dialogs/*、widgets/*）、`src/app.py`、`src/config.py`、`main.py`、主题 QSS 文件、i18n JSON 文件。
+- **Sprint 1**：models（Task/TaskStatus/Priority/TaskFilter/TaskRepository）、Markdown 解析器/格式化器、SignalBus、date_utils、测试套件
+- **Sprint 2**：app.py、config.py、main_window（框架+侧边栏+状态栏）、system_tray、light/dark 主题 QSS、main.py
+- **Sprint 3**：TaskInputWidget、FilterBar、TaskListModel、TaskListDelegate、TaskListView、TaskListPanel、TaskDialog、AboutDialog
+- **Sprint 4**：HeatmapModel、CalendarHeatmapWidget（自定义绘制 GitHub 风格热力图，含年份导航和点击筛选）
+- **Sprint 5**：SettingsDialog、导入/导出 Markdown、TaskScheduler、TaskNotifier、TaskArchiver、TaskRecurrence
+
+**测试覆盖**：parser（20 用例）、formatter（5 用例）、repository（12 用例）— 共 32 用例全部通过。
 
 **依赖安装**：PySide6 的 wheel 包约 160MB，网络慢时可能超时。失败时用 `UV_HTTP_TIMEOUT=300 uv sync` 重试。
