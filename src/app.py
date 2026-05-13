@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -17,6 +17,7 @@ from .services.recurrence import TaskRecurrence
 from .services.scheduler import TaskScheduler
 from .ui.main_window import MainWindow
 from .ui.system_tray import SystemTrayManager
+from .utils.icon_loader import get_icon_loader
 from .utils.signal_bus import get_signal_bus
 
 
@@ -35,8 +36,9 @@ class DeskTodoSeqApp(QApplication):
         self._repository = TaskRepository(self._config.db_path())
         self._repository.open()
 
-        # Load theme early
+        # Load theme and icons early
         self._load_theme()
+        self._load_icons()
 
         # Signal bus
         self._signal_bus = get_signal_bus()
@@ -57,6 +59,7 @@ class DeskTodoSeqApp(QApplication):
         self._archiver.start()
 
         self._main_window.show()
+        QTimer.singleShot(100, self._main_window.apply_screen_size)
 
     # ------------------------------------------------------------------
     # Theme
@@ -126,5 +129,11 @@ class DeskTodoSeqApp(QApplication):
         self._repository.close()
         self.quit()
 
+    def _load_icons(self) -> None:
+        loader = get_icon_loader()
+        self.setWindowIcon(loader.app_icon())
+
     def _on_config_changed(self) -> None:
         self._load_theme()
+        get_icon_loader().clear_cache()
+        self._load_icons()

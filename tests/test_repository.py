@@ -139,3 +139,28 @@ class TestAggregations:
         data = repository.get_heatmap_data(2026)
         assert data[date(2026, 5, 10)] == 2
         assert data[date(2026, 5, 15)] == 1
+
+
+class TestEmptyState:
+    """Verify welcome/empty-state scenarios — "今日无事，找点事情干一下吧"."""
+
+    def test_overdue_filter_empty_when_all_future(self, repository: TaskRepository) -> None:
+        """All tasks have future deadlines → overdue filter returns empty."""
+        future = date.today().replace(year=date.today().year + 1)
+        repository.insert(_make_task(task_id="1", deadline_date=future))
+        repository.insert(_make_task(task_id="2", deadline_date=future))
+        results = repository.search(TaskFilter(overdue_only=True))
+        assert len(results) == 0
+
+    def test_today_filter_empty_when_no_tasks_today(self, repository: TaskRepository) -> None:
+        """Tasks are all in the distant future → today filter returns empty."""
+        far = date.today().replace(year=date.today().year + 1)
+        repository.insert(_make_task(task_id="1", deadline_date=far, scheduled_date=far))
+        today = date.today()
+        results = repository.search(TaskFilter(date_from=today, date_to=today))
+        assert len(results) == 0
+
+    def test_empty_database(self, repository: TaskRepository) -> None:
+        """No tasks at all → any filter returns empty."""
+        results = repository.search(TaskFilter())
+        assert len(results) == 0

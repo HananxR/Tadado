@@ -28,6 +28,7 @@ class Task:
     recurrence_rule: Optional[str] = None
     parent_id: Optional[str] = None
     notes: Optional[str] = None
+    activity_log: list[dict] = field(default_factory=list)
 
     @property
     def is_overdue(self) -> bool:

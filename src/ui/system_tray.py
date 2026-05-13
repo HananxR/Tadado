@@ -7,6 +7,7 @@ from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from ..config import AppConfig
+from ..utils.icon_loader import load_icon
 
 
 class SystemTrayManager:
@@ -16,7 +17,7 @@ class SystemTrayManager:
         self._main_window = main_window
         self._config = config
 
-        icon = QIcon(self._icon_path("tray_normal.ico"))
+        icon = load_icon("tray_normal")
         self._tray = QSystemTrayIcon(icon)
         self._tray.setToolTip("DeskTodoSeq")
 
@@ -78,5 +79,5 @@ class SystemTrayManager:
         if base:
             path = Path(base) / "resources" / "icons" / name
         else:
-            path = Path(__file__).resolve().parents[3] / "resources" / "icons" / name
+            path = Path(__file__).resolve().parents[2] / "resources" / "icons" / name
         return str(path) if path.exists() else ""

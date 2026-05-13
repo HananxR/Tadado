@@ -1,6 +1,8 @@
-"""QTableView for displaying tasks with context menu and checkbox support."""
+"""QTableView for displaying tasks with context menu (no inline checkbox)."""
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QAction
@@ -24,16 +26,16 @@ from .task_list_model import TaskListModel
 
 
 class TaskListView(QTableView):
-    """Table view of tasks with right-click context menu."""
+    """Table view of tasks with right-click context menu. No inline checkbox."""
 
     task_selected = Signal(Task)
+    detail_requested = Signal(Task)
 
     def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._repository = repository
         self._signal_bus = get_signal_bus()
         self._formatter = MarkdownTaskFormatter()
-        self._selected_task: Task | None = None
 
         self.setObjectName("taskListView")
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -43,24 +45,9 @@ class TaskListView(QTableView):
         self.verticalHeader().hide()
         self.setShowGrid(False)
 
-        # Column widths
-        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self.horizontalHeader().resizeSection(0, 30)
-        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.horizontalHeader().resizeSection(1, 60)
-        self.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        self.horizontalHeader().resizeSection(2, 50)
-        self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        self.horizontalHeader().resizeSection(4, 90)
-        self.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        self.horizontalHeader().resizeSection(5, 120)
-
-        # Model and delegate
         delegate = TaskListDelegate(self)
         self.setItemDelegate(delegate)
 
-        # Connections
         self.customContextMenuRequested.connect(self._show_context_menu)
         self.clicked.connect(self._on_clicked)
         self.doubleClicked.connect(self._on_double_clicked)
@@ -77,8 +64,25 @@ class TaskListView(QTableView):
 
     def set_model(self, model: TaskListModel) -> None:
         self.setModel(model)
-        model.task_checked.connect(self._on_checkbox_toggled)
+        model.modelReset.connect(self._apply_column_widths)
         self.selectionModel().selectionChanged.connect(self._on_selection_changed)
+        self._apply_column_widths()
+
+    def _apply_column_widths(self) -> None:
+        """6 columns: created, content, deadline, priority, status, tags."""
+        h = self.horizontalHeader()
+        h.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(0, 130)   # 创建时间
+        h.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # 任务内容
+        h.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(2, 105)   # 截止时间
+        h.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(3, 50)    # 优先级
+        h.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(4, 60)    # 状态
+        h.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)  # 标签
+        if h.sectionSize(5) > 130:
+            h.resizeSection(5, 110)
 
     # ------------------------------------------------------------------
     # Context menu
@@ -95,15 +99,18 @@ class TaskListView(QTableView):
         menu = QMenu(self)
 
         edit_action = menu.addAction("编辑(&E)")
+        detail_action = menu.addAction("详情(&V)")
         delete_action = menu.addAction("删除(&D)")
         menu.addSeparator()
 
         status_menu = menu.addMenu("更改状态")
         for s in TaskStatus:
-            action = status_menu.addAction(s.display_name)
+            action = status_menu.addAction(f"  {s.display_name}")
+            action.setCheckable(True)
+            action.setChecked(s == task.status)
             action.setData(s)
             action.triggered.connect(
-                lambda checked=False, st=s: self._on_change_status(task, st)
+                lambda checked=False, st=s, t=task: self._on_change_status(t, st)
             )
 
         menu.addSeparator()
@@ -113,6 +120,8 @@ class TaskListView(QTableView):
 
         if action == edit_action:
             self._on_edit_task(task)
+        elif action == detail_action:
+            self._on_detail_task(task)
         elif action == delete_action:
             self._on_delete_task(task)
         elif action == copy_action:
@@ -123,14 +132,9 @@ class TaskListView(QTableView):
     # ------------------------------------------------------------------
 
     def _on_clicked(self, index: QModelIndex) -> None:
-        if index.column() == 0:
-            task: Task | None = index.data(Qt.ItemDataRole.UserRole)
-            if task:
-                self._toggle_task_status(task)
-        else:
-            task = self.selected_task()
-            if task:
-                self.task_selected.emit(task)
+        task = self.selected_task()
+        if task:
+            self.task_selected.emit(task)
 
     def _on_selection_changed(self) -> None:
         task = self.selected_task()
@@ -142,15 +146,13 @@ class TaskListView(QTableView):
         if task:
             self._on_edit_task(task)
 
-    def _on_checkbox_toggled(self, task_id: str) -> None:
-        task = self._repository.get_by_id(task_id)
-        if task:
-            self._toggle_task_status(task)
-
     def _on_edit_task(self, task: Task) -> None:
         dialog = TaskDialog(self._repository, task=task, parent=self)
         if dialog.exec() == TaskDialog.DialogCode.Accepted:
-            pass  # signal already emitted by TaskDialog
+            pass
+
+    def _on_detail_task(self, task: Task) -> None:
+        self.detail_requested.emit(task)
 
     def _on_delete_task(self, task: Task) -> None:
         result = QMessageBox.question(
@@ -165,15 +167,17 @@ class TaskListView(QTableView):
 
     def _on_change_status(self, task: Task, new_status: TaskStatus) -> None:
         old_status = task.status
+        if old_status == new_status:
+            return
         task.status = new_status
         if new_status == TaskStatus.DONE:
-            from datetime import datetime
-
-            task.completed_at = datetime.now()
+            task.completed_at = task.deadline_date or datetime.now()
         task.raw_md = self._formatter.format(task)
+        task.updated_at = datetime.now()
+        # Record in activity log
+        task.activity_log.append({
+            "ts": datetime.now().isoformat(),
+            "content": f"状态变更: {old_status.display_name} → {new_status.display_name}",
+        })
         self._repository.update(task)
         self._signal_bus.task_status_changed.emit(task, old_status)
-
-    def _toggle_task_status(self, task: Task) -> None:
-        new_status = task.status.next_status
-        self._on_change_status(task, new_status)

@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     recurrence_rule TEXT,
     parent_id TEXT,
     notes TEXT DEFAULT '',
+    activity_log TEXT DEFAULT '[]',
     FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE SET NULL
 );
 
@@ -58,6 +59,7 @@ _TASK_COLUMNS = [
     "scheduled_date", "deadline_date",
     "created_at", "updated_at", "completed_at",
     "archived", "archived_at", "recurrence_rule", "parent_id", "notes",
+    "activity_log",
 ]
 
 
@@ -68,6 +70,7 @@ def _row_to_task(row: tuple) -> Task:
         scheduled_str, deadline_str,
         created_str, updated_str, completed_str,
         archived_int, archived_str, recurrence, parent_id, notes,
+        activity_log_json,
     ) = row
 
     return Task(
@@ -87,6 +90,7 @@ def _row_to_task(row: tuple) -> Task:
         recurrence_rule=recurrence,
         parent_id=parent_id,
         notes=notes,
+        activity_log=json.loads(activity_log_json) if activity_log_json else [],
     )
 
 
@@ -109,6 +113,7 @@ def _task_to_row(task: Task) -> tuple:
         task.recurrence_rule,
         task.parent_id,
         task.notes,
+        json.dumps(task.activity_log, ensure_ascii=False) if task.activity_log else "[]",
     )
 
 
@@ -146,6 +151,10 @@ class TaskRepository:
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(SCHEMA_SQL)
+        try:
+            self._conn.execute("ALTER TABLE tasks ADD COLUMN activity_log TEXT DEFAULT '[]'")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         self._conn.commit()
 
     def close(self) -> None:
@@ -316,23 +325,38 @@ class TaskRepository:
     # Aggregations
     # ------------------------------------------------------------------
 
-    def get_heatmap_data(self, year: int) -> dict[date, int]:
-        """Return a mapping of date -> task count for the heatmap."""
+    def get_heatmap_data(self, year: int, tags: list[str] | None = None) -> dict[date, int]:
+        """Return a mapping of date -> task count for the heatmap, optionally filtered by tags."""
         start = f"{year}-01-01"
         end = f"{year}-12-31"
-        rows = self.conn.execute(
-            """SELECT COALESCE(deadline_date, scheduled_date, created_at) as d, COUNT(*)
-               FROM tasks
-               WHERE d BETWEEN ? AND ? AND archived = 0
-               GROUP BY d""",
-            (start, end),
-        ).fetchall()
+        query = """SELECT COALESCE(deadline_date, scheduled_date, created_at) as d, COUNT(*)
+                   FROM tasks
+                   WHERE d BETWEEN ? AND ? AND archived = 0"""
+        params: list = [start, end]
+        if tags:
+            tag_clauses = " AND ".join("tags LIKE ?" for _ in tags)
+            query += f" AND ({tag_clauses})"
+            params.extend(f'%"{t}"%' for t in tags)
+        query += " GROUP BY d"
+        rows = self.conn.execute(query, params).fetchall()
         result: dict[date, int] = {}
         for row in rows:
             parsed = _parse_date(row[0])
             if parsed:
                 result[parsed] = row[1]
         return result
+
+    def get_all_tags(self) -> list[str]:
+        """Return all unique tags from non-archived tasks."""
+        rows = self.conn.execute(
+            "SELECT DISTINCT tags FROM tasks WHERE archived = 0"
+        ).fetchall()
+        tag_set: set[str] = set()
+        for (tags_json,) in rows:
+            if tags_json:
+                for t in json.loads(tags_json):
+                    tag_set.add(t)
+        return sorted(tag_set)
 
     def get_status_counts(self) -> dict[TaskStatus, int]:
         """Return counts grouped by task status."""

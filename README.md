@@ -1,56 +1,57 @@
 # DeskTodoSeq
 
-Windows 桌面任务管理工具，使用 Markdown 语法定义和管理任务（兼容 **Todoseq** 格式），SQLite 本地存储 + FTS5 全文搜索，配备日历热力图可视化。
+Windows 桌面任务管理工具，Markdown 语法定义和管理任务（兼容 **Todoseq** 格式），SQLite 本地存储 + FTS5 全文搜索，配备日历热力图可视化、活动时间线、草稿编辑。
 
 ## 核心功能
 
-- **Markdown 原生任务定义** — 任务以 `"- [ ] TODO [#A] <2026-05-20> 重构模块 #标签"` 格式创建和编辑，`raw_md` 为唯一数据源
-- **快速状态流转** — 点击状态标签即可在 TODO → DOING → DONE / URGENT / WAIT / LATER 之间循环切换
-- **优先级与截止日** — 支持 `[#A]` `[#B]` `[#C]` 三级优先级，`<日期>` 截止日标记，自动检测逾期
-- **标签 + 全文搜索** — 任意 `#标签` 自由分类，SQLite FTS5 引擎对标题、标签、备注全文检索
-- **日历热力图** — GitHub 风格的任务活跃度热力图，直观展示每日任务完成情况
-- **系统托盘常驻** — 最小化到托盘，全局快捷键唤出/隐藏，定时提醒通知
-- **数据可移植** — 所有任务导入/导出为 Markdown 文件，纯文本即可迁移
+- **Markdown 原生任务** — 以 `"- [ ] TODO [#A] <2026-05-20> 重构模块 #标签"` 格式创建和编辑，`raw_md` 为唯一数据源
+- **状态快速流转** — 点击状态标签在 TODO → DOING → DONE / URGENT / WAIT / LATER 循环切换，支持下拉 + 快捷按钮
+- **优先级与截止日** — `[#A]` `[#B]` `[#C]` 三级优先级，`<日期>` 截止日，自动检测逾期
+- **标签 + 全文搜索** — `#标签` 自由分类，SQLite FTS5 全文搜索引擎
+- **日历热力图** — GitHub 风格任务活跃度，年份切换，点击日期筛选
+- **活动时间线** — 每个任务独立时间线：创建/状态变更/进展追加/完成，卡片式展示，支持编辑、删除、多选、复制 Markdown
+- **轮播 + 快速筛选** — 顶部轮播今日 A/B 活跃任务，一键切换"全部/今日/本周/逾期"视图，轮播联动
+- **草稿模式** — 工具栏"新建"在今日视角下创建内存草稿，保存后入库，未保存离开时提醒
+- **自动选中** — 筛选后自动选中列表第一条（紧急 > 优先级 > 截止日排序）
+- **系统托盘** — 最小化到托盘，定时提醒通知
+- **Markdown 导入/导出** — 纯文本即可迁移
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|------|
 | 语言 | Python 3.10 |
-| GUI 框架 | PySide6 (Qt for Python) |
-| 数据库 | SQLite + FTS5 全文搜索 |
-| 调度器 | APScheduler（提醒、归档等定时任务） |
-| 快捷键 | pynput（全局热键监听） |
+| GUI | PySide6 (Qt for Python) |
+| 数据库 | SQLite + FTS5 |
+| 调度 | APScheduler |
 | 包管理 | uv + setuptools |
-| 测试 | pytest + pytest-qt + pytest-mock |
-| 构建打包 | PyInstaller（单文件 exe） |
+| 测试 | pytest + pytest-qt |
+| 构建 | PyInstaller（单文件 exe） |
 
-## 架构概览
+## 架构
 
 ```
 src/
-  models/      领域模型 — Task、TaskStatus、Priority、TaskFilter、TaskRepository
-  services/    业务逻辑 — Markdown 解析器/格式化器
-  ui/          PySide6 界面 — 主窗口、系统托盘、任务列表、日历热力图、对话框
-  utils/       横切工具 — 信号总线(SignalBus)、日期工具、Win32 工具
+  models/    领域模型 — Task, TaskStatus, Priority, TaskFilter, TaskRepository
+  services/  业务逻辑 — MarkdownParser, MarkdownFormatter (往返稳定)
+  ui/        PySide6 — main_window, system_tray, task_list/, calendar_heatmap/, dialogs/, widgets/
+  utils/     信号总线(SignalBus), 日期工具, Win32 工具, 图标加载
 ```
 
-**核心数据流**：Markdown 行 → `MarkdownTaskParser` 解析 → `TaskRepository` 入库（raw_md + 结构化字段 + FTS5 索引）。编辑时修改 raw_md → 重新解析 → 同步更新。`MarkdownTaskFormatter` 保证相同字段始终生成稳定的 Markdown 输出。
+**核心数据流**：Markdown 行 → `MarkdownTaskParser` → 结构化字段 → `TaskRepository` 入库（raw_md + FTS5）。编辑时修改 raw_md → 重新解析 → 同步更新。`MarkdownTaskFormatter` 保证往返稳定（round-trip invariant）。
 
-## 开发规划
+## 开发进度
 
 | Sprint | 内容 | 状态 |
 |--------|------|------|
-| Sprint 1 | 领域模型、Markdown 解析/格式化、Repository、测试套件 | ✅ 完成 |
-| Sprint 2 | 应用骨架（app.py、config.py、main_window、system_tray、主题 QSS） | ✅ 完成 |
-| Sprint 3 | 任务列表组件（输入框、列表视图、筛选栏、右键菜单） | 🔲 待开发 |
-| Sprint 4 | 日历热力图组件（日级活跃度方格、颜色映射、年份切换） | 🔲 待开发 |
-| Sprint 5 | 对话框（设置、导入导出、关于）、通知提醒、归档、循环任务 | 🔲 待开发 |
+| Sprint 1 | 领域模型、Markdown 解析/格式化、Repository、测试套件 | ✅ |
+| Sprint 2 | 应用骨架（app.py、config.py、main_window、system_tray、QSS） | ✅ |
+| Sprint 3 | 任务列表组件（输入、列表、筛选、右键菜单、编辑面板） | ✅ |
+| Sprint 4 | 日历热力图（日级活跃度、颜色映射、年份切换、点击筛选） | ✅ |
+| Sprint 5 | 对话框、导入导出、通知、归档、循环任务 | ✅ |
+| Sprint 6 | 活动时间线、状态统计栏、轮播横幅、草稿模式、UI 统一优化 | ✅ |
 
-## 当前进度
-
-- **已完成**：models 全部（Task / TaskStatus / Priority / TaskFilter / TaskRepository）、Markdown 解析器/格式化器、SignalBus 信号总线、AppConfig 配置管理、MainWindow 主窗口框架（菜单栏/工具栏/侧边栏/状态栏）、SystemTray 系统托盘管理器、light/dark 主题 QSS、3 个测试文件（parser / formatter / repository）
-- **待开发**：task_list 组件、calendar_heatmap 组件、dialogs 对话框、widgets 通用组件、scheduler 定时调度器、notifier 通知器、archiver 归档器、recurrence 循环任务
+**测试覆盖**：35 用例（parser 20 + formatter 5 + repository 12 + empty-state 3），全部通过。
 
 ## 快速开始
 
@@ -71,14 +72,12 @@ uv run pyinstaller --name="DeskTodoSeq" --windowed --onefile \
   --add-data="resources;resources" main.py
 ```
 
-## 参考来源
+## 参考
 
-本项目在设计与实现中参考了以下优秀项目和方案：
-
-- **[Todoseq](https://github.com/nicepkg/todoseq)** — Markdown 任务序列化规范，定义了通过 Markdown 行描述任务状态、优先级、日期、标签的语法，DeskTodoSeq 完全兼容此格式
-- **[Org-mode](https://orgmode.org/)** — Emacs 的任务管理与大纲系统，状态流转（TODO → DOING → DONE）的设计理念来源
-- **[GitHub Contribution Graph](https://docs.github.com/en/account-and-profile/setting-up-and-managing-your-github-profile/managing-contribution-settings-on-your-profile)** — 日历热力图的可视化灵感来源
-- **[Qt Framework](https://www.qt.io/)** — 通过 PySide6 绑定使用的跨平台 GUI 框架
-- **[SQLite FTS5](https://www.sqlite.org/fts5.html)** — 内置全文搜索引擎，支撑任务搜索功能
+- [Todoseq](https://github.com/nicepkg/todoseq) — Markdown 任务格式规范
+- [Org-mode](https://orgmode.org/) — 状态流转设计理念
+- [GitHub Contribution Graph](https://docs.github.com/en/account-and-profile) — 热力图可视化灵感
+- [Qt Framework](https://www.qt.io/) — PySide6 跨平台 GUI
+- [SQLite FTS5](https://www.sqlite.org/fts5.html) — 内置全文搜索
 
 > 本项目仅供个人学习与实践使用。

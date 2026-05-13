@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QWidget
 
 from ...models.repository import TaskRepository
 from ...models.task import Task
+from ...services.md_formatter import MarkdownTaskFormatter
 from ...services.md_parser import MarkdownTaskParser
 from ...utils.signal_bus import get_signal_bus
 
@@ -22,13 +23,14 @@ class TaskInputWidget(QWidget):
         self._repository = repository
         self._signal_bus = get_signal_bus()
         self._parser = MarkdownTaskParser()
+        self._formatter = MarkdownTaskFormatter()
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         self._input = QLineEdit()
         self._input.setObjectName("taskInput")
-        self._input.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 任务标题 #标签 (Enter 创建)")
+        self._input.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 输入Markdown任务，Enter创建  |  Ctrl+N 聚焦")
         self._input.returnPressed.connect(self._on_text_entered)
         layout.addWidget(self._input)
 
@@ -50,7 +52,7 @@ class TaskInputWidget(QWidget):
         task = Task(
             id=str(uuid.uuid4()),
             raw_md=text,
-            title=parsed.title if parsed.title else text,
+            title=parsed.clean_title,
             status=parsed.status,
             priority=parsed.priority,
             tags=parsed.tags,
@@ -59,6 +61,8 @@ class TaskInputWidget(QWidget):
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
+        # Normalize raw_md through the formatter so status/priority always visible
+        task.raw_md = self._formatter.format(task)
         self._repository.insert(task)
         self._signal_bus.task_created.emit(task)
         self._input.clear()

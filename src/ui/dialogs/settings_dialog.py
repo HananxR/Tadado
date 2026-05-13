@@ -87,6 +87,12 @@ class SettingsDialog(QDialog):
         self._font_size.setValue(self._config.font_size)
         form.addRow("字体大小", self._font_size)
 
+        start_year = self._config.get("display", "heatmap_start_year", default=2026)
+        self._heatmap_start_year = QSpinBox()
+        self._heatmap_start_year.setRange(2000, 2100)
+        self._heatmap_start_year.setValue(start_year)
+        form.addRow("热力图起始年份", self._heatmap_start_year)
+
         return w
 
     # ------------------------------------------------------------------
@@ -143,6 +149,7 @@ class SettingsDialog(QDialog):
         self._config.set("general", "minimize_to_tray", value=self._minimize_cb.isChecked())
         self._config.set("display", "theme", value=self._theme_combo.currentData())
         self._config.set("display", "font_size", value=self._font_size.value())
+        self._config.set("display", "heatmap_start_year", value=self._heatmap_start_year.value())
         self._config.set("reminders", "enabled", value=self._reminders_cb.isChecked())
         self._config.set(
             "reminders", "quiet_hours_start",

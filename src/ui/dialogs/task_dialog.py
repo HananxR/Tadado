@@ -69,16 +69,12 @@ class TaskDialog(QDialog):
         hint = QLabel(
             '格式：<tt>- [ ] TODO [#A] &lt;2026-05-20&gt; 任务标题 #标签</tt>'
         )
-        hint.setStyleSheet("color: #888; font-size: 11px;")
+        hint.setObjectName("formatHint")
         root.addWidget(hint)
 
         self._md_edit = QLineEdit()
         self._md_edit.setObjectName("mdEdit")
         self._md_edit.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 任务标题 #标签")
-        self._md_edit.setStyleSheet(
-            "QLineEdit { font-family: 'Consolas', 'Courier New', monospace;"
-            " font-size: 13px; padding: 6px; }"
-        )
         self._md_edit.textChanged.connect(self._update_preview)
         root.addWidget(self._md_edit)
 
@@ -86,10 +82,7 @@ class TaskDialog(QDialog):
         root.addWidget(QLabel("解析预览："))
         self._preview = QLineEdit()
         self._preview.setReadOnly(True)
-        self._preview.setStyleSheet(
-            "QLineEdit { font-family: 'Consolas', 'Courier New', monospace;"
-            " color: #555; background: #f8f8f8; padding: 4px; }"
-        )
+        self._preview.setObjectName("mdPreview")
         root.addWidget(self._preview)
 
         # Recurrence (optional)

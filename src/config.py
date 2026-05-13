@@ -20,6 +20,7 @@ DEFAULT_CONFIG: dict = {
         "theme": "system",
         "default_sort": "deadline",
         "font_size": 12,
+        "heatmap_start_year": 2026,
         "heatmap_colors": {
             "level_0": "#ebedf0",
             "level_1": "#9be9a8",
