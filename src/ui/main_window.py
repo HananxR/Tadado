@@ -11,6 +11,7 @@ from PySide6.QtGui import (
     QShortcut, QKeySequence,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -668,9 +669,11 @@ class MainWindow(QMainWindow):
             self._activate_partition(target_id)
 
     def _prompt_partition_password(self, target_id: str, is_startup: bool = False) -> None:
-        """Show password dialog, looping until valid input or cancel."""
+        """Show password dialog (centered on main window), looping until valid input."""
         name = self._get_partition_name(target_id)
         while True:
+            # Ensure window geometry is settled for proper centering
+            QApplication.processEvents()
             pwd, ok = QInputDialog.getText(
                 self, "加密分区",
                 f"进入「{name}」分区需要密码\n请输入密码：",
