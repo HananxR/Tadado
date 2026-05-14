@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QDateTimeEdit,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QTextBrowser,
@@ -273,13 +274,19 @@ class TaskEditPanel(QWidget):
         self._deadline_dt_edit.setMinimumDateTime(QDateTime(2000, 1, 1, 0, 0, 0))
         self._deadline_dt_edit.setMaximumDateTime(QDateTime(2100, 12, 31, 23, 59, 0))
         self._deadline_dt_edit.setMinimumWidth(160)
-        self._deadline_dt_edit.setStyleSheet(
-            "QDateTimeEdit { background-color: #fafaf8; border: 1px solid #ddd9d0;"
-            " border-radius: 5px; padding: 4px 6px; font-size: 12px; color: #444; }"
-            "QDateTimeEdit:focus { border-color: #5b8def; background-color: #ffffff; }"
-            "QDateTimeEdit QAbstractSpinBox,"
-            "QDateTimeEdit QLineEdit { background-color: #fafaf8; color: #444; }"
-        )
+        # Use palette for reliable cross-platform background
+        from PySide6.QtGui import QPalette
+        pal = self._deadline_dt_edit.palette()
+        pal.setColor(QPalette.ColorRole.Base, QColor("#fafaf8"))
+        pal.setColor(QPalette.ColorRole.Text, QColor("#444444"))
+        pal.setColor(QPalette.ColorRole.Button, QColor("#f0eee8"))
+        self._deadline_dt_edit.setPalette(pal)
+        self._deadline_dt_edit.setAutoFillBackground(True)
+        # Force palette on internal QLineEdit
+        line_edit = self._deadline_dt_edit.findChild(QLineEdit)
+        if line_edit:
+            line_edit.setPalette(pal)
+            line_edit.setAutoFillBackground(True)
         self._deadline_dt_edit.dateTimeChanged.connect(self._on_deadline_picker_changed)
         deadline_row.addWidget(self._deadline_dt_edit)
         deadline_row.addStretch()
