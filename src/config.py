@@ -15,6 +15,10 @@ DEFAULT_CONFIG: dict = {
         "language": "zh_CN",
         "auto_start": False,
         "minimize_to_tray": True,
+        "default_partition": "",
+        "hidden_partitions": [],
+        "last_partition_id": "",
+        "auto_lock_minutes": 10,
     },
     "display": {
         "theme": "system",
@@ -42,6 +46,14 @@ DEFAULT_CONFIG: dict = {
     "hotkeys": {
         "toggle_window": "Ctrl+Alt+T",
         "new_task": "Ctrl+N",
+    },
+    "statuses": {},
+    "priorities": {},
+    "motd": {
+        "today": "今日无事，宜放松身心 🌿",
+        "week": "本周清风徐来，按自己的节奏前行 🚶",
+        "overdue": "无挂碍事，一身轻松，快乐生活 ✨",
+        "all": "一张白纸，正好画你想要的生活 🎨",
     },
 }
 

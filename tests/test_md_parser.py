@@ -118,3 +118,38 @@ class TestParseBatch:
         errors = [r for r in results if r[0] is None]
         assert len(parsed) == 4
         assert len(errors) == 0  # fallback makes everything parse
+
+
+class TestDeadlineTime:
+    """Tests for optional deadline time in <YYYY-MM-DD HH:MM> format."""
+
+    def test_deadline_with_time(self, parser: MarkdownTaskParser) -> None:
+        parsed = parser.parse(
+            "- [ ] TODO [#A] <2026-05-10> <2026-05-20 14:30> 任务 #tag"
+        )
+        assert parsed.deadline_date == date(2026, 5, 20)
+        assert parsed.deadline_time == "14:30"
+        assert parsed.scheduled_date == date(2026, 5, 10)
+
+    def test_deadline_without_time(self, parser: MarkdownTaskParser) -> None:
+        # Single date → scheduled_date; two dates → second is deadline
+        parsed = parser.parse(
+            "- [ ] TODO <2026-05-10> <2026-06-01> 任务"
+        )
+        assert parsed.scheduled_date == date(2026, 5, 10)
+        assert parsed.deadline_date == date(2026, 6, 1)
+        assert parsed.deadline_time is None
+
+    def test_deadline_time_fallback(self, parser: MarkdownTaskParser) -> None:
+        parsed = parser._fallback_parse(
+            "TODO <2026-05-10> <2026-06-15 09:00> 任务描述"
+        )
+        assert parsed.deadline_date == date(2026, 6, 15)
+        assert parsed.deadline_time == "09:00"
+
+    def test_deadline_time_t_separator(self, parser: MarkdownTaskParser) -> None:
+        parsed = parser.parse(
+            "- [ ] DOING <2026-07-01T18:00> 任务"
+        )
+        assert parsed.deadline_date == date(2026, 7, 1)
+        assert parsed.deadline_time == "18:00"

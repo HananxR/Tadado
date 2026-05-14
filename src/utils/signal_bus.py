@@ -32,6 +32,9 @@ class SignalBus(QObject):
     # Heatmap
     date_selected = Signal(date)
 
+    # Partitions
+    partitions_changed = Signal()
+
     # Config
     config_changed = Signal()
 

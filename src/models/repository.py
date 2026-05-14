@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     tags TEXT DEFAULT '[]',
     scheduled_date TEXT,
     deadline_date TEXT,
+    deadline_time TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     completed_at TEXT,
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     archived_at TEXT,
     recurrence_rule TEXT,
     parent_id TEXT,
+    partition_id TEXT,
     notes TEXT DEFAULT '',
     activity_log TEXT DEFAULT '[]',
     FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE SET NULL
@@ -52,13 +54,22 @@ CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_date);
 CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
 CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
 CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
+
+CREATE TABLE IF NOT EXISTS partitions (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    password TEXT DEFAULT '',
+    created_at TEXT NOT NULL
+);
 """
 
 _TASK_COLUMNS = [
     "id", "raw_md", "title", "status", "priority", "tags",
-    "scheduled_date", "deadline_date",
+    "scheduled_date", "deadline_date", "deadline_time",
     "created_at", "updated_at", "completed_at",
-    "archived", "archived_at", "recurrence_rule", "parent_id", "notes",
+    "archived", "archived_at", "recurrence_rule", "parent_id",
+    "partition_id", "notes",
     "activity_log",
 ]
 
@@ -67,9 +78,9 @@ def _row_to_task(row: tuple) -> Task:
     """Convert a database row tuple to a Task dataclass."""
     (
         id_, raw_md, title, status_str, priority_int, tags_json,
-        scheduled_str, deadline_str,
+        scheduled_str, deadline_str, deadline_time_str,
         created_str, updated_str, completed_str,
-        archived_int, archived_str, recurrence, parent_id, notes,
+        archived_int, archived_str, recurrence, parent_id, partition_id, notes,
         activity_log_json,
     ) = row
 
@@ -82,6 +93,7 @@ def _row_to_task(row: tuple) -> Task:
         tags=json.loads(tags_json) if tags_json else [],
         scheduled_date=_parse_date(scheduled_str),
         deadline_date=_parse_date(deadline_str),
+        deadline_time=deadline_time_str,
         created_at=_parse_datetime(created_str),
         updated_at=_parse_datetime(updated_str),
         completed_at=_parse_datetime(completed_str),
@@ -89,6 +101,7 @@ def _row_to_task(row: tuple) -> Task:
         archived_at=_parse_datetime(archived_str),
         recurrence_rule=recurrence,
         parent_id=parent_id,
+        partition_id=partition_id,
         notes=notes,
         activity_log=json.loads(activity_log_json) if activity_log_json else [],
     )
@@ -105,6 +118,7 @@ def _task_to_row(task: Task) -> tuple:
         json.dumps(task.tags, ensure_ascii=False),
         task.scheduled_date.isoformat() if task.scheduled_date else None,
         task.deadline_date.isoformat() if task.deadline_date else None,
+        task.deadline_time,
         task.created_at.isoformat() if task.created_at else None,
         task.updated_at.isoformat() if task.updated_at else None,
         task.completed_at.isoformat() if task.completed_at else None,
@@ -112,6 +126,7 @@ def _task_to_row(task: Task) -> tuple:
         task.archived_at.isoformat() if task.archived_at else None,
         task.recurrence_rule,
         task.parent_id,
+        task.partition_id,
         task.notes,
         json.dumps(task.activity_log, ensure_ascii=False) if task.activity_log else "[]",
     )
@@ -154,7 +169,41 @@ class TaskRepository:
         try:
             self._conn.execute("ALTER TABLE tasks ADD COLUMN activity_log TEXT DEFAULT '[]'")
         except sqlite3.OperationalError:
-            pass  # column already exists
+            pass
+        try:
+            self._conn.execute("ALTER TABLE tasks ADD COLUMN deadline_time TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            self._conn.execute("ALTER TABLE tasks ADD COLUMN partition_id TEXT REFERENCES partitions(id) ON DELETE SET NULL")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            self._conn.execute("ALTER TABLE partitions ADD COLUMN password TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        # Migrate legacy WAIT/LATER status to TODO
+        self._conn.execute("UPDATE tasks SET status = 'TODO' WHERE status IN ('WAIT', 'LATER')")
+        # Seed default partitions if none exist
+        cur = self._conn.execute("SELECT COUNT(*) FROM partitions")
+        if cur.fetchone()[0] == 0:
+            from .partition import DEFAULT_PARTITIONS
+            import uuid as _uuid
+            now = datetime.now().isoformat()
+            for i, name in enumerate(DEFAULT_PARTITIONS):
+                self._conn.execute(
+                    "INSERT INTO partitions (id, name, sort_order, created_at) VALUES (?, ?, ?, ?)",
+                    (str(_uuid.uuid4()), name, i, now),
+                )
+        # Migrate tasks with NULL partition_id to "工作" (first partition)
+        work_row = self._conn.execute(
+            "SELECT id FROM partitions ORDER BY sort_order LIMIT 1"
+        ).fetchone()
+        if work_row:
+            self._conn.execute(
+                "UPDATE tasks SET partition_id = ? WHERE partition_id IS NULL",
+                (work_row[0],),
+            )
         self._conn.commit()
 
     def close(self) -> None:
@@ -262,12 +311,23 @@ class TaskRepository:
                 where_clauses.append("tags LIKE ?")
                 params.append(f'%"{tag}"%')
 
+        # Partition filter
+        if filter_.partition_id is not None:
+            where_clauses.append("partition_id = ?")
+            params.append(filter_.partition_id)
+
         # Date range filter
         if filter_.date_from:
-            where_clauses.append("(deadline_date >= ? OR scheduled_date >= ?)")
+            where_clauses.append(
+                "(deadline_date >= ? OR scheduled_date >= ?"
+                " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
+            )
             params.extend([filter_.date_from.isoformat(), filter_.date_from.isoformat()])
         if filter_.date_to:
-            where_clauses.append("(deadline_date <= ? OR scheduled_date <= ?)")
+            where_clauses.append(
+                "(deadline_date <= ? OR scheduled_date <= ?"
+                " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
+            )
             params.extend([filter_.date_to.isoformat(), filter_.date_to.isoformat()])
 
         # Overdue only
@@ -310,6 +370,26 @@ class TaskRepository:
             placeholders = ", ".join("?" for _ in status_values)
             where_clauses.append(f"status IN ({placeholders})")
             params.extend(status_values)
+        if filter_.partition_id is not None:
+            where_clauses.append("partition_id = ?")
+            params.append(filter_.partition_id)
+        if filter_.date_from:
+            where_clauses.append(
+                "(deadline_date >= ? OR scheduled_date >= ?"
+                " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
+            )
+            params.extend([filter_.date_from.isoformat(), filter_.date_from.isoformat()])
+        if filter_.date_to:
+            where_clauses.append(
+                "(deadline_date <= ? OR scheduled_date <= ?"
+                " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
+            )
+            params.extend([filter_.date_to.isoformat(), filter_.date_to.isoformat()])
+        if filter_.overdue_only:
+            from datetime import date as _date
+            today = _date.today().isoformat()
+            where_clauses.append("deadline_date < ? AND status != 'DONE' AND archived = 0")
+            params.append(today)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         row = self.conn.execute(f"SELECT COUNT(*) FROM tasks {where_sql}", params).fetchone()
@@ -345,6 +425,71 @@ class TaskRepository:
             if parsed:
                 result[parsed] = row[1]
         return result
+
+    # ------------------------------------------------------------------
+    # Partition CRUD
+    # ------------------------------------------------------------------
+
+    def get_all_partitions(self) -> list[dict]:
+        """Return all partitions ordered by sort_order."""
+        rows = self.conn.execute(
+            "SELECT id, name, sort_order, password, created_at FROM partitions ORDER BY sort_order"
+        ).fetchall()
+        return [
+            {"id": r[0], "name": r[1], "sort_order": r[2], "password": r[3], "created_at": r[4]}
+            for r in rows
+        ]
+
+    def check_partition_password(self, partition_id: str) -> tuple[bool, str]:
+        """Return (has_password, password_hash_or_empty)."""
+        row = self.conn.execute(
+            "SELECT password FROM partitions WHERE id = ?", (partition_id,)
+        ).fetchone()
+        if row and row[0]:
+            return True, row[0]
+        return False, ""
+
+    def set_partition_password(self, partition_id: str, password: str) -> None:
+        """Set or clear a partition password."""
+        self.conn.execute(
+            "UPDATE partitions SET password = ? WHERE id = ?",
+            (password, partition_id),
+        )
+        self.conn.commit()
+
+    def get_partition_name_map(self) -> dict[str, str]:
+        """Return a mapping of partition_id → partition name."""
+        rows = self.conn.execute(
+            "SELECT id, name FROM partitions"
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
+
+    def upsert_partition(self, name: str, partition_id: str = "", sort_order: int = 0) -> dict:
+        """Insert or rename a partition. Returns the partition dict."""
+        import uuid as _uuid
+        if partition_id:
+            self.conn.execute(
+                "UPDATE partitions SET name = ?, sort_order = ? WHERE id = ?",
+                (name, sort_order, partition_id),
+            )
+        else:
+            partition_id = str(_uuid.uuid4())
+            self.conn.execute(
+                "INSERT INTO partitions (id, name, sort_order, created_at) VALUES (?, ?, ?, ?)",
+                (partition_id, name, sort_order, datetime.now().isoformat()),
+            )
+        self.conn.commit()
+        return {"id": partition_id, "name": name, "sort_order": sort_order}
+
+    def delete_partition(self, partition_id: str) -> bool:
+        """Delete a partition. Sets partition_id=NULL on affected tasks."""
+        self.conn.execute(
+            "UPDATE tasks SET partition_id = NULL WHERE partition_id = ?",
+            (partition_id,),
+        )
+        self.conn.execute("DELETE FROM partitions WHERE id = ?", (partition_id,))
+        self.conn.commit()
+        return True
 
     def get_all_tags(self) -> list[str]:
         """Return all unique tags from non-archived tasks."""

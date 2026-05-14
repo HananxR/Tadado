@@ -63,6 +63,7 @@ class StatusStatsBar(QWidget):
         self._repository = repository
         self._active_status: TaskStatus | None = None
         self._active_period: str = "day"
+        self._active_partition_id: str | None = None
         self._badges: dict[TaskStatus, _StatBadge] = {}
         self._period_labels: dict[str, QLabel] = {}
 
@@ -94,27 +95,50 @@ class StatusStatsBar(QWidget):
     # Public
     # ------------------------------------------------------------------
 
-    def refresh(self) -> None:
-        today = date.today()
-        if self._active_period == "day":
-            start = today
-            end = today
-        elif self._active_period == "week":
-            weekday = today.isoweekday()
-            start = today - timedelta(days=weekday - 1)
-            end = start + timedelta(days=6)
-        elif self._active_period == "month":
-            start = today.replace(day=1)
-            if today.month == 12:
-                end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
-            else:
-                end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
-        else:  # year
-            start = today.replace(month=1, day=1)
-            end = today.replace(month=12, day=31)
+    def set_partition_id(self, partition_id: str | None) -> None:
+        """Set the active partition scope for stats and filtering."""
+        self._active_partition_id = partition_id
+
+    def get_counts(self) -> dict[TaskStatus, int]:
+        """Return the last-refreshed status counts."""
+        counts = {}
+        for status in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+            badge = self._badges.get(status)
+            if badge:
+                text = badge.text()
+                parts = text.split(": ")
+                counts[status] = int(parts[1]) if len(parts) > 1 else 0
+        return counts
+
+    def refresh(self, date_from: date | None = None, date_to: date | None = None,
+                overdue_only: bool = False) -> None:
+        if date_from is not None and date_to is not None:
+            start, end = date_from, date_to
+        else:
+            today = date.today()
+            if self._active_period == "day":
+                start = today
+                end = today
+            elif self._active_period == "week":
+                weekday = today.isoweekday()
+                start = today - timedelta(days=weekday - 1)
+                end = start + timedelta(days=6)
+            elif self._active_period == "month":
+                start = today.replace(day=1)
+                if today.month == 12:
+                    end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+                else:
+                    end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+            else:  # year
+                start = today.replace(month=1, day=1)
+                end = today.replace(month=12, day=31)
 
         for status, color, label in self._STATUSES:
             f = TaskFilter(statuses={status}, date_from=start, date_to=end)
+            if self._active_partition_id:
+                f.partition_id = self._active_partition_id
+            if overdue_only:
+                f.overdue_only = True
             count = self._repository.count(f)
             badge = self._badges[status]
             badge.setText(f"{label}: {count}")
@@ -149,6 +173,8 @@ class StatusStatsBar(QWidget):
         f = TaskFilter(date_from=start, date_to=end)
         if self._active_status is not None:
             f.statuses = {self._active_status}
+        if self._active_partition_id:
+            f.partition_id = self._active_partition_id
         f.sort_by = [SortCriterion(field="priority", ascending=False)]
         return f
 

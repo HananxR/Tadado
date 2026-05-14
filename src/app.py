@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
+from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import QApplication
 
 from .config import AppConfig
@@ -24,8 +25,12 @@ from .utils.signal_bus import get_signal_bus
 class DeskTodoSeqApp(QApplication):
     """Main application — owns config, repository, services, and top-level UI."""
 
-    def __init__(self, argv: list[str]) -> None:
+    def __init__(self, argv: list[str], local_server: QLocalServer) -> None:
         super().__init__(argv)
+        self._local_server = local_server
+        self._local_server.setParent(self)
+        self._local_server.newConnection.connect(self._on_wake_request)
+
         self.setApplicationName("DeskTodoSeq")
         self.setApplicationVersion("0.1.0")
         self.setOrganizationName("DeskTodoSeq")
@@ -60,6 +65,17 @@ class DeskTodoSeqApp(QApplication):
 
         self._main_window.show()
         QTimer.singleShot(100, self._main_window.apply_screen_size)
+
+    def _on_wake_request(self) -> None:
+        """Another instance tried to start — bring existing window to front."""
+        while self._local_server.hasPendingConnections():
+            conn = self._local_server.nextPendingConnection()
+            if conn and conn.waitForReadyRead(500):
+                conn.readAll()
+            conn.close()
+        self._main_window.show()
+        self._main_window.raise_()
+        self._main_window.activateWindow()
 
     # ------------------------------------------------------------------
     # Theme

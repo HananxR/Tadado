@@ -24,9 +24,9 @@ class TaskListDelegate(QStyledItemDelegate):
             super().paint(painter, option, index)
             return
 
-        if col == 4:  # COL_STATUS
+        if col == 5:  # COL_STATUS
             self._paint_status_badge(painter, option, task)
-        elif col == 3:  # COL_PRIORITY
+        elif col == 4:  # COL_PRIORITY
             self._paint_priority_indicator(painter, option, task)
         else:
             super().paint(painter, option, index)

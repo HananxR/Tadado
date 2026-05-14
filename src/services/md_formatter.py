@@ -20,6 +20,7 @@ class MarkdownTaskFormatter:
             priority=task.priority,
             scheduled_date=task.scheduled_date,
             deadline_date=task.deadline_date,
+            deadline_time=task.deadline_time,
             title=task.title,
             tags=task.tags,
         )
@@ -30,6 +31,7 @@ class MarkdownTaskFormatter:
         priority: Priority = Priority.NONE,
         scheduled_date: str | None = None,
         deadline_date: str | None = None,
+        deadline_time: str | None = None,
         title: str = "",
         tags: list[str] | None = None,
     ) -> str:
@@ -40,6 +42,7 @@ class MarkdownTaskFormatter:
             priority: Priority level.
             scheduled_date: Scheduled date as YYYY-MM-DD string (or None).
             deadline_date: Deadline date as YYYY-MM-DD string (or None).
+            deadline_time: Deadline time as HH:MM string (or None).
             title: Clean task description (without tags).
             tags: Tag strings without the '#' prefix.
         """
@@ -60,9 +63,12 @@ class MarkdownTaskFormatter:
         if scheduled_date:
             parts.append(f"<{scheduled_date}>")
 
-        # Deadline date
+        # Deadline date (with optional time)
         if deadline_date:
-            parts.append(f"<{deadline_date}>")
+            if deadline_time:
+                parts.append(f"<{deadline_date} {deadline_time}>")
+            else:
+                parts.append(f"<{deadline_date}>")
 
         # Title
         parts.append(title)

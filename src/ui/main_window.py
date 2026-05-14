@@ -6,18 +6,26 @@ import datetime as dt
 from datetime import date
 
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QGuiApplication, QIcon, QShortcut, QKeySequence
+from PySide6.QtGui import (
+    QAction, QBrush, QColor, QGuiApplication, QIcon, QPainter, QPen, QPixmap,
+    QShortcut, QKeySequence,
+)
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QSplitter,
     QStackedWidget,
     QStatusBar,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -51,13 +59,20 @@ class MainWindow(QMainWindow):
         self._config = config
         self._repository = repository
         self._signal_bus = get_signal_bus()
+        self._carousel_filter: TaskFilter | None = None
+        self._active_partition_id: str | None = None
+        self._partition_passwords: dict[str, str] = {}
+        self._page: int = 0
+        self._page_size: int = 20
+        self._total_count: int = 0
 
         self.setWindowTitle("DeskTodoSeq")
 
         self._setup_menu_bar()
         self._setup_tool_bar()
-        self._setup_central_widget()
         self._setup_status_bar()
+        self._setup_central_widget()
+        self._setup_idle_lock()
         self._connect_signals()
         self._setup_shortcuts()
 
@@ -120,17 +135,67 @@ class MainWindow(QMainWindow):
     # Tool bar — minimal: just the logo / home button
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _make_partition_icon() -> QIcon:
+        """Draw a bookmark icon 🔖 to represent partition switching."""
+        px = QPixmap(64, 64)
+        px.fill(Qt.GlobalColor.transparent)
+        p = QPainter(px)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor("#5b8def")
+        p.setBrush(QBrush(color))
+        p.setPen(QPen(color.darker(130), 2.5))
+        # Bookmark shape: rounded top rect + triangular bottom
+        top = 10
+        left = 18
+        w = 28
+        h_body = 34
+        r = 4
+        # Main body (rounded top corners only)
+        p.drawRoundedRect(left, top, w, h_body, r, r)
+        # Triangular bottom (V-shape)
+        mid_x = left + w / 2
+        bottom_y = top + h_body + 10
+        from PySide6.QtGui import QPolygonF
+        from PySide6.QtCore import QPointF
+        triangle = QPolygonF([
+            QPointF(left, top + h_body),
+            QPointF(mid_x, bottom_y),
+            QPointF(left + w, top + h_body),
+        ])
+        p.drawPolygon(triangle)
+        # Cover the bottom rounded corners of the rect with the triangle fill
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRect(left, top + h_body - r, w, r)
+        p.end()
+        return QIcon(px)
+
     def _setup_tool_bar(self) -> None:
         toolbar = QToolBar("导航")
         toolbar.setMovable(False)
         toolbar.setIconSize(QSize(22, 22))
+        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.addToolBar(toolbar)
 
         # Logo button — click returns to main task view
-        logo_action = QAction(load_icon("app"), "主页", self)
+        logo_action = QAction(load_icon("app"), "DeskTodoSeq", self)
         logo_action.setToolTip("返回主界面")
         logo_action.triggered.connect(self._on_go_home)
         toolbar.addAction(logo_action)
+
+        # Partition selector — icon-only with popup menu
+        self._partition_btn = QToolButton()
+        self._partition_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+        self._partition_btn.setIcon(self._make_partition_icon())
+        self._partition_btn.setToolTip("切换分区")
+        self._partition_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._partition_menu = QMenu(self._partition_btn)
+        self._partition_btn.setMenu(self._partition_menu)
+        self._partition_btn.setStyleSheet(
+            "QToolButton { border: none; padding: 4px 10px; }"
+            "QToolButton:hover { background-color: #f0eee8; border-radius: 5px; }"
+        )
+        toolbar.addWidget(self._partition_btn)
 
         toolbar.addSeparator()
 
@@ -193,10 +258,44 @@ class MainWindow(QMainWindow):
         sep.setStyleSheet("background-color: #e0ddd6;")
         task_layout.addWidget(sep)
 
-        # Row 6: Splitter (task list | edit panel)
+        # Row 6: Splitter with password mask overlay
+        from PySide6.QtWidgets import QStackedLayout as _QStackedLayout
+        self._splitter_container = QWidget()
+        self._splitter_stack = _QStackedLayout(self._splitter_container)
+        self._splitter_stack.setContentsMargins(0, 0, 0, 0)
+        self._splitter_stack.setStackingMode(_QStackedLayout.StackingMode.StackOne)
+
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setHandleWidth(2)
         self._splitter.setChildrenCollapsible(False)
+
+        # Password mask overlay (hidden by default)
+        self._partition_mask = QWidget()
+        self._partition_mask.setObjectName("partitionMask")
+        self._partition_mask.setStyleSheet(
+            "QWidget#partitionMask { background-color: #f5f4f0; }"
+        )
+        mask_layout = QVBoxLayout(self._partition_mask)
+        mask_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mask_hint = QLabel("🔒 此分区已加密\n请输入密码查看内容")
+        mask_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mask_hint.setStyleSheet(
+            "QLabel { color: #888; font-size: 16px; font-weight: bold;"
+            " background: transparent; border: none; }"
+        )
+        mask_layout.addWidget(mask_hint)
+        unlock_btn = QPushButton("输入密码解锁")
+        unlock_btn.setObjectName("saveBtn")
+        unlock_btn.setFixedWidth(140)
+        unlock_btn.clicked.connect(self._on_unlock_partition)
+        mask_btn_row = QHBoxLayout()
+        mask_btn_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        mask_btn_row.addWidget(unlock_btn)
+        mask_layout.addLayout(mask_btn_row)
+        self._splitter_stack.setCurrentIndex(0)
+
+        self._splitter_stack.addWidget(self._splitter)
+        self._splitter_stack.addWidget(self._partition_mask)
 
         # Left: task list
         self._task_model = TaskListModel()
@@ -207,11 +306,45 @@ class MainWindow(QMainWindow):
         self._splitter.addWidget(self._task_view)
 
         # Right: edit panel
-        self._edit_panel = TaskEditPanel(self._repository)
+        self._edit_panel = TaskEditPanel(self._repository, self._task_model)
         self._edit_panel.setMinimumWidth(260)
         self._splitter.addWidget(self._edit_panel)
 
-        task_layout.addWidget(self._splitter, 1)
+        task_layout.addWidget(self._splitter_container, 1)
+
+        # Pagination bar
+        page_row = QHBoxLayout()
+        page_row.setSpacing(6)
+
+        self._page_prev_btn = QPushButton("◀")
+        self._page_prev_btn.setFixedWidth(32)
+        self._page_prev_btn.setStyleSheet("font-size: 10px;")
+        self._page_prev_btn.clicked.connect(self._on_page_prev)
+        page_row.addWidget(self._page_prev_btn)
+
+        self._page_label = QLabel("0 / 0")
+        self._page_label.setStyleSheet("font-size: 11px; color: #666;")
+        self._page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._page_label.setFixedWidth(50)
+        page_row.addWidget(self._page_label)
+
+        self._page_next_btn = QPushButton("▶")
+        self._page_next_btn.setFixedWidth(32)
+        self._page_next_btn.setStyleSheet("font-size: 10px;")
+        self._page_next_btn.clicked.connect(self._on_page_next)
+        page_row.addWidget(self._page_next_btn)
+
+        page_row.addSpacing(8)
+        page_row.addWidget(QLabel("每页"))
+        self._page_size_combo = QComboBox()
+        self._page_size_combo.addItems(["10", "20", "50"])
+        self._page_size_combo.setCurrentText(str(self._page_size))
+        self._page_size_combo.setFixedWidth(50)
+        self._page_size_combo.currentTextChanged.connect(self._on_page_size_changed)
+        page_row.addWidget(self._page_size_combo)
+        page_row.addStretch()
+        task_layout.addLayout(page_row)
+
         self._stack.addWidget(task_page)
 
         # === Page 1: Calendar heatmap ===
@@ -232,11 +365,14 @@ class MainWindow(QMainWindow):
         heatmap_layout.addStretch()
         self._stack.addWidget(heatmap_page)
 
-        self._carousel.set_items(
-            [{"task_id": "", "text": "今日无事，找点事情干一下吧 ☕", "color": "#aaa"}]
-        )
+        self._carousel_filter = TaskFilter(date_from=date.today(), date_to=date.today())
+        self._carousel.set_items([])
+        # Load partitions into filter bar and edit panel
+        self._load_partitions()
+
         self.setCentralWidget(self._stack)
         self._refresh_task_list()
+        self._update_carousel(self._carousel_filter)
 
     # ------------------------------------------------------------------
     # Status bar
@@ -244,13 +380,70 @@ class MainWindow(QMainWindow):
 
     def _setup_status_bar(self) -> None:
         self._status_bar = QStatusBar()
-        self._status_total = QLabel()
-        self._status_due = QLabel()
-        self._status_overdue = QLabel()
-        self._status_bar.addWidget(self._status_total)
-        self._status_bar.addWidget(self._status_due)
-        self._status_bar.addWidget(self._status_overdue)
+        self._status_partition = QLabel()
+        self._status_bar.addWidget(self._status_partition)
+        # Spacer
+        spacer = QWidget()
+        spacer.setSizePolicy(
+            QWidget().sizePolicy().horizontalPolicy().Expanding,
+            QWidget().sizePolicy().verticalPolicy().Fixed,
+        )
+        self._status_bar.addWidget(spacer)
+        self._status_clock = QLabel()
+        self._status_bar.addPermanentWidget(self._status_clock)
+        # Clock update timer
+        self._clock_timer = QTimer(self)
+        self._clock_timer.timeout.connect(self._update_clock)
+        self._clock_timer.start(1000)
+        self._update_clock()
         self.setStatusBar(self._status_bar)
+
+    def _update_clock(self) -> None:
+        from datetime import datetime as _dt
+        self._status_clock.setText(_dt.now().strftime("%Y-%m-%d %H:%M:%S"))
+        self._status_clock.setStyleSheet("color: #888; font-size: 11px; padding: 0 8px;")
+
+    def _setup_idle_lock(self) -> None:
+        """Set up auto-lock timer for password-protected partitions."""
+        self._idle_lock_timer = QTimer(self)
+        self._idle_lock_timer.setSingleShot(True)
+        self._idle_lock_timer.timeout.connect(self._on_idle_lock)
+        self.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """Reset idle timer on user interaction."""
+        from PySide6.QtCore import QEvent
+        if event.type() in (QEvent.Type.MouseMove, QEvent.Type.KeyPress,
+                            QEvent.Type.MouseButtonPress):
+            self._reset_idle_lock_timer()
+        return super().eventFilter(obj, event)
+
+    def _reset_idle_lock_timer(self) -> None:
+        """Reset the auto-lock countdown."""
+        if not hasattr(self, '_idle_lock_timer'):
+            return
+        if not self._active_partition_id:
+            return
+        if not self._partition_passwords.get(self._active_partition_id, ""):
+            return  # no password set for this partition
+        if self._splitter_stack.currentIndex() == 1:
+            return  # already locked
+        timeout_min = self._config.get("general", "auto_lock_minutes", default=10)
+        self._idle_lock_timer.start(timeout_min * 60 * 1000)
+
+    def _on_idle_lock(self) -> None:
+        """Auto-lock the current partition after idle timeout."""
+        if not self._active_partition_id:
+            return
+        if not self._partition_passwords.get(self._active_partition_id, ""):
+            return
+        self._task_model.load_tasks([])
+        self._edit_panel.clear()
+        self._splitter_stack.setCurrentIndex(1)
+        self._carousel.set_items([])
+        self._stats_bar.set_partition_id(None)
+        self._stats_bar.refresh()
+        self._update_status_partition_label()
 
     # ------------------------------------------------------------------
     # Signals & shortcuts
@@ -264,6 +457,7 @@ class MainWindow(QMainWindow):
         bus.task_deleted.connect(self._on_task_deleted)
         bus.task_status_changed.connect(self._on_data_changed)
         self._filter_bar.filter_changed.connect(self._on_filter_changed)
+        bus.partitions_changed.connect(self._on_partitions_changed)
 
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._on_new_task)
@@ -276,23 +470,81 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_data_changed(self, *args) -> None:
-        self._update_status_labels()
-        self._refresh_task_list()
-        self._stats_bar.refresh()
-        today = date.today()
-        self._update_carousel(TaskFilter(date_from=today, date_to=today))
+        f = self._carousel_filter or TaskFilter()
+        self._refresh_all_views(f, reset_page=False)
 
-    def _update_status_labels(self) -> None:
-        """Refresh the bottom status bar totals."""
-        try:
-            all_tasks = self._repository.get_all()
-            due = self._repository.get_due_today()
-            overdue = self._repository.get_overdue()
-        except Exception:
+    def _refresh_all_views(self, filter_: TaskFilter, reset_page: bool = True) -> None:
+        """Single entry point: refresh task list, stats, carousel, and status bar."""
+        if reset_page:
+            self._reset_pagination()
+        # ① Task list (updates _total_count, pagination, auto_select_first)
+        self._refresh_task_list(filter_)
+        # ② Stats bar (date range aligned to filter)
+        self._stats_bar.set_partition_id(self._active_partition_id)
+        if filter_.overdue_only:
+            from datetime import timedelta as _td
+            df, dt_to = date(2000, 1, 1), date.today() - _td(days=1)
+        elif filter_.date_from and filter_.date_to:
+            df, dt_to = filter_.date_from, filter_.date_to
+        else:
+            df, dt_to = date(2000, 1, 1), date(2100, 1, 1)
+        self._stats_bar.refresh(date_from=df, date_to=dt_to, overdue_only=filter_.overdue_only)
+        # ③ Carousel
+        self._update_carousel(filter_)
+        # ④ Status bar
+        self._update_status_partition_label()
+
+    def _update_status_partition_label(self) -> None:
+        """Show context-aware status bar: partition + filter summary + encouragement."""
+        if not self._active_partition_id:
             return
-        self._status_total.setText(f"{len(all_tasks)} 个任务")
-        self._status_due.setText(f"{len(due)} 个今日到期")
-        self._status_overdue.setText(f"{len(overdue)} 个已逾期")
+        # Show locked state if masked
+        if self._splitter_stack.currentIndex() == 1:
+            name = self._get_partition_name(self._active_partition_id)
+            self._status_partition.setText(f"  🔒 {name} · 已锁定，点击解锁按钮重试")
+            self._status_partition.setStyleSheet(
+                "color: #c0392b; font-size: 12px; font-weight: bold; padding: 2px 10px;"
+            )
+            return
+        name = self._get_partition_name(self._active_partition_id)
+        # Determine filter context
+        f = self._carousel_filter or TaskFilter()
+        today = date.today()
+        if f.overdue_only:
+            ctx = "逾期"
+        elif f.date_from == today and f.date_to == today:
+            ctx = "今日"
+        elif f.date_from and f.date_to and (f.date_to - f.date_from).days == 6:
+            ctx = "本周"
+        else:
+            ctx = "全部"
+
+        # Use total_count from the last refresh (consistent with task list + stats bar)
+        total = getattr(self, '_total_count', 0)
+
+        if total == 0:
+            motd = self._config.get("motd", default={})
+            key_map = {"今日": "today", "本周": "week", "逾期": "overdue", "全部": "all"}
+            msg = motd.get(key_map.get(ctx, "all"), "")
+            self._status_partition.setText(f"  📂 {name} :: [{ctx}] {msg}")
+            self._status_partition.setStyleSheet(
+                "color: #888; font-size: 12px; padding: 2px 10px;"
+            )
+        else:
+            counts = self._stats_bar.get_counts()
+            u = counts.get(TaskStatus.URGENT, 0)
+            t = counts.get(TaskStatus.TODO, 0)
+            d = counts.get(TaskStatus.DOING, 0)
+            dn = counts.get(TaskStatus.DONE, 0)
+            total = u + t + d + dn  # sum of stats bar = consistent with badges
+            self._status_partition.setText(
+                f"  📂 {name} :: [{ctx}] 紧急{u} 待办{t} 进行中{d} 已完成{dn}"
+                f" (共{total}条)  |  合理安排时间 ⏰"
+            )
+            self._status_partition.setStyleSheet(
+                "color: #5b8def; font-size: 12px; font-weight: bold;"
+                " padding: 2px 10px;"
+            )
 
     def _on_task_deleted(self, task_id: str) -> None:
         if self._edit_panel.current_task() and self._edit_panel.current_task().id == task_id:
@@ -302,9 +554,44 @@ class MainWindow(QMainWindow):
     def _refresh_task_list(self, filter_: TaskFilter | None = None) -> None:
         if filter_ is None:
             filter_ = self._filter_bar.build_filter()
+        if self._active_partition_id:
+            filter_.partition_id = self._active_partition_id
+        # Count total first
+        self._total_count = self._repository.count(filter_)
+        # Apply pagination
+        filter_.limit = self._page_size
+        filter_.offset = self._page * self._page_size
         tasks = self._repository.search(filter_)
+        self._task_model.set_offset(self._page * self._page_size)
         self._task_model.load_tasks(tasks)
+        self._update_page_label()
         self._auto_select_first()
+
+    def _update_page_label(self) -> None:
+        total_pages = max(1, (self._total_count + self._page_size - 1) // self._page_size)
+        self._page_label.setText(f"{self._page + 1} / {total_pages}")
+        self._page_prev_btn.setEnabled(self._page > 0)
+        self._page_next_btn.setEnabled(self._page < total_pages - 1)
+
+    def _on_page_prev(self) -> None:
+        if self._page > 0:
+            self._page -= 1
+            self._on_data_changed()
+
+    def _on_page_next(self) -> None:
+        total_pages = max(1, (self._total_count + self._page_size - 1) // self._page_size)
+        if self._page < total_pages - 1:
+            self._page += 1
+            self._on_data_changed()
+
+    def _on_page_size_changed(self, text: str) -> None:
+        self._page_size = int(text)
+        self._page = 0
+        self._on_data_changed()
+
+    def _reset_pagination(self) -> None:
+        """Reset to first page on filter/partition change."""
+        self._page = 0
 
     def _auto_select_first(self) -> None:
         """Auto-select the first (most important) task in the current list.
@@ -344,11 +631,187 @@ class MainWindow(QMainWindow):
                 self._edit_panel.load_task(task)
                 break
 
+    def _load_partitions(self) -> None:
+        """Populate toolbar partition menu from repository. No '全部' option."""
+        all_partitions = self._repository.get_all_partitions()
+        hidden = set(self._config.get("general", "hidden_partitions", default=[]))
+        visible = [p for p in all_partitions if p["id"] not in hidden]
+        self._partition_passwords = {p["id"]: p.get("password", "") for p in all_partitions}
+
+        # Rebuild menu (no "全部" — always in a specific partition)
+        self._partition_menu.clear()
+        for p in visible:
+            action = self._partition_menu.addAction(p["name"])
+            action.setData(p["id"])
+            action.triggered.connect(
+                lambda checked=False, pid=p["id"]: self._on_partition_menu_selected(pid)
+            )
+
+        # Determine active partition: last used → first visible → first overall
+        last_id = self._config.get("general", "last_partition_id", default="")
+        if last_id and any(p["id"] == last_id for p in visible):
+            target_id = last_id
+        elif visible:
+            target_id = visible[0]["id"]
+        else:
+            target_id = all_partitions[0]["id"] if all_partitions else ""
+        self._active_partition_id = target_id
+        # If password-protected, lock immediately before any data loads
+        if self._partition_passwords.get(target_id, ""):
+            name = self._get_partition_name(target_id)
+            self._partition_btn.setToolTip(f"当前分区：{name}（已锁定）")
+            self._splitter_stack.setCurrentIndex(1)
+            self._update_status_partition_label()
+            QTimer.singleShot(300, lambda: self._prompt_partition_password(target_id, is_startup=True))
+        else:
+            self._partition_btn.setToolTip(f"当前分区：{self._get_partition_name(target_id)}")
+            self._activate_partition(target_id)
+
+    def _prompt_partition_password(self, target_id: str, is_startup: bool = False) -> None:
+        """Show password dialog, looping until valid input or cancel."""
+        name = self._get_partition_name(target_id)
+        while True:
+            pwd, ok = QInputDialog.getText(
+                self, "加密分区",
+                f"进入「{name}」分区需要密码\n请输入密码：",
+                QLineEdit.EchoMode.Password,
+            )
+            if not ok:
+                if is_startup:
+                    fallback = self._find_first_unlocked_partition()
+                    if fallback and fallback != target_id:
+                        self._activate_partition(fallback)
+                        self._flash_status("已自动切换至「" + self._get_partition_name(fallback) + "」")
+                    else:
+                        self._lock_partition(target_id)
+                else:
+                    self._flash_status("已取消切换")
+                return
+            if not pwd.strip():
+                QMessageBox.warning(self, "提示", "请输入密码。")
+                continue
+            if pwd != self._partition_passwords.get(target_id, ""):
+                self._lock_partition(target_id)
+                self._flash_status("🔒 密码错误，内容已隐藏。点击解锁按钮重试")
+                return
+            self._activate_partition(target_id)
+            self._reset_idle_lock_timer()
+            return
+
+    def _on_partition_menu_selected(self, new_id: str) -> None:
+        """Handle partition switch from menu — check password, then refresh."""
+        if new_id == self._active_partition_id:
+            return
+        if self._partition_passwords.get(new_id, ""):
+            name = self._get_partition_name(new_id)
+            while True:
+                pwd, ok = QInputDialog.getText(
+                    self, "加密分区",
+                    f"进入「{name}」分区需要密码\n请输入密码：",
+                    QLineEdit.EchoMode.Password,
+                )
+                if not ok:
+                    self._flash_status("已取消切换")
+                    return
+                if not pwd.strip():
+                    QMessageBox.warning(self, "提示", "请输入密码。")
+                    continue
+                if pwd != self._partition_passwords[new_id]:
+                    self._lock_partition(new_id)
+                    self._flash_status("🔒 密码错误，内容已隐藏。点击解锁按钮重试")
+                    return
+                break
+        self._activate_partition(new_id)
+        self._reset_idle_lock_timer()
+
+    def _activate_partition(self, new_id: str) -> None:
+        """Activate a partition and refresh all views, defaulting to today filter."""
+        self._active_partition_id = new_id
+        self._splitter_stack.setCurrentIndex(0)
+        self._partition_btn.setToolTip(f"当前分区：{self._get_partition_name(new_id)}")
+        self._config.set("general", "last_partition_id", value=new_id)
+        self._config.save()
+        self._reset_pagination()
+        # Reset to today filter on partition switch
+        today = date.today()
+        self._carousel_filter = TaskFilter(date_from=today, date_to=today)
+        self._filter_bar.reset()
+        self._filter_bar.filter_changed.emit(TaskFilter(date_from=today, date_to=today))
+
+    def _on_unlock_partition(self) -> None:
+        """Retry password for the currently locked partition."""
+        new_id = self._active_partition_id
+        if not new_id or not self._partition_passwords.get(new_id, ""):
+            return
+        name = self._get_partition_name(new_id)
+        while True:
+            pwd, ok = QInputDialog.getText(
+                self, "解锁分区",
+                f"「{name}」分区已锁定\n请输入密码解锁：",
+                QLineEdit.EchoMode.Password,
+            )
+            if not ok:
+                return
+            if not pwd.strip():
+                QMessageBox.warning(self, "提示", "请输入密码。")
+                continue
+            if pwd == self._partition_passwords[new_id]:
+                self._activate_partition(new_id)
+                self._flash_status("🔓 已解锁，欢迎回来")
+                self._reset_idle_lock_timer()
+                return
+            self._flash_status("🔒 密码错误，请重试")
+            return
+
+    def _get_partition_name(self, pid: str) -> str:
+        for p in self._repository.get_all_partitions():
+            if p["id"] == pid:
+                return p["name"]
+        return "全部"
+
+    def _lock_partition(self, target_id: str) -> None:
+        """Lock a partition: show mask, empty data, update UI."""
+        name = self._get_partition_name(target_id)
+        self._partition_btn.setToolTip(f"当前分区：{name}（已锁定）")
+        self._splitter_stack.setCurrentIndex(1)
+        self._config.set("general", "last_partition_id", value=target_id)
+        self._config.save()
+        # Show empty: load nothing into task list, stats show 0
+        self._task_model.load_tasks([])
+        self._edit_panel.clear()
+        self._update_status_partition_label()
+        self._stats_bar.set_partition_id(None)
+        self._stats_bar.refresh()
+        self._carousel.set_items([])
+
+    def _find_first_unlocked_partition(self) -> str | None:
+        """Find the first partition without a password."""
+        for pid, pwd in self._partition_passwords.items():
+            if not pwd:
+                return pid
+        return None
+
+    def _flash_status(self, msg: str) -> None:
+        """Show a temporary message in the status bar (3 seconds)."""
+        self._status_partition.setText(f"  {msg}")
+        self._status_partition.setStyleSheet(
+            "color: #c0392b; font-size: 12px; font-weight: bold; padding: 2px 10px;"
+        )
+        QTimer.singleShot(3000, self._update_status_partition_label)
+
+    def _on_partitions_changed(self) -> None:
+        """Refresh partition data across all components."""
+        self._load_partitions()
+        self._on_data_changed()
+
     def _update_carousel(self, filter_: TaskFilter | None = None) -> None:
         if filter_ is not None:
-            tasks = self._repository.search(filter_)
+            f = filter_
         else:
-            tasks = self._repository.get_all()
+            f = TaskFilter()
+        if self._active_partition_id:
+            f.partition_id = self._active_partition_id
+        tasks = self._repository.search(f)
 
         active = [t for t in tasks if t.status != TaskStatus.DONE]
         done = [t for t in tasks if t.status == TaskStatus.DONE]
@@ -375,8 +838,6 @@ class MainWindow(QMainWindow):
                     "color": "#888",
                 })
 
-        if not items:
-            items = [{"task_id": "", "text": "今日无事，找点事情干一下吧 ☕", "color": "#aaa"}]
         self._carousel.set_items(items[:10])
 
     # ------------------------------------------------------------------
@@ -386,25 +847,27 @@ class MainWindow(QMainWindow):
     def _on_filter_changed(self, filter_: TaskFilter) -> None:
         if not self._guard_draft():
             return
-        self._update_status_labels()
+        self._stack.setCurrentIndex(0)
+        # Ensure mask is hidden (belt-and-suspenders for stale lock state)
+        if hasattr(self, '_splitter_stack'):
+            self._splitter_stack.setCurrentIndex(0)
+        self._carousel_filter = filter_
         self._edit_panel.clear()
-        self._refresh_task_list(filter_)
-        self._stats_bar.refresh()
-        self._update_carousel(filter_)
+        self._refresh_all_views(filter_, reset_page=True)
+        # Safety: ensure first result is selected
+        self._auto_select_first()
 
     def _on_stats_filter(self, filter_: TaskFilter) -> None:
         if not self._guard_draft():
             return
+        self._stack.setCurrentIndex(0)
+        self._carousel_filter = filter_
         self._filter_bar.blockSignals(True)
         self._filter_bar.reset()
         self._filter_bar.blockSignals(False)
-        tasks = self._repository.search(filter_)
-        self._task_model.load_tasks(tasks)
-        self._update_status_labels()
         self._edit_panel.clear()
+        self._refresh_all_views(filter_, reset_page=True)
         self._auto_select_first()
-        self._stats_bar.refresh()
-        self._update_carousel(filter_)
 
     # ------------------------------------------------------------------
     # Slots: task interaction
@@ -453,6 +916,7 @@ class MainWindow(QMainWindow):
     def _on_preset_filter(self, preset: str) -> None:
         if not self._guard_draft():
             return
+        self._stack.setCurrentIndex(0)
         today = date.today()
         self._filter_bar.reset()
 
@@ -476,8 +940,12 @@ class MainWindow(QMainWindow):
         """Create a draft TODO task under today's filter view."""
         if not self._guard_draft():
             return
+        self._stack.setCurrentIndex(0)
         today = date.today()
-        self._filter_bar.filter_changed.emit(TaskFilter(date_from=today, date_to=today))
+        f = TaskFilter(date_from=today, date_to=today)
+        if self._active_partition_id:
+            f.partition_id = self._active_partition_id
+        self._filter_bar.filter_changed.emit(f)
         self._edit_panel.create_draft()
 
     def _guard_draft(self) -> bool:
@@ -571,7 +1039,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_settings(self) -> None:
-        dialog = SettingsDialog(self._config, parent=self)
+        dialog = SettingsDialog(self._config, self._repository, parent=self)
         dialog.exec()
         self._signal_bus.config_changed.emit()
 

@@ -25,6 +25,7 @@ class TaskFilter:
     priorities: Optional[set[Priority]] = None
     min_priority: Optional[Priority] = None
     tags: Optional[set[str]] = None
+    partition_id: Optional[str] = None  # None means all partitions
     date_from: Optional[date] = None
     date_to: Optional[date] = None
     overdue_only: bool = False

@@ -5,20 +5,28 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Callable
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QDate, QSize, QTime, Qt, Signal
+from PySide6.QtGui import QPainter, QBrush, QColor, QPen, QPixmap, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDateEdit,
     QHBoxLayout,
     QLabel,
     QMessageBox,
     QPushButton,
-    QScrollArea,
+    QTextBrowser,
+    QSizePolicy,
+    QTextBrowser,
     QTextEdit,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
+
+import sys
+from pathlib import Path as _Path
 
 from ...models.repository import TaskRepository
 from ...models.task import Task
@@ -27,16 +35,26 @@ from ...services.md_formatter import MarkdownTaskFormatter
 from ...services.md_parser import MarkdownTaskParser
 from ...utils.signal_bus import get_signal_bus
 
+
+def _welcome_bg_path() -> str:
+    """Resolve the welcome banner background image path."""
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        p = _Path(base) / "resources" / "welcome_bg.jpg"
+    else:
+        p = _Path(__file__).resolve().parents[3] / "resources" / "welcome_bg.jpg"
+    return p.as_posix() if p.exists() else ""
+
+
 # ---------------------------------------------------------------------------
 # Per-entry card widget in the timeline
 # ---------------------------------------------------------------------------
 
 
 class _TimelineEntryWidget(QWidget):
-    """One card in the timeline: checkbox + timestamp + content (vertical layout)."""
+    """One card in the timeline: icon + timestamp + content (compact, fixed height)."""
 
     clicked = Signal(dict)
-    checked_changed = Signal()
 
     def __init__(self, entry: dict, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -44,35 +62,33 @@ class _TimelineEntryWidget(QWidget):
         self._selected = False
 
         self.setObjectName("entryCard")
-        self.setMinimumHeight(44)
+        self.setFixedHeight(48)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(8, 5, 8, 5)
         row.setSpacing(6)
 
-        # Checkbox
-        self._check = QCheckBox()
-        self._check.setFixedSize(18, 18)
-        self._check.stateChanged.connect(lambda _: self.checked_changed.emit())
-        row.addWidget(self._check, alignment=Qt.AlignmentFlag.AlignTop)
-
-        # Right side: timestamp line + content line
-        right = QVBoxLayout()
-        right.setSpacing(2)
-
+        # Icon dot
         icon = entry.get("icon", "●")
         color = entry.get("color", "#aaa")
-        ts = _fmt_ts(entry.get("ts", ""), short=True)
-        ts_label = QLabel(
-            f'<span style="color:{color};font-weight:bold;">{icon}</span>'
-            f' <span style="color:{color};font-size:10px;">{ts}</span>'
+        dot = QLabel(
+            f'<span style="color:{color};font-weight:bold;font-size:12px;">{icon}</span>'
         )
+        dot.setFixedWidth(16)
+        dot.setTextFormat(Qt.TextFormat.RichText)
+        row.addWidget(dot)
+
+        # Timestamp + content
+        right = QVBoxLayout()
+        right.setSpacing(1)
+        ts = _fmt_ts(entry.get("ts", ""), short=True)
+        ts_label = QLabel(f'<span style="color:{color};font-size:10px;">{ts}</span>')
         ts_label.setTextFormat(Qt.TextFormat.RichText)
         right.addWidget(ts_label)
 
         content = entry.get("content", "")
         content_label = QLabel(content)
-        content_label.setWordWrap(True)
+        content_label.setWordWrap(False)
         content_label.setStyleSheet(
             "color: #444; font-size: 11px; border: none; background: transparent;"
         )
@@ -88,18 +104,75 @@ class _TimelineEntryWidget(QWidget):
     def entry(self) -> dict:
         return self._entry
 
-    @property
-    def is_checked(self) -> bool:
-        return self._check.isChecked()
-
-    def set_checked(self, checked: bool) -> None:
-        self._check.setChecked(checked)
-
     def set_selected(self, selected: bool) -> None:
         self._selected = selected
         self.setProperty("selected", "true" if selected else "false")
         self.style().unpolish(self)
         self.style().polish(self)
+
+
+# ---------------------------------------------------------------------------
+# Banner widget with background image + text overlay
+# ---------------------------------------------------------------------------
+
+
+class _BannerWidget(QWidget):
+    """A banner that paints a background image with semi-transparent overlay + HTML text."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._bg_pixmap: QPixmap | None = None
+        self._html: str = ""
+        self._scaled_bg: QPixmap | None = None
+        self.setMinimumHeight(120)
+
+    def set_html(self, html: str) -> None:
+        self._html = html
+        self.update()
+
+    def set_bg_pixmap(self, pixmap: QPixmap) -> None:
+        self._bg_pixmap = pixmap if not pixmap.isNull() else None
+        self._scaled_bg = None
+        self.update()
+
+    def resizeEvent(self, event) -> None:
+        self._scaled_bg = None
+        super().resizeEvent(event)
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+
+        # Background image (or solid fallback)
+        if self._bg_pixmap:
+            if self._scaled_bg is None:
+                self._scaled_bg = self._bg_pixmap.scaled(
+                    w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            p.drawPixmap(0, 0, self._scaled_bg)
+        else:
+            p.setBrush(QBrush(QColor("#fffdf7")))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRect(0, 0, w, h)
+
+        # Render HTML text centered both horizontally and vertically
+        if self._html:
+            doc = QTextDocument()
+            doc.setHtml(
+                f'<p align="center" style="margin:0;line-height:1.4;">'
+                f'{self._html}</p>'
+            )
+            doc.setTextWidth(w - 30)
+            doc.setDocumentMargin(0)
+            th = doc.size().height()
+            ty = max(0, (h - int(th)) // 2)
+            p.save()
+            p.translate(15, ty)
+            doc.drawContents(p)
+            p.restore()
+        p.end()
 
 
 # ---------------------------------------------------------------------------
@@ -110,9 +183,10 @@ class _TimelineEntryWidget(QWidget):
 class TaskEditPanel(QWidget):
     """Right-side panel: raw_md editor, preview, save/delete, and card-style activity timeline."""
 
-    def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
+    def __init__(self, repository: TaskRepository, task_model=None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._repository = repository
+        self._task_model = task_model  # for in-place row updates
         self._parser = MarkdownTaskParser()
         self._formatter = MarkdownTaskFormatter()
         self._signal_bus = get_signal_bus()
@@ -120,30 +194,52 @@ class TaskEditPanel(QWidget):
         self._original_md: str = ""
         self._entry_widgets: list[_TimelineEntryWidget] = []
         self._selected_entry: dict | None = None
+        self._updating_from_md: bool = False
 
         self.setObjectName("taskEditPanel")
         self.setMinimumWidth(320)
 
+        # Preload welcome background
+        self._welcome_pixmap = QPixmap(_welcome_bg_path()) if _welcome_bg_path() else QPixmap()
+
+        # Direct layout (headers fixed, timeline scrolls internally)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 6)
-        layout.setSpacing(5)
+        layout.setSpacing(6)
 
-        # --- Header ---
-        header = QLabel("编辑任务")
-        header.setStyleSheet("font-weight: bold; font-size: 14px;")
-        layout.addWidget(header)
+        # --- Draft banner ---
+        self._draft_banner = _BannerWidget()
+        self._draft_banner.setVisible(False)
+        layout.addWidget(self._draft_banner, 6)
 
-        # --- Markdown editor ---
-        layout.addWidget(QLabel("Markdown："))
+        # --- 编辑任务 section ---
+        editor_header = QLabel("编辑任务")
+        editor_header.setStyleSheet("font-weight: bold; font-size: 14px;")
+        layout.addWidget(editor_header)
+        # Collapse toggle next to header
+        self._collapse_btn = QPushButton("▼")
+        self._collapse_btn.setFixedSize(24, 24)
+        self._collapse_btn.setStyleSheet("font-size: 10px; padding: 0;")
+        self._collapse_btn.setToolTip("折叠编辑区")
+        self._collapse_btn.clicked.connect(self._on_toggle_collapse)
+        self._collapse_btn.setVisible(False)
+        # (Button will be positioned in layout after header)
+
+        # Collapsible editor content
+        self._editor_collapsible = QWidget()
+        ec = QVBoxLayout(self._editor_collapsible)
+        ec.setContentsMargins(0, 0, 0, 0)
+        ec.setSpacing(4)
+
+        ec.addWidget(QLabel("Markdown："))
         self._md_edit = QTextEdit()
         self._md_edit.setObjectName("mdEditor")
         self._md_edit.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 标题 #标签")
         self._md_edit.setMaximumHeight(85)
         self._md_edit.textChanged.connect(self._on_text_changed)
-        layout.addWidget(self._md_edit)
+        ec.addWidget(self._md_edit)
 
-        # --- Live preview ---
-        layout.addWidget(QLabel("预览："))
+        ec.addWidget(QLabel("预览："))
         self._preview = QLabel("(选择任务进行编辑)")
         self._preview.setTextFormat(Qt.TextFormat.RichText)
         self._preview.setWordWrap(True)
@@ -151,11 +247,51 @@ class TaskEditPanel(QWidget):
             "QLabel { color: #555; background: #f8f8f8; padding: 6px 8px;"
             " border-radius: 4px; font-size: 12px; }"
         )
-        self._preview.setMinimumHeight(40)
-        self._preview.setMaximumHeight(90)
-        layout.addWidget(self._preview)
+        self._preview.setMinimumHeight(36)
+        self._preview.setMaximumHeight(52)
+        ec.addWidget(self._preview)
 
-        # --- Action buttons ---
+        # Date / time metadata
+        meta_widget = QWidget()
+        meta_widget.setStyleSheet("background: transparent;")
+        meta_layout = QVBoxLayout(meta_widget)
+        meta_layout.setContentsMargins(0, 2, 0, 2)
+        meta_layout.setSpacing(4)
+        created_row = QHBoxLayout()
+        created_row.setSpacing(6)
+        created_row.addWidget(QLabel("创建时间："))
+        self._created_label = QLabel("—")
+        self._created_label.setStyleSheet("color: #888; font-size: 11px;")
+        created_row.addWidget(self._created_label)
+        created_row.addStretch()
+        meta_layout.addLayout(created_row)
+        deadline_row = QHBoxLayout()
+        deadline_row.setSpacing(6)
+        deadline_row.addWidget(QLabel("截止时间："))
+        self._deadline_date_edit = QDateEdit()
+        self._deadline_date_edit.setCalendarPopup(True)
+        self._deadline_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self._deadline_date_edit.setDate(QDate.currentDate())
+        self._deadline_date_edit.setMinimumDate(QDate(2000, 1, 1))
+        self._deadline_date_edit.setMaximumDate(QDate(2100, 12, 31))
+        self._deadline_date_edit.dateChanged.connect(self._on_deadline_picker_changed)
+        deadline_row.addWidget(self._deadline_date_edit)
+        self._deadline_time_edit = QTimeEdit()
+        self._deadline_time_edit.setDisplayFormat("HH:mm")
+        self._deadline_time_edit.setTime(QTime.currentTime())
+        self._deadline_time_edit.timeChanged.connect(self._on_deadline_picker_changed)
+        deadline_row.addWidget(self._deadline_time_edit)
+        self._time_toggle = QCheckBox("时间")
+        self._time_toggle.setChecked(True)
+        self._time_toggle.setStyleSheet("font-size: 10px; color: #888;")
+        self._time_toggle.toggled.connect(self._on_time_toggle_changed)
+        deadline_row.addWidget(self._time_toggle)
+        deadline_row.addStretch()
+        meta_layout.addLayout(deadline_row)
+        ec.addWidget(meta_widget)
+        layout.addWidget(self._editor_collapsible)
+
+        # Action buttons
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
         self._save_btn = QPushButton("保存")
@@ -166,11 +302,9 @@ class TaskEditPanel(QWidget):
         self._delete_btn.setObjectName("deleteBtn")
         self._delete_btn.clicked.connect(self._on_delete)
         self._delete_btn.setEnabled(False)
-        self._copy_btn = QPushButton("复制MD")
-        self._copy_btn.clicked.connect(self._on_copy)
         btn_row.addWidget(self._save_btn)
         btn_row.addWidget(self._delete_btn)
-        btn_row.addWidget(self._copy_btn)
+        btn_row.addWidget(self._collapse_btn)
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
@@ -184,64 +318,39 @@ class TaskEditPanel(QWidget):
         tc.setContentsMargins(8, 6, 8, 6)
         tc.setSpacing(4)
 
-        # -- Header + toolbar in one row --
-        hdr_row = QHBoxLayout()
-        hdr_row.setSpacing(8)
+        # -- Section header --
         tl_header = QLabel("活动时间线")
-        tl_header.setStyleSheet("font-weight: bold; font-size: 12px; color: #444;")
-        hdr_row.addWidget(tl_header)
-        hdr_row.addStretch()
+        tl_header.setStyleSheet("font-weight: bold; font-size: 14px; color: #444;")
+        tc.addWidget(tl_header)
 
-        self._select_all_cb = QCheckBox("全选")
-        self._select_all_cb.setStyleSheet("font-size: 10px; color: #888; spacing: 3px;")
-        self._select_all_cb.stateChanged.connect(self._on_select_all_changed)
-        self._select_all_cb.setEnabled(False)
-        hdr_row.addWidget(self._select_all_cb)
-
-        self._delete_sel_btn = QPushButton("删选中")
-        self._delete_sel_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
-        self._delete_sel_btn.clicked.connect(self._on_delete_selected)
-        self._delete_sel_btn.setEnabled(False)
-        hdr_row.addWidget(self._delete_sel_btn)
-
-        self._copy_tl_btn = QPushButton("复制MD")
-        self._copy_tl_btn.setStyleSheet("font-size: 10px; padding: 2px 6px;")
-        self._copy_tl_btn.clicked.connect(self._on_copy_timeline_md)
-        self._copy_tl_btn.setEnabled(False)
-        hdr_row.addWidget(self._copy_tl_btn)
-        tc.addLayout(hdr_row)
-
-        tc.addWidget(_h_sep())
-
-        # -- Scrollable entry cards --
-        self._entry_scroll = QScrollArea()
-        self._entry_scroll.setWidgetResizable(True)
-        self._entry_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._entry_scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
-        self._entry_container = QWidget()
-        self._entry_container.setStyleSheet("background: transparent;")
-        self._entry_layout = QVBoxLayout(self._entry_container)
-        self._entry_layout.setContentsMargins(0, 0, 0, 0)
-        self._entry_layout.setSpacing(4)
-        self._entry_layout.addStretch()
-        self._entry_scroll.setWidget(self._entry_container)
-
+        # -- Timeline log (rich text with aligned timestamps) --
+        self._timeline_log = QTextBrowser()
+        self._timeline_log.setReadOnly(True)
+        self._timeline_log.setMinimumHeight(200)
+        self._timeline_log.setStyleSheet(
+            "QTextBrowser { background: #fafaf8; border: 1px solid #ddd9d0;"
+            " border-radius: 6px; font-size: 12px; padding: 6px; color: #444; }"
+        )
         self._entry_placeholder = QLabel("  (选择任务查看活动时间线)")
         self._entry_placeholder.setStyleSheet("color: #aaa; font-size: 11px; padding: 8px;")
         self._entry_placeholder.setVisible(False)
         tc.addWidget(self._entry_placeholder)
-        tc.addWidget(self._entry_scroll, 1)
-        self._entry_scroll.setVisible(False)
-
-        tc.addWidget(_h_sep())
+        tc.addWidget(self._timeline_log, 1)
+        self._timeline_log.setVisible(False)
 
         # -- Status quick-toggle --
         status_row = QHBoxLayout()
         status_row.setSpacing(6)
         status_row.addWidget(QLabel("状态切换："))
         self._status_combo = QComboBox()
-        for s in TaskStatus:
-            self._status_combo.addItem(s.display_name, s)
+        for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+            self._status_combo.addItem(f"● {s.display_name}", s)
+            from PySide6.QtGui import QColor
+            self._status_combo.setItemData(
+                self._status_combo.count() - 1,
+                QColor(s.display_color),
+                Qt.ItemDataRole.ForegroundRole,
+            )
         self._status_combo.setEnabled(False)
         self._status_combo.setFixedWidth(90)
         status_row.addWidget(self._status_combo)
@@ -276,24 +385,11 @@ class TaskEditPanel(QWidget):
         self._log_save_btn.clicked.connect(self._on_log_save)
         self._log_save_btn.setEnabled(False)
 
-        self._log_delete_btn = QPushButton("删除此条")
-        self._log_delete_btn.setStyleSheet("QPushButton { color: #c0392b; }")
-        self._log_delete_btn.clicked.connect(self._on_log_delete)
-        self._log_delete_btn.setEnabled(False)
-        self._log_delete_btn.setVisible(False)
-
-        self._log_cancel_btn = QPushButton("取消")
-        self._log_cancel_btn.clicked.connect(self._on_log_cancel)
-        self._log_cancel_btn.setEnabled(False)
-        self._log_cancel_btn.setVisible(False)
-
         log_btn_row.addWidget(self._log_save_btn)
-        log_btn_row.addWidget(self._log_delete_btn)
-        log_btn_row.addWidget(self._log_cancel_btn)
         log_btn_row.addStretch()
         tc.addLayout(log_btn_row)
 
-        layout.addWidget(self._timeline_card, 1)
+        layout.addWidget(self._timeline_card, 6)
         self._timeline_card.setVisible(False)
 
     # ------------------------------------------------------------------
@@ -307,6 +403,10 @@ class TaskEditPanel(QWidget):
         self._md_edit.setText(task.raw_md)
         self._md_edit.blockSignals(False)
 
+        self._draft_banner.setVisible(False)
+        self._collapse_btn.setVisible(True)
+        self._editor_collapsible.setVisible(False)  # default collapsed
+        self._collapse_btn.setText("▼")
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(True)
         self._status_combo.setEnabled(True)
@@ -314,13 +414,35 @@ class TaskEditPanel(QWidget):
         self._log_edit.setEnabled(True)
         self._log_save_btn.setEnabled(True)
         self._timeline_card.setVisible(True)
-        self._select_all_cb.setEnabled(True)
-        self._copy_tl_btn.setEnabled(True)
+
 
         for i in range(self._status_combo.count()):
             if self._status_combo.itemData(i) == task.status:
                 self._status_combo.setCurrentIndex(i)
                 break
+
+        # Set date/time pickers
+        self._updating_from_md = True
+        if task.deadline_date:
+            qd = QDate(task.deadline_date.year, task.deadline_date.month, task.deadline_date.day)
+            self._deadline_date_edit.setDate(qd)
+            self._time_toggle.setChecked(True)
+            if task.deadline_time:
+                h, m = task.deadline_time.split(":")
+                self._deadline_time_edit.setTime(QTime(int(h), int(m)))
+            else:
+                self._deadline_time_edit.setTime(QTime.currentTime())
+        else:
+            self._deadline_date_edit.setDate(QDate.currentDate())
+            self._time_toggle.setChecked(True)
+            self._deadline_time_edit.setTime(QTime.currentTime())
+        self._updating_from_md = False
+
+        # Set created_at label
+        if task.created_at:
+            self._created_label.setText(task.created_at.strftime("%Y-%m-%d %H:%M"))
+        else:
+            self._created_label.setText("—")
 
         self._update_preview()
         self._refresh_timeline()
@@ -332,43 +454,67 @@ class TaskEditPanel(QWidget):
         self._md_edit.blockSignals(True)
         self._md_edit.clear()
         self._md_edit.blockSignals(False)
+        self._collapse_btn.setVisible(False)
+        self._editor_collapsible.setVisible(True)
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
         self._status_combo.setEnabled(False)
         self._status_btn.setEnabled(False)
         self._log_edit.setEnabled(False)
         self._log_save_btn.setEnabled(False)
+        self._draft_banner.setVisible(False)
         self._preview.setText("(选择任务进行编辑)")
         self._timeline_card.setVisible(False)
-        self._select_all_cb.setEnabled(False)
-        self._delete_sel_btn.setEnabled(False)
-        self._copy_tl_btn.setEnabled(False)
+
+        self._updating_from_md = True
+        self._deadline_date_edit.setDate(QDate.currentDate())
+        self._time_toggle.setChecked(True)
+        self._deadline_time_edit.setTime(QTime.currentTime())
+        self._created_label.setText("—")
+        self._updating_from_md = False
         self._clear_entries()
         self._hide_log_detail()
 
     def show_empty(self) -> None:
-        """Show encouraging empty-state when no tasks match the current filter."""
+        """Show encouraging empty-state — 60% banner + 40% editor."""
         self._current_task = None
         self._original_md = ""
+        html = (
+            '<span style="font-size:12px;color:#c0392b;letter-spacing:4px;">'
+            '─ 宜 ─</span><br>'
+            '<span style="font-size:28px;">🎉</span><br>'
+            '<span style="font-size:20px;color:#c0392b;font-weight:bold;">'
+            '今日无事</span><br>'
+            '<span style="font-size:13px;color:#eee;letter-spacing:2px;">'
+            '宜狂欢 · 忌加班</span><br>'
+            '<span style="font-size:12px;color:#c0392b;letter-spacing:4px;">'
+            '─ 忌 ─</span>'
+        )
+        self._draft_banner.set_html(html)
+        self._draft_banner.set_bg_pixmap(self._welcome_pixmap)
+        self._draft_banner.setVisible(True)
+        # Editor section (40%)
         self._md_edit.blockSignals(True)
-        self._md_edit.clear()
+        self._md_edit.setText("")
+        self._md_edit.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 标题 #标签")
         self._md_edit.blockSignals(False)
+        self._collapse_btn.setVisible(False)
+        self._editor_collapsible.setVisible(True)
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
-        self._status_combo.setEnabled(False)
-        self._status_btn.setEnabled(False)
-        self._log_edit.setEnabled(False)
-        self._log_save_btn.setEnabled(False)
-        self._preview.setText(
-            '<div style="text-align:center;padding:20px 0;">'
-            '<span style="font-size:28px;">☕</span><br>'
-            '<span style="color:#888;font-size:13px;">今日无事，找点事情干一下吧</span>'
-            '</div>'
-        )
+        self._status_combo.setEnabled(True)
+        self._status_btn.setEnabled(True)
+        self._log_edit.setEnabled(True)
+        self._log_save_btn.setEnabled(True)
+        self._preview.setText("")
         self._timeline_card.setVisible(False)
-        self._select_all_cb.setEnabled(False)
-        self._delete_sel_btn.setEnabled(False)
-        self._copy_tl_btn.setEnabled(False)
+
+        self._updating_from_md = True
+        self._deadline_date_edit.setDate(QDate.currentDate())
+        self._time_toggle.setChecked(True)
+        self._deadline_time_edit.setTime(QTime.currentTime())
+        self._created_label.setText("—")
+        self._updating_from_md = False
         self._clear_entries()
         self._hide_log_detail()
 
@@ -397,9 +543,46 @@ class TaskEditPanel(QWidget):
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
-        self.load_task(draft)
-        # In draft mode, save starts enabled because template != empty
+        # Load draft into editor without showing full timeline
+        self._current_task = draft
+        self._original_md = ""
+        self._md_edit.blockSignals(True)
+        self._md_edit.setText(template)
+        self._md_edit.blockSignals(False)
+
+        html = (
+            '<span style="font-size:12px;color:#c0392b;letter-spacing:4px;">'
+            '─ 宜 ─</span><br>'
+            '<span style="font-size:28px;">✍️</span><br>'
+            '<span style="font-size:20px;color:#c0392b;font-weight:bold;">'
+            '今日无事</span><br>'
+            '<span style="font-size:13px;color:#eee;letter-spacing:2px;">'
+            '宜创作 · 忌虚度</span><br>'
+            '<span style="font-size:12px;color:#c0392b;letter-spacing:4px;">'
+            '─ 忌 ─</span>'
+        )
+        self._draft_banner.set_html(html)
+        self._draft_banner.set_bg_pixmap(self._welcome_pixmap)
+        self._draft_banner.setVisible(True)
+        self._collapse_btn.setVisible(False)
+        self._editor_collapsible.setVisible(True)
         self._save_btn.setEnabled(True)
+        self._delete_btn.setEnabled(False)
+        self._status_combo.setEnabled(True)
+        self._status_btn.setEnabled(True)
+        self._timeline_card.setVisible(False)
+        # Set pickers for draft
+        self._updating_from_md = True
+        today_d = datetime.now()
+        self._deadline_date_edit.setDate(QDate(today_d.year, today_d.month, today_d.day))
+        self._time_toggle.setChecked(True)
+        self._deadline_time_edit.setTime(QTime.currentTime())
+        self._updating_from_md = False
+        self._created_label.setText(
+            draft.created_at.strftime("%Y-%m-%d %H:%M") if draft.created_at else "—"
+        )
+        self._update_preview()
+        self._clear_entries()
 
     def has_unsaved_draft(self) -> bool:
         """Return True if the panel holds an in-memory draft (not yet in DB)."""
@@ -416,9 +599,46 @@ class TaskEditPanel(QWidget):
 
     def _on_text_changed(self) -> None:
         self._update_preview()
+        self._sync_pickers_from_md()
         if self._current_task is not None:
             current_text = self._md_edit.toPlainText().strip()
             self._save_btn.setEnabled(current_text != self._original_md.strip())
+        else:
+            # Empty / welcome state: enable save if user typed something
+            self._save_btn.setEnabled(bool(self._md_edit.toPlainText().strip()))
+
+    def _sync_pickers_from_md(self) -> None:
+        """Update date/time pickers from the current Markdown text."""
+        if self._updating_from_md:
+            return
+        text = self._md_edit.toPlainText().strip()
+        if not text:
+            return
+        try:
+            parsed = self._parser.parse(text)
+        except ValueError:
+            return
+        self._updating_from_md = True
+        if parsed.deadline_date:
+            qdate = QDate(parsed.deadline_date.year, parsed.deadline_date.month, parsed.deadline_date.day)
+            self._deadline_date_edit.blockSignals(True)
+            self._deadline_date_edit.setDate(qdate)
+            self._deadline_date_edit.blockSignals(False)
+            self._time_toggle.setChecked(True)
+            if parsed.deadline_time:
+                h, m = parsed.deadline_time.split(":")
+                self._deadline_time_edit.blockSignals(True)
+                self._deadline_time_edit.setTime(QTime(int(h), int(m)))
+                self._deadline_time_edit.blockSignals(False)
+            else:
+                self._deadline_time_edit.setTime(QTime.currentTime())
+        else:
+            self._deadline_date_edit.blockSignals(True)
+            self._deadline_date_edit.setDate(QDate.currentDate())
+            self._deadline_date_edit.blockSignals(False)
+            self._time_toggle.setChecked(True)
+            self._deadline_time_edit.setTime(QTime.currentTime())
+        self._updating_from_md = False
 
     def _update_preview(self) -> None:
         text = self._md_edit.toPlainText().strip()
@@ -465,9 +685,84 @@ class TaskEditPanel(QWidget):
         except ValueError:
             self._preview.setText('<span style="color:#e74c3c;">⚠ 无法解析</span>')
 
-    def _on_save(self) -> None:
-        if not self._current_task:
+    # ------------------------------------------------------------------
+    # Deadline picker → Markdown sync
+    # ------------------------------------------------------------------
+
+    def _on_deadline_picker_changed(self) -> None:
+        """Update Markdown text when the date/time pickers change."""
+        if self._updating_from_md or not self._current_task:
             return
+        self._updating_from_md = True
+        text = self._md_edit.toPlainText().strip()
+        if not text:
+            self._updating_from_md = False
+            return
+        qdate = self._deadline_date_edit.date()
+        new_date = qdate.toString("yyyy-MM-dd")
+        # Replace or add deadline in the Markdown
+        import re as _re
+        # Match existing deadline pattern <YYYY-MM-DD> or <YYYY-MM-DD HH:MM>
+        dl_pattern = _re.compile(r"<(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2})?>")
+        if self._time_toggle.isChecked():
+            qt = self._deadline_time_edit.time()
+            new_dl = f"<{new_date} {qt.toString('HH:mm')}>"
+        else:
+            new_dl = f"<{new_date}>"
+        if dl_pattern.search(text):
+            text = dl_pattern.sub(new_dl, text, count=1)
+        else:
+            # No deadline in text — insert before the title
+            parts = text.rsplit(" ", 1) if " " in text else [text, ""]
+            # Insert deadline before last part (title)
+            idx = text.rfind(">")
+            if idx >= 0:
+                text = text[:idx + 1] + " " + new_dl + text[idx + 1:]
+            else:
+                # Insert after priority, before title
+                pri_match = _re.search(r"\[#[ABC]\]\s*", text)
+                if pri_match:
+                    pos = pri_match.end()
+                    text = text[:pos] + f"{new_dl} " + text[pos:]
+                else:
+                    # Insert after status keyword
+                    kw_match = _re.search(r"(TODO|DOING|DONE|URGENT|WAIT|LATER)\s*", text)
+                    if kw_match:
+                        pos = kw_match.end()
+                        text = text[:pos] + f"{new_dl} " + text[pos:]
+                    else:
+                        text = text.rstrip() + " " + new_dl
+        self._md_edit.blockSignals(True)
+        self._md_edit.setText(text)
+        self._md_edit.blockSignals(False)
+        self._update_preview()
+        if self._current_task is not None:
+            current_text = self._md_edit.toPlainText().strip()
+            self._save_btn.setEnabled(current_text != self._original_md.strip())
+        self._updating_from_md = False
+
+    def _on_time_toggle_changed(self, checked: bool) -> None:
+        """Show or hide the time editor."""
+        self._deadline_time_edit.setVisible(checked)
+        if not self._updating_from_md:
+            self._on_deadline_picker_changed()
+
+    def _on_save(self) -> None:
+        is_new = self._current_task is None
+        if is_new:
+            # Creating a new task from empty/welcome state
+            import uuid
+            from ...models.task import Task as TaskCls
+            self._current_task = TaskCls(
+                id="",
+                raw_md="",
+                title="",
+                status=TaskStatus.TODO,
+                priority=Priority.NONE,
+                tags=[],
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
         text = self._md_edit.toPlainText().strip()
         if not text:
             return
@@ -479,13 +774,17 @@ class TaskEditPanel(QWidget):
 
         task = self._current_task
         old_status = task.status
-        task.raw_md = text
+        # Status is controlled by the combo, not Markdown text
+        combo_status = self._status_combo.currentData()
         task.title = parsed.clean_title
-        task.status = parsed.status
+        task.status = combo_status if combo_status else parsed.status
         task.priority = parsed.priority
         task.tags = parsed.tags
         task.scheduled_date = parsed.scheduled_date
         task.deadline_date = parsed.deadline_date
+        task.deadline_time = parsed.deadline_time
+        # Regenerate canonical raw_md with combo status
+        task.raw_md = self._formatter.format(task)
         task.updated_at = datetime.now()
         if task.status != old_status:
             task.activity_log.append({
@@ -508,6 +807,11 @@ class TaskEditPanel(QWidget):
             self._repository.update(task)
         self._original_md = task.raw_md
         self._save_btn.setEnabled(False)
+        # Update editor with canonical Markdown
+        self._md_edit.blockSignals(True)
+        self._md_edit.setText(task.raw_md)
+        self._md_edit.blockSignals(False)
+        self._update_preview()
         if is_draft:
             self._signal_bus.task_created.emit(task)
         elif task.status != old_status:
@@ -515,6 +819,10 @@ class TaskEditPanel(QWidget):
         else:
             self._signal_bus.task_updated.emit(task)
         self._refresh_timeline()
+        # Collapse editor after save
+        self._collapse_btn.setVisible(True)
+        self._editor_collapsible.setVisible(False)
+        self._collapse_btn.setText("▼")
 
     def _on_delete(self) -> None:
         if not self._current_task:
@@ -529,9 +837,15 @@ class TaskEditPanel(QWidget):
             self._signal_bus.task_deleted.emit(task.id)
             self.clear()
 
-    def _on_copy(self) -> None:
-        if self._current_task:
-            QApplication.clipboard().setText(self._current_task.raw_md)
+    # ------------------------------------------------------------------
+    # Collapse / expand editor
+    # ------------------------------------------------------------------
+
+    def _on_toggle_collapse(self) -> None:
+        collapsed = self._editor_collapsible.isVisible()
+        self._editor_collapsible.setVisible(not collapsed)
+        self._collapse_btn.setText("▼" if collapsed else "▲")
+        self._collapse_btn.setToolTip("展开编辑区" if collapsed else "折叠编辑区")
 
     # ------------------------------------------------------------------
     # Quick status change
@@ -560,6 +874,9 @@ class TaskEditPanel(QWidget):
         })
         self._repository.update(task)
         self._original_md = task.raw_md
+        # Update just this row in the model (no full refresh)
+        if self._task_model:
+            self._task_model.update_task(task)
         self._signal_bus.task_status_changed.emit(task, old_status)
         self._md_edit.blockSignals(True)
         self._md_edit.setText(task.raw_md)
@@ -573,142 +890,51 @@ class TaskEditPanel(QWidget):
     # ==================================================================
 
     def _clear_entries(self) -> None:
-        while self._entry_layout.count() > 1:
-            item = self._entry_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self._entry_widgets.clear()
+        """Clear the timeline text log."""
+        if hasattr(self, '_timeline_log'):
+            self._timeline_log.clear()
+
+    def _hide_log_detail(self) -> None:
+        """Reset to add-progress mode (no-op now)."""
+        self._reset_log_editor()
 
     def _refresh_timeline(self) -> None:
         task = self._current_task
-        self._clear_entries()
-        self._hide_log_detail()
         if not task:
-            self._entry_scroll.setVisible(False)
+            self._timeline_log.setVisible(False)
             self._entry_placeholder.setVisible(True)
-            self._select_all_cb.setEnabled(False)
-            self._delete_sel_btn.setEnabled(False)
-            self._copy_tl_btn.setEnabled(False)
             return
 
         self._entry_placeholder.setVisible(False)
-        self._entry_scroll.setVisible(True)
-        self._select_all_cb.setEnabled(True)
-        self._select_all_cb.setCheckState(Qt.CheckState.Unchecked)
-        self._copy_tl_btn.setEnabled(True)
+        self._timeline_log.setVisible(True)
 
-        entries = self._build_entries(task)
+        def _row(icon: str, color: str, ts: str, content: str) -> str:
+            return (
+                f'<p style="margin:3px 0;font-family:Consolas,monospace;font-size:12px;">'
+                f'<span style="color:{color};font-weight:bold;">{icon}</span>'
+                f' <span style="color:{color};">{ts:>11}</span>'
+                f' <span style="color:#444;">{content}</span>'
+                f'</p>'
+            )
 
-        # Find latest user entry for auto-expand
-        latest_user_entry: dict | None = None
-        for e in entries:
-            if e.get("source") == "user":
-                latest_user_entry = e
-                break
-
-        for e in entries:
-            card = _TimelineEntryWidget(e)
-            card.clicked.connect(self._on_entry_clicked)
-            card.checked_changed.connect(self._on_entry_checked_changed)
-            self._entry_layout.insertWidget(self._entry_layout.count() - 1, card)
-            self._entry_widgets.append(card)
-
-        if latest_user_entry:
-            self._select_entry(latest_user_entry)
-        else:
-            self._reset_log_editor()
-
-        self._update_delete_sel_btn()
-
-    def _build_entries(self, task: Task) -> list[dict]:
-        """Build timeline entry list, newest first."""
-        entries: list[dict] = []
-
-        entries.append({
-            "ts": datetime.now().isoformat(),
-            "content": f"当前: {task.status.display_name}",
-            "icon": "▶",
-            "color": task.status.display_color,
-            "source": "system",
-        })
-
+        rows: list[str] = []
+        sc = task.status.display_color
+        rows.append(_row("▶", sc, _fmt_ts(datetime.now().isoformat(), True),
+                          f"当前: {task.status.display_name}"))
         if task.completed_at:
-            entries.append({
-                "ts": task.completed_at.isoformat(),
-                "content": "任务完成 ✓",
-                "icon": "●",
-                "color": "#27ae60",
-                "source": "system",
-            })
+            rows.append(_row("●", "#27ae60", _fmt_ts(task.completed_at.isoformat(), True),
+                              "任务完成 ✓"))
+        for e in reversed(task.activity_log[:10]):
+            ts = _fmt_ts(e.get("ts", ""), True)
+            rows.append(_row("●", "#f39c12", ts, e.get("content", "")))
+        if task.created_at:
+            rows.append(_row("○", "#aaa", _fmt_ts(task.created_at.isoformat(), True),
+                              "创建任务"))
 
-        for e in reversed(task.activity_log):
-            is_status = "状态" in e.get("content", "")
-            entries.append({
-                "ts": e.get("ts", ""),
-                "content": e.get("content", ""),
-                "icon": "●",
-                "color": "#f39c12",
-                "source": "system" if is_status else "user",
-            })
-
-        entries.append({
-            "ts": task.created_at.isoformat() if task.created_at else "",
-            "content": "创建任务",
-            "icon": "○",
-            "color": "#aaa",
-            "source": "system",
-        })
-
-        return entries
-
-    # ------------------------------------------------------------------
-    # Entry selection → unified log editor (merged detail + progress)
-    # ------------------------------------------------------------------
-
-    def _on_entry_clicked(self, entry: dict) -> None:
-        self._select_entry(entry)
-
-    def _select_entry(self, entry: dict) -> None:
-        self._selected_entry = entry
-        for w in self._entry_widgets:
-            w.set_selected(w.entry is entry)
-
-        source = entry.get("source", "system")
-        content = entry.get("content", "")
-        is_system = source == "system"
-
-        if is_system:
-            self._log_editor_label.setText("查看详情")
-            self._log_edit.blockSignals(True)
-            self._log_edit.setPlainText(content)
-            self._log_edit.blockSignals(False)
-            self._log_edit.setReadOnly(True)
-            self._log_edit.setStyleSheet("QTextEdit { background: #f5f4f0; color: #888; }")
-            self._log_save_btn.setVisible(False)
-            self._log_delete_btn.setVisible(False)
-            self._log_cancel_btn.setVisible(True)
-            self._log_cancel_btn.setEnabled(True)
-        else:
-            self._log_editor_label.setText("编辑日志")
-            self._log_edit.blockSignals(True)
-            self._log_edit.setPlainText(content)
-            self._log_edit.blockSignals(False)
-            self._log_edit.setReadOnly(False)
-            self._log_edit.setStyleSheet("")
-            self._log_save_btn.setText("保存修改")
-            self._log_save_btn.setVisible(True)
-            self._log_save_btn.setEnabled(True)
-            self._log_delete_btn.setVisible(True)
-            self._log_delete_btn.setEnabled(True)
-            self._log_cancel_btn.setVisible(True)
-            self._log_cancel_btn.setEnabled(True)
-
-    def _hide_log_detail(self) -> None:
-        """Return to default 'add progress' mode."""
-        self._selected_entry = None
-        for w in self._entry_widgets:
-            w.set_selected(False)
+        self._timeline_log.setHtml(f'<div>{"".join(rows)}</div>')
         self._reset_log_editor()
+
+
 
     def _reset_log_editor(self) -> None:
         self._selected_entry = None
@@ -722,34 +948,14 @@ class TaskEditPanel(QWidget):
         self._log_save_btn.setText("追加进展")
         self._log_save_btn.setVisible(True)
         self._log_save_btn.setEnabled(True)
-        self._log_delete_btn.setVisible(False)
-        self._log_delete_btn.setEnabled(False)
-        self._log_cancel_btn.setVisible(False)
-        self._log_cancel_btn.setEnabled(False)
 
     # ------------------------------------------------------------------
     # Log editor actions
     # ------------------------------------------------------------------
 
     def _on_log_save(self) -> None:
-        content = self._log_edit.toPlainText().strip()
-        if not content:
-            return
-
-        if self._selected_entry and self._selected_entry.get("source") == "user":
-            # Editing an existing user entry
-            self._on_detail_save()
-        else:
-            # Adding new progress
-            self._on_add_progress()
-
-    def _on_log_delete(self) -> None:
-        if not self._current_task or not self._selected_entry:
-            return
-        self._on_detail_delete()
-
-    def _on_log_cancel(self) -> None:
-        self._hide_log_detail()
+        """Always add new progress — the log editor is only for adding."""
+        self._on_add_progress()
 
     # ------------------------------------------------------------------
     # Add progress
@@ -773,126 +979,6 @@ class TaskEditPanel(QWidget):
     # Edit / delete existing entry
     # ------------------------------------------------------------------
 
-    def _on_detail_save(self) -> None:
-        if not self._current_task or not self._selected_entry:
-            return
-        new_content = self._log_edit.toPlainText().strip()
-        if not new_content:
-            return
-        task = self._current_task
-        old_ts = self._selected_entry.get("ts", "")
-        old_content = self._selected_entry.get("content", "")
-        for e in task.activity_log:
-            if e.get("ts") == old_ts and e.get("content") == old_content:
-                e["content"] = new_content
-                break
-        task.updated_at = datetime.now()
-        self._repository.update(task)
-        self._signal_bus.task_updated.emit(task)
-        self._refresh_timeline()
-
-    def _on_detail_delete(self) -> None:
-        if not self._current_task or not self._selected_entry:
-            return
-        task = self._current_task
-        old_ts = self._selected_entry.get("ts", "")
-        old_content = self._selected_entry.get("content", "")
-
-        result = QMessageBox.question(
-            self, "确认删除", "确定要删除此条日志吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if result != QMessageBox.StandardButton.Yes:
-            return
-
-        task.activity_log = [
-            e for e in task.activity_log
-            if not (e.get("ts") == old_ts and e.get("content") == old_content)
-        ]
-        task.updated_at = datetime.now()
-        self._repository.update(task)
-        self._signal_bus.task_updated.emit(task)
-        self._refresh_timeline()
-
-    # ------------------------------------------------------------------
-    # Multi-select
-    # ------------------------------------------------------------------
-
-    def _on_select_all_changed(self, state: int) -> None:
-        checked = state == Qt.CheckState.Checked.value
-        for w in self._entry_widgets:
-            w.set_checked(checked)
-        self._update_delete_sel_btn()
-
-    def _on_entry_checked_changed(self) -> None:
-        self._update_delete_sel_btn()
-        all_checked = all(w.is_checked for w in self._entry_widgets)
-        any_checked = any(w.is_checked for w in self._entry_widgets)
-        self._select_all_cb.blockSignals(True)
-        if all_checked:
-            self._select_all_cb.setCheckState(Qt.CheckState.Checked)
-        elif any_checked:
-            self._select_all_cb.setCheckState(Qt.CheckState.PartiallyChecked)
-        else:
-            self._select_all_cb.setCheckState(Qt.CheckState.Unchecked)
-        self._select_all_cb.blockSignals(False)
-
-    def _update_delete_sel_btn(self) -> None:
-        any_checked = any(w.is_checked for w in self._entry_widgets)
-        self._delete_sel_btn.setEnabled(any_checked)
-
-    def _on_delete_selected(self) -> None:
-        if not self._current_task:
-            return
-        selected = [w.entry for w in self._entry_widgets if w.is_checked]
-        if not selected:
-            return
-        count = len(selected)
-        result = QMessageBox.question(
-            self, "确认删除", f"确定要删除选中的 {count} 条日志吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if result != QMessageBox.StandardButton.Yes:
-            return
-
-        task = self._current_task
-        remove_keys = {(e.get("ts"), e.get("content")) for e in selected}
-        task.activity_log = [
-            e for e in task.activity_log
-            if (e.get("ts"), e.get("content")) not in remove_keys
-        ]
-        task.updated_at = datetime.now()
-        self._repository.update(task)
-        self._signal_bus.task_updated.emit(task)
-        self._refresh_timeline()
-
-    # ------------------------------------------------------------------
-    # Copy timeline as Markdown
-    # ------------------------------------------------------------------
-
-    def _on_copy_timeline_md(self) -> None:
-        if not self._current_task:
-            return
-        task = self._current_task
-        lines: list[str] = [f"## 活动时间线 — {task.title}", ""]
-
-        if task.created_at:
-            lines.append(f"- {task.created_at.strftime('%Y-%m-%d %H:%M')} 创建任务")
-
-        for e in task.activity_log:
-            ts = e.get("ts", "")
-            content = e.get("content", "")
-            try:
-                dt_ts = datetime.fromisoformat(ts) if ts else None
-                ts_str = dt_ts.strftime("%Y-%m-%d %H:%M") if dt_ts else ts
-            except (ValueError, TypeError):
-                ts_str = ts[:16] if ts else "—"
-            lines.append(f"- {ts_str} {content}")
-
-        if task.completed_at:
-            lines.append(f"- {task.completed_at.strftime('%Y-%m-%d %H:%M')} 任务完成 ✓")
-
-        QApplication.clipboard().setText("\n".join(lines))
 
 
 # ---------------------------------------------------------------------------

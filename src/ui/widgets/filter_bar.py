@@ -43,21 +43,22 @@ class FilterBar(QWidget):
         self._search.textChanged.connect(lambda: self._debounce.start())
         layout.addWidget(self._search, 2)
 
-        # Status combo
+        # Status combo (4 main statuses only)
         self._status = QComboBox()
         self._status.setObjectName("statusFilter")
         self._status.addItem("状态", None)
-        for s in TaskStatus:
+        for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             self._status.addItem(s.display_name, s)
         self._status.currentIndexChanged.connect(self._on_filter_changed)
         layout.addWidget(self._status, 1)
 
-        # Priority combo
+        # Priority combo (with level mapping)
         self._priority = QComboBox()
         self._priority.setObjectName("priorityFilter")
         self._priority.addItem("优先级", None)
+        _PRIORITY_LABELS = {Priority.A: "A (最高)", Priority.B: "B (中等)", Priority.C: "C (低)"}
         for p in (Priority.A, Priority.B, Priority.C):
-            self._priority.addItem(p.display_tag, p)
+            self._priority.addItem(_PRIORITY_LABELS.get(p, p.display_tag), p)
         self._priority.currentIndexChanged.connect(self._on_filter_changed)
         layout.addWidget(self._priority, 1)
 

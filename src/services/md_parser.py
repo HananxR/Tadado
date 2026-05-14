@@ -23,7 +23,8 @@ _TASK_LINE_PATTERN = re.compile(
     r"(TODO|DOING|DONE|URGENT|WAIT|LATER)"
     r"(?:\s+\[#([ABC])\])?"
     r"(?:\s+<(\d{4}-\d{2}-\d{2})>)?"
-    r"(?:\s+<(\d{4}-\d{2}-\d{2})>)?"
+    r"(?:\s+<(\d{4}-\d{2}-\d{2})"
+    r"(?:[T ](\d{2}:\d{2}))?>)?"
     r"\s+(.+)$"
 )
 
@@ -41,7 +42,8 @@ class ParsedTask:
     priority: Priority
     scheduled_date: Optional[date]
     deadline_date: Optional[date]
-    title: str
+    deadline_time: Optional[str] = None
+    title: str = ""
     tags: list[str] = field(default_factory=list)
 
     @property
@@ -74,7 +76,8 @@ class MarkdownTaskParser:
         priority = Priority.from_string(priority_str) if priority_str else Priority.NONE
         scheduled_date = self._parse_date_safe(match.group(4))
         deadline_date = self._parse_date_safe(match.group(5))
-        title_text = match.group(6).strip()
+        deadline_time = match.group(6)
+        title_text = match.group(7).strip()
 
         tags = self._extract_tags(title_text)
         clean_title = _TAG_PATTERN.sub("", title_text).strip()
@@ -85,6 +88,7 @@ class MarkdownTaskParser:
             priority=priority,
             scheduled_date=scheduled_date,
             deadline_date=deadline_date,
+            deadline_time=deadline_time,
             title=clean_title,
             tags=tags,
         )
@@ -146,14 +150,22 @@ class MarkdownTaskParser:
             priority = Priority.from_string(pri_match.group(1))
             remaining = remaining[pri_match.end():].strip()
 
-        # Extract dates (greedy, up to two)
-        date_matches = re.findall(r"<(\d{4}-\d{2}-\d{2})>", remaining)
+        # Extract dates with optional time (greedy, up to two)
+        deadline_time = None
+        date_matches = re.findall(
+            r"<(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?>", remaining
+        )
         if date_matches:
-            scheduled_date = self._parse_date_safe(date_matches[0])
-            remaining = re.sub(r"<\d{4}-\d{2}-\d{2}>", "", remaining, count=1).strip()
+            scheduled_date = self._parse_date_safe(date_matches[0][0])
+            remaining = re.sub(
+                r"<\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?>", "", remaining, count=1
+            ).strip()
         if len(date_matches) >= 2:
-            deadline_date = self._parse_date_safe(date_matches[1])
-            remaining = re.sub(r"<\d{4}-\d{2}-\d{2}>", "", remaining, count=1).strip()
+            deadline_date = self._parse_date_safe(date_matches[1][0])
+            deadline_time = date_matches[1][1] if len(date_matches[1]) > 1 else None
+            remaining = re.sub(
+                r"<\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?>", "", remaining, count=1
+            ).strip()
 
         tags = self._extract_tags(remaining)
         clean_title = _TAG_PATTERN.sub("", remaining).strip()
@@ -166,6 +178,7 @@ class MarkdownTaskParser:
             priority=priority,
             scheduled_date=scheduled_date,
             deadline_date=deadline_date,
+            deadline_time=deadline_time,
             title=clean_title,
             tags=tags,
         )

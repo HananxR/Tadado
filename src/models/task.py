@@ -20,6 +20,8 @@ class Task:
     tags: list[str] = field(default_factory=list)
     scheduled_date: Optional[date] = None
     deadline_date: Optional[date] = None
+    deadline_time: Optional[str] = None
+    partition_id: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None

@@ -71,18 +71,35 @@ QToolBar QToolButton:hover {
 QToolBar QToolButton:pressed {
     background-color: #363850;
 }
+QToolBar QComboBox#partitionToolCombo {
+    background-color: #1e1f2e;
+    border: 1px solid #3d3f52;
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 12px;
+    color: #c9d1d9;
+    font-weight: bold;
+}
+QToolBar QComboBox#partitionToolCombo:hover {
+    border-color: #7aa2f7;
+}
+QToolBar QComboBox#partitionToolCombo::drop-down {
+    width: 16px;
+    border: none;
+}
 
 /* ── Status Bar ──────────────────────────────────────────────── */
 QStatusBar {
     background-color: #24253a;
     border-top: 1px solid #2f3040;
-    padding: 3px 10px;
-    font-size: 11px;
+    padding: 4px 10px;
+    font-size: 12px;
     color: #8b949e;
+    min-height: 28px;
 }
 QStatusBar QLabel {
     color: #8b949e;
-    font-size: 11px;
+    font-size: 12px;
     padding: 0 6px;
 }
 
@@ -315,6 +332,88 @@ QLineEdit#mdPreview {
     background: #1a1b26;
     padding: 4px 8px;
     border-radius: 4px;
+}
+
+/* ── Date / Time pickers ─────────────────────────────────────── */
+QDateEdit, QTimeEdit, QDateTimeEdit {
+    background-color: #1e1f2e;
+    border: 1px solid #3d3f52;
+    border-radius: 5px;
+    padding: 4px 6px;
+    font-size: 12px;
+    color: #c9d1d9;
+}
+QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
+    border-color: #7aa2f7;
+    background-color: #1a1b26;
+}
+QDateEdit::drop-down, QTimeEdit::drop-down, QDateTimeEdit::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: 1px solid #3d3f52;
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
+QDateEdit::up-button, QTimeEdit::up-button,
+QDateEdit::down-button, QTimeEdit::down-button {
+    width: 16px;
+    height: 10px;
+}
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {
+    background-color: #2f3040;
+    border: 1px solid #3d3f52;
+}
+QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {
+    background-color: #383a50;
+}
+QCalendarWidget {
+    background-color: #24253a;
+    border: 1px solid #2f3040;
+    border-radius: 6px;
+    color: #c9d1d9;
+}
+QCalendarWidget QToolButton {
+    color: #c9d1d9;
+    background-color: transparent;
+    border: none;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+QCalendarWidget QToolButton:hover {
+    background-color: #2f3040;
+    border-radius: 4px;
+}
+QCalendarWidget QMenu {
+    background-color: #24253a;
+    color: #c9d1d9;
+}
+QCalendarWidget QTableView {
+    background-color: #24253a;
+    selection-background-color: #2f3648;
+    selection-color: #c9d1d9;
+}
+
+/* ── Tag Chips ────────────────────────────────────────────────── */
+QPushButton#tagChip {
+    background-color: #2f3040;
+    border: 1px solid #3d3f52;
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 10px;
+    color: #7aa2f7;
+}
+QPushButton#tagChip:hover {
+    background-color: #383a50;
+}
+QPushButton#tagChip:checked {
+    background-color: #7aa2f7;
+    color: #1a1b26;
+}
+
+/* ── Partition Mask ────────────────────────────────────────────── */
+QWidget#partitionMask {
+    background-color: rgba(26, 27, 38, 235);
 }
 
 /* ── Quick-access zone (carousel + preset buttons) ───────────── */

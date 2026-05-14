@@ -69,20 +69,21 @@ class TaskListView(QTableView):
         self._apply_column_widths()
 
     def _apply_column_widths(self) -> None:
-        """6 columns: created, content, deadline, priority, status, tags."""
+        """7 columns: #, created, content, deadline, priority, status, tags."""
         h = self.horizontalHeader()
         h.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(0, 130)   # 创建时间
-        h.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # 任务内容
-        h.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(2, 105)   # 截止时间
+        h.resizeSection(0, 36)    # 序号
+        h.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(1, 120)   # 创建时间
+        h.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # 任务内容
         h.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(3, 50)    # 优先级
+        h.resizeSection(3, 100)   # 截止时间
         h.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(4, 60)    # 状态
-        h.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)  # 标签
-        if h.sectionSize(5) > 130:
-            h.resizeSection(5, 110)
+        h.resizeSection(4, 45)    # 优先级
+        h.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(5, 55)    # 状态
+        h.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(6, 80)    # 标签
 
     # ------------------------------------------------------------------
     # Context menu
@@ -104,10 +105,8 @@ class TaskListView(QTableView):
         menu.addSeparator()
 
         status_menu = menu.addMenu("更改状态")
-        for s in TaskStatus:
+        for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             action = status_menu.addAction(f"  {s.display_name}")
-            action.setCheckable(True)
-            action.setChecked(s == task.status)
             action.setData(s)
             action.triggered.connect(
                 lambda checked=False, st=s, t=task: self._on_change_status(t, st)
@@ -152,7 +151,9 @@ class TaskListView(QTableView):
             pass
 
     def _on_detail_task(self, task: Task) -> None:
-        self.detail_requested.emit(task)
+        from ..dialogs.timeline_detail_dialog import TimelineDetailDialog
+        dlg = TimelineDetailDialog(task, parent=self)
+        dlg.exec()
 
     def _on_delete_task(self, task: Task) -> None:
         result = QMessageBox.question(

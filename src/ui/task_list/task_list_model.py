@@ -11,22 +11,27 @@ from ...models.priority import Priority
 from ...models.task import Task
 from ...models.task_status import TaskStatus
 
-_COLUMN_HEADERS = ["创建时间", "任务内容", "截止时间", "优先级", "状态", "标签"]
+_COLUMN_HEADERS = ["#", "创建时间", "任务内容", "截止时间", "优先级", "状态", "标签"]
 
-COL_CREATED = 0
-COL_CONTENT = 1
-COL_DEADLINE = 2
-COL_PRIORITY = 3
-COL_STATUS = 4
-COL_TAGS = 5
+COL_ROW = 0
+COL_CREATED = 1
+COL_CONTENT = 2
+COL_DEADLINE = 3
+COL_PRIORITY = 4
+COL_STATUS = 5
+COL_TAGS = 6
 
 
 class TaskListModel(QAbstractTableModel):
-    """6-column table: created, content, deadline, priority, status, tags."""
+    """7-column table: row#, created, content, deadline, priority, status, tags."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._tasks: list[Task] = []
+        self._offset: int = 0
+
+    def set_offset(self, offset: int) -> None:
+        self._offset = offset
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._tasks)
@@ -41,6 +46,8 @@ class TaskListModel(QAbstractTableModel):
         col = index.column()
 
         if role == Qt.ItemDataRole.DisplayRole:
+            if col == COL_ROW:
+                return str(self._offset + index.row() + 1)
             return self._display_data(task, col)
 
         if role == Qt.ItemDataRole.ForegroundRole:
@@ -154,6 +161,6 @@ class TaskListModel(QAbstractTableModel):
 
     @staticmethod
     def _alignment(col: int) -> Qt.AlignmentFlag:
-        if col in (COL_CREATED, COL_DEADLINE, COL_PRIORITY, COL_STATUS):
+        if col in (COL_ROW, COL_CREATED, COL_DEADLINE, COL_PRIORITY, COL_STATUS):
             return Qt.AlignmentFlag.AlignCenter
         return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter

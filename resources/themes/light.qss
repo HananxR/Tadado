@@ -69,18 +69,35 @@ QToolBar QToolButton:hover {
 QToolBar QToolButton:pressed {
     background-color: #e4e2da;
 }
+QToolBar QComboBox#partitionToolCombo {
+    background-color: #fafaf8;
+    border: 1px solid #ddd9d0;
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 12px;
+    color: #444;
+    font-weight: bold;
+}
+QToolBar QComboBox#partitionToolCombo:hover {
+    border-color: #5b8def;
+}
+QToolBar QComboBox#partitionToolCombo::drop-down {
+    width: 16px;
+    border: none;
+}
 
 /* ── Status Bar ──────────────────────────────────────────────── */
 QStatusBar {
     background-color: #ffffff;
     border-top: 1px solid #e8e6e0;
-    padding: 3px 10px;
-    font-size: 11px;
+    padding: 4px 10px;
+    font-size: 12px;
     color: #888;
+    min-height: 28px;
 }
 QStatusBar QLabel {
     color: #888;
-    font-size: 11px;
+    font-size: 12px;
     padding: 0 6px;
 }
 
@@ -312,6 +329,57 @@ QLineEdit#mdPreview {
     background: #fafaf6;
     padding: 4px 8px;
     border-radius: 4px;
+}
+
+/* ── Date / Time pickers ─────────────────────────────────────── */
+QDateEdit, QTimeEdit, QDateTimeEdit {
+    background-color: #fafaf8;
+    border: 1px solid #ddd9d0;
+    border-radius: 5px;
+    padding: 4px 6px;
+    font-size: 12px;
+    color: #444;
+}
+QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
+    border-color: #5b8def;
+    background-color: #ffffff;
+}
+QDateEdit::drop-down, QTimeEdit::drop-down, QDateTimeEdit::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: 1px solid #e8e6e0;
+    border-top-right-radius: 5px;
+    border-bottom-right-radius: 5px;
+}
+QDateEdit::up-button, QTimeEdit::up-button,
+QDateEdit::down-button, QTimeEdit::down-button {
+    width: 16px;
+    height: 10px;
+}
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {
+    background-color: #f0eee8;
+    border: 1px solid #ddd9d0;
+}
+QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {
+    background-color: #e6e3da;
+}
+
+/* ── Tag Chips ────────────────────────────────────────────────── */
+QPushButton#tagChip {
+    background-color: #edf2fb;
+    border: 1px solid #c5d8f8;
+    border-radius: 10px;
+    padding: 2px 8px;
+    font-size: 10px;
+    color: #3b6edc;
+}
+QPushButton#tagChip:hover {
+    background-color: #d0e0f8;
+}
+QPushButton#tagChip:checked {
+    background-color: #5b8def;
+    color: #ffffff;
 }
 
 /* ── Quick-access zone (carousel + preset buttons) ───────────── */
