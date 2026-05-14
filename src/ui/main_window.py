@@ -668,8 +668,14 @@ class MainWindow(QMainWindow):
         if self._partition_passwords.get(target_id, ""):
             self._lock_partition(target_id)
         else:
-            self._partition_btn.setToolTip(f"当前分区：{self._get_partition_name(target_id)}")
+            name = self._get_partition_name(target_id)
+            self._partition_btn.setToolTip(f"当前分区：{name}")
             self._activate_partition(target_id)
+            # Ensure partition is always visible in status bar
+            self._status_partition.setText(f"  📂 {name}")
+            self._status_partition.setStyleSheet(
+                "color: #5b8def; font-size: 12px; font-weight: bold; padding: 2px 10px;"
+            )
 
     def _on_partition_menu_selected(self, new_id: str) -> None:
         """Handle partition switch from menu — check password, then refresh."""
