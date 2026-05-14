@@ -672,8 +672,6 @@ class MainWindow(QMainWindow):
         """Show password dialog (centered on main window), looping until valid input."""
         name = self._get_partition_name(target_id)
         while True:
-            # Ensure window geometry is settled for proper centering
-            QApplication.processEvents()
             pwd, ok = QInputDialog.getText(
                 self, "加密分区",
                 f"进入「{name}」分区需要密码\n请输入密码：",
