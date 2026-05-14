@@ -552,6 +552,9 @@ class MainWindow(QMainWindow):
         self._on_data_changed()
 
     def _refresh_task_list(self, filter_: TaskFilter | None = None) -> None:
+        # Skip data loading when partition is locked
+        if hasattr(self, '_splitter_stack') and self._splitter_stack.currentIndex() == 1:
+            return
         if filter_ is None:
             filter_ = self._filter_bar.build_filter()
         if self._active_partition_id:
@@ -658,10 +661,7 @@ class MainWindow(QMainWindow):
         self._active_partition_id = target_id
         # If password-protected, lock immediately before any data loads
         if self._partition_passwords.get(target_id, ""):
-            name = self._get_partition_name(target_id)
-            self._partition_btn.setToolTip(f"当前分区：{name}（已锁定）")
-            self._splitter_stack.setCurrentIndex(1)
-            self._update_status_partition_label()
+            self._lock_partition(target_id)
             QTimer.singleShot(500, lambda: self._prompt_partition_password(target_id, is_startup=True))
         else:
             self._partition_btn.setToolTip(f"当前分区：{self._get_partition_name(target_id)}")
