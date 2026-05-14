@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Callable
 
-from PySide6.QtCore import QDate, QDateTime, QSize, QTime, Qt, Signal
-from PySide6.QtGui import QPainter, QBrush, QColor, QPalette, QPen, QPixmap, QTextDocument
+from PySide6.QtCore import QDate, QSize, QTime, Qt, Signal
+from PySide6.QtGui import QPainter, QBrush, QColor, QPen, QPixmap, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QDateTimeEdit,
+    QDateEdit,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QTextBrowser,
     QSizePolicy,
     QTextEdit,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -267,27 +268,21 @@ class TaskEditPanel(QWidget):
         deadline_row = QHBoxLayout()
         deadline_row.setSpacing(6)
         deadline_row.addWidget(QLabel("截止时间："))
-        self._deadline_dt_edit = QDateTimeEdit()
-        self._deadline_dt_edit.setCalendarPopup(True)
-        self._deadline_dt_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
-        self._deadline_dt_edit.setDateTime(QDateTime.currentDateTime())
-        self._deadline_dt_edit.setMinimumDateTime(QDateTime(2000, 1, 1, 0, 0, 0))
-        self._deadline_dt_edit.setMaximumDateTime(QDateTime(2100, 12, 31, 23, 59, 0))
-        self._deadline_dt_edit.setMinimumWidth(160)
-        # Use palette for reliable cross-platform background
-        pal = self._deadline_dt_edit.palette()
-        pal.setColor(QPalette.ColorRole.Base, QColor("#fafaf8"))
-        pal.setColor(QPalette.ColorRole.Text, QColor("#444444"))
-        pal.setColor(QPalette.ColorRole.Button, QColor("#f0eee8"))
-        self._deadline_dt_edit.setPalette(pal)
-        self._deadline_dt_edit.setAutoFillBackground(True)
-        # Force palette on internal QLineEdit
-        line_edit = self._deadline_dt_edit.findChild(QLineEdit)
-        if line_edit:
-            line_edit.setPalette(pal)
-            line_edit.setAutoFillBackground(True)
-        self._deadline_dt_edit.dateTimeChanged.connect(self._on_deadline_picker_changed)
-        deadline_row.addWidget(self._deadline_dt_edit)
+        self._deadline_date_edit = QDateEdit()
+        self._deadline_date_edit.setCalendarPopup(True)
+        self._deadline_date_edit.setDisplayFormat("yyyy-MM-dd")
+        self._deadline_date_edit.setDate(QDate.currentDate())
+        self._deadline_date_edit.setMinimumDate(QDate(2000, 1, 1))
+        self._deadline_date_edit.setMaximumDate(QDate(2100, 12, 31))
+        self._deadline_date_edit.setMinimumWidth(110)
+        self._deadline_date_edit.dateChanged.connect(self._on_deadline_picker_changed)
+        deadline_row.addWidget(self._deadline_date_edit)
+        self._deadline_time_edit = QTimeEdit()
+        self._deadline_time_edit.setDisplayFormat("HH:mm")
+        self._deadline_time_edit.setTime(QTime.currentTime())
+        self._deadline_time_edit.setFixedWidth(55)
+        self._deadline_time_edit.timeChanged.connect(self._on_deadline_picker_changed)
+        deadline_row.addWidget(self._deadline_time_edit)
         deadline_row.addStretch()
         meta_layout.addLayout(deadline_row)
         ec.addWidget(meta_widget)
@@ -425,15 +420,14 @@ class TaskEditPanel(QWidget):
         # Set datetime picker
         self._updating_from_md = True
         if task.deadline_date:
-            h, m = 23, 59
+            self._deadline_date_edit.setDate(QDate(task.deadline_date.year,
+                task.deadline_date.month, task.deadline_date.day))
+            self._deadline_time_edit.setTime(QTime(23, 59))
             if task.deadline_time:
                 parts = task.deadline_time.split(":")
-                h, m = int(parts[0]), int(parts[1])
-            dt = QDateTime(task.deadline_date.year, task.deadline_date.month,
-                           task.deadline_date.day, h, m, 0)
-            self._deadline_dt_edit.setDateTime(dt)
+                self._deadline_time_edit.setTime(QTime(int(parts[0]), int(parts[1])))
         else:
-            self._deadline_dt_edit.setDateTime(QDateTime.currentDateTime())
+            self._deadline_date_edit.setDate(QDate.currentDate())
         self._updating_from_md = False
 
         # Set created_at label
@@ -465,7 +459,7 @@ class TaskEditPanel(QWidget):
         self._timeline_card.setVisible(False)
 
         self._updating_from_md = True
-        self._deadline_dt_edit.setDateTime(QDateTime.currentDateTime())
+        self._deadline_date_edit.setDate(QDate.currentDate())
 
         self._created_label.setText("—")
         self._updating_from_md = False
@@ -507,7 +501,7 @@ class TaskEditPanel(QWidget):
         self._timeline_card.setVisible(False)
 
         self._updating_from_md = True
-        self._deadline_dt_edit.setDateTime(QDateTime.currentDateTime())
+        self._deadline_date_edit.setDate(QDate.currentDate())
 
         self._created_label.setText("—")
         self._updating_from_md = False
@@ -570,7 +564,8 @@ class TaskEditPanel(QWidget):
         # Set pickers for draft
         self._updating_from_md = True
         today_d = datetime.now()
-        self._deadline_dt_edit.setDateTime(QDateTime(today_d.year, today_d.month, today_d.day, 23, 59, 0))
+        self._deadline_date_edit.setDate(QDate(today_d.year, today_d.month, today_d.day))
+        self._deadline_time_edit.setTime(QTime(23, 59))
 
         self._updating_from_md = False
         self._created_label.setText(
@@ -619,11 +614,12 @@ class TaskEditPanel(QWidget):
             if parsed.deadline_time:
                 parts = parsed.deadline_time.split(":")
                 h, m = int(parts[0]), int(parts[1])
-            dt = QDateTime(parsed.deadline_date.year, parsed.deadline_date.month,
-                           parsed.deadline_date.day, h, m, 0)
-            self._deadline_dt_edit.setDateTime(dt)
+            self._deadline_date_edit.setDate(QDate(parsed.deadline_date.year,
+                parsed.deadline_date.month, parsed.deadline_date.day))
+            self._deadline_time_edit.setTime(QTime(h, m))
         else:
-            self._deadline_dt_edit.setDateTime(QDateTime.currentDateTime())
+            self._deadline_date_edit.setDate(QDate.currentDate())
+            self._deadline_time_edit.setTime(QTime.currentTime())
 
     
         self._updating_from_md = False
@@ -686,8 +682,9 @@ class TaskEditPanel(QWidget):
         if not text:
             self._updating_from_md = False
             return
-        qdt = self._deadline_dt_edit.dateTime()
-        new_dl = f"<{qdt.toString('yyyy-MM-dd HH:mm')}>"
+        qd = self._deadline_date_edit.date()
+        qt = self._deadline_time_edit.time()
+        new_dl = f"<{qd.toString('yyyy-MM-dd')} {qt.toString('HH:mm')}>"
         import re as _re
         dl_pattern = _re.compile(r"<(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2})?>")
         if dl_pattern.search(text):
