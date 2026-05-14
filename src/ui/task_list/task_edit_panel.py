@@ -326,7 +326,8 @@ class TaskEditPanel(QWidget):
         # -- Timeline log (rich text with aligned timestamps) --
         self._timeline_log = QTextBrowser()
         self._timeline_log.setReadOnly(True)
-        self._timeline_log.setMinimumHeight(200)
+        self._timeline_log.setMinimumHeight(120)
+        self._timeline_log.setMaximumHeight(350)
         self._timeline_log.setStyleSheet(
             "QTextBrowser { background: #fafaf8; border: 1px solid #ddd9d0;"
             " border-radius: 6px; font-size: 12px; padding: 6px; color: #444; }"
@@ -335,7 +336,7 @@ class TaskEditPanel(QWidget):
         self._entry_placeholder.setStyleSheet("color: #aaa; font-size: 11px; padding: 8px;")
         self._entry_placeholder.setVisible(False)
         tc.addWidget(self._entry_placeholder)
-        tc.addWidget(self._timeline_log, 1)
+        tc.addWidget(self._timeline_log)
         self._timeline_log.setVisible(False)
 
         # -- Status quick-toggle --
