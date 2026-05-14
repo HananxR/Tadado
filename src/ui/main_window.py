@@ -662,7 +662,7 @@ class MainWindow(QMainWindow):
             self._partition_btn.setToolTip(f"当前分区：{name}（已锁定）")
             self._splitter_stack.setCurrentIndex(1)
             self._update_status_partition_label()
-            QTimer.singleShot(300, lambda: self._prompt_partition_password(target_id, is_startup=True))
+            QTimer.singleShot(500, lambda: self._prompt_partition_password(target_id, is_startup=True))
         else:
             self._partition_btn.setToolTip(f"当前分区：{self._get_partition_name(target_id)}")
             self._activate_partition(target_id)
