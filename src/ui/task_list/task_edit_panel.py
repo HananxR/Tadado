@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Callable
 
 from PySide6.QtCore import QDate, QDateTime, QSize, QTime, Qt, Signal
-from PySide6.QtGui import QPainter, QBrush, QColor, QPen, QPixmap, QTextDocument
+from PySide6.QtGui import QPainter, QBrush, QColor, QPalette, QPen, QPixmap, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -275,7 +275,6 @@ class TaskEditPanel(QWidget):
         self._deadline_dt_edit.setMaximumDateTime(QDateTime(2100, 12, 31, 23, 59, 0))
         self._deadline_dt_edit.setMinimumWidth(160)
         # Use palette for reliable cross-platform background
-        from PySide6.QtGui import QPalette
         pal = self._deadline_dt_edit.palette()
         pal.setColor(QPalette.ColorRole.Base, QColor("#fafaf8"))
         pal.setColor(QPalette.ColorRole.Text, QColor("#444444"))
@@ -348,7 +347,6 @@ class TaskEditPanel(QWidget):
         self._status_combo = QComboBox()
         for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             self._status_combo.addItem(f"● {s.display_name}", s)
-            from PySide6.QtGui import QColor
             self._status_combo.setItemData(
                 self._status_combo.count() - 1,
                 QColor(s.display_color),
