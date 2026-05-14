@@ -442,8 +442,10 @@ class MainWindow(QMainWindow):
         self._edit_panel.clear()
         self._splitter_stack.setCurrentIndex(1)
         self._carousel.set_items([])
-        self._stats_bar.set_partition_id(None)
-        self._stats_bar.refresh()
+        for status in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+            badge = self._stats_bar._badges.get(status)
+            if badge:
+                badge.setText(f"{badge.text().split(':')[0]}: 0")
         self._update_status_partition_label()
 
     # ------------------------------------------------------------------
@@ -751,9 +753,12 @@ class MainWindow(QMainWindow):
         self._task_model.load_tasks([])
         self._edit_panel.clear()
         self._update_status_partition_label()
-        self._stats_bar.set_partition_id(None)
-        self._stats_bar.refresh()
         self._carousel.set_items([])
+        # Force stats bar to show all zeros
+        for status in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+            badge = self._stats_bar._badges.get(status)
+            if badge:
+                badge.setText(f"{badge.text().split(':')[0]}: 0")
 
     def _find_first_unlocked_partition(self) -> str | None:
         """Find the first partition without a password."""
