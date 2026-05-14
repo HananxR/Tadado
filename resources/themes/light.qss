@@ -352,12 +352,6 @@ QDateEdit::drop-down, QTimeEdit::drop-down, QDateTimeEdit::drop-down {
     border-top-right-radius: 5px;
     border-bottom-right-radius: 5px;
 }
-QDateTimeEdit QAbstractSpinBox,
-QDateTimeEdit QLineEdit {
-    background-color: #fafaf8;
-    color: #444;
-    selection-background-color: #c5d8f8;
-}
 QDateEdit::up-button, QTimeEdit::up-button,
 QDateEdit::down-button, QTimeEdit::down-button {
     width: 16px;
@@ -369,36 +363,6 @@ QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {
 }
 QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {
     background-color: #e6e3da;
-}
-
-/* ── Calendar Popup ──────────────────────────────────────────── */
-QCalendarWidget {
-    background-color: #ffffff;
-    border: 1px solid #ddd9d0;
-    border-radius: 6px;
-}
-QCalendarWidget QToolButton {
-    color: #444;
-    background-color: transparent;
-    border: none;
-    padding: 4px 8px;
-    font-size: 12px;
-}
-QCalendarWidget QToolButton:hover {
-    background-color: #f0eee8;
-    border-radius: 4px;
-}
-QCalendarWidget QTableView {
-    background-color: #ffffff;
-    selection-background-color: #edf2fb;
-    selection-color: #2c2c2c;
-    outline: none;
-}
-QCalendarWidget QAbstractItemView:enabled {
-    color: #444;
-    background-color: #ffffff;
-    selection-background-color: #edf2fb;
-    selection-color: #2c2c2c;
 }
 
 /* ── Tag Chips ────────────────────────────────────────────────── */

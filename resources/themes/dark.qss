@@ -347,12 +347,6 @@ QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
     border-color: #7aa2f7;
     background-color: #1a1b26;
 }
-QDateTimeEdit QAbstractSpinBox,
-QDateTimeEdit QLineEdit {
-    background-color: #1e1f2e;
-    color: #c9d1d9;
-    selection-background-color: #2f4360;
-}
 QDateEdit::drop-down, QTimeEdit::drop-down, QDateTimeEdit::drop-down {
     subcontrol-origin: padding;
     subcontrol-position: top right;

@@ -14,11 +14,11 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QTextBrowser,
     QSizePolicy,
+    QTextBrowser,
     QTextEdit,
     QTimeEdit,
     QVBoxLayout,
@@ -274,15 +274,18 @@ class TaskEditPanel(QWidget):
         self._deadline_date_edit.setDate(QDate.currentDate())
         self._deadline_date_edit.setMinimumDate(QDate(2000, 1, 1))
         self._deadline_date_edit.setMaximumDate(QDate(2100, 12, 31))
-        self._deadline_date_edit.setMinimumWidth(110)
         self._deadline_date_edit.dateChanged.connect(self._on_deadline_picker_changed)
         deadline_row.addWidget(self._deadline_date_edit)
         self._deadline_time_edit = QTimeEdit()
         self._deadline_time_edit.setDisplayFormat("HH:mm")
         self._deadline_time_edit.setTime(QTime.currentTime())
-        self._deadline_time_edit.setFixedWidth(55)
         self._deadline_time_edit.timeChanged.connect(self._on_deadline_picker_changed)
         deadline_row.addWidget(self._deadline_time_edit)
+        self._time_toggle = QCheckBox("时间")
+        self._time_toggle.setChecked(True)
+        self._time_toggle.setStyleSheet("font-size: 10px; color: #888;")
+        self._time_toggle.toggled.connect(self._on_time_toggle_changed)
+        deadline_row.addWidget(self._time_toggle)
         deadline_row.addStretch()
         meta_layout.addLayout(deadline_row)
         ec.addWidget(meta_widget)
@@ -342,6 +345,7 @@ class TaskEditPanel(QWidget):
         self._status_combo = QComboBox()
         for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             self._status_combo.addItem(f"● {s.display_name}", s)
+            from PySide6.QtGui import QColor
             self._status_combo.setItemData(
                 self._status_combo.count() - 1,
                 QColor(s.display_color),
@@ -417,17 +421,21 @@ class TaskEditPanel(QWidget):
                 self._status_combo.setCurrentIndex(i)
                 break
 
-        # Set datetime picker
+        # Set date/time pickers
         self._updating_from_md = True
         if task.deadline_date:
-            self._deadline_date_edit.setDate(QDate(task.deadline_date.year,
-                task.deadline_date.month, task.deadline_date.day))
-            self._deadline_time_edit.setTime(QTime(23, 59))
+            qd = QDate(task.deadline_date.year, task.deadline_date.month, task.deadline_date.day)
+            self._deadline_date_edit.setDate(qd)
+            self._time_toggle.setChecked(True)
             if task.deadline_time:
-                parts = task.deadline_time.split(":")
-                self._deadline_time_edit.setTime(QTime(int(parts[0]), int(parts[1])))
+                h, m = task.deadline_time.split(":")
+                self._deadline_time_edit.setTime(QTime(int(h), int(m)))
+            else:
+                self._deadline_time_edit.setTime(QTime.currentTime())
         else:
             self._deadline_date_edit.setDate(QDate.currentDate())
+            self._time_toggle.setChecked(True)
+            self._deadline_time_edit.setTime(QTime.currentTime())
         self._updating_from_md = False
 
         # Set created_at label
@@ -460,7 +468,8 @@ class TaskEditPanel(QWidget):
 
         self._updating_from_md = True
         self._deadline_date_edit.setDate(QDate.currentDate())
-
+        self._time_toggle.setChecked(True)
+        self._deadline_time_edit.setTime(QTime.currentTime())
         self._created_label.setText("—")
         self._updating_from_md = False
         self._clear_entries()
@@ -502,7 +511,8 @@ class TaskEditPanel(QWidget):
 
         self._updating_from_md = True
         self._deadline_date_edit.setDate(QDate.currentDate())
-
+        self._time_toggle.setChecked(True)
+        self._deadline_time_edit.setTime(QTime.currentTime())
         self._created_label.setText("—")
         self._updating_from_md = False
         self._clear_entries()
@@ -565,8 +575,8 @@ class TaskEditPanel(QWidget):
         self._updating_from_md = True
         today_d = datetime.now()
         self._deadline_date_edit.setDate(QDate(today_d.year, today_d.month, today_d.day))
-        self._deadline_time_edit.setTime(QTime(23, 59))
-
+        self._time_toggle.setChecked(True)
+        self._deadline_time_edit.setTime(QTime.currentTime())
         self._updating_from_md = False
         self._created_label.setText(
             draft.created_at.strftime("%Y-%m-%d %H:%M") if draft.created_at else "—"
@@ -610,18 +620,24 @@ class TaskEditPanel(QWidget):
             return
         self._updating_from_md = True
         if parsed.deadline_date:
-            h, m = 23, 59
+            qdate = QDate(parsed.deadline_date.year, parsed.deadline_date.month, parsed.deadline_date.day)
+            self._deadline_date_edit.blockSignals(True)
+            self._deadline_date_edit.setDate(qdate)
+            self._deadline_date_edit.blockSignals(False)
+            self._time_toggle.setChecked(True)
             if parsed.deadline_time:
-                parts = parsed.deadline_time.split(":")
-                h, m = int(parts[0]), int(parts[1])
-            self._deadline_date_edit.setDate(QDate(parsed.deadline_date.year,
-                parsed.deadline_date.month, parsed.deadline_date.day))
-            self._deadline_time_edit.setTime(QTime(h, m))
+                h, m = parsed.deadline_time.split(":")
+                self._deadline_time_edit.blockSignals(True)
+                self._deadline_time_edit.setTime(QTime(int(h), int(m)))
+                self._deadline_time_edit.blockSignals(False)
+            else:
+                self._deadline_time_edit.setTime(QTime.currentTime())
         else:
+            self._deadline_date_edit.blockSignals(True)
             self._deadline_date_edit.setDate(QDate.currentDate())
+            self._deadline_date_edit.blockSignals(False)
+            self._time_toggle.setChecked(True)
             self._deadline_time_edit.setTime(QTime.currentTime())
-
-    
         self._updating_from_md = False
 
     def _update_preview(self) -> None:
@@ -674,7 +690,7 @@ class TaskEditPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _on_deadline_picker_changed(self) -> None:
-        """Update Markdown text when the datetime picker changes."""
+        """Update Markdown text when the date/time pickers change."""
         if self._updating_from_md or not self._current_task:
             return
         self._updating_from_md = True
@@ -682,24 +698,35 @@ class TaskEditPanel(QWidget):
         if not text:
             self._updating_from_md = False
             return
-        qd = self._deadline_date_edit.date()
-        qt = self._deadline_time_edit.time()
-        new_dl = f"<{qd.toString('yyyy-MM-dd')} {qt.toString('HH:mm')}>"
+        qdate = self._deadline_date_edit.date()
+        new_date = qdate.toString("yyyy-MM-dd")
+        # Replace or add deadline in the Markdown
         import re as _re
+        # Match existing deadline pattern <YYYY-MM-DD> or <YYYY-MM-DD HH:MM>
         dl_pattern = _re.compile(r"<(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2})?>")
+        if self._time_toggle.isChecked():
+            qt = self._deadline_time_edit.time()
+            new_dl = f"<{new_date} {qt.toString('HH:mm')}>"
+        else:
+            new_dl = f"<{new_date}>"
         if dl_pattern.search(text):
             text = dl_pattern.sub(new_dl, text, count=1)
         else:
+            # No deadline in text — insert before the title
+            parts = text.rsplit(" ", 1) if " " in text else [text, ""]
+            # Insert deadline before last part (title)
             idx = text.rfind(">")
             if idx >= 0:
                 text = text[:idx + 1] + " " + new_dl + text[idx + 1:]
             else:
+                # Insert after priority, before title
                 pri_match = _re.search(r"\[#[ABC]\]\s*", text)
                 if pri_match:
                     pos = pri_match.end()
                     text = text[:pos] + f"{new_dl} " + text[pos:]
                 else:
-                    kw_match = _re.search(r"(TODO|DOING|DONE|URGENT)\s*", text)
+                    # Insert after status keyword
+                    kw_match = _re.search(r"(TODO|DOING|DONE|URGENT|WAIT|LATER)\s*", text)
                     if kw_match:
                         pos = kw_match.end()
                         text = text[:pos] + f"{new_dl} " + text[pos:]
@@ -713,6 +740,12 @@ class TaskEditPanel(QWidget):
             current_text = self._md_edit.toPlainText().strip()
             self._save_btn.setEnabled(current_text != self._original_md.strip())
         self._updating_from_md = False
+
+    def _on_time_toggle_changed(self, checked: bool) -> None:
+        """Show or hide the time editor."""
+        self._deadline_time_edit.setVisible(checked)
+        if not self._updating_from_md:
+            self._on_deadline_picker_changed()
 
     def _on_save(self) -> None:
         is_new = self._current_task is None
@@ -939,9 +972,7 @@ class TaskEditPanel(QWidget):
         task.activity_log.append(entry)
         task.updated_at = datetime.now()
         self._repository.update(task)
-        # Update model row in place (no full refresh)
-        if self._task_model:
-            self._task_model.update_task(task)
+        self._signal_bus.task_updated.emit(task)
         self._refresh_timeline()
 
     # ------------------------------------------------------------------

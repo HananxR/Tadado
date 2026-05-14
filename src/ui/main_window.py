@@ -11,7 +11,6 @@ from PySide6.QtGui import (
     QShortcut, QKeySequence,
 )
 from PySide6.QtWidgets import (
-    QApplication,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -669,7 +668,7 @@ class MainWindow(QMainWindow):
             self._activate_partition(target_id)
 
     def _prompt_partition_password(self, target_id: str, is_startup: bool = False) -> None:
-        """Show password dialog (centered on main window), looping until valid input."""
+        """Show password dialog, looping until valid input or cancel."""
         name = self._get_partition_name(target_id)
         while True:
             pwd, ok = QInputDialog.getText(
