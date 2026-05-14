@@ -277,6 +277,8 @@ class TaskEditPanel(QWidget):
             "QDateTimeEdit { background-color: #fafaf8; border: 1px solid #ddd9d0;"
             " border-radius: 5px; padding: 4px 6px; font-size: 12px; color: #444; }"
             "QDateTimeEdit:focus { border-color: #5b8def; background-color: #ffffff; }"
+            "QDateTimeEdit QAbstractSpinBox,"
+            "QDateTimeEdit QLineEdit { background-color: #fafaf8; color: #444; }"
         )
         self._deadline_dt_edit.dateTimeChanged.connect(self._on_deadline_picker_changed)
         deadline_row.addWidget(self._deadline_dt_edit)

@@ -352,10 +352,11 @@ QDateEdit::drop-down, QTimeEdit::drop-down, QDateTimeEdit::drop-down {
     border-top-right-radius: 5px;
     border-bottom-right-radius: 5px;
 }
+QDateTimeEdit QAbstractSpinBox,
 QDateTimeEdit QLineEdit {
     background-color: #fafaf8;
-    border: none;
     color: #444;
+    selection-background-color: #c5d8f8;
 }
 QDateEdit::up-button, QTimeEdit::up-button,
 QDateEdit::down-button, QTimeEdit::down-button {
