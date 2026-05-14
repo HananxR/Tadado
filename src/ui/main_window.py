@@ -371,8 +371,9 @@ class MainWindow(QMainWindow):
         self._load_partitions()
 
         self.setCentralWidget(self._stack)
-        self._refresh_task_list()
-        self._update_carousel(self._carousel_filter)
+        if self._splitter_stack.currentIndex() != 1:
+            self._refresh_task_list()
+            self._update_carousel(self._carousel_filter)
 
     # ------------------------------------------------------------------
     # Status bar
@@ -470,6 +471,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_data_changed(self, *args) -> None:
+        if hasattr(self, '_splitter_stack') and self._splitter_stack.currentIndex() == 1:
+            return  # partition locked, no data refresh
         f = self._carousel_filter or TaskFilter()
         self._refresh_all_views(f, reset_page=False)
 
