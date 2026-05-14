@@ -662,44 +662,12 @@ class MainWindow(QMainWindow):
         else:
             target_id = all_partitions[0]["id"] if all_partitions else ""
         self._active_partition_id = target_id
-        # If password-protected, lock immediately before any data loads
+        # If password-protected, lock immediately — user clicks "解锁" to prompt
         if self._partition_passwords.get(target_id, ""):
             self._lock_partition(target_id)
-            QTimer.singleShot(500, lambda: self._prompt_partition_password(target_id, is_startup=True))
         else:
             self._partition_btn.setToolTip(f"当前分区：{self._get_partition_name(target_id)}")
             self._activate_partition(target_id)
-
-    def _prompt_partition_password(self, target_id: str, is_startup: bool = False) -> None:
-        """Show password dialog, looping until valid input or cancel."""
-        name = self._get_partition_name(target_id)
-        while True:
-            pwd, ok = QInputDialog.getText(
-                self, "加密分区",
-                f"进入「{name}」分区需要密码\n请输入密码：",
-                QLineEdit.EchoMode.Password,
-            )
-            if not ok:
-                if is_startup:
-                    fallback = self._find_first_unlocked_partition()
-                    if fallback and fallback != target_id:
-                        self._activate_partition(fallback)
-                        self._flash_status("已自动切换至「" + self._get_partition_name(fallback) + "」")
-                    else:
-                        self._lock_partition(target_id)
-                else:
-                    self._flash_status("已取消切换")
-                return
-            if not pwd.strip():
-                QMessageBox.warning(self, "提示", "请输入密码。")
-                continue
-            if pwd != self._partition_passwords.get(target_id, ""):
-                self._lock_partition(target_id)
-                self._flash_status("🔒 密码错误，内容已隐藏。点击解锁按钮重试")
-                return
-            self._activate_partition(target_id)
-            self._reset_idle_lock_timer()
-            return
 
     def _on_partition_menu_selected(self, new_id: str) -> None:
         """Handle partition switch from menu — check password, then refresh."""
