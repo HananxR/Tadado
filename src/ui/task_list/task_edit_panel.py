@@ -421,12 +421,7 @@ class TaskEditPanel(QWidget):
         self._editor_collapsible.setVisible(False)  # default collapsed
         self._collapse_btn.setText("▼")
         # Show task summary when collapsed
-        sc = task.status.display_color
-        self._task_summary.setText(
-            f'<span style="background:{sc};color:#fff;padding:1px 6px;border-radius:3px;'
-            f'font-size:10px;">{task.status.display_name}</span>'
-            f' <b>{task.title}</b>'
-        )
+        self._task_summary.setText(f'任务：<b>{task.title}</b>')
         self._task_summary.setVisible(True)
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(True)
@@ -867,12 +862,7 @@ class TaskEditPanel(QWidget):
         self._collapse_btn.setVisible(True)
         self._editor_collapsible.setVisible(False)
         self._collapse_btn.setText("▼")
-        sc = task.status.display_color
-        self._task_summary.setText(
-            f'<span style="background:{sc};color:#fff;padding:1px 6px;border-radius:3px;'
-            f'font-size:10px;">{task.status.display_name}</span>'
-            f' <b>{task.title}</b>'
-        )
+        self._task_summary.setText(f'任务：<b>{task.title}</b>')
         self._task_summary.setVisible(True)
 
     def _on_delete(self) -> None:
@@ -971,15 +961,27 @@ class TaskEditPanel(QWidget):
             )
 
         rows: list[str] = []
-        st = task.status.display_name
-        st_color = task.status.display_color
-        for e in reversed(task.activity_log[:10]):
+        # Track status backwards through the log for per-entry context
+        cur_status = task.status
+        cur_color = task.status.display_color
+        for e in reversed(task.activity_log):
             ts = _fmt_ts(e.get("ts", ""), True)
             content = e.get("content", "")
+            # Detect status change entries and update tracked status
+            if "状态变更:" in content or "状态切换:" in content:
+                # Extract the OLD status (text before the arrow)
+                import re as _re
+                m = _re.search(r"→\s*(\S+)", content)
+                if m:
+                    try:
+                        cur_status = TaskStatus.from_string(m.group(1))
+                        cur_color = cur_status.display_color
+                    except Exception:
+                        pass
             is_done = "任务完成" in content
             color = "#27ae60" if is_done else "#f39c12"
             rows.append(_row("●", color, ts,
-                              f'<span style="color:{st_color};">[{st}]</span> {content}'))
+                              f'<span style="color:{cur_color};">[{cur_status.display_name}]</span> {content}'))
         if not rows and task.created_at:
             rows.append(_row("○", "#aaa", _fmt_ts(task.created_at.isoformat(), True),
                               "创建任务"))
@@ -1055,5 +1057,5 @@ def _fmt_ts(ts, short: bool = False) -> str:
         except (ValueError, TypeError):
             return ts[:16]
     if short:
-        return ts.strftime("%m-%d %H:%M")
-    return ts.strftime("%Y-%m-%d %H:%M")
+        return ts.strftime("%m-%d %H:%M:%S")
+    return ts.strftime("%Y-%m-%d %H:%M:%S")
