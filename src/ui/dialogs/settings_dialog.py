@@ -55,7 +55,6 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_reminders_tab(), "提醒")
         tabs.addTab(self._build_archive_tab(), "归档")
         tabs.addTab(self._build_partitions_tab(), "分区管理")
-        tabs.addTab(self._build_fields_tab(), "字段管理")
         tabs.addTab(self._build_motd_tab(), "激励语")
         layout.addWidget(tabs)
 
@@ -87,6 +86,15 @@ class SettingsDialog(QDialog):
         )
         form.addRow("分区自动锁定", self._auto_lock_spin)
 
+        self._page_size_spin = QSpinBox()
+        self._page_size_spin.setRange(10, 100)
+        self._page_size_spin.setSingleStep(10)
+        self._page_size_spin.setSuffix(" 条/页")
+        self._page_size_spin.setValue(
+            self._config.get("general", "page_size", default=20)
+        )
+        form.addRow("默认每页条数", self._page_size_spin)
+
         return w
 
     # ------------------------------------------------------------------
@@ -107,11 +115,6 @@ class SettingsDialog(QDialog):
                 self._theme_combo.setCurrentIndex(i)
                 break
         form.addRow("主题", self._theme_combo)
-
-        self._font_size = QSpinBox()
-        self._font_size.setRange(8, 24)
-        self._font_size.setValue(self._config.font_size)
-        form.addRow("字体大小", self._font_size)
 
         start_year = self._config.get("display", "heatmap_start_year", default=2026)
         self._heatmap_start_year = QSpinBox()
@@ -511,8 +514,8 @@ class SettingsDialog(QDialog):
     def _on_accept(self) -> None:
         self._config.set("general", "minimize_to_tray", value=self._minimize_cb.isChecked())
         self._config.set("general", "auto_lock_minutes", value=self._auto_lock_spin.value())
+        self._config.set("general", "page_size", value=self._page_size_spin.value())
         self._config.set("display", "theme", value=self._theme_combo.currentData())
-        self._config.set("display", "font_size", value=self._font_size.value())
         self._config.set("display", "heatmap_start_year", value=self._heatmap_start_year.value())
         self._config.set("reminders", "enabled", value=self._reminders_cb.isChecked())
         self._config.set(
@@ -537,36 +540,6 @@ class SettingsDialog(QDialog):
                 pid = self._partitions_data[r]["id"]
                 hidden.append(pid)
         self._config.set("general", "hidden_partitions", value=hidden)
-        # Save status/priority config
-        status_cfg = {}
-        for r in range(self._status_table.rowCount()):
-            kw = self._status_table.item(r, 0).text().strip()
-            name = self._status_table.item(r, 1).text().strip()
-            color = self._status_table.item(r, 2).text().strip()
-            from ...models.task_status import TaskStatus
-            builtin_kws = {s.value for s in TaskStatus}
-            if kw in builtin_kws:
-                default = TaskStatus.from_string(kw)
-                if name != default.display_name or color != default.display_color:
-                    status_cfg[kw] = {"display_name": name, "display_color": color}
-            else:
-                status_cfg[kw] = {"display_name": name, "display_color": color}
-        self._config.set("statuses", value=status_cfg)
-
-        priority_cfg = {}
-        for r in range(self._priority_table.rowCount()):
-            lvl = self._priority_table.item(r, 0).text().strip()
-            name = self._priority_table.item(r, 1).text().strip()
-            color = self._priority_table.item(r, 2).text().strip()
-            from ...models.priority import Priority
-            builtin_lvls = {str(p.value) for p in Priority}
-            if lvl in builtin_lvls:
-                p = Priority(int(lvl))
-                if name != p.name or color != p.display_color:
-                    priority_cfg[lvl] = {"display_name": name, "display_color": color}
-            else:
-                priority_cfg[lvl] = {"display_name": name, "display_color": color}
-        self._config.set("priorities", value=priority_cfg)
 
         motd_cfg = {}
         for key, edit in self._motd_edits.items():

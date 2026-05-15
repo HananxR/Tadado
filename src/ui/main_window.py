@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         self._active_partition_id: str | None = None
         self._partition_passwords: dict[str, str] = {}
         self._page: int = 0
-        self._page_size: int = 20
+        self._page_size: int = config.get("general", "page_size", default=20)
         self._total_count: int = 0
 
         self.setWindowTitle("DeskTodoSeq")
@@ -595,6 +595,8 @@ class MainWindow(QMainWindow):
     def _on_page_size_changed(self, text: str) -> None:
         self._page_size = int(text)
         self._page = 0
+        self._config.set("general", "page_size", value=self._page_size)
+        self._config.save()
         self._on_data_changed()
 
     def _reset_pagination(self) -> None:

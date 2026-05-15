@@ -19,6 +19,7 @@ DEFAULT_CONFIG: dict = {
         "hidden_partitions": [],
         "last_partition_id": "",
         "auto_lock_minutes": 10,
+        "page_size": 20,
     },
     "display": {
         "theme": "system",
