@@ -13,9 +13,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QVBoxLayout,
-    QWidget,
 )
 
 from ...models.repository import TaskRepository
@@ -83,45 +81,40 @@ class TimelineDetailDialog(QDialog):
         tag_row.addWidget(save_tags_btn)
         layout.addLayout(tag_row)
 
-        # Scrollable timeline entries
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setStyleSheet(
-            "QScrollArea { border: 1px solid #e0ddd6; border-radius: 6px; background: #fafaf8; }"
+        # Timeline text block (matching edit panel style)
+        from PySide6.QtWidgets import QTextBrowser
+        timeline = QTextBrowser()
+        timeline.setReadOnly(True)
+        timeline.setStyleSheet(
+            "QTextBrowser { background: #fafaf8; border: 1px solid #ddd9d0;"
+            " border-radius: 6px; font-size: 12px; padding: 6px; color: #444; }"
         )
-        container = QWidget()
-        container.setStyleSheet("background: transparent;")
-        cl = QVBoxLayout(container)
-        cl.setContentsMargins(8, 6, 8, 6)
-        cl.setSpacing(4)
 
-        entries: list[tuple[str, str, str]] = []
-        entries.append(("▶", task.status.display_color, f"当前: {task.status.display_name}"))
+        def _row(icon: str, color: str, ts: str, content: str) -> str:
+            return (
+                f'<p style="margin:3px 0;font-family:Consolas,monospace;font-size:12px;">'
+                f'<span style="color:{color};font-weight:bold;">{icon}</span>'
+                f' <span style="color:{color};">{ts:>11}</span>'
+                f' <span style="color:#444;">{content}</span>'
+                f'</p>'
+            )
+
+        rows: list[str] = []
+        sc = task.status.display_color
+        rows.append(_row("▶", sc, _fmt_ts(datetime.now().isoformat(), True),
+                          f"当前: {task.status.display_name}"))
         if task.completed_at:
-            entries.append(("●", "#27ae60", "任务完成 ✓"))
-        for e in reversed(task.activity_log):
-            entries.append(("●", "#f39c12", e.get("content", "")))
-        entries.append(
-            ("○", "#aaa",
-             f"创建任务 ({_fmt_ts(task.created_at.isoformat() if task.created_at else '', True)})")
-        )
+            rows.append(_row("●", "#27ae60", _fmt_ts(task.completed_at.isoformat(), True),
+                              "任务完成 ✓"))
+        for e in reversed(task.activity_log[:10]):
+            ts = _fmt_ts(e.get("ts", ""), True)
+            rows.append(_row("●", "#f39c12", ts, e.get("content", "")))
+        if task.created_at:
+            rows.append(_row("○", "#aaa", _fmt_ts(task.created_at.isoformat(), True),
+                              "创建任务"))
 
-        for icon, color, content in entries:
-            row = QHBoxLayout()
-            row.setSpacing(6)
-            dot = QLabel(f'<span style="color:{color};font-weight:bold;">{icon}</span>')
-            dot.setFixedWidth(16)
-            dot.setTextFormat(Qt.TextFormat.RichText)
-            row.addWidget(dot)
-            text = QLabel(content)
-            text.setWordWrap(True)
-            text.setStyleSheet("color: #444; font-size: 11px;")
-            row.addWidget(text, 1)
-            cl.addLayout(row)
-
-        cl.addStretch()
-        scroll.setWidget(container)
-        layout.addWidget(scroll, 1)
+        timeline.setHtml(f'<div>{"".join(rows)}</div>')
+        layout.addWidget(timeline, 1)
 
         # Buttons
         btn_row = QHBoxLayout()
