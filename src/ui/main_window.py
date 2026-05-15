@@ -673,6 +673,7 @@ class MainWindow(QMainWindow):
         else:
             name = self._get_partition_name(target_id)
             self._partition_btn.setToolTip(f"当前分区：{name}")
+            self._edit_panel.set_active_partition(target_id)
             self._activate_partition(target_id)
             # Ensure partition is always visible in status bar
             self._status_partition.setText(f"  📂 {name}")
@@ -720,6 +721,7 @@ class MainWindow(QMainWindow):
         self._config.set("general", "last_partition_id", value=new_id)
         self._config.save()
         self._update_partition_menu_check()
+        self._edit_panel.set_active_partition(new_id)
         self._reset_pagination()
         # Reset to today filter on partition switch
         today = date.today()

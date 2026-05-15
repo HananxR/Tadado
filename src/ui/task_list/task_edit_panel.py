@@ -194,6 +194,7 @@ class TaskEditPanel(QWidget):
         self._original_md: str = ""
         self._entry_widgets: list[_TimelineEntryWidget] = []
         self._selected_entry: dict | None = None
+        self._draft_partition_id: str | None = None
         self._updating_from_md: bool = False
 
         self.setObjectName("taskEditPanel")
@@ -546,6 +547,10 @@ class TaskEditPanel(QWidget):
     def show_details(self, task: Task) -> None:
         self.load_task(task)
 
+    def set_active_partition(self, partition_id: str | None) -> None:
+        """Set the partition for the next draft task."""
+        self._draft_partition_id = partition_id
+
     def create_draft(self) -> None:
         """Create an in-memory draft TODO task with today's date. Not persisted until saved."""
         today = datetime.now().strftime("%Y-%m-%d")
@@ -832,6 +837,8 @@ class TaskEditPanel(QWidget):
         if is_draft:
             import uuid
             task.id = str(uuid.uuid4())
+            if self._draft_partition_id:
+                task.partition_id = self._draft_partition_id
             self._repository.insert(task)
         else:
             self._repository.update(task)
