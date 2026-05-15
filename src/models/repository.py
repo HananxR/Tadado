@@ -608,6 +608,14 @@ class TaskRepository:
         clauses: list[str] = []
         for sc in sort_by:
             col = _field_map.get(sc.field, sc.field)
-            direction = "ASC" if sc.ascending else "DESC"
-            clauses.append(f"{col} {direction}")
+            if sc.field == "status":
+                # Custom order: URGENT > TODO > DOING > DONE
+                clauses.append(
+                    "CASE status WHEN 'URGENT' THEN 1 WHEN 'TODO' THEN 2 "
+                    "WHEN 'DOING' THEN 3 WHEN 'DONE' THEN 4 ELSE 5 END "
+                    + ("ASC" if sc.ascending else "DESC")
+                )
+            else:
+                direction = "ASC" if sc.ascending else "DESC"
+                clauses.append(f"{col} {direction}")
         return clauses
