@@ -603,9 +603,15 @@ class TaskEditPanel(QWidget):
         QTimer.singleShot(800, lambda: self._md_edit.setStyleSheet(""))
         self._save_btn.setEnabled(True)
         self._delete_btn.setEnabled(False)
+        # Reset status combo to TODO for new draft
+        for i in range(self._status_combo.count()):
+            if self._status_combo.itemData(i) == TaskStatus.TODO:
+                self._status_combo.setCurrentIndex(i)
+                break
         self._status_combo.setEnabled(True)
         self._status_btn.setEnabled(True)
         self._timeline_card.setVisible(False)
+        self._timeline_log.clear()
         # Set pickers for draft
         self._updating_from_md = True
         today_d = datetime.now()
