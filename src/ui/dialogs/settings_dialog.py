@@ -426,22 +426,36 @@ class SettingsDialog(QDialog):
         has_pwd, cur = self._repository.check_partition_password(pid)
         if has_pwd:
             old, ok = QInputDialog.getText(
-                self, "修改密码", "输入旧密码（留空则清除密码）：",
+                self, "修改密码", "输入旧密码（留空清除，忘记请点OK后重置）：",
                 QLineEdit.EchoMode.Password,
             )
             if not ok:
                 return
-            if old and old != cur:
-                QMessageBox.warning(self, "密码错误", "旧密码不正确。")
-                return
             if not old:
+                # Empty = clear password
                 self._repository.set_partition_password(pid, "")
-            else:
+            elif old != cur:
+                # Wrong password — offer reset
+                result = QMessageBox.question(
+                    self, "密码错误",
+                    "旧密码不正确。是否直接设置新密码？（无需旧密码）",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                )
+                if result != QMessageBox.StandardButton.Yes:
+                    return
                 new, ok2 = QInputDialog.getText(
-                    self, "设置新密码", "输入新密码：",
+                    self, "重置密码", "输入新密码（留空则清除）：",
                     QLineEdit.EchoMode.Password,
                 )
-                if ok2 and new:
+                if ok2:
+                    self._repository.set_partition_password(pid, new)
+            else:
+                # Correct password — change it
+                new, ok2 = QInputDialog.getText(
+                    self, "设置新密码", "输入新密码（留空则清除）：",
+                    QLineEdit.EchoMode.Password,
+                )
+                if ok2:
                     self._repository.set_partition_password(pid, new)
         else:
             pwd, ok = QInputDialog.getText(
