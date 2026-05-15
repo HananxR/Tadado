@@ -178,9 +178,15 @@ class TaskListView(QTableView):
         task.raw_md = self._formatter.format(task)
         task.updated_at = datetime.now()
         # Record in activity log
-        task.activity_log.append({
-            "ts": datetime.now().isoformat(),
-            "content": f"状态变更: {old_status.display_name} → {new_status.display_name}",
-        })
+        if new_status == TaskStatus.DONE:
+            task.activity_log.append({
+                "ts": task.completed_at.isoformat() if task.completed_at else datetime.now().isoformat(),
+                "content": f"任务完成 ✓ 截止: {task.deadline_date.isoformat()}" if task.deadline_date else "任务完成 ✓",
+            })
+        else:
+            task.activity_log.append({
+                "ts": datetime.now().isoformat(),
+                "content": f"状态变更: {old_status.display_name} → {new_status.display_name}",
+            })
         self._repository.update(task)
         self._signal_bus.task_status_changed.emit(task, old_status)
