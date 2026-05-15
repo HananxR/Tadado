@@ -828,16 +828,17 @@ class TaskEditPanel(QWidget):
         task.raw_md = self._formatter.format(task)
         task.updated_at = datetime.now()
         if task.status != old_status:
-            task.activity_log.append({
-                "ts": datetime.now().isoformat(),
-                "content": f"状态变更: {old_status.display_name} → {task.status.display_name}",
-            })
-        if task.status == TaskStatus.DONE and old_status != TaskStatus.DONE:
-            task.completed_at = task.deadline_date or datetime.now()
-            task.activity_log.append({
-                "ts": task.completed_at.isoformat(),
-                "content": f"任务完成 ✓ 截止: {task.deadline_date.isoformat()}" if task.deadline_date else "任务完成 ✓",
-            })
+            if task.status == TaskStatus.DONE:
+                task.completed_at = task.deadline_date or datetime.now()
+                task.activity_log.append({
+                    "ts": task.completed_at.isoformat(),
+                    "content": f"任务完成 ✓ 截止: {task.deadline_date.isoformat()}" if task.deadline_date else "任务完成 ✓",
+                })
+            else:
+                task.activity_log.append({
+                    "ts": datetime.now().isoformat(),
+                    "content": f"状态变更: {old_status.display_name} → {task.status.display_name}",
+                })
 
         is_draft = task.id == ""
         if is_draft:
@@ -917,12 +918,13 @@ class TaskEditPanel(QWidget):
                 "ts": task.completed_at.isoformat(),
                 "content": f"任务完成 ✓ 截止: {task.deadline_date.isoformat()}" if task.deadline_date else "任务完成 ✓",
             })
+        else:
+            task.activity_log.append({
+                "ts": datetime.now().isoformat(),
+                "content": f"状态切换: {old_status.display_name} → {new_status.display_name}",
+            })
         task.raw_md = self._formatter.format(task)
         task.updated_at = datetime.now()
-        task.activity_log.append({
-            "ts": datetime.now().isoformat(),
-            "content": f"状态切换: {old_status.display_name} → {new_status.display_name}",
-        })
         self._repository.update(task)
         self._original_md = task.raw_md
         # Update just this row in the model (no full refresh)
