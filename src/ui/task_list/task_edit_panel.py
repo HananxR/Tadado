@@ -291,6 +291,17 @@ class TaskEditPanel(QWidget):
         ec.addWidget(meta_widget)
         layout.addWidget(self._editor_collapsible)
 
+        # Task summary (visible when collapsed)
+        self._task_summary = QLabel()
+        self._task_summary.setTextFormat(Qt.TextFormat.RichText)
+        self._task_summary.setWordWrap(True)
+        self._task_summary.setStyleSheet(
+            "QLabel { color: #444; font-size: 12px; padding: 4px 0;"
+            " background: transparent; }"
+        )
+        self._task_summary.setVisible(False)
+        layout.addWidget(self._task_summary)
+
         # Action buttons
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
@@ -408,6 +419,14 @@ class TaskEditPanel(QWidget):
         self._collapse_btn.setVisible(True)
         self._editor_collapsible.setVisible(False)  # default collapsed
         self._collapse_btn.setText("▼")
+        # Show task summary when collapsed
+        sc = task.status.display_color
+        self._task_summary.setText(
+            f'<span style="background:{sc};color:#fff;padding:1px 6px;border-radius:3px;'
+            f'font-size:10px;">{task.status.display_name}</span>'
+            f' <b>{task.title}</b>'
+        )
+        self._task_summary.setVisible(True)
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(True)
         self._status_combo.setEnabled(True)
@@ -457,6 +476,7 @@ class TaskEditPanel(QWidget):
         self._md_edit.blockSignals(False)
         self._collapse_btn.setVisible(False)
         self._editor_collapsible.setVisible(True)
+        self._task_summary.setVisible(False)
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
         self._status_combo.setEnabled(False)
@@ -501,6 +521,7 @@ class TaskEditPanel(QWidget):
         self._md_edit.blockSignals(False)
         self._collapse_btn.setVisible(False)
         self._editor_collapsible.setVisible(True)
+        self._task_summary.setVisible(False)
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
         self._status_combo.setEnabled(True)
@@ -567,6 +588,7 @@ class TaskEditPanel(QWidget):
         self._draft_banner.setVisible(True)
         self._collapse_btn.setVisible(False)
         self._editor_collapsible.setVisible(True)
+        self._task_summary.setVisible(False)
         self._save_btn.setEnabled(True)
         self._delete_btn.setEnabled(False)
         self._status_combo.setEnabled(True)
@@ -824,6 +846,13 @@ class TaskEditPanel(QWidget):
         self._collapse_btn.setVisible(True)
         self._editor_collapsible.setVisible(False)
         self._collapse_btn.setText("▼")
+        sc = task.status.display_color
+        self._task_summary.setText(
+            f'<span style="background:{sc};color:#fff;padding:1px 6px;border-radius:3px;'
+            f'font-size:10px;">{task.status.display_name}</span>'
+            f' <b>{task.title}</b>'
+        )
+        self._task_summary.setVisible(True)
 
     def _on_delete(self) -> None:
         if not self._current_task:
@@ -847,6 +876,7 @@ class TaskEditPanel(QWidget):
         self._editor_collapsible.setVisible(not collapsed)
         self._collapse_btn.setText("▼" if collapsed else "▲")
         self._collapse_btn.setToolTip("展开编辑区" if collapsed else "折叠编辑区")
+        self._task_summary.setVisible(collapsed)
 
     # ------------------------------------------------------------------
     # Quick status change

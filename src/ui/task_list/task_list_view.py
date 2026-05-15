@@ -69,7 +69,7 @@ class TaskListView(QTableView):
         self._apply_column_widths()
 
     def _apply_column_widths(self) -> None:
-        """7 columns: #, created, content, deadline, priority, status, tags."""
+        """6 columns: #, created, content, deadline, priority, status."""
         h = self.horizontalHeader()
         h.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         h.resizeSection(0, 36)    # 序号
@@ -82,8 +82,6 @@ class TaskListView(QTableView):
         h.resizeSection(4, 45)    # 优先级
         h.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         h.resizeSection(5, 55)    # 状态
-        h.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(6, 80)    # 标签
 
     # ------------------------------------------------------------------
     # Context menu
