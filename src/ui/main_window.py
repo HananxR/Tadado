@@ -934,6 +934,9 @@ class MainWindow(QMainWindow):
         if not self._guard_draft():
             return
         self._stack.setCurrentIndex(0)
+        self.show()
+        self.raise_()
+        self.activateWindow()
         today = date.today()
         f = TaskFilter(date_from=today, date_to=today)
         if self._active_partition_id:
