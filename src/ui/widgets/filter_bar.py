@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLineEdit, QWidget
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QLineEdit, QWidget
 
 from ...models.priority import Priority
 from ...models.task_filter import SortCriterion, TaskFilter
@@ -63,6 +63,9 @@ class FilterBar(QWidget):
         layout.addWidget(self._priority, 1)
 
         # Sort combo
+        sort_label = QLabel("排序：")
+        sort_label.setStyleSheet("font-size: 11px; color: #888;")
+        layout.addWidget(sort_label)
         self._sort = QComboBox()
         self._sort.setObjectName("sortCombo")
         for label in self._SORT_MAP:
