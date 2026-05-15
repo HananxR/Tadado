@@ -11,7 +11,7 @@ from ...models.priority import Priority
 from ...models.task import Task
 from ...models.task_status import TaskStatus
 
-_COLUMN_HEADERS = ["#", "创建时间", "任务内容", "截止时间", "优先级", "状态"]
+_COLUMN_HEADERS = ["#", "创建时间", "任务内容", "截止时间", "优先级", "状态", "标签"]
 
 COL_ROW = 0
 COL_CREATED = 1
@@ -19,6 +19,7 @@ COL_CONTENT = 2
 COL_DEADLINE = 3
 COL_PRIORITY = 4
 COL_STATUS = 5
+COL_TAGS = 6
 
 
 class TaskListModel(QAbstractTableModel):
@@ -136,6 +137,8 @@ class TaskListModel(QAbstractTableModel):
             return task.priority.name
         if col == COL_STATUS:
             return task.status.display_name
+        if col == COL_TAGS:
+            return " ".join(f"#{t}" for t in task.tags)
         return ""
 
     @staticmethod

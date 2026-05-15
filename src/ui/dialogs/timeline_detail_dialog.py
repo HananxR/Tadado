@@ -1,4 +1,4 @@
-"""Read-only timeline detail dialog with copy-MD support."""
+"""Timeline detail dialog with copy-MD and tag editing support."""
 
 from __future__ import annotations
 
@@ -10,13 +10,18 @@ from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
+from ...models.repository import TaskRepository
 from ...models.task import Task
+from ...services.md_formatter import MarkdownTaskFormatter
+from ...utils.signal_bus import get_signal_bus
 
 
 def _fmt_ts(ts, short: bool = False) -> str:
@@ -33,15 +38,17 @@ def _fmt_ts(ts, short: bool = False) -> str:
 
 
 class TimelineDetailDialog(QDialog):
-    """Shows a read-only activity timeline for a task, with a Copy MD button."""
+    """Shows activity timeline for a task, with Copy MD and tag editing."""
 
-    def __init__(self, task: Task, parent: QWidget | None = None) -> None:
+    def __init__(self, task: Task, repository: TaskRepository, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._task = task
+        self._repository = repository
+        self._formatter = MarkdownTaskFormatter()
 
-        self.setWindowTitle(f"活动时间线 — {task.title}")
+        self.setWindowTitle(f"详情 — {task.title}")
         self.setObjectName("timelineDetailDialog")
-        self.resize(500, 480)
+        self.resize(500, 520)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
@@ -58,24 +65,46 @@ class TimelineDetailDialog(QDialog):
         status_label.setStyleSheet("color: #888; font-size: 11px;")
         layout.addWidget(status_label)
 
+        # Tag editing row
+        tag_row = QHBoxLayout()
+        tag_row.setSpacing(6)
+        tag_row.addWidget(QLabel("标签："))
+        tags_text = " ".join(f"#{t}" for t in task.tags)
+        self._tag_edit = QLineEdit()
+        self._tag_edit.setText(tags_text)
+        self._tag_edit.setPlaceholderText("#标签1 #标签2 ...")
+        self._tag_edit.setStyleSheet(
+            "QLineEdit { font-family: Consolas, monospace; font-size: 12px; }"
+        )
+        tag_row.addWidget(self._tag_edit, 1)
+        save_tags_btn = QPushButton("保存标签")
+        save_tags_btn.setObjectName("saveBtn")
+        save_tags_btn.clicked.connect(self._on_save_tags)
+        tag_row.addWidget(save_tags_btn)
+        layout.addLayout(tag_row)
+
         # Scrollable timeline entries
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("QScrollArea { border: 1px solid #e0ddd6; border-radius: 6px; background: #fafaf8; }")
+        scroll.setStyleSheet(
+            "QScrollArea { border: 1px solid #e0ddd6; border-radius: 6px; background: #fafaf8; }"
+        )
         container = QWidget()
         container.setStyleSheet("background: transparent;")
         cl = QVBoxLayout(container)
         cl.setContentsMargins(8, 6, 8, 6)
         cl.setSpacing(4)
 
-        # Build entries (newest first)
         entries: list[tuple[str, str, str]] = []
         entries.append(("▶", task.status.display_color, f"当前: {task.status.display_name}"))
         if task.completed_at:
             entries.append(("●", "#27ae60", "任务完成 ✓"))
         for e in reversed(task.activity_log):
             entries.append(("●", "#f39c12", e.get("content", "")))
-        entries.append(("○", "#aaa", f"创建任务 ({_fmt_ts(task.created_at.isoformat() if task.created_at else '', True)})"))
+        entries.append(
+            ("○", "#aaa",
+             f"创建任务 ({_fmt_ts(task.created_at.isoformat() if task.created_at else '', True)})")
+        )
 
         for icon, color, content in entries:
             row = QHBoxLayout()
@@ -105,6 +134,19 @@ class TimelineDetailDialog(QDialog):
         close_btn.clicked.connect(self.accept)
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
+
+    def _on_save_tags(self) -> None:
+        """Parse tags from #tag1 #tag2 format and save to task."""
+        import re
+        text = self._tag_edit.text().strip()
+        tags = re.findall(r"#([\w一-鿿/\-]+)", text)
+        self._task.tags = tags
+        # Regenerate raw_md with new tags
+        self._task.raw_md = self._formatter.format(self._task)
+        self._task.updated_at = datetime.now()
+        self._repository.update(self._task)
+        get_signal_bus().task_updated.emit(self._task)
+        QMessageBox.information(self, "保存成功", f"标签已更新：{' '.join(f'#{t}' for t in tags)}")
 
     def _on_copy_md(self) -> None:
         task = self._task
