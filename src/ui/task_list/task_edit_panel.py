@@ -353,10 +353,20 @@ class TaskEditPanel(QWidget):
         tc.addWidget(self._timeline_log)
         self._timeline_log.setVisible(False)
 
-        # -- Status quick-toggle --
-        status_row = QHBoxLayout()
-        status_row.setSpacing(6)
-        status_row.addWidget(QLabel("状态切换："))
+        # -- Progress input (status combo + text + button) --
+        progress_label = QLabel("追加进展")
+        progress_label.setStyleSheet("font-size: 11px; color: #888; font-weight: bold;")
+        tc.addWidget(progress_label)
+
+        self._log_edit = QTextEdit()
+        self._log_edit.setPlaceholderText("输入进展内容…")
+        self._log_edit.setMinimumHeight(46)
+        self._log_edit.setMaximumHeight(72)
+        self._log_edit.setEnabled(False)
+        tc.addWidget(self._log_edit)
+
+        progress_btn_row = QHBoxLayout()
+        progress_btn_row.setSpacing(6)
         self._status_combo = QComboBox()
         for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             self._status_combo.addItem(f"● {s.display_name}", s)
@@ -368,41 +378,15 @@ class TaskEditPanel(QWidget):
             )
         self._status_combo.setEnabled(False)
         self._status_combo.setFixedWidth(90)
-        status_row.addWidget(self._status_combo)
-        self._status_btn = QPushButton("切换")
-        self._status_btn.clicked.connect(self._on_quick_status_change)
-        self._status_btn.setEnabled(False)
-        status_row.addWidget(self._status_btn)
-        status_row.addStretch()
-        tc.addLayout(status_row)
-
-        # -- Unified log editor (progress input / detail editor merged) --
-        log_label_row = QHBoxLayout()
-        self._log_editor_label = QLabel("追加进展")
-        self._log_editor_label.setStyleSheet("font-size: 11px; color: #888; font-weight: bold;")
-        log_label_row.addWidget(self._log_editor_label)
-        log_label_row.addStretch()
-        tc.addLayout(log_label_row)
-
-        self._log_edit = QTextEdit()
-        self._log_edit.setPlaceholderText("输入进展内容…")
-        self._log_edit.setMinimumHeight(46)
-        self._log_edit.setMaximumHeight(72)
-        self._log_edit.setEnabled(False)
-        tc.addWidget(self._log_edit)
-
-        # Buttons for the log editor (context-dependent)
-        log_btn_row = QHBoxLayout()
-        log_btn_row.setSpacing(6)
+        progress_btn_row.addWidget(self._status_combo)
 
         self._log_save_btn = QPushButton("追加进展")
         self._log_save_btn.setObjectName("saveBtn")
         self._log_save_btn.clicked.connect(self._on_log_save)
         self._log_save_btn.setEnabled(False)
-
-        log_btn_row.addWidget(self._log_save_btn)
-        log_btn_row.addStretch()
-        tc.addLayout(log_btn_row)
+        progress_btn_row.addWidget(self._log_save_btn)
+        progress_btn_row.addStretch()
+        tc.addLayout(progress_btn_row)
 
         layout.addWidget(self._timeline_card, 6)
         self._timeline_card.setVisible(False)
@@ -428,7 +412,6 @@ class TaskEditPanel(QWidget):
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(True)
         self._status_combo.setEnabled(True)
-        self._status_btn.setEnabled(True)
         self._log_edit.setEnabled(True)
         self._log_save_btn.setEnabled(True)
         self._timeline_card.setVisible(True)
@@ -478,7 +461,6 @@ class TaskEditPanel(QWidget):
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
         self._status_combo.setEnabled(False)
-        self._status_btn.setEnabled(False)
         self._log_edit.setEnabled(False)
         self._log_save_btn.setEnabled(False)
         self._draft_banner.setVisible(False)
@@ -523,7 +505,6 @@ class TaskEditPanel(QWidget):
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(False)
         self._status_combo.setEnabled(True)
-        self._status_btn.setEnabled(True)
         self._log_edit.setEnabled(True)
         self._log_save_btn.setEnabled(True)
         self._preview.setText("")
@@ -606,7 +587,6 @@ class TaskEditPanel(QWidget):
                 self._status_combo.setCurrentIndex(i)
                 break
         self._status_combo.setEnabled(True)
-        self._status_btn.setEnabled(True)
         self._timeline_card.setVisible(False)
         self._timeline_log.clear()
         # Set pickers for draft
@@ -896,43 +876,6 @@ class TaskEditPanel(QWidget):
     # Quick status change
     # ------------------------------------------------------------------
 
-    def _on_quick_status_change(self) -> None:
-        if not self._current_task:
-            return
-        new_status = self._status_combo.currentData()
-        if new_status is None or new_status == self._current_task.status:
-            return
-        task = self._current_task
-        old_status = task.status
-        task.status = new_status
-        if new_status == TaskStatus.DONE:
-            task.completed_at = task.deadline_date or datetime.now()
-            task.activity_log.append({
-                "ts": task.completed_at.isoformat(),
-                "content": f"任务完成 ✓ 截止: {task.deadline_date.isoformat()}" if task.deadline_date else "任务完成 ✓",
-                "status": new_status.value,
-            })
-        else:
-            task.activity_log.append({
-                "ts": datetime.now().isoformat(),
-                "content": f"状态切换: {old_status.display_name} → {new_status.display_name}",
-                "status": new_status.value,
-            })
-        task.raw_md = self._formatter.format(task)
-        task.updated_at = datetime.now()
-        self._repository.update(task)
-        self._original_md = task.raw_md
-        # Update just this row in the model (no full refresh)
-        if self._task_model:
-            self._task_model.update_task(task)
-        self._signal_bus.task_status_changed.emit(task, old_status)
-        self._md_edit.blockSignals(True)
-        self._md_edit.setText(task.raw_md)
-        self._md_edit.blockSignals(False)
-        self._save_btn.setEnabled(False)
-        self._update_preview()
-        self._refresh_timeline()
-
     # ==================================================================
     # Timeline — card-style entries
     # ==================================================================
@@ -999,7 +942,6 @@ class TaskEditPanel(QWidget):
 
     def _reset_log_editor(self) -> None:
         self._selected_entry = None
-        self._log_editor_label.setText("追加进展")
         self._log_edit.blockSignals(True)
         self._log_edit.clear()
         self._log_edit.blockSignals(False)
@@ -1015,26 +957,37 @@ class TaskEditPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _on_log_save(self) -> None:
-        """Always add new progress — the log editor is only for adding."""
-        self._on_add_progress()
-
-    # ------------------------------------------------------------------
-    # Add progress
-    # ------------------------------------------------------------------
-
-    def _on_add_progress(self) -> None:
+        """Add progress: optionally change status + record text, all in one entry."""
         if not self._current_task:
             return
         content = self._log_edit.toPlainText().strip()
-        if not content:
-            return
-        entry = {"ts": datetime.now().isoformat(), "content": content,
-                 "status": self._current_task.status.value}
+        new_status = self._status_combo.currentData()
+        if not content and new_status == self._current_task.status:
+            return  # nothing changed
         task = self._current_task
-        task.activity_log.append(entry)
+        old_status = task.status
+        if new_status and new_status != task.status:
+            task.status = new_status
+            if new_status == TaskStatus.DONE:
+                task.completed_at = task.deadline_date or datetime.now()
+            task.raw_md = self._formatter.format(task)
+        # Record one entry with current status
+        entry_content = content if content else f"状态变更为 {task.status.display_name}"
+        task.activity_log.append({
+            "ts": datetime.now().isoformat(),
+            "content": entry_content,
+            "status": task.status.value,
+        })
         task.updated_at = datetime.now()
         self._repository.update(task)
-        self._signal_bus.task_updated.emit(task)
+        self._original_md = task.raw_md
+        if self._task_model:
+            self._task_model.update_task(task)
+        if task.status != old_status:
+            self._signal_bus.task_status_changed.emit(task, old_status)
+        else:
+            self._signal_bus.task_updated.emit(task)
+        self._log_edit.clear()
         self._refresh_timeline()
 
     # ------------------------------------------------------------------
