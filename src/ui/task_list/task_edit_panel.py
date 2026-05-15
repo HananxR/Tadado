@@ -828,7 +828,8 @@ class TaskEditPanel(QWidget):
                 task.activity_log.append({
                     "ts": task.completed_at.isoformat(),
                     "content": f"任务完成 ✓ 截止: {task.deadline_date.isoformat()}" if task.deadline_date else "任务完成 ✓",
-                })
+                    "status": task.status.value,
+            })
             else:
                 task.activity_log.append({
                     "ts": datetime.now().isoformat(),
@@ -907,11 +908,13 @@ class TaskEditPanel(QWidget):
             task.activity_log.append({
                 "ts": task.completed_at.isoformat(),
                 "content": f"任务完成 ✓ 截止: {task.deadline_date.isoformat()}" if task.deadline_date else "任务完成 ✓",
+                "status": new_status.value,
             })
         else:
             task.activity_log.append({
                 "ts": datetime.now().isoformat(),
                 "content": f"状态切换: {old_status.display_name} → {new_status.display_name}",
+                "status": new_status.value,
             })
         task.raw_md = self._formatter.format(task)
         task.updated_at = datetime.now()
@@ -961,27 +964,21 @@ class TaskEditPanel(QWidget):
             )
 
         rows: list[str] = []
-        # Track status backwards through the log for per-entry context
-        cur_status = task.status
-        cur_color = task.status.display_color
         for e in reversed(task.activity_log):
             ts = _fmt_ts(e.get("ts", ""), True)
             content = e.get("content", "")
-            # Detect status change entries and update tracked status
-            if "状态变更:" in content or "状态切换:" in content:
-                # Extract the OLD status (text before the arrow)
-                import re as _re
-                m = _re.search(r"→\s*(\S+)", content)
-                if m:
-                    try:
-                        cur_status = TaskStatus.from_string(m.group(1))
-                        cur_color = cur_status.display_color
-                    except Exception:
-                        pass
+            st_val = e.get("status", task.status.value)
+            try:
+                st = TaskStatus.from_string(st_val)
+                sc = st.display_color
+                sn = st.display_name
+            except Exception:
+                sc = "#888"
+                sn = st_val
             is_done = "任务完成" in content
             color = "#27ae60" if is_done else "#f39c12"
             rows.append(_row("●", color, ts,
-                              f'<span style="color:{cur_color};">[{cur_status.display_name}]</span> {content}'))
+                              f'<span style="color:{sc};">[{sn}]</span> {content}'))
         if not rows and task.created_at:
             rows.append(_row("○", "#aaa", _fmt_ts(task.created_at.isoformat(), True),
                               "创建任务"))
@@ -1022,7 +1019,8 @@ class TaskEditPanel(QWidget):
         content = self._log_edit.toPlainText().strip()
         if not content:
             return
-        entry = {"ts": datetime.now().isoformat(), "content": content}
+        entry = {"ts": datetime.now().isoformat(), "content": content,
+                 "status": self._current_task.status.value}
         task = self._current_task
         task.activity_log.append(entry)
         task.updated_at = datetime.now()

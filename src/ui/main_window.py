@@ -622,8 +622,13 @@ class MainWindow(QMainWindow):
 
     def _auto_select_first(self) -> None:
         """Auto-select the first (most important) task in the current list.
-        If the list is empty, show an encouraging empty-state message."""
+        If the list is empty, show an encouraging empty-state message.
+        If a task is already being edited, keep it selected."""
         all_tasks = self._task_model.tasks
+        # Keep current selection if it still exists in model
+        cur = self._edit_panel.current_task()
+        if cur and cur.id and any(t.id == cur.id for t in all_tasks):
+            return
         if not all_tasks:
             self._edit_panel.show_empty()
             return
