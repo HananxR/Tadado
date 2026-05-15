@@ -646,11 +646,12 @@ class MainWindow(QMainWindow):
         visible = [p for p in all_partitions if p["id"] not in hidden]
         self._partition_passwords = {p["id"]: p.get("password", "") for p in all_partitions}
 
-        # Rebuild menu (no "全部" — always in a specific partition)
+        # Rebuild menu with checkable items (current partition marked)
         self._partition_menu.clear()
         for p in visible:
             action = self._partition_menu.addAction(p["name"])
             action.setData(p["id"])
+            action.setCheckable(True)
             action.triggered.connect(
                 lambda checked=False, pid=p["id"]: self._on_partition_menu_selected(pid)
             )
@@ -676,6 +677,12 @@ class MainWindow(QMainWindow):
             self._status_partition.setStyleSheet(
                 "color: #5b8def; font-size: 12px; font-weight: bold; padding: 2px 10px;"
             )
+
+    def _update_partition_menu_check(self) -> None:
+        """Mark the currently active partition in the dropdown menu."""
+        active = self._active_partition_id
+        for action in self._partition_menu.actions():
+            action.setChecked(action.data() == active)
 
     def _on_partition_menu_selected(self, new_id: str) -> None:
         """Handle partition switch from menu — check password, then refresh."""
@@ -710,6 +717,7 @@ class MainWindow(QMainWindow):
         self._partition_btn.setToolTip(f"当前分区：{self._get_partition_name(new_id)}")
         self._config.set("general", "last_partition_id", value=new_id)
         self._config.save()
+        self._update_partition_menu_check()
         self._reset_pagination()
         # Reset to today filter on partition switch
         today = date.today()
@@ -755,6 +763,7 @@ class MainWindow(QMainWindow):
         self._splitter_stack.setCurrentIndex(1)
         self._config.set("general", "last_partition_id", value=target_id)
         self._config.save()
+        self._update_partition_menu_check()
         # Show empty: load nothing into task list, stats show 0
         self._task_model.load_tasks([])
         self._edit_panel.clear()
