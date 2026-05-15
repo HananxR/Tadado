@@ -971,11 +971,15 @@ class TaskEditPanel(QWidget):
             )
 
         rows: list[str] = []
+        st = task.status.display_name
+        st_color = task.status.display_color
         for e in reversed(task.activity_log[:10]):
             ts = _fmt_ts(e.get("ts", ""), True)
-            is_done = "任务完成" in e.get("content", "")
+            content = e.get("content", "")
+            is_done = "任务完成" in content
             color = "#27ae60" if is_done else "#f39c12"
-            rows.append(_row("●", color, ts, e.get("content", "")))
+            rows.append(_row("●", color, ts,
+                              f'<span style="color:{st_color};">[{st}]</span> {content}'))
         if not rows and task.created_at:
             rows.append(_row("○", "#aaa", _fmt_ts(task.created_at.isoformat(), True),
                               "创建任务"))
