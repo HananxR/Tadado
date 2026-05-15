@@ -589,6 +589,9 @@ class TaskEditPanel(QWidget):
         self._collapse_btn.setVisible(False)
         self._editor_collapsible.setVisible(True)
         self._task_summary.setVisible(False)
+        # Focus the editor so user can start typing immediately
+        self._md_edit.setFocus()
+        self._md_edit.selectAll()
         self._save_btn.setEnabled(True)
         self._delete_btn.setEnabled(False)
         self._status_combo.setEnabled(True)
