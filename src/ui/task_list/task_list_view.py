@@ -108,6 +108,8 @@ class TaskListView(QTableView):
         for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             action = status_menu.addAction(f"  {s.display_name}")
             action.setData(s)
+            action.setCheckable(True)
+            action.setChecked(s == task.status)
             action.triggered.connect(
                 lambda checked=False, st=s, t=task: self._on_change_status(t, st)
             )
