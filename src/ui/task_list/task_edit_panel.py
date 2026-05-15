@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Callable
 
-from PySide6.QtCore import QDate, QSize, QTime, Qt, Signal
+from PySide6.QtCore import QDate, QSize, QTime, Qt, QTimer, Signal
 from PySide6.QtGui import QPainter, QBrush, QColor, QPen, QPixmap, QTextDocument
 from PySide6.QtWidgets import (
     QApplication,
@@ -589,9 +589,13 @@ class TaskEditPanel(QWidget):
         self._collapse_btn.setVisible(False)
         self._editor_collapsible.setVisible(True)
         self._task_summary.setVisible(False)
-        # Focus the editor so user can start typing immediately
+        # Focus editor and flash it to draw attention
         self._md_edit.setFocus()
         self._md_edit.selectAll()
+        self._md_edit.setStyleSheet(
+            "QTextEdit#mdEditor { border: 2px solid #5b8def; background: #f0f4ff; }"
+        )
+        QTimer.singleShot(800, lambda: self._md_edit.setStyleSheet(""))
         self._save_btn.setEnabled(True)
         self._delete_btn.setEnabled(False)
         self._status_combo.setEnabled(True)
