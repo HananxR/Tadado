@@ -455,7 +455,7 @@ class MainWindow(QMainWindow):
     def _connect_signals(self) -> None:
         bus = self._signal_bus
         bus.scan_completed.connect(self._on_data_changed)
-        bus.task_created.connect(self._on_data_changed)
+        bus.task_created.connect(self._on_task_created)
         bus.task_updated.connect(self._on_data_changed)
         bus.task_deleted.connect(self._on_task_deleted)
         bus.task_status_changed.connect(self._on_data_changed)
@@ -550,6 +550,23 @@ class MainWindow(QMainWindow):
                 "color: #5b8def; font-size: 12px; font-weight: bold;"
                 " padding: 2px 10px;"
             )
+
+    def _on_task_created(self, task: Task) -> None:
+        """Refresh and select the newly created task."""
+        self._on_data_changed()
+        model = self._task_view.model()
+        if model is None:
+            return
+        for row in range(model.rowCount()):
+            idx = model.index(row, 0)
+            t = idx.data(Qt.ItemDataRole.UserRole)
+            if t and t.id == task.id:
+                sm = self._task_view.selectionModel()
+                if sm is not None:
+                    sm.setCurrentIndex(idx, sm.SelectionFlag.SelectCurrent | sm.SelectionFlag.Rows)
+                self._task_view.scrollTo(idx)
+                self._edit_panel.load_task(task)
+                break
 
     def _on_task_deleted(self, task_id: str) -> None:
         if self._edit_panel.current_task() and self._edit_panel.current_task().id == task_id:
