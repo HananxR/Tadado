@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from datetime import datetime
 from typing import Callable
 
@@ -967,7 +969,14 @@ class TaskEditPanel(QWidget):
         for e in reversed(task.activity_log):
             ts = _fmt_ts(e.get("ts", ""), True)
             content = e.get("content", "")
-            st_val = e.get("status", task.status.value)
+            st_val = e.get("status", "")
+            if not st_val:
+                # Legacy entry: derive status from content or use current
+                if "状态切换:" in content or "状态变更:" in content:
+                    m = re.search(r"→\s*(\S+)", content)
+                    st_val = m.group(1) if m else task.status.value
+                else:
+                    st_val = task.status.value
             try:
                 st = TaskStatus.from_string(st_val)
                 sc = st.display_color
