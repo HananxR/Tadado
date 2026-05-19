@@ -98,7 +98,7 @@ class SettingsDialog(QDialog):
         form.addRow("默认每页条数", self._page_size_spin)
 
         self._default_sort_combo = QComboBox()
-        SORT_LABELS = {"status": "状态", "deadline": "截止日", "priority": "优先级", "created": "创建时间", "title": "标题"}
+        SORT_LABELS = {"status": "状态", "deadline": "截止日", "created": "创建时间", "title": "标题"}
         for key, label in SORT_LABELS.items():
             self._default_sort_combo.addItem(label, key)
         current_sort = self._config.get("general", "default_sort", default="status")
@@ -181,137 +181,6 @@ class SettingsDialog(QDialog):
         form.addRow("完成后天数", self._archive_days)
 
         return w
-
-    # ------------------------------------------------------------------
-    # Fields tab (status / priority configuration)
-    # ------------------------------------------------------------------
-
-    def _build_fields_tab(self) -> QWidget:
-        from ...models.task_status import TaskStatus
-        from ...models.priority import Priority
-
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setSpacing(8)
-
-        sub_tabs = QTabWidget()
-
-        # --- Status sub-tab ---
-        sw = QWidget()
-        sw_layout = QVBoxLayout(sw)
-        self._status_table = QTableWidget(0, 3)
-        self._status_table.setHorizontalHeaderLabels(["关键字", "显示名", "颜色"])
-        self._status_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        sw_layout.addWidget(self._status_table)
-
-        s_btn_row = QHBoxLayout()
-        s_add = QPushButton("添加")
-        s_add.clicked.connect(self._on_add_status)
-        s_reset = QPushButton("恢复默认")
-        s_reset.clicked.connect(self._on_reset_statuses)
-        s_btn_row.addWidget(s_add)
-        s_btn_row.addWidget(s_reset)
-        s_btn_row.addStretch()
-        sw_layout.addLayout(s_btn_row)
-        sub_tabs.addTab(sw, "状态配置")
-
-        # --- Priority sub-tab ---
-        pw = QWidget()
-        pw_layout = QVBoxLayout(pw)
-        self._priority_table = QTableWidget(0, 3)
-        self._priority_table.setHorizontalHeaderLabels(["等级", "显示名", "颜色"])
-        self._priority_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        pw_layout.addWidget(self._priority_table)
-
-        p_btn_row = QHBoxLayout()
-        p_add = QPushButton("添加")
-        p_add.clicked.connect(self._on_add_priority)
-        p_reset = QPushButton("恢复默认")
-        p_reset.clicked.connect(self._on_reset_priorities)
-        p_btn_row.addWidget(p_add)
-        p_btn_row.addWidget(p_reset)
-        p_btn_row.addStretch()
-        pw_layout.addLayout(p_btn_row)
-        sub_tabs.addTab(pw, "优先级配置")
-
-        layout.addWidget(sub_tabs)
-        self._populate_status_table()
-        self._populate_priority_table()
-        return w
-
-    def _populate_status_table(self) -> None:
-        from ...models.task_status import TaskStatus
-        self._status_table.setRowCount(0)
-        custom = self._config.get("statuses", default={})
-        for s in TaskStatus:
-            row = self._status_table.rowCount()
-            self._status_table.insertRow(row)
-            kw_item = QTableWidgetItem(s.value)
-            kw_item.setFlags(kw_item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # built-in: read-only
-            kw_item.setToolTip("内置")
-            self._status_table.setItem(row, 0, kw_item)
-            name = custom.get(s.value, {}).get("display_name", s.display_name)
-            self._status_table.setItem(row, 1, QTableWidgetItem(name))
-            color = custom.get(s.value, {}).get("display_color", s.display_color)
-            self._status_table.setItem(row, 2, QTableWidgetItem(color))
-        for kw, cfg in custom.items():
-            if kw not in {s.value for s in TaskStatus}:
-                row = self._status_table.rowCount()
-                self._status_table.insertRow(row)
-                self._status_table.setItem(row, 0, QTableWidgetItem(kw))
-                self._status_table.setItem(row, 1, QTableWidgetItem(cfg.get("display_name", kw)))
-                self._status_table.setItem(row, 2, QTableWidgetItem(cfg.get("display_color", "#888")))
-
-    def _populate_priority_table(self) -> None:
-        from ...models.priority import Priority
-        self._priority_table.setRowCount(0)
-        custom = self._config.get("priorities", default={})
-        for p in Priority:
-            if p == Priority.NONE:
-                continue
-            row = self._priority_table.rowCount()
-            self._priority_table.insertRow(row)
-            kw_item = QTableWidgetItem(str(p.value))
-            kw_item.setFlags(kw_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            kw_item.setToolTip("内置")
-            self._priority_table.setItem(row, 0, kw_item)
-            name = custom.get(str(p.value), {}).get("display_name", p.name)
-            self._priority_table.setItem(row, 1, QTableWidgetItem(name))
-            color = custom.get(str(p.value), {}).get("display_color", p.display_color)
-            self._priority_table.setItem(row, 2, QTableWidgetItem(color))
-        for lvl, cfg in custom.items():
-            if int(lvl) not in {p.value for p in Priority}:
-                row = self._priority_table.rowCount()
-                self._priority_table.insertRow(row)
-                self._priority_table.setItem(row, 0, QTableWidgetItem(lvl))
-                self._priority_table.setItem(row, 1, QTableWidgetItem(cfg.get("display_name", lvl)))
-                self._priority_table.setItem(row, 2, QTableWidgetItem(cfg.get("display_color", "#888")))
-
-    def _on_add_status(self) -> None:
-        kw, ok = QInputDialog.getText(self, "添加状态", "关键字 (大写字母)：")
-        if ok and kw.strip():
-            row = self._status_table.rowCount()
-            self._status_table.insertRow(row)
-            self._status_table.setItem(row, 0, QTableWidgetItem(kw.strip().upper()))
-            self._status_table.setItem(row, 1, QTableWidgetItem(kw.strip()))
-            self._status_table.setItem(row, 2, QTableWidgetItem("#888888"))
-
-    def _on_reset_statuses(self) -> None:
-        self._config.set("statuses", value={})
-        self._populate_status_table()
-
-    def _on_add_priority(self) -> None:
-        lvl, ok = QInputDialog.getText(self, "添加优先级", "等级数字 (4+)：")
-        if ok and lvl.strip().isdigit():
-            row = self._priority_table.rowCount()
-            self._priority_table.insertRow(row)
-            self._priority_table.setItem(row, 0, QTableWidgetItem(lvl.strip()))
-            self._priority_table.setItem(row, 1, QTableWidgetItem(lvl.strip()))
-            self._priority_table.setItem(row, 2, QTableWidgetItem("#888888"))
-
-    def _on_reset_priorities(self) -> None:
-        self._config.set("priorities", value={})
-        self._populate_priority_table()
 
     # ------------------------------------------------------------------
     # Partitions tab
@@ -543,8 +412,8 @@ class SettingsDialog(QDialog):
 
 <h3>1.1 Markdown 即数据</h3>
 <p>DeskTodoSeq 以 <b>Markdown 文本行为任务的最小单元</b>。每一条任务都是一行标准的 Markdown：</p>
-<pre style="background:#f5f6fa;padding:8px;border-radius:4px;">- [ ] TODO [#A] &lt;2026-05-20&gt; 重构认证模块 #backend</pre>
-<p>这条文本 <b>既是用户看到的，也是数据库存储的规范格式</b>。结构化字段（状态、优先级、日期、标签）从 Markdown 派生，始终可通过解析器重新生成——<b>raw_md 是唯一真相源（Single Source of Truth）</b>。</p>
+<pre style="background:#f5f6fa;padding:8px;border-radius:4px;">- [ ] TODO &lt;2026-05-20&gt; 重构认证模块 #backend</pre>
+<p>这条文本 <b>既是用户看到的，也是数据库存储的规范格式</b>。结构化字段（状态、日期、标签）从 Markdown 派生，始终可通过解析器重新生成——<b>raw_md 是唯一真相源（Single Source of Truth）</b>。</p>
 
 <h3>1.2 本地优先 · 隐私至上</h3>
 <p>所有数据存储在本地 SQLite 数据库中，无需网络连接、无需注册账号。支持分区密码保护，敏感任务可加密隔离。</p>
@@ -571,7 +440,7 @@ class SettingsDialog(QDialog):
 │  notifier · archiver · recurrence           │
 ├─────────────────────────────────────────────┤
 │  领域模型层 (src/models/)                   │
-│  Task · TaskStatus · Priority · Partition   │
+│  Task · TaskStatus · Partition               │
 │  TaskFilter · TaskRepository (SQLite)       │
 ├─────────────────────────────────────────────┤
 │  工具层 (src/utils/)                        │
@@ -584,7 +453,7 @@ class SettingsDialog(QDialog):
 用户输入 Markdown
     │
     ▼ MarkdownTaskParser.parse()
-ParsedTask(status, priority, deadline, title, tags...)
+ParsedTask(status, deadline, title, tags...)
     │
     ▼ MarkdownTaskFormatter.format()
 Task(raw_md, title, status, ...)  ← 规范化后的领域对象
@@ -612,11 +481,10 @@ SQLite (raw_md + 结构化列 + FTS5 全文索引)
 
 <h3>3.1 任务创建与 Markdown 编辑</h3>
 <p>点击工具栏 <b>+ 新建</b> 按钮（或 <kbd>Ctrl+N</kbd>），编辑面板自动生成今日日期的 TODO 模板：</p>
-<pre style="background:#f5f6fa;padding:8px;border-radius:4px;">- [ ] TODO [#A] &lt;2026-05-15&gt; 新任务</pre>
+<pre style="background:#f5f6fa;padding:8px;border-radius:4px;">- [ ] TODO &lt;2026-05-15&gt; 新任务</pre>
 <p><b>Markdown 语法规则：</b></p>
 <ul>
 <li><b>状态关键字</b>：<code>TODO</code> / <code>DOING</code> / <code>DONE</code> / <code>URGENT</code>——位于 <code>- [ ]</code> 之后</li>
-<li><b>优先级</b>：<code>[#A]</code> <code>[#B]</code> <code>[#C]</code>——A 最高，C 最低</li>
 <li><b>截止日期</b>：<code>&lt;YYYY-MM-DD&gt;</code> 或 <code>&lt;YYYY-MM-DD HH:MM&gt;</code></li>
 <li><b>标签</b>：<code>#标签名</code>——可多个，置于行末</li>
 </ul>

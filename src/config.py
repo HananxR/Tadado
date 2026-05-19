@@ -49,7 +49,6 @@ DEFAULT_CONFIG: dict = {
         "new_task": "Ctrl+N",
     },
     "statuses": {},
-    "priorities": {},
     "motd": {
         "today": "今日无事，宜放松身心 🌿",
         "week": "本周清风徐来，按自己的节奏前行 🚶",

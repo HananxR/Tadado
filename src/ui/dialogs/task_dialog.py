@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...models.priority import Priority
 from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...models.task_status import TaskStatus
@@ -67,14 +66,14 @@ class TaskDialog(QDialog):
         # Markdown input
         root.addWidget(QLabel("Markdown 任务："))
         hint = QLabel(
-            '格式：<tt>- [ ] TODO [#A] &lt;2026-05-20&gt; 任务标题 #标签</tt>'
+            '格式：<tt>- [ ] TODO &lt;2026-05-20&gt; 任务标题 #标签</tt>'
         )
         hint.setObjectName("formatHint")
         root.addWidget(hint)
 
         self._md_edit = QLineEdit()
         self._md_edit.setObjectName("mdEdit")
-        self._md_edit.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 任务标题 #标签")
+        self._md_edit.setPlaceholderText("- [ ] TODO <2026-05-20> 任务标题 #标签")
         self._md_edit.textChanged.connect(self._update_preview)
         root.addWidget(self._md_edit)
 
@@ -117,7 +116,6 @@ class TaskDialog(QDialog):
             parsed = self._parser.parse(text)
             parts = [
                 f"状态={parsed.status.display_name}",
-                f"优先级={parsed.priority.display_tag or '无'}",
             ]
             if parsed.scheduled_date:
                 parts.append(f"计划={parsed.scheduled_date.isoformat()}")
@@ -144,7 +142,7 @@ class TaskDialog(QDialog):
                 "解析失败",
                 "无法解析 Markdown 格式。\n\n"
                 "正确格式示例：\n"
-                "- [ ] TODO [#A] <2026-05-20> 标题 #标签",
+                "- [ ] TODO <2026-05-20> 标题 #标签",
             )
             return
 
@@ -155,7 +153,6 @@ class TaskDialog(QDialog):
             self._task.raw_md = text
             self._task.title = parsed.clean_title
             self._task.status = parsed.status
-            self._task.priority = parsed.priority
             self._task.tags = parsed.tags
             self._task.scheduled_date = parsed.scheduled_date
             self._task.deadline_date = parsed.deadline_date
@@ -170,7 +167,6 @@ class TaskDialog(QDialog):
                 raw_md=text,
                 title=parsed.clean_title,
                 status=parsed.status,
-                priority=parsed.priority,
                 tags=parsed.tags,
                 scheduled_date=parsed.scheduled_date,
                 deadline_date=parsed.deadline_date,

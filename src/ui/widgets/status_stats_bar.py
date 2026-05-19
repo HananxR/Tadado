@@ -175,7 +175,7 @@ class StatusStatsBar(QWidget):
             f.statuses = {self._active_status}
         if self._active_partition_id:
             f.partition_id = self._active_partition_id
-        f.sort_by = [SortCriterion(field="priority", ascending=False)]
+        f.sort_by = [SortCriterion(field="deadline", ascending=True)]
         return f
 
     # ------------------------------------------------------------------

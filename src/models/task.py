@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Optional
 
-from .priority import Priority
 from .task_status import TaskStatus
 
 
@@ -16,7 +15,6 @@ class Task:
     raw_md: str
     title: str
     status: TaskStatus = TaskStatus.TODO
-    priority: Priority = Priority.NONE
     tags: list[str] = field(default_factory=list)
     scheduled_date: Optional[date] = None
     deadline_date: Optional[date] = None
@@ -31,6 +29,7 @@ class Task:
     parent_id: Optional[str] = None
     notes: Optional[str] = None
     activity_log: list[dict] = field(default_factory=list)
+    progress: int = 0
 
     @property
     def is_overdue(self) -> bool:

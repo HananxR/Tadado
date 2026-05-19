@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
-from .priority import Priority
 from .task_status import TaskStatus
 
 
@@ -12,7 +11,7 @@ from .task_status import TaskStatus
 class SortCriterion:
     """A single sort dimension for task list ordering."""
 
-    field: str  # "deadline" | "priority" | "created" | "status" | "title" | "scheduled"
+    field: str  # "deadline" | "created" | "status" | "title" | "scheduled"
     ascending: bool = True
 
 
@@ -22,8 +21,6 @@ class TaskFilter:
 
     search_text: str = ""
     statuses: Optional[set[TaskStatus]] = None  # None means all
-    priorities: Optional[set[Priority]] = None
-    min_priority: Optional[Priority] = None
     tags: Optional[set[str]] = None
     partition_id: Optional[str] = None  # None means all partitions
     date_from: Optional[date] = None

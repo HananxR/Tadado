@@ -7,7 +7,6 @@ from typing import Any
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor, QFont as QtFont
 
-from ...models.priority import Priority
 from ...models.task import Task
 from ...models.task_status import TaskStatus
 
@@ -61,9 +60,6 @@ class TaskListModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.UserRole:
             return task
-
-        if role == Qt.ItemDataRole.BackgroundRole:
-            return self._background_color(task)
 
         if role == Qt.ItemDataRole.TextAlignmentRole:
             return self._alignment(col)
@@ -146,30 +142,9 @@ class TaskListModel(QAbstractTableModel):
         return None
 
     @staticmethod
-    def _background_color(task: Task) -> QColor | None:
-        # Priority-based row tint
-        if task.priority == Priority.A:
-            return QColor("#ffe8e8")  # red tint — highest
-        if task.priority == Priority.B:
-            return QColor("#fff8e0")  # yellow tint — medium
-        if task.priority == Priority.C:
-            return QColor("#e8f8e8")  # green tint — low
-        return None
-
-    @staticmethod
     def _calc_progress(task: Task) -> str:
-        """Progress 0-100% based on time elapsed from creation to deadline."""
-        from datetime import date as _date
-        if not task.deadline_date or not task.created_at:
-            return "—"
-        created_date = task.created_at.date()
-        today = _date.today()
-        total = (task.deadline_date - created_date).days
-        if total <= 0:
-            return "100%" if today >= task.deadline_date else "—"
-        elapsed = (today - created_date).days
-        pct = max(0, min(100, int(elapsed / total * 100)))
-        return f"{pct}%"
+        """Progress 0-100% from Task.progress field (manually set by user)."""
+        return f"{task.progress}%"
 
     @staticmethod
     def _alignment(col: int) -> Qt.AlignmentFlag:

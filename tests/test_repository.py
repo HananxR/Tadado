@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from src.models.priority import Priority
 from src.models.repository import TaskRepository
 from src.models.task import Task
 from src.models.task_filter import SortCriterion, TaskFilter
@@ -16,7 +15,6 @@ def _make_task(
     task_id: str | None = None,
     title: str = "测试任务",
     status: TaskStatus = TaskStatus.TODO,
-    priority: Priority = Priority.NONE,
     tags: list[str] | None = None,
     deadline_date: date | None = None,
     scheduled_date: date | None = None,
@@ -28,7 +26,6 @@ def _make_task(
         raw_md=f"- [{'x' if status == TaskStatus.DONE else ' '}] {status.value} {title}",
         title=title,
         status=status,
-        priority=priority,
         tags=tags or [],
         scheduled_date=scheduled_date,
         deadline_date=deadline_date,
@@ -100,21 +97,14 @@ class TestSearch:
         statuses = {r.status for r in results}
         assert statuses == {TaskStatus.TODO, TaskStatus.DOING}
 
-    def test_priority_filter(self, repository: TaskRepository) -> None:
-        repository.insert(_make_task(task_id="1", priority=Priority.A))
-        repository.insert(_make_task(task_id="2", priority=Priority.C))
-        results = repository.search(TaskFilter(min_priority=Priority.B))
-        assert len(results) == 1
-        assert results[0].priority == Priority.A
-
     def test_sorting(self, repository: TaskRepository) -> None:
-        repository.insert(_make_task(task_id="1", priority=Priority.A))
-        repository.insert(_make_task(task_id="2", priority=Priority.C))
-        repository.insert(_make_task(task_id="3", priority=Priority.B))
+        repository.insert(_make_task(task_id="1", title="C任务"))
+        repository.insert(_make_task(task_id="2", title="A任务"))
+        repository.insert(_make_task(task_id="3", title="B任务"))
         results = repository.search(
-            TaskFilter(sort_by=[SortCriterion("priority", ascending=False)])
+            TaskFilter(sort_by=[SortCriterion("title", ascending=True)])
         )
-        assert [r.priority.value for r in results] == [3, 2, 1]
+        assert [r.title for r in results] == ["A任务", "B任务", "C任务"]
 
     def test_limit_offset(self, repository: TaskRepository) -> None:
         for i in range(10):

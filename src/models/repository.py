@@ -8,7 +8,6 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from .priority import Priority
 from .task import Task
 from .task_filter import SortCriterion, TaskFilter
 from .task_status import TaskStatus
@@ -71,17 +70,18 @@ _TASK_COLUMNS = [
     "archived", "archived_at", "recurrence_rule", "parent_id",
     "partition_id", "notes",
     "activity_log",
+    "progress",
 ]
 
 
 def _row_to_task(row: tuple) -> Task:
     """Convert a database row tuple to a Task dataclass."""
     (
-        id_, raw_md, title, status_str, priority_int, tags_json,
+        id_, raw_md, title, status_str, _priority_int, tags_json,
         scheduled_str, deadline_str, deadline_time_str,
         created_str, updated_str, completed_str,
         archived_int, archived_str, recurrence, parent_id, partition_id, notes,
-        activity_log_json,
+        activity_log_json, progress_int,
     ) = row
 
     return Task(
@@ -89,7 +89,6 @@ def _row_to_task(row: tuple) -> Task:
         raw_md=raw_md,
         title=title,
         status=TaskStatus.from_string(status_str),
-        priority=Priority.from_level(priority_int),
         tags=json.loads(tags_json) if tags_json else [],
         scheduled_date=_parse_date(scheduled_str),
         deadline_date=_parse_date(deadline_str),
@@ -104,6 +103,7 @@ def _row_to_task(row: tuple) -> Task:
         partition_id=partition_id,
         notes=notes,
         activity_log=json.loads(activity_log_json) if activity_log_json else [],
+        progress=progress_int if progress_int else 0,
     )
 
 
@@ -114,7 +114,7 @@ def _task_to_row(task: Task) -> tuple:
         task.raw_md,
         task.title,
         task.status.value,
-        task.priority.value,
+        0,  # priority (deprecated, kept for DB compat)
         json.dumps(task.tags, ensure_ascii=False),
         task.scheduled_date.isoformat() if task.scheduled_date else None,
         task.deadline_date.isoformat() if task.deadline_date else None,
@@ -129,6 +129,7 @@ def _task_to_row(task: Task) -> tuple:
         task.partition_id,
         task.notes,
         json.dumps(task.activity_log, ensure_ascii=False) if task.activity_log else "[]",
+        task.progress,
     )
 
 
@@ -180,6 +181,10 @@ class TaskRepository:
             pass
         try:
             self._conn.execute("ALTER TABLE partitions ADD COLUMN password TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            self._conn.execute("ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
         # Migrate legacy WAIT/LATER status to TODO
@@ -293,17 +298,6 @@ class TaskRepository:
             placeholders = ", ".join("?" for _ in status_values)
             where_clauses.append(f"status IN ({placeholders})")
             params.extend(status_values)
-
-        # Priority filter
-        if filter_.priorities is not None:
-            pri_values = [p.value for p in filter_.priorities]
-            placeholders = ", ".join("?" for _ in pri_values)
-            where_clauses.append(f"priority IN ({placeholders})")
-            params.extend(pri_values)
-
-        if filter_.min_priority is not None:
-            where_clauses.append("priority >= ?")
-            params.append(filter_.min_priority.value)
 
         # Tag filter (each tag must be present)
         if filter_.tags:
@@ -610,7 +604,6 @@ class TaskRepository:
             "deadline": "deadline_date",
             "created": "created_at",
             "status": "status",
-            "priority": "priority",
             "title": "title",
             "scheduled": "scheduled_date",
         }

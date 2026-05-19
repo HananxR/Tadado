@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from ..models.priority import Priority
 from ..models.task import Task
 from ..models.task_status import TaskStatus
 
@@ -17,7 +16,6 @@ class MarkdownTaskFormatter:
         """
         return self.format_fields(
             status=task.status,
-            priority=task.priority,
             scheduled_date=task.scheduled_date,
             deadline_date=task.deadline_date,
             deadline_time=task.deadline_time,
@@ -28,7 +26,6 @@ class MarkdownTaskFormatter:
     @staticmethod
     def format_fields(
         status: TaskStatus = TaskStatus.TODO,
-        priority: Priority = Priority.NONE,
         scheduled_date: str | None = None,
         deadline_date: str | None = None,
         deadline_time: str | None = None,
@@ -39,7 +36,6 @@ class MarkdownTaskFormatter:
 
         Args:
             status: Task status keyword.
-            priority: Priority level.
             scheduled_date: Scheduled date as YYYY-MM-DD string (or None).
             deadline_date: Deadline date as YYYY-MM-DD string (or None).
             deadline_time: Deadline time as HH:MM string (or None).
@@ -54,10 +50,6 @@ class MarkdownTaskFormatter:
 
         # Status keyword
         parts.append(status.value)
-
-        # Priority
-        if priority != Priority.NONE:
-            parts.append(f"[#{priority.name}]")
 
         # Scheduled date
         if scheduled_date:

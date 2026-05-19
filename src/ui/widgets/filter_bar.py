@@ -1,11 +1,10 @@
-"""Horizontal filter bar with search, status, priority, and sort controls."""
+"""Horizontal filter bar with search, status, and sort controls."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QLineEdit, QWidget
 
-from ...models.priority import Priority
 from ...models.task_filter import SortCriterion, TaskFilter
 from ...models.task_status import TaskStatus
 
@@ -17,7 +16,6 @@ class FilterBar(QWidget):
 
     _SORT_MAP: dict[str, str] = {
         "截止日": "deadline",
-        "优先级": "priority",
         "创建时间": "created",
         "状态": "status",
         "标题": "title",
@@ -52,16 +50,6 @@ class FilterBar(QWidget):
         self._status.currentIndexChanged.connect(self._on_filter_changed)
         layout.addWidget(self._status, 1)
 
-        # Priority combo (with level mapping)
-        self._priority = QComboBox()
-        self._priority.setObjectName("priorityFilter")
-        self._priority.addItem("优先级", None)
-        _PRIORITY_LABELS = {Priority.A: "A (最高)", Priority.B: "B (中等)", Priority.C: "C (低)"}
-        for p in (Priority.A, Priority.B, Priority.C):
-            self._priority.addItem(_PRIORITY_LABELS.get(p, p.display_tag), p)
-        self._priority.currentIndexChanged.connect(self._on_filter_changed)
-        layout.addWidget(self._priority, 1)
-
         # Sort combo
         sort_label = QLabel("排序：")
         sort_label.setStyleSheet("font-size: 11px; color: #888;")
@@ -85,10 +73,6 @@ class FilterBar(QWidget):
         if status_data is not None:
             f.statuses = {status_data}
 
-        priority_data = self._priority.currentData()
-        if priority_data is not None:
-            f.min_priority = priority_data
-
         sort_label = self._sort.currentText()
         field = self._SORT_MAP.get(sort_label, "deadline")
         f.sort_by = [SortCriterion(field=field, ascending=True)]
@@ -98,7 +82,6 @@ class FilterBar(QWidget):
     def reset(self) -> None:
         self._search.clear()
         self._status.setCurrentIndex(0)
-        self._priority.setCurrentIndex(0)
 
     def set_sort(self, field: str) -> None:
         """Set the sort combo to the given field name (e.g. 'status', 'deadline')."""
@@ -113,13 +96,13 @@ class FilterBar(QWidget):
         self.reset()
         if preset == "today":
             self._status.setCurrentIndex(0)
-            self._priority.setCurrentIndex(0)
+            pass  # priority removed
         elif preset == "week":
             self._status.setCurrentIndex(0)
-            self._priority.setCurrentIndex(0)
+            pass  # priority removed
         elif preset == "overdue":
             self._status.setCurrentIndex(0)
-            self._priority.setCurrentIndex(0)
+            pass  # priority removed
 
     # ------------------------------------------------------------------
     # Internal

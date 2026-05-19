@@ -7,13 +7,11 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
 
-from ..models.priority import Priority
 from ..models.task_status import TaskStatus
 
 # Pattern breakdown:
 #   ^- \[([ xX])\]                          checkbox
 #   \s+(TODO|DOING|DONE|URGENT|WAIT|LATER)   status keyword
-#   (?:\s+\[#([ABC])\])?                     optional priority
 #   (?:\s+<(\d{4}-\d{2}-\d{2})>)?            optional scheduled date
 #   (?:\s+<(\d{4}-\d{2}-\d{2})>)?            optional deadline date
 #   \s+(.+)$                                  title + tags
@@ -21,7 +19,6 @@ from ..models.task_status import TaskStatus
 _TASK_LINE_PATTERN = re.compile(
     r"^-\s*\[([ xX])\]\s+"
     r"(TODO|DOING|DONE|URGENT|WAIT|LATER)"
-    r"(?:\s+\[#([ABC])\])?"
     r"(?:\s+<(\d{4}-\d{2}-\d{2})>)?"
     r"(?:\s+<(\d{4}-\d{2}-\d{2})"
     r"(?:[T ](\d{2}:\d{2}))?>)?"
@@ -39,7 +36,6 @@ class ParsedTask:
 
     checkbox_checked: bool
     status: TaskStatus
-    priority: Priority
     scheduled_date: Optional[date]
     deadline_date: Optional[date]
     deadline_time: Optional[str] = None
@@ -72,12 +68,10 @@ class MarkdownTaskParser:
 
         checkbox_char = match.group(1)
         status = TaskStatus.from_string(match.group(2))
-        priority_str = match.group(3)
-        priority = Priority.from_string(priority_str) if priority_str else Priority.NONE
-        scheduled_date = self._parse_date_safe(match.group(4))
-        deadline_date = self._parse_date_safe(match.group(5))
-        deadline_time = match.group(6)
-        title_text = match.group(7).strip()
+        scheduled_date = self._parse_date_safe(match.group(3))
+        deadline_date = self._parse_date_safe(match.group(4))
+        deadline_time = match.group(5)
+        title_text = match.group(6).strip()
 
         tags = self._extract_tags(title_text)
         clean_title = _TAG_PATTERN.sub("", title_text).strip()
@@ -85,7 +79,6 @@ class MarkdownTaskParser:
         return ParsedTask(
             checkbox_checked=checkbox_char.lower() == "x",
             status=status,
-            priority=priority,
             scheduled_date=scheduled_date,
             deadline_date=deadline_date,
             deadline_time=deadline_time,
@@ -125,7 +118,6 @@ class MarkdownTaskParser:
         """
         status = TaskStatus.TODO
         checkbox = False
-        priority = Priority.NONE
         scheduled_date = None
         deadline_date = None
         remaining = line
@@ -143,12 +135,6 @@ class MarkdownTaskParser:
                 status = TaskStatus.from_string(kw)
                 remaining = remaining[len(kw):].strip()
                 break
-
-        # Extract priority
-        pri_match = re.match(r"\[#([ABC])\]\s*", remaining, re.IGNORECASE)
-        if pri_match:
-            priority = Priority.from_string(pri_match.group(1))
-            remaining = remaining[pri_match.end():].strip()
 
         # Extract dates with optional time (greedy, up to two)
         deadline_time = None
@@ -175,7 +161,6 @@ class MarkdownTaskParser:
         return ParsedTask(
             checkbox_checked=checkbox or (status == TaskStatus.DONE),
             status=status,
-            priority=priority,
             scheduled_date=scheduled_date,
             deadline_date=deadline_date,
             deadline_time=deadline_time,

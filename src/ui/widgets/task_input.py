@@ -30,7 +30,7 @@ class TaskInputWidget(QWidget):
 
         self._input = QLineEdit()
         self._input.setObjectName("taskInput")
-        self._input.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 输入Markdown任务，Enter创建  |  Ctrl+N 聚焦")
+        self._input.setPlaceholderText("- [ ] TODO <2026-05-20> 输入Markdown任务，Enter创建  |  Ctrl+N 聚焦")
         self._input.returnPressed.connect(self._on_text_entered)
         layout.addWidget(self._input)
 
@@ -54,14 +54,13 @@ class TaskInputWidget(QWidget):
             raw_md=text,
             title=parsed.clean_title,
             status=parsed.status,
-            priority=parsed.priority,
             tags=parsed.tags,
             scheduled_date=parsed.scheduled_date,
             deadline_date=parsed.deadline_date,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
-        # Normalize raw_md through the formatter so status/priority always visible
+        # Normalize raw_md through the formatter
         task.raw_md = self._formatter.format(task)
         self._repository.insert(task)
         self._signal_bus.task_created.emit(task)

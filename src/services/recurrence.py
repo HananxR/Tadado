@@ -50,7 +50,6 @@ class TaskRecurrence:
             raw_md=task.raw_md,
             title=task.title,
             status=TaskStatus.TODO,
-            priority=task.priority,
             tags=list(task.tags),
             scheduled_date=new_scheduled,
             deadline_date=new_deadline,

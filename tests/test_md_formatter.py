@@ -6,7 +6,6 @@ from datetime import date, datetime
 
 import pytest
 
-from src.models.priority import Priority
 from src.models.task import Task
 from src.models.task_status import TaskStatus
 from src.services.md_formatter import MarkdownTaskFormatter
@@ -24,7 +23,6 @@ class TestFormat:
             raw_md="",
             title="重构认证模块",
             status=TaskStatus.TODO,
-            priority=Priority.A,
             scheduled_date=date(2026, 5, 10),
             deadline_date=date(2026, 5, 20),
             tags=["backend"],
@@ -32,7 +30,7 @@ class TestFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [ ] TODO [#A] <2026-05-10> <2026-05-20> 重构认证模块 #backend"
+        assert result == "- [ ] TODO <2026-05-10> <2026-05-20> 重构认证模块 #backend"
 
     def test_minimal_task(self, formatter: MarkdownTaskFormatter) -> None:
         task = Task(
@@ -40,7 +38,6 @@ class TestFormat:
             raw_md="",
             title="买菜",
             status=TaskStatus.TODO,
-            priority=Priority.NONE,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -53,13 +50,12 @@ class TestFormat:
             raw_md="",
             title="修bug",
             status=TaskStatus.DONE,
-            priority=Priority.B,
             tags=["urgent"],
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [x] DONE [#B] 修bug #urgent"
+        assert result == "- [x] DONE 修bug #urgent"
 
     def test_no_tags(self, formatter: MarkdownTaskFormatter) -> None:
         task = Task(
@@ -67,7 +63,6 @@ class TestFormat:
             raw_md="",
             title="写周报",
             status=TaskStatus.DOING,
-            priority=Priority.NONE,
             created_at=datetime.now(),
             updated_at=datetime.now(),
         )
@@ -87,7 +82,6 @@ class TestRoundTrip:
             raw_md="",
             title="编写测试",
             status=TaskStatus.DOING,
-            priority=Priority.C,
             scheduled_date=date(2026, 6, 1),
             deadline_date=date(2026, 6, 15),
             tags=["qa", "automation"],
@@ -97,7 +91,6 @@ class TestRoundTrip:
         md_line = formatter.format(task)
         parsed = parser.parse(md_line)
         assert parsed.status == task.status
-        assert parsed.priority == task.priority
         assert parsed.scheduled_date == task.scheduled_date
         assert parsed.deadline_date == task.deadline_date
         assert parsed.title == task.title

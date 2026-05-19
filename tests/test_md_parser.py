@@ -6,7 +6,6 @@ from datetime import date
 
 import pytest
 
-from src.models.priority import Priority
 from src.models.task_status import TaskStatus
 from src.services.md_parser import MarkdownTaskParser, ParsedTask
 
@@ -20,9 +19,8 @@ class TestParseStandard:
     """Full-format task lines."""
 
     def test_full_format(self, parser: MarkdownTaskParser) -> None:
-        result = parser.parse("- [ ] TODO [#A] <2026-05-10> <2026-05-20> 重构认证模块 #backend")
+        result = parser.parse("- [ ] TODO <2026-05-10> <2026-05-20> 重构认证模块 #backend")
         assert result.status == TaskStatus.TODO
-        assert result.priority == Priority.A
         assert result.scheduled_date == date(2026, 5, 10)
         assert result.deadline_date == date(2026, 5, 20)
         assert result.title == "重构认证模块"
@@ -31,7 +29,6 @@ class TestParseStandard:
     def test_minimal_format(self, parser: MarkdownTaskParser) -> None:
         result = parser.parse("- [ ] TODO 买菜")
         assert result.status == TaskStatus.TODO
-        assert result.priority == Priority.NONE
         assert result.scheduled_date is None
         assert result.deadline_date is None
         assert result.title == "买菜"
@@ -64,9 +61,8 @@ class TestParseFallback:
     """Lines that don't match the strict pattern."""
 
     def test_missing_checkbox(self, parser: MarkdownTaskParser) -> None:
-        result = parser.parse("TODO [#A] 处理发票")
+        result = parser.parse("TODO 处理发票")
         assert result.status == TaskStatus.TODO
-        assert result.priority == Priority.A
         assert result.title == "处理发票"
 
     def test_missing_keyword(self, parser: MarkdownTaskParser) -> None:
@@ -86,9 +82,8 @@ class TestParseFallback:
         assert "critical" in result.tags
 
     def test_case_insensitive(self, parser: MarkdownTaskParser) -> None:
-        result = parser.parse("- [ ] todo [#b] 随便")
+        result = parser.parse("- [ ] todo 随便")
         assert result.status == TaskStatus.TODO
-        assert result.priority == Priority.B
 
 
 class TestErrorHandling:
@@ -112,7 +107,7 @@ class TestParseBatch:
 这不是任务
 - [x] DONE 任务2 #done
 
-- [ ] DOING [#B] 任务3"""
+- [ ] DOING 任务3"""
         results = parser.parse_batch(text)
         parsed = [r[0] for r in results if r[0] is not None]
         errors = [r for r in results if r[0] is None]
@@ -125,7 +120,7 @@ class TestDeadlineTime:
 
     def test_deadline_with_time(self, parser: MarkdownTaskParser) -> None:
         parsed = parser.parse(
-            "- [ ] TODO [#A] <2026-05-10> <2026-05-20 14:30> 任务 #tag"
+            "- [ ] TODO <2026-05-10> <2026-05-20 14:30> 任务 #tag"
         )
         assert parsed.deadline_date == date(2026, 5, 20)
         assert parsed.deadline_time == "14:30"

@@ -46,7 +46,7 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
 
     demos = [
         (
-            f"- [x] DONE [#A] <{today - timedelta(days=2)}> 准备季度汇报 PPT #工作",
+            f"- [x] DONE<{today - timedelta(days=2)}> 准备季度汇报 PPT #工作",
             "准备季度汇报 PPT — 完整状态流转演示",
             [
                 {"ts": _ago(4), "content": "收集各团队 Q3 数据报表", "status": "TODO"},
@@ -57,13 +57,13 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
             datetime.now() - timedelta(days=2),
         ),
         (
-            f"- [ ] TODO [#B] <{today + timedelta(days=2)}> 每周三次有氧运动 #健康",
+            f"- [ ] TODO<{today + timedelta(days=2)}> 每周三次有氧运动 #健康",
             "每周三次有氧运动 — 循环任务 + 标签",
             [{"ts": datetime.now().isoformat(), "content": "本周完成 1/3 次：跑步 5km", "status": "TODO"}],
             None,
         ),
         (
-            f"- [ ] DOING [#A] <{today + timedelta(days=10)}> 阅读《系统设计面试》第 5-8 章 #学习",
+            f"- [ ] DOING<{today + timedelta(days=10)}> 阅读《系统设计面试》第 5-8 章 #学习",
             "阅读《系统设计面试》— DOING + 多次进展",
             [
                 {"ts": _ago(6), "content": "开始第 5 章：设计限流器（令牌桶 vs 漏桶）", "status": "DOING"},
@@ -73,7 +73,7 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
             None,
         ),
         (
-            f"- [ ] URGENT [#A] <{today + timedelta(days=1)}> 学习 Rust 所有权和借用机制 #学习 #Rust",
+            f"- [ ] URGENT<{today + timedelta(days=1)}> 学习 Rust 所有权和借用机制 #学习 #Rust",
             "学习 Rust 所有权机制 — URGENT + 详细笔记",
             [
                 {"ts": _ago(2), "content": "阅读 Rust Book 第 4 章：所有权", "status": "URGENT"},
@@ -83,7 +83,7 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
             None,
         ),
         (
-            f"- [ ] TODO [#A] <{today - timedelta(days=1)}> 整理本月开支账单 #生活",
+            f"- [ ] TODO<{today - timedelta(days=1)}> 整理本月开支账单 #生活",
             "整理本月开支账单 — 逾期演示",
             [
                 {"ts": _ago(3), "content": "导出支付宝账单 CSV", "status": "TODO"},
@@ -92,7 +92,7 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
             None,
         ),
         (
-            f"- [ ] WAIT [#B] <{today + timedelta(days=30)}> 规划端午出行行程 #生活 #旅行",
+            f"- [ ] WAIT<{today + timedelta(days=30)}> 规划端午出行行程 #生活 #旅行",
             "规划端午出行行程 — WAIT 等待中 + 远期",
             [
                 {"ts": _ago(7), "content": "初步确定目的地：成都（3 天 2 晚）", "status": "TODO"},
@@ -101,13 +101,13 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
             None,
         ),
         (
-            f"- [ ] TODO [#C] <{today + timedelta(days=7)}> 写技术博客：深入理解 Python asyncio 协程 #学习 #写作",
+            f"- [ ] TODO<{today + timedelta(days=7)}> 写技术博客：深入理解 Python asyncio 协程 #学习 #写作",
             "写技术博客：Python 协程 — C 优先级",
             [{"ts": datetime.now().isoformat(), "content": "确定选题和大纲：事件循环、Task、await 原理", "status": "TODO"}],
             None,
         ),
         (
-            f"- [ ] LATER [] <{today + timedelta(days=60)}> 整理书单并写读书笔记 #阅读 #生活",
+            f"- [ ] LATER <{today + timedelta(days=60)}> 整理书单并写读书笔记 #阅读 #生活",
             "整理书单并写读书笔记 — LATER 稍后 + 无优先级",
             [],
             None,
@@ -121,7 +121,6 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
             raw_md=raw_md,
             title=title,
             status=parsed.status,
-            priority=parsed.priority,
             tags=parsed.tags,
             deadline_date=parsed.deadline_date,
             deadline_time=parsed.deadline_time,

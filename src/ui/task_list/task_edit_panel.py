@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPushButton,
+    QSpinBox,
     QTextBrowser,
     QSizePolicy,
     QTextBrowser,
@@ -261,7 +262,7 @@ class TaskEditPanel(QWidget):
         ec.addWidget(QLabel("Markdown："))
         self._md_edit = QTextEdit()
         self._md_edit.setObjectName("mdEditor")
-        self._md_edit.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 标题 #标签")
+        self._md_edit.setPlaceholderText("- [ ] TODO <2026-05-20> 标题 #标签")
         self._md_edit.setMaximumHeight(85)
         self._md_edit.textChanged.connect(self._on_text_changed)
         ec.addWidget(self._md_edit)
@@ -309,7 +310,7 @@ class TaskEditPanel(QWidget):
         self._deadline_time_edit.setDisplayFormat("HH:mm")
         self._deadline_time_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._deadline_time_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self._deadline_time_edit.setTime(QTime.currentTime())
+        self._deadline_time_edit.setTime(QTime(23, 59))
         self._deadline_time_edit.timeChanged.connect(self._on_deadline_picker_changed)
         deadline_row.addWidget(self._deadline_time_edit)
         self._time_toggle = QCheckBox("时间")
@@ -409,6 +410,15 @@ class TaskEditPanel(QWidget):
         self._status_combo.setFixedWidth(90)
         progress_btn_row.addWidget(self._status_combo)
 
+        self._progress_spin = QSpinBox()
+        self._progress_spin.setRange(0, 100)
+        self._progress_spin.setValue(0)
+        self._progress_spin.setSuffix("%")
+        self._progress_spin.setFixedWidth(62)
+        self._progress_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._progress_spin.setEnabled(False)
+        progress_btn_row.addWidget(self._progress_spin)
+
         self._log_save_btn = QPushButton("追加进展")
         self._log_save_btn.setObjectName("saveBtn")
         self._log_save_btn.clicked.connect(self._on_log_save)
@@ -461,11 +471,11 @@ class TaskEditPanel(QWidget):
                 h, m = task.deadline_time.split(":")
                 self._deadline_time_edit.setTime(QTime(int(h), int(m)))
             else:
-                self._deadline_time_edit.setTime(QTime.currentTime())
+                self._deadline_time_edit.setTime(QTime(23, 59))
         else:
             self._deadline_date_edit.setDate(QDate.currentDate())
             self._time_toggle.setChecked(True)
-            self._deadline_time_edit.setTime(QTime.currentTime())
+            self._deadline_time_edit.setTime(QTime(23, 59))
         self._updating_from_md = False
 
         # Set created_at label
@@ -474,6 +484,8 @@ class TaskEditPanel(QWidget):
         else:
             self._created_label.setText("—")
 
+        self._progress_spin.setValue(task.progress)
+        self._progress_spin.setEnabled(True)
         self._update_preview()
         self._refresh_timeline()
         self._reset_log_editor()
@@ -499,7 +511,7 @@ class TaskEditPanel(QWidget):
         self._updating_from_md = True
         self._deadline_date_edit.setDate(QDate.currentDate())
         self._time_toggle.setChecked(True)
-        self._deadline_time_edit.setTime(QTime.currentTime())
+        self._deadline_time_edit.setTime(QTime(23, 59))
         self._created_label.setText("—")
         self._updating_from_md = False
         self._clear_entries()
@@ -526,7 +538,7 @@ class TaskEditPanel(QWidget):
         # Editor section (40%)
         self._md_edit.blockSignals(True)
         self._md_edit.setText("")
-        self._md_edit.setPlaceholderText("- [ ] TODO [#A] <2026-05-20> 标题 #标签")
+        self._md_edit.setPlaceholderText("- [ ] TODO <2026-05-20> 标题 #标签")
         self._md_edit.blockSignals(False)
         self._collapse_btn.setVisible(False)
         self._editor_collapsible.setVisible(True)
@@ -542,9 +554,11 @@ class TaskEditPanel(QWidget):
         self._updating_from_md = True
         self._deadline_date_edit.setDate(QDate.currentDate())
         self._time_toggle.setChecked(True)
-        self._deadline_time_edit.setTime(QTime.currentTime())
+        self._deadline_time_edit.setTime(QTime(23, 59))
         self._created_label.setText("—")
         self._updating_from_md = False
+        self._progress_spin.setValue(0)
+        self._progress_spin.setEnabled(False)
         self._clear_entries()
         self._hide_log_detail()
 
@@ -559,9 +573,15 @@ class TaskEditPanel(QWidget):
         self._draft_partition_id = partition_id
 
     def create_draft(self) -> None:
-        """Create an in-memory draft TODO task with today's date. Not persisted until saved."""
-        today = datetime.now().strftime("%Y-%m-%d")
-        template = f"- [ ] TODO [#A] <{today}> 新任务"
+        """Create an in-memory draft TODO task defaulting deadline to nearest Friday."""
+        today_d = date.today()
+        weekday = today_d.isoweekday()
+        days_ahead = (5 - weekday) % 7
+        if days_ahead == 0:
+            days_ahead = 7
+        target = today_d + timedelta(days=days_ahead)
+        friday_str = target.strftime("%Y-%m-%d")
+        template = f"- [ ] TODO <{friday_str}> 新任务"
         parsed = self._parser.parse(template)
         from ...models.task import Task as TaskCls
 
@@ -570,7 +590,6 @@ class TaskEditPanel(QWidget):
             raw_md=template,
             title=parsed.clean_title,
             status=parsed.status,
-            priority=parsed.priority,
             tags=parsed.tags,
             scheduled_date=parsed.scheduled_date,
             deadline_date=parsed.deadline_date,
@@ -616,19 +635,15 @@ class TaskEditPanel(QWidget):
                 self._status_combo.setCurrentIndex(i)
                 break
         self._status_combo.setEnabled(True)
+        self._progress_spin.setValue(0)
+        self._progress_spin.setEnabled(True)
         self._timeline_card.setVisible(False)
         self._timeline_log.clear()
         # Set pickers for draft — deadline defaults to nearest Friday
         self._updating_from_md = True
-        today_d = date.today()
-        weekday = today_d.isoweekday()  # 1=Mon .. 7=Sun
-        days_ahead = (5 - weekday) % 7  # days to next Friday (0 = today is Friday)
-        if days_ahead == 0:
-            days_ahead = 7  # today is Friday → next Friday
-        target = today_d + timedelta(days=days_ahead)
         self._deadline_date_edit.setDate(QDate(target.year, target.month, target.day))
         self._time_toggle.setChecked(True)
-        self._deadline_time_edit.setTime(QTime.currentTime())
+        self._deadline_time_edit.setTime(QTime(23, 59))
         self._updating_from_md = False
         self._created_label.setText(
             draft.created_at.strftime("%Y-%m-%d %H:%M") if draft.created_at else "—"
@@ -683,13 +698,13 @@ class TaskEditPanel(QWidget):
                 self._deadline_time_edit.setTime(QTime(int(h), int(m)))
                 self._deadline_time_edit.blockSignals(False)
             else:
-                self._deadline_time_edit.setTime(QTime.currentTime())
+                self._deadline_time_edit.setTime(QTime(23, 59))
         else:
             self._deadline_date_edit.blockSignals(True)
             self._deadline_date_edit.setDate(QDate.currentDate())
             self._deadline_date_edit.blockSignals(False)
             self._time_toggle.setChecked(True)
-            self._deadline_time_edit.setTime(QTime.currentTime())
+            self._deadline_time_edit.setTime(QTime(23, 59))
         self._updating_from_md = False
 
     def _update_preview(self) -> None:
@@ -705,20 +720,12 @@ class TaskEditPanel(QWidget):
                 for t in (parsed.tags or [])
             )
             sc = parsed.status.display_color
-            pc = parsed.priority.display_color
 
             # Status badge — same visual as left table delegate
             html = (
                 f"<span style='background:{sc};color:#fff;padding:1px 7px;"
                 f"border-radius:3px;font-size:10px;'>{parsed.status.display_name}</span>"
             )
-
-            # Priority: colored dot + letter (matching left table delegate style)
-            if parsed.priority.name != "NONE":
-                html += (
-                    f" <span style='color:{pc};font-size:11px;'>"
-                    f"●{parsed.priority.name}</span>"
-                )
 
             if parsed.scheduled_date:
                 html += (
@@ -771,19 +778,13 @@ class TaskEditPanel(QWidget):
             if idx >= 0:
                 text = text[:idx + 1] + " " + new_dl + text[idx + 1:]
             else:
-                # Insert after priority, before title
-                pri_match = _re.search(r"\[#[ABC]\]\s*", text)
-                if pri_match:
-                    pos = pri_match.end()
+                # Insert after status keyword
+                kw_match = _re.search(r"(TODO|DOING|DONE|URGENT|WAIT|LATER)\s*", text)
+                if kw_match:
+                    pos = kw_match.end()
                     text = text[:pos] + f"{new_dl} " + text[pos:]
                 else:
-                    # Insert after status keyword
-                    kw_match = _re.search(r"(TODO|DOING|DONE|URGENT|WAIT|LATER)\s*", text)
-                    if kw_match:
-                        pos = kw_match.end()
-                        text = text[:pos] + f"{new_dl} " + text[pos:]
-                    else:
-                        text = text.rstrip() + " " + new_dl
+                    text = text.rstrip() + " " + new_dl
         self._md_edit.blockSignals(True)
         self._md_edit.setText(text)
         self._md_edit.blockSignals(False)
@@ -810,7 +811,6 @@ class TaskEditPanel(QWidget):
                 raw_md="",
                 title="",
                 status=TaskStatus.TODO,
-                priority=Priority.NONE,
                 tags=[],
                 created_at=datetime.now(),
                 updated_at=datetime.now(),
@@ -830,7 +830,6 @@ class TaskEditPanel(QWidget):
         combo_status = self._status_combo.currentData()
         task.title = parsed.clean_title
         task.status = combo_status if combo_status else parsed.status
-        task.priority = parsed.priority
         task.tags = parsed.tags
         task.scheduled_date = parsed.scheduled_date
         task.deadline_date = parsed.deadline_date
@@ -971,8 +970,9 @@ class TaskEditPanel(QWidget):
                 sn = st_val
             is_done = "任务完成" in content
             color = "#27ae60" if is_done else "#f39c12"
+            progress_val = e.get("progress", task.progress)
             rows.append(_row("●", color, ts,
-                              f'<span style="color:{sc};">[{sn}]</span> {content}',
+                              f'<span style="color:{sc};">[{sn}|{progress_val}%]</span> {content}',
                               entry_idx=orig_idx))
         # Always show creation marker (oldest entry), unless a real one exists
         if task.created_at and not any("创建任务" in e.get("content", "") for e in task.activity_log):
@@ -1012,6 +1012,9 @@ class TaskEditPanel(QWidget):
             except Exception:
                 pass
 
+        progress_val = entry.get("progress", self._current_task.progress)
+        self._progress_spin.setValue(progress_val)
+
         self._log_save_btn.setText("更新进展")
 
 
@@ -1027,6 +1030,8 @@ class TaskEditPanel(QWidget):
         self._log_save_btn.setText("追加进展")
         self._log_save_btn.setVisible(True)
         self._log_save_btn.setEnabled(True)
+        if self._current_task:
+            self._progress_spin.setValue(self._current_task.progress)
 
     # ------------------------------------------------------------------
     # Log editor actions
@@ -1049,6 +1054,8 @@ class TaskEditPanel(QWidget):
                 return
             entry["content"] = content
             entry["status"] = new_status.value if new_status else entry.get("status", "")
+            entry["progress"] = self._progress_spin.value()
+            task.progress = self._progress_spin.value()
             if new_status and new_status != old_status:
                 task.status = new_status
                 if new_status == TaskStatus.DONE:
@@ -1077,10 +1084,12 @@ class TaskEditPanel(QWidget):
             task.raw_md = self._formatter.format(task)
         # Record one entry with current status
         entry_content = content if content else f"状态变更为 {task.status.display_name}"
+        task.progress = self._progress_spin.value()
         task.activity_log.append({
             "ts": datetime.now().isoformat(),
             "content": entry_content,
             "status": task.status.value,
+            "progress": task.progress,
         })
         task.updated_at = datetime.now()
         self._repository.update(task)

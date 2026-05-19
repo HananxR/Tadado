@@ -31,7 +31,6 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import AppConfig
-from ..models.priority import Priority
 from ..models.repository import TaskRepository
 from ..models.task import Task
 from ..models.task_filter import TaskFilter
@@ -648,17 +647,15 @@ class MainWindow(QMainWindow):
             self._edit_panel.show_empty()
             return
 
-        # Sort: status importance → priority → closest deadline
+        # Sort: status importance → closest deadline
         status_rank = {
             TaskStatus.URGENT: 0, TaskStatus.TODO: 1, TaskStatus.DOING: 2,
             TaskStatus.WAIT: 3, TaskStatus.LATER: 4, TaskStatus.DONE: 5,
         }
-        priority_rank = {"A": 0, "B": 1, "C": 2, "D": 3}
         sorted_tasks = sorted(
             all_tasks,
             key=lambda t: (
                 status_rank.get(t.status, 99),
-                priority_rank.get(t.priority.name, 99),
                 t.deadline_date or date.max,
                 t.scheduled_date or date.max,
             ),
@@ -849,25 +846,17 @@ class MainWindow(QMainWindow):
 
         items: list[dict] = []
         for t in active:
-            if t.priority in (Priority.A, Priority.B):
-                items.append({
-                    "task_id": t.id,
-                    "text": f"[{t.priority.name}] {t.title}",
-                    "color": t.status.display_color,
-                })
+            items.append({
+                "task_id": t.id,
+                "text": t.title,
+                "color": t.status.display_color,
+            })
         for t in done:
             items.append({
                 "task_id": t.id,
                 "text": f"✓ {t.title}",
                 "color": "#27ae60",
             })
-        for t in active:
-            if t.priority not in (Priority.A, Priority.B):
-                items.append({
-                    "task_id": t.id,
-                    "text": f"· {t.title}",
-                    "color": "#888",
-                })
 
         self._carousel.set_items(items[:10])
 
@@ -1035,7 +1024,6 @@ class MainWindow(QMainWindow):
                     raw_md=raw_line,
                     title=parsed.title,
                     status=parsed.status,
-                    priority=parsed.priority,
                     tags=parsed.tags,
                     scheduled_date=parsed.scheduled_date,
                     deadline_date=parsed.deadline_date,
