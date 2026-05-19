@@ -307,7 +307,6 @@ class TaskEditPanel(QWidget):
         deadline_row.addWidget(self._deadline_date_edit)
         self._deadline_time_edit = QTimeEdit()
         self._deadline_time_edit.setDisplayFormat("HH:mm")
-        self._deadline_time_edit.setFixedWidth(52)
         self._deadline_time_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._deadline_time_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self._deadline_time_edit.setTime(QTime.currentTime())
