@@ -11,13 +11,13 @@ from ...models.priority import Priority
 from ...models.task import Task
 from ...models.task_status import TaskStatus
 
-_COLUMN_HEADERS = ["#", "创建时间", "任务内容", "截止时间", "优先级", "状态", "标签"]
+_COLUMN_HEADERS = ["#", "创建时间", "任务内容", "截止时间", "进度", "状态", "标签"]
 
 COL_ROW = 0
 COL_CREATED = 1
 COL_CONTENT = 2
 COL_DEADLINE = 3
-COL_PRIORITY = 4
+COL_PROGRESS = 4
 COL_STATUS = 5
 COL_TAGS = 6
 
@@ -125,16 +125,14 @@ class TaskListModel(QAbstractTableModel):
     @staticmethod
     def _display_data(task: Task, col: int) -> str:
         if col == COL_CREATED:
-            return task.created_at.strftime("%Y-%m-%d %H:%M") if task.created_at else ""
+            return task.created_at.strftime("%Y-%m-%d") if task.created_at else ""
         if col == COL_CONTENT:
             return task.title or task.raw_md
         if col == COL_DEADLINE:
             d = task.deadline_date or task.scheduled_date
             return d.isoformat() if d else ""
-        if col == COL_PRIORITY:
-            if task.priority == Priority.NONE:
-                return "—"
-            return task.priority.name
+        if col == COL_PROGRESS:
+            return TaskListModel._calc_progress(task)
         if col == COL_STATUS:
             return task.status.display_name
         if col == COL_TAGS:
@@ -145,22 +143,36 @@ class TaskListModel(QAbstractTableModel):
     def _foreground_color(task: Task, col: int) -> QColor | None:
         if col == COL_STATUS:
             return QColor(task.status.display_color)
-        if col == COL_PRIORITY and task.priority != Priority.NONE:
-            return QColor(task.priority.display_color)
         return None
 
     @staticmethod
     def _background_color(task: Task) -> QColor | None:
-        from datetime import date as _date
-        today = _date.today()
-        if task.status == TaskStatus.URGENT:
-            return QColor("#fff0f0")
-        if task.deadline_date and task.deadline_date < today and task.status != TaskStatus.DONE:
-            return QColor("#fff8f0")
+        # Priority-based row tint
+        if task.priority == Priority.A:
+            return QColor("#ffe8e8")  # red tint — highest
+        if task.priority == Priority.B:
+            return QColor("#fff8e0")  # yellow tint — medium
+        if task.priority == Priority.C:
+            return QColor("#e8f8e8")  # green tint — low
         return None
 
     @staticmethod
+    def _calc_progress(task: Task) -> str:
+        """Progress 0-100% based on time elapsed from creation to deadline."""
+        from datetime import date as _date
+        if not task.deadline_date or not task.created_at:
+            return "—"
+        created_date = task.created_at.date()
+        today = _date.today()
+        total = (task.deadline_date - created_date).days
+        if total <= 0:
+            return "100%" if today >= task.deadline_date else "—"
+        elapsed = (today - created_date).days
+        pct = max(0, min(100, int(elapsed / total * 100)))
+        return f"{pct}%"
+
+    @staticmethod
     def _alignment(col: int) -> Qt.AlignmentFlag:
-        if col in (COL_ROW, COL_CREATED, COL_DEADLINE, COL_PRIORITY, COL_STATUS):
+        if col in (COL_ROW, COL_CREATED, COL_DEADLINE, COL_PROGRESS, COL_STATUS):
             return Qt.AlignmentFlag.AlignCenter
         return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter

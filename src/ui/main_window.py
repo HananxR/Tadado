@@ -974,15 +974,14 @@ class MainWindow(QMainWindow):
         self._on_new_draft()
 
     def _on_new_draft(self) -> None:
-        """Create a draft TODO task under today's filter view."""
+        """Create a draft TODO task — reset to today view first."""
         if not self._guard_draft():
             return
         self._stack.setCurrentIndex(0)
         self.show()
         self.raise_()
         self.activateWindow()
-        today = date.today()
-        f = TaskFilter(date_from=today, date_to=today)
+        f = self._filter_bar.build_filter()
         if self._active_partition_id:
             f.partition_id = self._active_partition_id
         self._filter_bar.filter_changed.emit(f)

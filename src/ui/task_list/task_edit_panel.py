@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Callable
 
 from PySide6.QtCore import QDate, QSize, QTime, Qt, QTimer, Signal
@@ -618,10 +618,15 @@ class TaskEditPanel(QWidget):
         self._status_combo.setEnabled(True)
         self._timeline_card.setVisible(False)
         self._timeline_log.clear()
-        # Set pickers for draft
+        # Set pickers for draft — deadline defaults to nearest Friday
         self._updating_from_md = True
-        today_d = datetime.now()
-        self._deadline_date_edit.setDate(QDate(today_d.year, today_d.month, today_d.day))
+        today_d = date.today()
+        weekday = today_d.isoweekday()  # 1=Mon .. 7=Sun
+        days_ahead = (5 - weekday) % 7  # days to next Friday (0 = today is Friday)
+        if days_ahead == 0:
+            days_ahead = 7  # today is Friday → next Friday
+        target = today_d + timedelta(days=days_ahead)
+        self._deadline_date_edit.setDate(QDate(target.year, target.month, target.day))
         self._time_toggle.setChecked(True)
         self._deadline_time_edit.setTime(QTime.currentTime())
         self._updating_from_md = False
