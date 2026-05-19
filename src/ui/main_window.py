@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from datetime import date
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QDateTime, QSize, Qt, QTime, QTimer
 from PySide6.QtGui import (
     QAction, QBrush, QColor, QGuiApplication, QIcon, QPainter, QPen, QPixmap,
     QShortcut, QKeySequence,
@@ -75,6 +75,7 @@ class MainWindow(QMainWindow):
         self._setup_idle_lock()
         self._connect_signals()
         self._setup_shortcuts()
+        self._setup_midnight_timer()
 
     # ------------------------------------------------------------------
     # Adaptive sizing — called from app.py before show()
@@ -463,6 +464,7 @@ class MainWindow(QMainWindow):
         self._filter_bar.filter_changed.connect(self._on_filter_changed)
         bus.partitions_changed.connect(self._on_partitions_changed)
         bus.config_changed.connect(self._on_config_changed)
+        bus.archive_completed.connect(self._on_data_changed)
 
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._on_new_task)
@@ -488,16 +490,21 @@ class MainWindow(QMainWindow):
         self._refresh_task_list(filter_)
         # ② Stats bar (date range aligned to filter)
         self._stats_bar.set_partition_id(self._active_partition_id)
+        # Determine lower bound: use last archive time for "全部" and "逾期"
+        last_archive = self._repository.get_last_archive_time()
+        archive_bound = last_archive.date() if last_archive else date(2000, 1, 1)
+
         if filter_.overdue_only:
             from datetime import timedelta as _td
-            df, dt_to = date(2000, 1, 1), date.today() - _td(days=1)
+            df, dt_to = archive_bound, date.today() - _td(days=1)
         elif filter_.date_to and not filter_.date_from:
-            # "today" preset: upper bound only, show stats for all tasks up to date_to
+            # "today" preset: upper bound only, stats for all tasks up to date_to
             df, dt_to = date(2000, 1, 1), filter_.date_to
         elif filter_.date_from and filter_.date_to:
             df, dt_to = filter_.date_from, filter_.date_to
         else:
-            df, dt_to = date(2000, 1, 1), date(2100, 1, 1)
+            # "全部": from last archive to now
+            df, dt_to = archive_bound, date(2100, 1, 1)
         self._stats_bar.refresh(date_from=df, date_to=dt_to, overdue_only=filter_.overdue_only)
         # ③ Carousel
         self._update_carousel(filter_)
@@ -949,7 +956,6 @@ class MainWindow(QMainWindow):
         elif preset == "today":
             f = self._filter_bar.build_filter()
             f.date_to = today  # deadline <= today (includes overdue) + no-deadline
-            f.statuses = {TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING}
             self._filter_bar.filter_changed.emit(f)
         elif preset == "week":
             weekday = today.isoweekday()
@@ -957,7 +963,6 @@ class MainWindow(QMainWindow):
             sunday = monday + dt.timedelta(days=6)
             f = self._filter_bar.build_filter()
             f.date_from, f.date_to = monday, sunday
-            f.statuses = {TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING}
             self._filter_bar.filter_changed.emit(f)
         elif preset == "overdue":
             f = self._filter_bar.build_filter()
@@ -1081,6 +1086,27 @@ class MainWindow(QMainWindow):
     def _on_config_changed(self) -> None:
         """Sync filter bar sort when default sort config changes."""
         self._filter_bar.set_sort(self._config.default_sort)
+
+    # ------------------------------------------------------------------
+    # Midnight timer — refreshes stats when the day boundary crosses
+    # ------------------------------------------------------------------
+
+    def _setup_midnight_timer(self) -> None:
+        self._midnight_timer = QTimer(self)
+        self._midnight_timer.setSingleShot(True)
+        self._midnight_timer.timeout.connect(self._on_midnight_crossed)
+        self._schedule_midnight_timer()
+
+    def _schedule_midnight_timer(self) -> None:
+        now = QDateTime.currentDateTime()
+        tomorrow = now.date().addDays(1)
+        midnight = QDateTime(tomorrow, QTime(0, 0, 0))
+        self._midnight_timer.start(now.msecsTo(midnight))
+
+    def _on_midnight_crossed(self) -> None:
+        """Day boundary crossed — refresh stats so overdue/today counts update."""
+        self._on_data_changed()
+        self._schedule_midnight_timer()
 
     def _on_quit(self) -> None:
         self._signal_bus.application_quit.emit()

@@ -333,7 +333,7 @@ class TaskRepository:
         # Overdue only
         if filter_.overdue_only:
             today = date.today().isoformat()
-            where_clauses.append("deadline_date < ? AND status != 'DONE' AND archived = 0")
+            where_clauses.append("deadline_date < ?")
             params.append(today)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -388,7 +388,7 @@ class TaskRepository:
         if filter_.overdue_only:
             from datetime import date as _date
             today = _date.today().isoformat()
-            where_clauses.append("deadline_date < ? AND status != 'DONE' AND archived = 0")
+            where_clauses.append("deadline_date < ?")
             params.append(today)
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -564,6 +564,15 @@ class TaskRepository:
         )
         self.conn.commit()
         return cursor.rowcount
+
+    def get_last_archive_time(self) -> datetime | None:
+        """Return the most recent archive timestamp, or None if never archived."""
+        row = self.conn.execute(
+            "SELECT MAX(archived_at) FROM tasks WHERE archived = 1"
+        ).fetchone()
+        if row and row[0]:
+            return _parse_datetime(row[0])
+        return None
 
     # ------------------------------------------------------------------
     # Notification log (Phase 2)
