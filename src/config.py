@@ -20,10 +20,10 @@ DEFAULT_CONFIG: dict = {
         "last_partition_id": "",
         "auto_lock_minutes": 10,
         "page_size": 20,
+        "default_sort": "status",
     },
     "display": {
         "theme": "system",
-        "default_sort": "deadline",
         "font_size": 12,
         "heatmap_start_year": 2026,
         "heatmap_colors": {
@@ -62,7 +62,7 @@ DEFAULT_CONFIG: dict = {
 def _default_data_dir() -> Path:
     """Return the default data directory — portable mode preferred."""
     # Portable: exe 同目录 `data/`
-    portable = Path(__file__).resolve().parents[2] / "data"
+    portable = Path(__file__).resolve().parents[1] / "resources"
     if portable.exists() or not _is_frozen():
         return portable
     # Standard: %APPDATA%/DeskTodoSeq
@@ -146,7 +146,7 @@ class AppConfig(QObject):
 
     @property
     def default_sort(self) -> str:
-        return self._get("display", "default_sort")
+        return self._get("general", "default_sort")
 
     @property
     def heatmap_colors(self) -> dict:

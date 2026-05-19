@@ -3,7 +3,6 @@
 import sys
 
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QMessageBox
 
 from src.app import DeskTodoSeqApp
 
@@ -11,17 +10,27 @@ _SERVER_NAME = "DeskTodoSeq_Instance"
 
 
 def main() -> None:
+    # Step 1: Try connecting to an existing instance first
+    sock = QLocalSocket()
+    sock.connectToServer(_SERVER_NAME)
+    if sock.waitForConnected(500):
+        # Another instance is running — wake it and exit silently
+        sock.write(b"wake")
+        sock.waitForBytesWritten(1000)
+        sock.close()
+        sys.exit(0)
+
+    # Step 2: No existing instance — clean up stale pipe and start server
     QLocalServer.removeServer(_SERVER_NAME)
     local_server = QLocalServer()
     if not local_server.listen(_SERVER_NAME):
-        # Another instance is running — wake it and exit
-        sock = QLocalSocket()
-        sock.connectToServer(_SERVER_NAME)
-        if sock.waitForConnected(2000):
-            sock.write(b"wake")
-            sock.waitForBytesWritten(1000)
-            sock.close()
-        QMessageBox.information(None, "DeskTodoSeq", "软件已在运行，已切换至已有窗口。")
+        # Race condition: another instance started between our check and listen
+        sock2 = QLocalSocket()
+        sock2.connectToServer(_SERVER_NAME)
+        if sock2.waitForConnected(2000):
+            sock2.write(b"wake")
+            sock2.waitForBytesWritten(1000)
+            sock2.close()
         sys.exit(0)
 
     app = DeskTodoSeqApp(sys.argv, local_server)

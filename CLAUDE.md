@@ -29,7 +29,13 @@ uv run ruff check src/ tests/                 # lint 检查
 uv run ruff check --select=F src/             # 仅 pyflakes 规则
 
 # 构建打包
+# 免安装便携版（单文件）：
 uv run pyinstaller --name="DeskTodoSeq" --windowed --onefile --icon="resources/icons/app.ico" --add-data="resources;resources" main.py
+
+# 安装版（用户可选路径，需先安装 Inno Setup）：
+# 1. 用 --onedir 打包（启动更快）
+uv run pyinstaller --name="DeskTodoSeq" --windowed --onedir --icon="resources/icons/app.ico" --add-data="resources;resources" main.py
+# 2. 用 Inno Setup Compiler 打开 installer.iss 编译 → 生成 Setup.exe
 ```
 
 ## 架构

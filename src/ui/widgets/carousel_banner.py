@@ -61,24 +61,27 @@ class CarouselBanner(QWidget):
         self._render()
 
     def _scroll(self) -> None:
-        if not self._items:
-            return
-        self._current_offset = (self._current_offset + self._group_size) % max(len(self._items), 1)
+        n = len(self._items)
+        if n <= self._group_size:
+            return  # no need to scroll when items fit in one view
+        self._current_offset = (self._current_offset + self._group_size) % n
         self._render()
 
     def _render(self) -> None:
         n = len(self._items)
+        shown = min(n, self._group_size)
         for i in range(self._group_size):
             lbl = self._labels[i]
-            idx = (self._current_offset + i) % max(n, 1) if n > 0 else 0
-            if n > 0:
+            if i < shown:
+                idx = (self._current_offset + i) % max(n, 1)
                 item = self._items[idx]
                 color = item.get("color", "#5b8def")
                 text = item.get("text", "")
                 lbl.setText(f'<span style="color:{color};">●</span> {text}')
                 lbl.setToolTip(text)
+                lbl.setVisible(True)
             else:
-                lbl.setText("")
+                lbl.setVisible(False)
 
     def _on_label_clicked(self, label_idx: int) -> None:
         n = len(self._items)

@@ -101,6 +101,15 @@ class FilterBar(QWidget):
         self._priority.setCurrentIndex(0)
         self._sort.setCurrentIndex(0)
 
+    def set_sort(self, field: str) -> None:
+        """Set the sort combo to the given field name (e.g. 'status', 'deadline')."""
+        for display, key in self._SORT_MAP.items():
+            if key == field:
+                idx = self._sort.findText(display)
+                if idx >= 0:
+                    self._sort.setCurrentIndex(idx)
+                return
+
     def set_preset(self, preset: str) -> None:
         self.reset()
         if preset == "today":

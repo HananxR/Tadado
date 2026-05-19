@@ -114,6 +114,29 @@ class _TimelineEntryWidget(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# Timeline browser with click-to-edit support
+# ---------------------------------------------------------------------------
+
+
+class _TimelineBrowser(QTextBrowser):
+    """QTextBrowser subclass that detects clicks on individual timeline entries."""
+
+    entry_clicked = Signal(int)
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            anchor = self.anchorAt(event.pos())
+            if anchor.startswith("entry:"):
+                try:
+                    idx = int(anchor.split(":", 1)[1])
+                    self.entry_clicked.emit(idx)
+                    return
+                except (ValueError, IndexError):
+                    pass
+        super().mousePressEvent(event)
+
+
+# ---------------------------------------------------------------------------
 # Banner widget with background image + text overlay
 # ---------------------------------------------------------------------------
 
@@ -338,7 +361,7 @@ class TaskEditPanel(QWidget):
         tc.addWidget(tl_header)
 
         # -- Timeline log (rich text with aligned timestamps) --
-        self._timeline_log = QTextBrowser()
+        self._timeline_log = _TimelineBrowser()
         self._timeline_log.setReadOnly(True)
         self._timeline_log.setMinimumHeight(120)
         self._timeline_log.setMaximumHeight(350)
@@ -350,6 +373,7 @@ class TaskEditPanel(QWidget):
         self._entry_placeholder.setStyleSheet("color: #aaa; font-size: 11px; padding: 8px;")
         self._entry_placeholder.setVisible(False)
         tc.addWidget(self._entry_placeholder)
+        self._timeline_log.entry_clicked.connect(self._on_timeline_entry_clicked)
         tc.addWidget(self._timeline_log)
         self._timeline_log.setVisible(False)
 
@@ -816,6 +840,7 @@ class TaskEditPanel(QWidget):
                 task.activity_log.append({
                     "ts": datetime.now().isoformat(),
                     "content": f"状态变更: {old_status.display_name} → {task.status.display_name}",
+                    "status": task.status.value,
                 })
 
         is_draft = task.id == ""
@@ -889,6 +914,10 @@ class TaskEditPanel(QWidget):
         """Reset to add-progress mode (no-op now)."""
         self._reset_log_editor()
 
+    def refresh_timeline(self) -> None:
+        """Public: refresh timeline display without resetting editor state."""
+        self._refresh_timeline()
+
     def _refresh_timeline(self) -> None:
         task = self._current_task
         if not task:
@@ -899,9 +928,11 @@ class TaskEditPanel(QWidget):
         self._entry_placeholder.setVisible(False)
         self._timeline_log.setVisible(True)
 
-        def _row(icon: str, color: str, ts: str, content: str) -> str:
+        def _row(icon: str, color: str, ts: str, content: str, entry_idx: int | None = None) -> str:
+            anchor = f'<a name="entry:{entry_idx}"></a>' if entry_idx is not None else ""
             return (
                 f'<p style="margin:3px 0;font-family:Consolas,monospace;font-size:12px;">'
+                f'{anchor}'
                 f'<span style="color:{color};font-weight:bold;">{icon}</span>'
                 f' <span style="color:{color};">{ts:>11}</span>'
                 f' <span style="color:#444;">{content}</span>'
@@ -909,7 +940,8 @@ class TaskEditPanel(QWidget):
             )
 
         rows: list[str] = []
-        for e in reversed(task.activity_log):
+        for i, e in enumerate(reversed(task.activity_log)):
+            orig_idx = len(task.activity_log) - 1 - i
             ts = _fmt_ts(e.get("ts", ""), True)
             content = e.get("content", "")
             st_val = e.get("status", "")
@@ -930,13 +962,47 @@ class TaskEditPanel(QWidget):
             is_done = "任务完成" in content
             color = "#27ae60" if is_done else "#f39c12"
             rows.append(_row("●", color, ts,
-                              f'<span style="color:{sc};">[{sn}]</span> {content}'))
-        if not rows and task.created_at:
+                              f'<span style="color:{sc};">[{sn}]</span> {content}',
+                              entry_idx=orig_idx))
+        # Always show creation marker (oldest entry), unless a real one exists
+        if task.created_at and not any("创建任务" in e.get("content", "") for e in task.activity_log):
             rows.append(_row("○", "#aaa", _fmt_ts(task.created_at.isoformat(), True),
                               "创建任务"))
 
         self._timeline_log.setHtml(f'<div>{"".join(rows)}</div>')
         self._reset_log_editor()
+
+    def _on_timeline_entry_clicked(self, idx: int) -> None:
+        """Populate the progress editor with the clicked timeline entry for editing."""
+        if not self._current_task:
+            return
+        if idx < 0 or idx >= len(self._current_task.activity_log):
+            return
+
+        entry = self._current_task.activity_log[idx]
+        self._selected_entry = (idx, entry)
+
+        self._log_edit.blockSignals(True)
+        self._log_edit.setText(entry.get("content", ""))
+        self._log_edit.blockSignals(False)
+        self._log_edit.setReadOnly(False)
+        self._log_edit.setPlaceholderText("编辑进展内容…")
+        self._log_edit.setStyleSheet(
+            "QTextEdit { border: 2px solid #f39c12; background: #fffdf5; }"
+        )
+
+        st_val = entry.get("status", "")
+        if st_val:
+            try:
+                st = TaskStatus.from_string(st_val)
+                for i in range(self._status_combo.count()):
+                    if self._status_combo.itemData(i) == st:
+                        self._status_combo.setCurrentIndex(i)
+                        break
+            except Exception:
+                pass
+
+        self._log_save_btn.setText("更新进展")
 
 
 
@@ -957,16 +1023,44 @@ class TaskEditPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _on_log_save(self) -> None:
-        """Add progress: optionally change status + record text, all in one entry."""
+        """Add or update progress: optionally change status + record text."""
         if not self._current_task:
             return
         content = self._log_edit.toPlainText().strip()
         new_status = self._status_combo.currentData()
-        if not content and new_status == self._current_task.status:
-            return  # nothing changed
         task = self._current_task
         old_status = task.status
-        if new_status and new_status != task.status:
+
+        if self._selected_entry is not None:
+            # ---- Editing an existing entry ----
+            idx, entry = self._selected_entry
+            if not content:
+                self._refresh_timeline()
+                return
+            entry["content"] = content
+            entry["status"] = new_status.value if new_status else entry.get("status", "")
+            if new_status and new_status != old_status:
+                task.status = new_status
+                if new_status == TaskStatus.DONE:
+                    task.completed_at = task.deadline_date or datetime.now()
+                task.raw_md = self._formatter.format(task)
+            task.updated_at = datetime.now()
+            self._repository.update(task)
+            self._original_md = task.raw_md
+            if self._task_model:
+                self._task_model.update_task(task)
+            if task.status != old_status:
+                self._signal_bus.task_status_changed.emit(task, old_status)
+            else:
+                self._signal_bus.task_updated.emit(task)
+            self._log_edit.clear()
+            self._refresh_timeline()
+            return
+
+        # ---- Appending a new entry ----
+        if not content and new_status == old_status:
+            return  # nothing changed
+        if new_status and new_status != old_status:
             task.status = new_status
             if new_status == TaskStatus.DONE:
                 task.completed_at = task.deadline_date or datetime.now()

@@ -111,9 +111,7 @@ uv run python main.py
 uv run pytest
 
 # 构建
-uv run pyinstaller --name="DeskTodoSeq" --windowed --onefile \
-  --icon="resources/icons/app.ico" \
-  --add-data="resources;resources" main.py
+uv run pyinstaller --name="DeskTodoSeq" --windowed --onefile --icon="resources/icons/app.ico" --add-data="resources;resources" main.py
 ```
 
 ## 参考

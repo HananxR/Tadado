@@ -245,6 +245,7 @@ class MainWindow(QMainWindow):
 
         # Row 3: Filter bar
         self._filter_bar = FilterBar()
+        self._filter_bar.set_sort(self._config.default_sort)
         task_layout.addWidget(self._filter_bar)
 
         # Row 4: Status statistics bar
@@ -625,10 +626,13 @@ class MainWindow(QMainWindow):
         If the list is empty, show an encouraging empty-state message.
         If a task is already being edited, keep it selected."""
         all_tasks = self._task_model.tasks
-        # Keep current selection if it still exists in model
+        # Keep current selection if it still exists in model, but refresh timeline
         cur = self._edit_panel.current_task()
-        if cur and cur.id and any(t.id == cur.id for t in all_tasks):
-            return
+        if cur and cur.id:
+            for t in all_tasks:
+                if t.id == cur.id:
+                    self._edit_panel.load_task(t)
+                    return
         if not all_tasks:
             self._edit_panel.show_empty()
             return
@@ -745,11 +749,10 @@ class MainWindow(QMainWindow):
         self._update_partition_menu_check()
         self._edit_panel.set_active_partition(new_id)
         self._reset_pagination()
-        # Reset to today filter on partition switch
-        today = date.today()
-        self._carousel_filter = TaskFilter(date_from=today, date_to=today)
+        # Reset to "all" filter on partition switch so users see everything
+        self._carousel_filter = None
         self._filter_bar.reset()
-        self._filter_bar.filter_changed.emit(TaskFilter(date_from=today, date_to=today))
+        self._filter_bar.filter_changed.emit(TaskFilter())
 
     def _on_unlock_partition(self) -> None:
         """Retry password for the currently locked partition."""

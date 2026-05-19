@@ -53,3 +53,8 @@ default = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.20.0",
+]
