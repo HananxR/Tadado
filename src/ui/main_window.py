@@ -462,6 +462,7 @@ class MainWindow(QMainWindow):
         bus.task_status_changed.connect(self._on_data_changed)
         self._filter_bar.filter_changed.connect(self._on_filter_changed)
         bus.partitions_changed.connect(self._on_partitions_changed)
+        bus.config_changed.connect(self._on_config_changed)
 
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._on_new_task)
@@ -752,7 +753,7 @@ class MainWindow(QMainWindow):
         # Reset to "all" filter on partition switch so users see everything
         self._carousel_filter = None
         self._filter_bar.reset()
-        self._filter_bar.filter_changed.emit(TaskFilter())
+        self._filter_bar.filter_changed.emit(self._filter_bar.build_filter())
 
     def _on_unlock_partition(self) -> None:
         """Retry password for the currently locked partition."""
@@ -919,7 +920,7 @@ class MainWindow(QMainWindow):
         self._save_splitter_state()
         self._stack.setCurrentIndex(0)
         self._filter_bar.reset()
-        self._filter_bar.filter_changed.emit(TaskFilter())
+        self._filter_bar.filter_changed.emit(self._filter_bar.build_filter())
         self._restore_splitter_state()
 
     def _save_splitter_state(self) -> list[int]:
@@ -941,16 +942,22 @@ class MainWindow(QMainWindow):
         self._filter_bar.reset()
 
         if preset == "all":
-            self._filter_bar.filter_changed.emit(TaskFilter())
+            self._filter_bar.filter_changed.emit(self._filter_bar.build_filter())
         elif preset == "today":
-            self._filter_bar.filter_changed.emit(TaskFilter(date_from=today, date_to=today))
+            f = self._filter_bar.build_filter()
+            f.date_from, f.date_to = today, today
+            self._filter_bar.filter_changed.emit(f)
         elif preset == "week":
             weekday = today.isoweekday()
             monday = today - dt.timedelta(days=weekday - 1)
             sunday = monday + dt.timedelta(days=6)
-            self._filter_bar.filter_changed.emit(TaskFilter(date_from=monday, date_to=sunday))
+            f = self._filter_bar.build_filter()
+            f.date_from, f.date_to = monday, sunday
+            self._filter_bar.filter_changed.emit(f)
         elif preset == "overdue":
-            self._filter_bar.filter_changed.emit(TaskFilter(overdue_only=True))
+            f = self._filter_bar.build_filter()
+            f.overdue_only = True
+            self._filter_bar.filter_changed.emit(f)
 
     def _on_new_task(self) -> None:
         """Ctrl+N — same as clicking the '新建' toolbar button."""
@@ -1066,6 +1073,10 @@ class MainWindow(QMainWindow):
         dialog.exec()
         self._signal_bus.config_changed.emit()
 
+    def _on_config_changed(self) -> None:
+        """Sync filter bar sort when default sort config changes."""
+        self._filter_bar.set_sort(self._config.default_sort)
+
     def _on_quit(self) -> None:
         self._signal_bus.application_quit.emit()
 
@@ -1094,6 +1105,6 @@ class MainWindow(QMainWindow):
         self._filter_bar.blockSignals(True)
         self._filter_bar.reset()
         self._filter_bar.blockSignals(False)
-        self._filter_bar.filter_changed.emit(
-            TaskFilter(date_from=selected_date, date_to=selected_date)
-        )
+        f = self._filter_bar.build_filter()
+        f.date_from, f.date_to = selected_date, selected_date
+        self._filter_bar.filter_changed.emit(f)
