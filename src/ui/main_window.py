@@ -491,6 +491,9 @@ class MainWindow(QMainWindow):
         if filter_.overdue_only:
             from datetime import timedelta as _td
             df, dt_to = date(2000, 1, 1), date.today() - _td(days=1)
+        elif filter_.date_to and not filter_.date_from:
+            # "today" preset: upper bound only, show stats for all tasks up to date_to
+            df, dt_to = date(2000, 1, 1), filter_.date_to
         elif filter_.date_from and filter_.date_to:
             df, dt_to = filter_.date_from, filter_.date_to
         else:
@@ -945,7 +948,8 @@ class MainWindow(QMainWindow):
             self._filter_bar.filter_changed.emit(self._filter_bar.build_filter())
         elif preset == "today":
             f = self._filter_bar.build_filter()
-            f.date_from, f.date_to = today, today
+            f.date_to = today  # deadline <= today (includes overdue) + no-deadline
+            f.statuses = {TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING}
             self._filter_bar.filter_changed.emit(f)
         elif preset == "week":
             weekday = today.isoweekday()
@@ -953,6 +957,7 @@ class MainWindow(QMainWindow):
             sunday = monday + dt.timedelta(days=6)
             f = self._filter_bar.build_filter()
             f.date_from, f.date_to = monday, sunday
+            f.statuses = {TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING}
             self._filter_bar.filter_changed.emit(f)
         elif preset == "overdue":
             f = self._filter_bar.build_filter()
