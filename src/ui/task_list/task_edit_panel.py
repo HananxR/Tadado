@@ -10,6 +10,7 @@ from typing import Callable
 from PySide6.QtCore import QDate, QSize, QTime, Qt, QTimer, Signal
 from PySide6.QtGui import QPainter, QBrush, QColor, QPen, QPixmap, QTextDocument
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -301,11 +302,14 @@ class TaskEditPanel(QWidget):
         self._deadline_date_edit.setMinimumDate(QDate(2000, 1, 1))
         self._deadline_date_edit.setMaximumDate(QDate(2100, 12, 31))
         self._deadline_date_edit.setFixedWidth(138)
+        self._deadline_date_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._deadline_date_edit.dateChanged.connect(self._on_deadline_picker_changed)
         deadline_row.addWidget(self._deadline_date_edit)
         self._deadline_time_edit = QTimeEdit()
         self._deadline_time_edit.setDisplayFormat("HH:mm")
-        self._deadline_time_edit.setFixedWidth(62)
+        self._deadline_time_edit.setFixedWidth(52)
+        self._deadline_time_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._deadline_time_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self._deadline_time_edit.setTime(QTime.currentTime())
         self._deadline_time_edit.timeChanged.connect(self._on_deadline_picker_changed)
         deadline_row.addWidget(self._deadline_time_edit)
