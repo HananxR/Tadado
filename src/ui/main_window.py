@@ -367,7 +367,7 @@ class MainWindow(QMainWindow):
         heatmap_layout.addStretch()
         self._stack.addWidget(heatmap_page)
 
-        self._carousel_filter = TaskFilter(date_from=date.today(), date_to=date.today())
+        self._carousel_filter = TaskFilter()
         self._carousel.set_items([])
         # Load partitions into filter bar and edit panel
         self._load_partitions()
@@ -498,12 +498,12 @@ class MainWindow(QMainWindow):
             from datetime import timedelta as _td
             df, dt_to = archive_bound, date.today() - _td(days=1)
         elif filter_.date_to and not filter_.date_from:
-            # "today" preset: upper bound only, stats for all tasks up to date_to
-            df, dt_to = date(2000, 1, 1), filter_.date_to
+            # "week" preset: upper bound only, stats up to end of week
+            df, dt_to = archive_bound, filter_.date_to
         elif filter_.date_from and filter_.date_to:
             df, dt_to = filter_.date_from, filter_.date_to
         else:
-            # "全部": from last archive to now
+            # "today" / "all": from last archive to now (or all time)
             df, dt_to = archive_bound, date(2100, 1, 1)
         self._stats_bar.refresh(date_from=df, date_to=dt_to, overdue_only=filter_.overdue_only)
         # ③ Carousel
@@ -954,15 +954,15 @@ class MainWindow(QMainWindow):
         if preset == "all":
             self._filter_bar.filter_changed.emit(self._filter_bar.build_filter())
         elif preset == "today":
-            f = self._filter_bar.build_filter()
-            f.date_to = today  # deadline <= today (includes overdue) + no-deadline
-            self._filter_bar.filter_changed.emit(f)
+            # "Today" = all active tasks regardless of deadline.
+            # Deadline is task metadata, not a visibility filter.
+            self._filter_bar.filter_changed.emit(self._filter_bar.build_filter())
         elif preset == "week":
             weekday = today.isoweekday()
             monday = today - dt.timedelta(days=weekday - 1)
             sunday = monday + dt.timedelta(days=6)
             f = self._filter_bar.build_filter()
-            f.date_from, f.date_to = monday, sunday
+            f.date_to = sunday  # includes overdue + this week
             self._filter_bar.filter_changed.emit(f)
         elif preset == "overdue":
             f = self._filter_bar.build_filter()
