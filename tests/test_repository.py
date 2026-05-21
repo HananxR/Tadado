@@ -118,9 +118,11 @@ class TestAggregations:
         repository.insert(_make_task(task_id="1", status=TaskStatus.TODO))
         repository.insert(_make_task(task_id="2", status=TaskStatus.DOING))
         repository.insert(_make_task(task_id="3", status=TaskStatus.DOING))
+        repository.insert(_make_task(task_id="4", status=TaskStatus.OVERDUE))
         counts = repository.get_status_counts()
         assert counts[TaskStatus.TODO] == 1
         assert counts[TaskStatus.DOING] == 2
+        assert counts[TaskStatus.OVERDUE] == 1
 
     def test_heatmap_data(self, repository: TaskRepository) -> None:
         repository.insert(_make_task(task_id="1", deadline_date=date(2026, 5, 10)))
@@ -154,3 +156,51 @@ class TestEmptyState:
         """No tasks at all → any filter returns empty."""
         results = repository.search(TaskFilter())
         assert len(results) == 0
+
+
+class TestOverdueStatus:
+    """Auto OVERDUE detection and reversion via refresh_overdue_status()."""
+
+    def test_auto_overdue(self, repository: TaskRepository) -> None:
+        """Tasks past deadline become OVERDUE; future/DONE tasks don't."""
+        from datetime import date as _date, timedelta
+        past = _date.today() - timedelta(days=7)
+        future = _date.today() + timedelta(days=365)
+        repository.insert(_make_task(task_id="1", title="past", deadline_date=past))
+        repository.insert(_make_task(task_id="2", title="future", deadline_date=future))
+        repository.insert(_make_task(task_id="3", title="done", status=TaskStatus.DONE, deadline_date=past))
+
+        changed = repository.refresh_overdue_status()
+        changed_ids = [t.id for t, _ in changed]
+        assert "1" in changed_ids
+        assert "2" not in changed_ids
+        assert "3" not in changed_ids
+
+        t1 = repository.get_by_id("1")
+        assert t1 is not None
+        assert t1.status == TaskStatus.OVERDUE
+
+    def test_revert_overdue(self, repository: TaskRepository) -> None:
+        """OVERDUE tasks with future deadline revert to DOING."""
+        from datetime import date as _date, timedelta
+        future = _date.today() + timedelta(days=365)
+        task = _make_task(task_id="1", title="revert", status=TaskStatus.OVERDUE, deadline_date=future)
+        repository.insert(task)
+
+        changed = repository.refresh_overdue_status()
+        assert "1" in [t.id for t, _ in changed]
+
+        t1 = repository.get_by_id("1")
+        assert t1 is not None
+        assert t1.status == TaskStatus.DOING
+
+    def test_sort_order_includes_overdue(self, repository: TaskRepository) -> None:
+        """OVERDUE sorts before DOING."""
+        today = date.today()
+        repository.insert(_make_task(task_id="1", status=TaskStatus.DOING, deadline_date=today))
+        repository.insert(_make_task(task_id="2", status=TaskStatus.OVERDUE, deadline_date=today))
+        results = repository.search(
+            TaskFilter(sort_by=[SortCriterion("status", ascending=True)])
+        )
+        statuses = [r.status for r in results]
+        assert statuses.index(TaskStatus.OVERDUE) < statuses.index(TaskStatus.DOING)

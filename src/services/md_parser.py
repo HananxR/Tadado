@@ -11,14 +11,14 @@ from ..models.task_status import TaskStatus
 
 # Pattern breakdown:
 #   ^- \[([ xX])\]                          checkbox
-#   \s+(TODO|DOING|DONE|URGENT|WAIT|LATER)   status keyword
+#   \s+(TODO|DOING|DONE|OVERDUE)       status keyword
 #   (?:\s+<(\d{4}-\d{2}-\d{2})>)?            optional scheduled date
 #   (?:\s+<(\d{4}-\d{2}-\d{2})>)?            optional deadline date
 #   \s+(.+)$                                  title + tags
 
 _TASK_LINE_PATTERN = re.compile(
     r"^-\s*\[([ xX])\]\s+"
-    r"(TODO|DOING|DONE|URGENT|WAIT|LATER)"
+    r"(TODO|DOING|DONE|OVERDUE)"
     r"(?:\s+<(\d{4}-\d{2}-\d{2})>)?"
     r"(?:\s+<(\d{4}-\d{2}-\d{2})"
     r"(?:[T ](\d{2}:\d{2}))?>)?"

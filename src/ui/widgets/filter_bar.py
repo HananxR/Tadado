@@ -45,7 +45,7 @@ class FilterBar(QWidget):
         self._status = QComboBox()
         self._status.setObjectName("statusFilter")
         self._status.addItem("状态", None)
-        for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+        for s in (TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE, TaskStatus.OVERDUE):
             self._status.addItem(s.display_name, s)
         self._status.currentIndexChanged.connect(self._on_filter_changed)
         layout.addWidget(self._status, 1)

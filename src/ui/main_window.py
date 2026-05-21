@@ -449,7 +449,7 @@ class MainWindow(QMainWindow):
         self._edit_panel.clear()
         self._splitter_stack.setCurrentIndex(1)
         self._carousel.set_items([])
-        for status in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+        for status in (TaskStatus.OVERDUE, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             badge = self._stats_bar._badges.get(status)
             if badge:
                 badge.setText(f"{badge.text().split(':')[0]}: 0")
@@ -556,13 +556,13 @@ class MainWindow(QMainWindow):
             )
         else:
             counts = self._stats_bar.get_counts()
-            u = counts.get(TaskStatus.URGENT, 0)
+            ov = counts.get(TaskStatus.OVERDUE, 0)
             t = counts.get(TaskStatus.TODO, 0)
             d = counts.get(TaskStatus.DOING, 0)
             dn = counts.get(TaskStatus.DONE, 0)
-            total = u + t + d + dn  # sum of stats bar = consistent with badges
+            total = ov + t + d + dn  # sum of stats bar = consistent with badges
             self._status_partition.setText(
-                f"  📂 {name} :: [{ctx}] 紧急{u} 待办{t} 进行中{d} 已完成{dn}"
+                f"  📂 {name} :: [{ctx}] 逾期{ov} 待办{t} 进行中{d} 已完成{dn}"
                 f" (共{total}条)  |  合理安排时间 ⏰"
             )
             from ..utils.design_tokens import get_tokens as _gt4
@@ -658,8 +658,8 @@ class MainWindow(QMainWindow):
 
         # Sort: status importance → closest deadline
         status_rank = {
-            TaskStatus.URGENT: 0, TaskStatus.TODO: 1, TaskStatus.DOING: 2,
-            TaskStatus.WAIT: 3, TaskStatus.LATER: 4, TaskStatus.DONE: 5,
+            TaskStatus.OVERDUE: 0, TaskStatus.TODO: 1,
+            TaskStatus.DOING: 2, TaskStatus.DONE: 3,
         }
         sorted_tasks = sorted(
             all_tasks,
@@ -817,7 +817,7 @@ class MainWindow(QMainWindow):
         self._update_status_partition_label()
         self._carousel.set_items([])
         # Force stats bar to show all zeros
-        for status in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+        for status in (TaskStatus.OVERDUE, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             badge = self._stats_bar._badges.get(status)
             if badge:
                 badge.setText(f"{badge.text().split(':')[0]}: 0")
@@ -1111,7 +1111,10 @@ class MainWindow(QMainWindow):
         self._midnight_timer.start(now.msecsTo(midnight))
 
     def _on_midnight_crossed(self) -> None:
-        """Day boundary crossed — refresh stats so overdue/today counts update."""
+        """Day boundary crossed — refresh overdue status and stats."""
+        changed = self._repository.refresh_overdue_status()
+        for task, old_status in changed:
+            self._signal_bus.task_status_changed.emit(task, old_status)
         self._on_data_changed()
         self._schedule_midnight_timer()
 

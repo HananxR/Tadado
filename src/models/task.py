@@ -36,7 +36,7 @@ class Task:
         """True when the deadline has passed and the task is still active."""
         if self.deadline_date is None:
             return False
-        if self.status in (TaskStatus.DONE,):
+        if self.status in (TaskStatus.DONE, TaskStatus.OVERDUE):
             return False
         return self.deadline_date < date.today()
 
@@ -45,7 +45,7 @@ class Task:
         """True when the deadline is within the next *days* days."""
         if self.deadline_date is None:
             return False
-        if self.status in (TaskStatus.DONE,):
+        if self.status in (TaskStatus.DONE, TaskStatus.OVERDUE):
             return False
         today = date.today()
         delta = (self.deadline_date - today).days

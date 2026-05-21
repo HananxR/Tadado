@@ -105,7 +105,7 @@ class TaskListView(QTableView):
         menu.addSeparator()
 
         status_menu = menu.addMenu("更改状态")
-        for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+        for s in (TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             action = status_menu.addAction(f"  {s.display_name}")
             action.setData(s)
             action.setCheckable(True)
@@ -113,6 +113,9 @@ class TaskListView(QTableView):
             action.triggered.connect(
                 lambda checked=False, st=s, t=task: self._on_change_status(t, st)
             )
+        if task.status == TaskStatus.OVERDUE:
+            locked_action = status_menu.addAction("  逾期 (不可更改)")
+            locked_action.setEnabled(False)
 
         menu.addSeparator()
         copy_action = menu.addAction("复制 MD(&C)")
@@ -169,6 +172,9 @@ class TaskListView(QTableView):
             self._signal_bus.task_deleted.emit(task.id)
 
     def _on_change_status(self, task: Task, new_status: TaskStatus) -> None:
+        # OVERDUE is locked — cannot be manually changed
+        if task.status == TaskStatus.OVERDUE:
+            return
         old_status = task.status
         if old_status == new_status:
             return

@@ -43,7 +43,7 @@ class _StatBadge(QLabel):
 
 
 class StatusStatsBar(QWidget):
-    """Horizontal bar showing URGENT/TODO/DOING/DONE counts aggregated by period.
+    """Horizontal bar showing OVERDUE/TODO/DOING/DONE counts aggregated by period.
 
     Clicking a status badge filters the task list.
     Clicking a period (日/周/月/年) changes the aggregation.
@@ -52,7 +52,7 @@ class StatusStatsBar(QWidget):
     filter_changed = Signal(TaskFilter)
 
     _STATUSES = [
-        (TaskStatus.URGENT, "#e74c3c", "紧急"),
+        (TaskStatus.OVERDUE, "#c0392b", "逾期"),
         (TaskStatus.TODO, "#5b8def", "待办"),
         (TaskStatus.DOING, "#f39c12", "进行中"),
         (TaskStatus.DONE, "#27ae60", "已完成"),
@@ -103,7 +103,7 @@ class StatusStatsBar(QWidget):
     def get_counts(self) -> dict[TaskStatus, int]:
         """Return the last-refreshed status counts."""
         counts = {}
-        for status in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+        for status in (TaskStatus.OVERDUE, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             badge = self._badges.get(status)
             if badge:
                 text = badge.text()

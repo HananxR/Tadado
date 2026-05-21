@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS partitions (
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     password TEXT DEFAULT '',
+    archive_days INTEGER NOT NULL DEFAULT 9999,
     created_at TEXT NOT NULL
 );
 """
@@ -187,8 +188,18 @@ class TaskRepository:
             self._conn.execute("ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0")
         except sqlite3.OperationalError:
             pass
-        # Migrate legacy WAIT/LATER status to TODO
-        self._conn.execute("UPDATE tasks SET status = 'TODO' WHERE status IN ('WAIT', 'LATER')")
+        try:
+            self._conn.execute("ALTER TABLE partitions ADD COLUMN archive_days INTEGER NOT NULL DEFAULT 9999")
+        except sqlite3.OperationalError:
+            pass
+        # Migrate legacy WAIT/LATER/URGENT status to TODO
+        self._conn.execute("UPDATE tasks SET status = 'TODO' WHERE status IN ('WAIT', 'LATER', 'URGENT')")
+        # Auto-mark overdue tasks on DB open
+        self._conn.execute(
+            "UPDATE tasks SET status = 'OVERDUE' WHERE deadline_date < ? "
+            "AND archived = 0 AND status NOT IN ('DONE', 'OVERDUE')",
+            (date.today().isoformat(),),
+        )
         # Seed default partitions if none exist
         cur = self._conn.execute("SELECT COUNT(*) FROM partitions")
         if cur.fetchone()[0] == 0:
@@ -427,10 +438,10 @@ class TaskRepository:
     def get_all_partitions(self) -> list[dict]:
         """Return all partitions ordered by sort_order."""
         rows = self.conn.execute(
-            "SELECT id, name, sort_order, password, created_at FROM partitions ORDER BY sort_order"
+            "SELECT id, name, sort_order, password, archive_days, created_at FROM partitions ORDER BY sort_order"
         ).fetchall()
         return [
-            {"id": r[0], "name": r[1], "sort_order": r[2], "password": r[3], "created_at": r[4]}
+            {"id": r[0], "name": r[1], "sort_order": r[2], "password": r[3], "archive_days": r[4], "created_at": r[5]}
             for r in rows
         ]
 
@@ -448,6 +459,14 @@ class TaskRepository:
         self.conn.execute(
             "UPDATE partitions SET password = ? WHERE id = ?",
             (password, partition_id),
+        )
+        self.conn.commit()
+
+    def update_partition_archive_days(self, partition_id: str, days: int) -> None:
+        """Set the archive-after-completion days for a partition."""
+        self.conn.execute(
+            "UPDATE partitions SET archive_days = ? WHERE id = ?",
+            (days, partition_id),
         )
         self.conn.commit()
 
@@ -538,15 +557,70 @@ class TaskRepository:
         return [_row_to_task(tuple(r)) for r in rows]
 
     # ------------------------------------------------------------------
+    # Overdue status refresh
+    # ------------------------------------------------------------------
+
+    def refresh_overdue_status(self) -> list[tuple[Task, TaskStatus]]:
+        """Scan all tasks and auto-set or revert OVERDUE status.
+
+        Returns a list of (task, old_status) for each changed task
+        so callers can emit ``task_status_changed`` signals.
+        """
+        from ..services.md_formatter import MarkdownTaskFormatter
+
+        formatter = MarkdownTaskFormatter()
+        changed: list[tuple[Task, TaskStatus]] = []
+        today_iso = date.today().isoformat()
+        cols = ", ".join(_TASK_COLUMNS)
+
+        # Tasks past deadline that are not yet OVERDUE or DONE → OVERDUE
+        rows = self.conn.execute(
+            f"SELECT {cols} FROM tasks WHERE deadline_date < ? "
+            "AND deadline_date IS NOT NULL AND archived = 0 "
+            "AND status NOT IN ('DONE', 'OVERDUE')",
+            (today_iso,),
+        ).fetchall()
+        for row in rows:
+            task = _row_to_task(tuple(row))
+            old_status = task.status
+            task.status = TaskStatus.OVERDUE
+            task.raw_md = formatter.format(task)
+            self.update(task)
+            changed.append((task, old_status))
+
+        # OVERDUE tasks whose deadline is now in the future → revert to DOING
+        rows = self.conn.execute(
+            f"SELECT {cols} FROM tasks WHERE status = 'OVERDUE' "
+            "AND (deadline_date >= ? OR deadline_date IS NULL)",
+            (today_iso,),
+        ).fetchall()
+        for row in rows:
+            task = _row_to_task(tuple(row))
+            old_status = task.status
+            task.status = TaskStatus.DOING
+            task.raw_md = formatter.format(task)
+            self.update(task)
+            changed.append((task, old_status))
+
+        return changed
+
+    # ------------------------------------------------------------------
     # Archive helpers (Phase 2)
     # ------------------------------------------------------------------
 
-    def get_tasks_for_archive(self, cutoff_date: date) -> list[Task]:
+    def get_tasks_for_archive(self, cutoff_date: date, partition_id: str | None = None) -> list[Task]:
         cols = ", ".join(_TASK_COLUMNS)
-        rows = self.conn.execute(
-            f"SELECT {cols} FROM tasks WHERE status='DONE' AND completed_at <= ? AND archived=0",
-            (cutoff_date.isoformat(),),
-        ).fetchall()
+        if partition_id:
+            rows = self.conn.execute(
+                f"SELECT {cols} FROM tasks WHERE status='DONE' AND completed_at <= ? "
+                "AND archived=0 AND partition_id = ?",
+                (cutoff_date.isoformat(), partition_id),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                f"SELECT {cols} FROM tasks WHERE status='DONE' AND completed_at <= ? AND archived=0",
+                (cutoff_date.isoformat(),),
+            ).fetchall()
         return [_row_to_task(tuple(r)) for r in rows]
 
     def archive_batch(self, task_ids: list[str]) -> int:
@@ -611,10 +685,10 @@ class TaskRepository:
         for sc in sort_by:
             col = _field_map.get(sc.field, sc.field)
             if sc.field == "status":
-                # Custom order: URGENT > TODO > DOING > DONE
+                # Custom order: OVERDUE > DOING > TODO > DONE
                 clauses.append(
-                    "CASE status WHEN 'URGENT' THEN 1 WHEN 'TODO' THEN 2 "
-                    "WHEN 'DOING' THEN 3 WHEN 'DONE' THEN 4 ELSE 5 END "
+                    "CASE status WHEN 'OVERDUE' THEN 1 "
+                    "WHEN 'DOING' THEN 2 WHEN 'TODO' THEN 3 WHEN 'DONE' THEN 4 ELSE 5 END "
                     + ("ASC" if sc.ascending else "DESC")
                 )
             else:

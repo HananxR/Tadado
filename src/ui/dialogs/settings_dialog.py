@@ -175,10 +175,10 @@ class SettingsDialog(QDialog):
         self._archive_cb.setChecked(self._config.archive_enabled)
         form.addRow("启用自动归档", self._archive_cb)
 
-        self._archive_days = QSpinBox()
-        self._archive_days.setRange(1, 365)
-        self._archive_days.setValue(self._config.archive_after_days)
-        form.addRow("完成后天数", self._archive_days)
+        hint = QLabel("每个分区的归档天数在「分区管理」中独立设置，默认 9999 天（不归档）。")
+        hint.setWordWrap(True)
+        hint.setStyleSheet("font-size: 11px; color: #888;")
+        form.addRow(hint)
 
         return w
 
@@ -195,16 +195,18 @@ class SettingsDialog(QDialog):
         hint.setStyleSheet("font-size: 11px;")
         layout.addWidget(hint)
 
-        # Partition table: 可见 | 名称 | 密码 | 删除
-        self._partition_table = QTableWidget(0, 4)
-        self._partition_table.setHorizontalHeaderLabels(["可见", "名称", "密码", ""])
+        # Partition table: 可见 | 名称 | 归档天数 | 密码 | 删除
+        self._partition_table = QTableWidget(0, 5)
+        self._partition_table.setHorizontalHeaderLabels(["可见", "名称", "归档天数", "密码", ""])
         self._partition_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
         self._partition_table.horizontalHeader().resizeSection(0, 40)
         self._partition_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self._partition_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        self._partition_table.horizontalHeader().resizeSection(2, 60)
+        self._partition_table.horizontalHeader().resizeSection(2, 80)
         self._partition_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
         self._partition_table.horizontalHeader().resizeSection(3, 60)
+        self._partition_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
+        self._partition_table.horizontalHeader().resizeSection(4, 60)
         self._partition_table.verticalHeader().hide()
         self._partition_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         layout.addWidget(self._partition_table)
@@ -253,6 +255,13 @@ class SettingsDialog(QDialog):
             name_item = QTableWidgetItem(p["name"])
             self._partition_table.setItem(row, 1, name_item)
 
+            # Archive days
+            archive_spin = QSpinBox()
+            archive_spin.setRange(1, 9999)
+            archive_spin.setValue(p.get("archive_days", 9999))
+            archive_spin.setToolTip("完成后 N 天自动归档，9999 表示不归档")
+            self._partition_table.setCellWidget(row, 2, archive_spin)
+
             # Password button
             has_pwd = bool(p.get("password", ""))
             pwd_btn = QPushButton("🔒" if has_pwd else "🔓")
@@ -260,14 +269,14 @@ class SettingsDialog(QDialog):
                 "QPushButton { font-size: 12px; padding: 2px 6px; border: none; }"
             )
             pwd_btn.clicked.connect(lambda checked=False, pid=p["id"]: self._on_set_partition_password(pid))
-            self._partition_table.setCellWidget(row, 2, pwd_btn)
+            self._partition_table.setCellWidget(row, 3, pwd_btn)
 
             # Delete button per row
             del_btn = QPushButton("删除")
             del_btn.setObjectName("deleteBtn")
             del_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }")
             del_btn.clicked.connect(lambda checked=False, pid=p["id"]: self._on_delete_single_partition(pid))
-            self._partition_table.setCellWidget(row, 3, del_btn)
+            self._partition_table.setCellWidget(row, 4, del_btn)
 
             # Default combo
             self._default_partition_combo.addItem(p["name"], p["id"])
@@ -489,7 +498,7 @@ SQLite (raw_md + 结构化列 + FTS5 全文索引)
 <pre style="padding:8px;border-radius:4px;">- [ ] TODO &lt;2026-05-15&gt; 新任务</pre>
 <p><b>Markdown 语法规则：</b></p>
 <ul>
-<li><b>状态关键字</b>：<code>TODO</code> / <code>DOING</code> / <code>DONE</code> / <code>URGENT</code>——位于 <code>- [ ]</code> 之后</li>
+<li><b>状态关键字</b>：<code>TODO</code> / <code>DOING</code> / <code>DONE</code> / <code>OVERDUE</code>——位于 <code>- [ ]</code> 之后（OVERDUE 为系统自动判定）</li>
 <li><b>截止日期</b>：<code>&lt;YYYY-MM-DD&gt;</code> 或 <code>&lt;YYYY-MM-DD HH:MM&gt;</code></li>
 <li><b>标签</b>：<code>#标签名</code>——可多个，置于行末</li>
 </ul>
@@ -497,9 +506,13 @@ SQLite (raw_md + 结构化列 + FTS5 全文索引)
 <h3>3.2 任务状态与生命周期</h3>
 <p>任务状态按以下循环流转：</p>
 <pre style="padding:8px;border-radius:4px;">
-URGENT ──→ DOING ──→ DONE ──→ TODO
-  ↑                            │
-  └──────── TODO ←─────────────┘
+TODO ──→ DOING ──→ DONE ──→ DOING (重新激活)
+  │
+  └──(逾期自动判定)──→ OVERDUE (锁定)
+                       │
+             (修改截至时间为未来)
+                       ↓
+                    DOING + 活动日志
 </pre>
 <p><b>操作方式：</b></p>
 <ul>
@@ -533,7 +546,7 @@ URGENT ──→ DOING ──→ DONE ──→ TODO
 <p>筛选栏提供多维过滤：</p>
 <ul>
 <li><b>搜索框</b>：全文搜索（基于 FTS5），支持中文分词</li>
-<li><b>状态筛选</b>：按 URGENT / TODO / DOING / DONE 过滤</li>
+<li><b>状态筛选</b>：按 OVERDUE / TODO / DOING / DONE 过滤</li>
 <li><b>优先级筛选</b>：按 A / B / C 过滤</li>
 <li><b>排序</b>：支持按状态、截止日、优先级、创建时间、标题排序</li>
 </ul>
@@ -590,9 +603,9 @@ URGENT ──→ DOING ──→ DONE ──→ TODO
 <tr><td>📊 准备季度汇报 PPT</td><td>完整状态流转（TODO→DOING→DONE）+ 活动时间线</td></tr>
 <tr><td>🏃 每周三次有氧运动</td><td>循环任务 + 标签 #健康</td></tr>
 <tr><td>📖 阅读《系统设计面试》</td><td>DOING 状态 + 多次追加进展</td></tr>
-<tr><td>🦀 学习 Rust 所有权机制</td><td>URGENT 高优先级 + 详细学习笔记时间线</td></tr>
+<tr><td>🦀 学习 Rust 所有权机制</td><td>DOING 进行中 + 详细学习笔记时间线</td></tr>
 <tr><td>💰 整理本月开支账单</td><td>逾期任务展示 + deadline 紧迫感</td></tr>
-<tr><td>✈️ 规划端午出行行程</td><td>远期截止日 + WAIT 等待中状态</td></tr>
+<tr><td>✈️ 规划端午出行行程</td><td>远期截止日 + TODO 待办状态</td></tr>
 <tr><td>📝 写技术博客：Python 协程</td><td>低保真优先级 + 富文本活动记录</td></tr>
 <tr><td>📚 整理书单并写读书笔记</td><td>LATER 稍后状态 + 多标签</td></tr>
 </table>
@@ -656,18 +669,23 @@ DeskTodoSeq — 用 Markdown 管理时间，用数据可视化进度。
             value=self._quiet_end.time().toString("HH:mm"),
         )
         self._config.set("archive", "enabled", value=self._archive_cb.isChecked())
-        self._config.set("archive", "completed_after_days", value=self._archive_days.value())
         self._config.set(
             "general", "default_partition",
             value=self._default_partition_combo.currentData(),
         )
-        # Save hidden partitions
+        # Save hidden partitions + per-partition archive days
         hidden = []
         for r in range(self._partition_table.rowCount()):
             cb = self._partition_table.cellWidget(r, 0)
             if cb and not cb.isChecked():
                 pid = self._partitions_data[r]["id"]
                 hidden.append(pid)
+            # Save per-partition archive days
+            archive_spin = self._partition_table.cellWidget(r, 2)
+            if archive_spin and r < len(self._partitions_data):
+                pid = self._partitions_data[r]["id"]
+                new_days = archive_spin.value()
+                self._repository.update_partition_archive_days(pid, new_days)
         self._config.set("general", "hidden_partitions", value=hidden)
 
         motd_cfg = {}

@@ -95,3 +95,41 @@ class TestRoundTrip:
         assert parsed.deadline_date == task.deadline_date
         assert parsed.title == task.title
         assert parsed.tags == task.tags
+
+
+class TestOverdueFormat:
+    """OVERDUE status formatting."""
+
+    def test_overdue_task(self, formatter: MarkdownTaskFormatter) -> None:
+        task = Task(
+            id="o1",
+            raw_md="",
+            title="已逾期报告",
+            status=TaskStatus.OVERDUE,
+            deadline_date=date(2026, 5, 1),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        result = formatter.format(task)
+        assert result == "- [ ] OVERDUE <2026-05-01> 已逾期报告"
+
+    def test_overdue_round_trip(self, formatter: MarkdownTaskFormatter) -> None:
+        from src.services.md_parser import MarkdownTaskParser
+
+        parser = MarkdownTaskParser()
+        task = Task(
+            id="o2",
+            raw_md="",
+            title="过期任务",
+            status=TaskStatus.OVERDUE,
+            scheduled_date=date(2026, 4, 1),
+            deadline_date=date(2026, 4, 15),
+            tags=["逾期"],
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        md_line = formatter.format(task)
+        parsed = parser.parse(md_line)
+        assert parsed.status == TaskStatus.OVERDUE
+        assert parsed.scheduled_date == date(2026, 4, 1)
+        assert parsed.deadline_date == date(2026, 4, 15)

@@ -154,12 +154,12 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
             None,
         ),
         (
-            f"- [ ] URGENT<{today + timedelta(days=1)}> 学习 Rust 所有权和借用机制 #学习 #Rust",
-            "学习 Rust 所有权机制 — URGENT + 详细笔记",
+            f"- [ ] DOING<{today + timedelta(days=1)}> 学习 Rust 所有权和借用机制 #学习 #Rust",
+            "学习 Rust 所有权机制 — DOING + 详细笔记",
             [
-                {"ts": _ago(2), "content": "阅读 Rust Book 第 4 章：所有权", "status": "URGENT"},
-                {"ts": _ago(1), "content": "理解三规则：每个值只有一个所有者；值离开作用域被丢弃；引用不获取所有权", "status": "URGENT"},
-                {"ts": datetime.now().isoformat(), "content": "完成练习题 1-10，正确率 8/10", "status": "URGENT"},
+                {"ts": _ago(2), "content": "阅读 Rust Book 第 4 章：所有权", "status": "DOING"},
+                {"ts": _ago(1), "content": "理解三规则：每个值只有一个所有者；值离开作用域被丢弃；引用不获取所有权", "status": "DOING"},
+                {"ts": datetime.now().isoformat(), "content": "完成练习题 1-10，正确率 8/10", "status": "DOING"},
             ],
             None,
         ),
@@ -262,6 +262,13 @@ class DeskTodoSeqApp(QApplication):
 
         self._main_window.show()
         QTimer.singleShot(100, self._main_window.apply_screen_size)
+        QTimer.singleShot(200, self._refresh_overdue_on_startup)
+
+    def _refresh_overdue_on_startup(self) -> None:
+        """Scan all tasks and auto-set/revert OVERDUE status after startup."""
+        changed = self._repository.refresh_overdue_status()
+        for task, old_status in changed:
+            self._signal_bus.task_status_changed.emit(task, old_status)
 
     def _on_wake_request(self) -> None:
         """Another instance tried to start — bring existing window to front."""

@@ -39,9 +39,17 @@ class TaskArchiver:
         if not self._config.archive_enabled:
             return
 
-        cutoff = date.today() - timedelta(days=self._config.archive_after_days)
-        tasks = self._repository.get_tasks_for_archive(cutoff)
-        if tasks:
-            ids = [t.id for t in tasks]
-            count = self._repository.archive_batch(ids)
-            self._signal_bus.archive_completed.emit(count)
+        today = date.today()
+        partitions = self._repository.get_all_partitions()
+        total_archived = 0
+
+        for p in partitions:
+            archive_days = p.get("archive_days", 9999)
+            cutoff = today - timedelta(days=archive_days)
+            tasks = self._repository.get_tasks_for_archive(cutoff, p["id"])
+            if tasks:
+                ids = [t.id for t in tasks]
+                total_archived += self._repository.archive_batch(ids)
+
+        if total_archived:
+            self._signal_bus.archive_completed.emit(total_archived)

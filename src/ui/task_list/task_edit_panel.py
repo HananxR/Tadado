@@ -425,7 +425,7 @@ class TaskEditPanel(QWidget):
         progress_btn_row = QHBoxLayout()
         progress_btn_row.setSpacing(6)
         self._status_combo = QComboBox()
-        for s in (TaskStatus.URGENT, TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
+        for s in (TaskStatus.DOING, TaskStatus.DONE):
             self._status_combo.addItem(f"● {s.display_name}", s)
             from PySide6.QtGui import QColor
             self._status_combo.setItemData(
@@ -480,16 +480,26 @@ class TaskEditPanel(QWidget):
         self._task_summary.setVisible(True)
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(True)
-        self._status_combo.setEnabled(True)
         self._log_edit.setEnabled(True)
         self._log_save_btn.setEnabled(True)
         self._timeline_card.setVisible(True)
 
-
-        for i in range(self._status_combo.count()):
-            if self._status_combo.itemData(i) == task.status:
-                self._status_combo.setCurrentIndex(i)
-                break
+        # Status combo: OVERDUE shows only "逾期"; others show DOING/DONE
+        self._status_combo.blockSignals(True)
+        self._status_combo.clear()
+        if task.status == TaskStatus.OVERDUE:
+            self._status_combo.addItem(f"● {TaskStatus.OVERDUE.display_name}", TaskStatus.OVERDUE)
+            self._status_combo.setEnabled(False)
+        else:
+            for s in (TaskStatus.DOING, TaskStatus.DONE):
+                self._status_combo.addItem(f"● {s.display_name}", s)
+            self._status_combo.setEnabled(True)
+            target = task.status if task.status != TaskStatus.TODO else TaskStatus.DOING
+            for i in range(self._status_combo.count()):
+                if self._status_combo.itemData(i) == target:
+                    self._status_combo.setCurrentIndex(i)
+                    break
+        self._status_combo.blockSignals(False)
 
         # Set date/time pickers
         self._updating_from_md = True
@@ -873,7 +883,7 @@ class TaskEditPanel(QWidget):
                 text = text[:idx + 1] + " " + new_dl + text[idx + 1:]
             else:
                 # Insert after status keyword
-                kw_match = _re.search(r"(TODO|DOING|DONE|URGENT|WAIT|LATER)\s*", text)
+                kw_match = _re.search(r"(TODO|DOING|DONE|OVERDUE)\s*", text)
                 if kw_match:
                     pos = kw_match.end()
                     text = text[:pos] + f"{new_dl} " + text[pos:]
@@ -886,6 +896,7 @@ class TaskEditPanel(QWidget):
         if self._current_task is not None:
             current_text = self._md_edit.toPlainText().strip()
             self._save_btn.setEnabled(current_text != self._original_md.strip())
+            self._reevaluate_overdue()
         self._updating_from_md = False
 
 
@@ -971,6 +982,8 @@ class TaskEditPanel(QWidget):
         else:
             self._signal_bus.task_updated.emit(task)
         self._refresh_timeline()
+        # Re-evaluate overdue status after save
+        self._reevaluate_overdue()
         # Collapse editor after save
         self._collapse_btn.setVisible(True)
         self._editor_collapsible.setVisible(False)
@@ -990,6 +1003,69 @@ class TaskEditPanel(QWidget):
             self._repository.delete(task.id)
             self._signal_bus.task_deleted.emit(task.id)
             self.clear()
+
+    # ------------------------------------------------------------------
+    # Overdue re-evaluation
+    # ------------------------------------------------------------------
+
+    def _reevaluate_overdue(self) -> None:
+        """Check if the current task should become OVERDUE or be reverted."""
+        if not self._current_task:
+            return
+        task = self._current_task
+        qdate = self._deadline_date_edit.date()
+        dl_date = date(qdate.year(), qdate.month(), qdate.day())
+        today = date.today()
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        if task.status == TaskStatus.OVERDUE:
+            # Was overdue — check if deadline moved to future
+            if dl_date >= today and task.deadline_date is not None:
+                old_dl = task.deadline_date.isoformat()
+                new_dl = dl_date.isoformat()
+                task.status = TaskStatus.DOING
+                task.deadline_date = dl_date
+                task.raw_md = self._formatter.format(task)
+                task.updated_at = datetime.now()
+                task.activity_log.append({
+                    "ts": datetime.now().isoformat(),
+                    "content": f"调整截至时间由{old_dl}->{new_dl}，状态由逾期->进行中",
+                    "status": task.status.value,
+                })
+                self._repository.update(task)
+                self._original_md = task.raw_md
+                self._signal_bus.task_status_changed.emit(task, TaskStatus.OVERDUE)
+                # Repopulate combo back to DOING/DONE
+                self._status_combo.blockSignals(True)
+                self._status_combo.clear()
+                for s in (TaskStatus.DOING, TaskStatus.DONE):
+                    self._status_combo.addItem(f"● {s.display_name}", s)
+                self._status_combo.setEnabled(True)
+                self._status_combo.setCurrentIndex(0)  # DOING
+                self._status_combo.blockSignals(False)
+                self._refresh_timeline()
+        elif dl_date < today and task.status not in (TaskStatus.DONE, TaskStatus.OVERDUE):
+            # Deadline passed and not DONE → OVERDUE
+            old_status = task.status
+            task.status = TaskStatus.OVERDUE
+            task.deadline_date = dl_date
+            task.raw_md = self._formatter.format(task)
+            task.updated_at = datetime.now()
+            task.activity_log.append({
+                "ts": datetime.now().isoformat(),
+                "content": f"超过截至时间({now_str}),当前项目已逾期",
+                "status": task.status.value,
+            })
+            self._repository.update(task)
+            self._original_md = task.raw_md
+            self._signal_bus.task_status_changed.emit(task, old_status)
+            # Populate combo with only OVERDUE (locked)
+            self._status_combo.blockSignals(True)
+            self._status_combo.clear()
+            self._status_combo.addItem(f"● {TaskStatus.OVERDUE.display_name}", TaskStatus.OVERDUE)
+            self._status_combo.setEnabled(False)
+            self._status_combo.blockSignals(False)
+            self._refresh_timeline()
 
     # ------------------------------------------------------------------
     # Collapse / expand editor
@@ -1143,9 +1219,14 @@ class TaskEditPanel(QWidget):
         if not self._current_task:
             return
         content = self._log_edit.toPlainText().strip()
-        new_status = self._status_combo.currentData()
+        raw_status = self._status_combo.currentData()
         task = self._current_task
         old_status = task.status
+
+        # OVERDUE lock: cannot change status via progress
+        if old_status == TaskStatus.OVERDUE:
+            raw_status = TaskStatus.OVERDUE
+        new_status = raw_status
 
         if self._selected_entry is not None:
             # ---- Editing an existing entry ----

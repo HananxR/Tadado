@@ -36,6 +36,12 @@ class TaskScheduler:
     # ------------------------------------------------------------------
 
     def _check_due_tasks(self) -> None:
+        # Phase 1: Auto-set/revert OVERDUE status (always runs)
+        changed = self._repository.refresh_overdue_status()
+        for task, old_status in changed:
+            self._signal_bus.task_status_changed.emit(task, old_status)
+
+        # Phase 2: Reminder check (respects reminders_enabled)
         if not self._config.reminders_enabled:
             return
 

@@ -42,7 +42,6 @@ DEFAULT_CONFIG: dict = {
     },
     "archive": {
         "enabled": False,
-        "completed_after_days": 30,
     },
     "hotkeys": {
         "toggle_window": "Ctrl+Alt+T",
@@ -162,10 +161,6 @@ class AppConfig(QObject):
     @property
     def archive_enabled(self) -> bool:
         return bool(self._get("archive", "enabled"))
-
-    @property
-    def archive_after_days(self) -> int:
-        return int(self._get("archive", "completed_after_days"))
 
     # ------------------------------------------------------------------
     # Getters / Setters

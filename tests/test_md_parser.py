@@ -75,10 +75,10 @@ class TestParseFallback:
         assert result.status == TaskStatus.TODO
         assert result.title == "整理桌面"
 
-    def test_urgent_fallback(self, parser: MarkdownTaskParser) -> None:
+    def test_legacy_urgent_fallback(self, parser: MarkdownTaskParser) -> None:
+        """URGENT keyword no longer exists — treated as plain text, defaults to TODO."""
         result = parser.parse("URGENT 服务器宕机 #critical")
-        assert result.status == TaskStatus.URGENT
-        assert result.title == "服务器宕机"
+        assert result.status == TaskStatus.TODO
         assert "critical" in result.tags
 
     def test_case_insensitive(self, parser: MarkdownTaskParser) -> None:
@@ -148,3 +148,25 @@ class TestDeadlineTime:
         )
         assert parsed.deadline_date == date(2026, 7, 1)
         assert parsed.deadline_time == "18:00"
+
+
+class TestOverdue:
+    """OVERDUE status parsing."""
+
+    def test_overdue_parsing(self, parser: MarkdownTaskParser) -> None:
+        result = parser.parse("- [ ] OVERDUE <2026-05-01> 已逾期任务 #urgent")
+        assert result.status == TaskStatus.OVERDUE
+        assert result.scheduled_date == date(2026, 5, 1)
+        assert result.title == "已逾期任务"
+
+    def test_overdue_fallback(self, parser: MarkdownTaskParser) -> None:
+        result = parser.parse("- [ ] OVERDUE 简洁逾期")
+        assert result.status == TaskStatus.OVERDUE
+
+    def test_old_status_fallback_to_todo(self, parser: MarkdownTaskParser) -> None:
+        """WAIT/LATER keywords now map to TODO via from_string fallback."""
+        result = parser.parse("- [ ] WAIT 等待中")
+        assert result.status == TaskStatus.TODO
+
+        result = parser.parse("- [ ] LATER 稍后做")
+        assert result.status == TaskStatus.TODO
