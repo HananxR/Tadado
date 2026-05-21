@@ -675,12 +675,14 @@ class TaskEditPanel(QWidget):
         QTimer.singleShot(800, lambda: self._md_edit.setStyleSheet(""))
         self._save_btn.setEnabled(True)
         self._delete_btn.setEnabled(False)
-        # Reset status combo to TODO for new draft
-        for i in range(self._status_combo.count()):
-            if self._status_combo.itemData(i) == TaskStatus.TODO:
-                self._status_combo.setCurrentIndex(i)
-                break
+        # Repopulate combo for new draft: DOING/DONE, default DOING
+        self._status_combo.blockSignals(True)
+        self._status_combo.clear()
+        for s in (TaskStatus.DOING, TaskStatus.DONE):
+            self._status_combo.addItem(f"● {s.display_name}", s)
+        self._status_combo.setCurrentIndex(0)  # DOING
         self._status_combo.setEnabled(True)
+        self._status_combo.blockSignals(False)
         self._progress_edit.setText(str(0))
         self._progress_edit.setEnabled(True)
         self._timeline_card.setVisible(False)
@@ -915,6 +917,14 @@ class TaskEditPanel(QWidget):
                 created_at=datetime.now(),
                 updated_at=datetime.now(),
             )
+            # Ensure combo is populated (may be stale from previous task)
+            self._status_combo.blockSignals(True)
+            self._status_combo.clear()
+            for s in (TaskStatus.DOING, TaskStatus.DONE):
+                self._status_combo.addItem(f"● {s.display_name}", s)
+            self._status_combo.setCurrentIndex(0)  # DOING
+            self._status_combo.setEnabled(True)
+            self._status_combo.blockSignals(False)
         text = self._md_edit.toPlainText().strip()
         if not text:
             return
@@ -926,10 +936,11 @@ class TaskEditPanel(QWidget):
 
         task = self._current_task
         old_status = task.status
-        # Status is controlled by the combo, not Markdown text
+        is_draft = task.id == ""
         combo_status = self._status_combo.currentData()
         task.title = parsed.clean_title
-        task.status = combo_status if combo_status else parsed.status
+        # New drafts always start as TODO; combo only affects existing tasks
+        task.status = parsed.status if is_draft else (combo_status if combo_status else parsed.status)
         task.tags = parsed.tags
         task.scheduled_date = parsed.scheduled_date
         task.deadline_date = parsed.deadline_date
@@ -1155,7 +1166,7 @@ class TaskEditPanel(QWidget):
             progress_val = e.get("progress", task.progress)
             rows.append(_row("●", color, ts,
                               f'<span style="color:{sc};">[{sn}|{progress_val}%]</span> {content}',
-                              entry_idx=orig_idx))
+                              entry_idx=None if orig_idx == 0 else orig_idx))
         self._timeline_log.setHtml(f'<div>{"".join(rows)}</div>')
         self._reset_log_editor()
 
@@ -1165,6 +1176,8 @@ class TaskEditPanel(QWidget):
             return
         if idx < 0 or idx >= len(self._current_task.activity_log):
             return
+        if idx == 0:
+            return  # initial "创建任务" entry is locked
 
         entry = self._current_task.activity_log[idx]
         self._selected_entry = (idx, entry)
@@ -1193,6 +1206,7 @@ class TaskEditPanel(QWidget):
         self._progress_edit.setText(str(progress_val))
 
         self._log_save_btn.setText("更新进展")
+        self._status_combo.setEnabled(False)  # status locked when editing
 
 
 
@@ -1209,6 +1223,8 @@ class TaskEditPanel(QWidget):
         self._log_save_btn.setEnabled(True)
         if self._current_task:
             self._progress_edit.setText(str(self._current_task.progress))
+            if self._current_task.status != TaskStatus.OVERDUE:
+                self._status_combo.setEnabled(True)
 
     # ------------------------------------------------------------------
     # Log editor actions
@@ -1229,29 +1245,20 @@ class TaskEditPanel(QWidget):
         new_status = raw_status
 
         if self._selected_entry is not None:
-            # ---- Editing an existing entry ----
+            # ---- Editing an existing entry (content + progress only, status locked) ----
             idx, entry = self._selected_entry
             if not content:
                 self._refresh_timeline()
                 return
             entry["content"] = content
-            entry["status"] = new_status.value if new_status else entry.get("status", "")
             entry["progress"] = int(self._progress_edit.text() or 0)
             task.progress = int(self._progress_edit.text() or 0)
-            if new_status and new_status != old_status:
-                task.status = new_status
-                if new_status == TaskStatus.DONE:
-                    task.completed_at = task.deadline_date or datetime.now()
-                task.raw_md = self._formatter.format(task)
             task.updated_at = datetime.now()
             self._repository.update(task)
             self._original_md = task.raw_md
             if self._task_model:
                 self._task_model.update_task(task)
-            if task.status != old_status:
-                self._signal_bus.task_status_changed.emit(task, old_status)
-            else:
-                self._signal_bus.task_updated.emit(task)
+            self._signal_bus.task_updated.emit(task)
             self._log_edit.clear()
             self._refresh_timeline()
             return

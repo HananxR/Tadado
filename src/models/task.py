@@ -50,3 +50,15 @@ class Task:
         today = date.today()
         delta = (self.deadline_date - today).days
         return 0 <= delta <= days
+
+    @property
+    def urgency_score(self) -> float:
+        """Urgency for sorting/coloring: positive=overdue days, negative=days until due.
+
+        DONE tasks (-9999) and tasks without deadline (-9998) are least urgent.
+        """
+        if self.status == TaskStatus.DONE:
+            return -9999.0
+        if self.deadline_date is None:
+            return -9998.0
+        return (date.today() - self.deadline_date).days

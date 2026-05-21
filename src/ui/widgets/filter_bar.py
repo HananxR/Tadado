@@ -15,6 +15,7 @@ class FilterBar(QWidget):
     filter_changed = Signal(TaskFilter)
 
     _SORT_MAP: dict[str, str] = {
+        "紧急程度": "urgency",
         "截止日": "deadline",
         "创建时间": "created",
         "状态": "status",

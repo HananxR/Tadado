@@ -8,7 +8,6 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor, QFont as QtFont
 
 from ...models.task import Task
-from ...models.task_status import TaskStatus
 
 _COLUMN_HEADERS = ["#", "创建时间", "任务内容", "截止时间", "进度", "状态", "标签"]
 
@@ -151,3 +150,7 @@ class TaskListModel(QAbstractTableModel):
         if col in (COL_ROW, COL_CREATED, COL_DEADLINE, COL_PROGRESS, COL_STATUS):
             return Qt.AlignmentFlag.AlignCenter
         return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+
+    # ------------------------------------------------------------------
+    # Internal helpers (continued)
+    # ------------------------------------------------------------------

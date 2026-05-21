@@ -11,7 +11,7 @@ from .task_status import TaskStatus
 class SortCriterion:
     """A single sort dimension for task list ordering."""
 
-    field: str  # "deadline" | "created" | "status" | "title" | "scheduled"
+    field: str  # "deadline" | "created" | "status" | "title" | "scheduled" | "urgency"
     ascending: bool = True
 
 

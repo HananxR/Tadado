@@ -19,6 +19,7 @@ def _make_task(
     deadline_date: date | None = None,
     scheduled_date: date | None = None,
     archived: bool = False,
+    progress: int = 0,
 ) -> Task:
     now = datetime.now()
     return Task(
@@ -32,6 +33,7 @@ def _make_task(
         created_at=now,
         updated_at=now,
         archived=archived,
+        progress=progress,
     )
 
 
@@ -204,3 +206,58 @@ class TestOverdueStatus:
         )
         statuses = [r.status for r in results]
         assert statuses.index(TaskStatus.OVERDUE) < statuses.index(TaskStatus.DOING)
+
+
+class TestUrgencySort:
+    """Sort by urgency_score: overdue first → future → DONE → no-deadline."""
+
+    def test_urgency_sort_overdue_first(self, repository: TaskRepository) -> None:
+        from datetime import date as _date, timedelta
+
+        today = _date.today()
+        repository.insert(_make_task(task_id="far_future", deadline_date=today + timedelta(days=30)))
+        repository.insert(_make_task(task_id="overdue5", deadline_date=today - timedelta(days=5)))
+        repository.insert(_make_task(task_id="overdue1", deadline_date=today - timedelta(days=1)))
+
+        results = repository.search(
+            TaskFilter(sort_by=[SortCriterion("urgency", ascending=True)], show_archived=True)
+        )
+        ids = [r.id for r in results]
+        # Most overdue first
+        assert ids.index("overdue5") < ids.index("overdue1") < ids.index("far_future")
+
+    def test_urgency_sort_done_last(self, repository: TaskRepository) -> None:
+        today = date.today()
+        repository.insert(_make_task(task_id="active", deadline_date=today))
+        repository.insert(_make_task(task_id="done", status=TaskStatus.DONE, deadline_date=today))
+
+        results = repository.search(
+            TaskFilter(sort_by=[SortCriterion("urgency", ascending=True)], show_archived=True)
+        )
+        ids = [r.id for r in results]
+        assert ids.index("active") < ids.index("done")
+
+    def test_urgency_sort_no_deadline_second_last(self, repository: TaskRepository) -> None:
+        today = date.today()
+        repository.insert(_make_task(task_id="no_dl", deadline_date=None))
+        repository.insert(_make_task(task_id="done", status=TaskStatus.DONE, deadline_date=today))
+
+        results = repository.search(
+            TaskFilter(sort_by=[SortCriterion("urgency", ascending=True)], show_archived=True)
+        )
+        ids = [r.id for r in results]
+        # no-deadline (-9998) > DONE (-9999) when descending
+        assert ids.index("no_dl") < ids.index("done")
+
+    def test_urgency_sort_same_score_by_progress(self, repository: TaskRepository) -> None:
+        today = date.today()
+        t1 = _make_task(task_id="low_prog", deadline_date=today, progress=20)
+        t2 = _make_task(task_id="high_prog", deadline_date=today, progress=80)
+        repository.insert(t1)
+        repository.insert(t2)
+
+        results = repository.search(
+            TaskFilter(sort_by=[SortCriterion("urgency", ascending=True)], show_archived=True)
+        )
+        ids = [r.id for r in results]
+        assert ids.index("high_prog") < ids.index("low_prog")

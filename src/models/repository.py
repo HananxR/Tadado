@@ -680,6 +680,7 @@ class TaskRepository:
             "status": "status",
             "title": "title",
             "scheduled": "scheduled_date",
+            "urgency": "urgency",
         }
         clauses: list[str] = []
         for sc in sort_by:
@@ -691,6 +692,21 @@ class TaskRepository:
                     "WHEN 'DOING' THEN 2 WHEN 'TODO' THEN 3 WHEN 'DONE' THEN 4 ELSE 5 END "
                     + ("ASC" if sc.ascending else "DESC")
                 )
+            elif sc.field == "urgency":
+                # "ascending" = most urgent first (score DESC, progress DESC, created ASC)
+                urgency_expr = (
+                    "CASE WHEN status = 'DONE' THEN -9999 "
+                    "WHEN deadline_date IS NULL THEN -9998 "
+                    "ELSE julianday('now') - julianday(deadline_date) END"
+                )
+                if sc.ascending:
+                    clauses.append(f"{urgency_expr} DESC")
+                    clauses.append("progress DESC")
+                    clauses.append("created_at ASC")
+                else:
+                    clauses.append(f"{urgency_expr} ASC")
+                    clauses.append("progress ASC")
+                    clauses.append("created_at DESC")
             else:
                 direction = "ASC" if sc.ascending else "DESC"
                 clauses.append(f"{col} {direction}")

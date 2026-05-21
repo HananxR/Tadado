@@ -173,11 +173,11 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
             None,
         ),
         (
-            f"- [ ] WAIT<{today + timedelta(days=30)}> 规划端午出行行程 #生活 #旅行",
-            "规划端午出行行程 — WAIT 等待中 + 远期",
+            f"- [ ] TODO<{today + timedelta(days=30)}> 规划端午出行行程 #生活 #旅行",
+            "规划端午出行行程 — TODO 远期计划",
             [
                 {"ts": _ago(7), "content": "初步确定目的地：成都（3 天 2 晚）", "status": "TODO"},
-                {"ts": _ago(5), "content": "查看攻略，等待朋友确认出发时间", "status": "WAIT"},
+                {"ts": _ago(5), "content": "查看攻略，等待朋友确认出发时间", "status": "TODO"},
             ],
             None,
         ),
@@ -188,8 +188,8 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
             None,
         ),
         (
-            f"- [ ] LATER <{today + timedelta(days=60)}> 整理书单并写读书笔记 #阅读 #生活",
-            "整理书单并写读书笔记 — LATER 稍后 + 无优先级",
+            f"- [ ] TODO<{today + timedelta(days=60)}> 整理书单并写读书笔记 #阅读 #生活",
+            "整理书单并写读书笔记 — TODO 稍后处理",
             [],
             None,
         ),
