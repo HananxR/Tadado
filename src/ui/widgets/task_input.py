@@ -49,6 +49,7 @@ class TaskInputWidget(QWidget):
             self._flash_error()
             return
 
+        now = datetime.now()
         task = Task(
             id=str(uuid.uuid4()),
             raw_md=text,
@@ -57,8 +58,14 @@ class TaskInputWidget(QWidget):
             tags=parsed.tags,
             scheduled_date=parsed.scheduled_date,
             deadline_date=parsed.deadline_date,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            created_at=now,
+            updated_at=now,
+            activity_log=[{
+                "ts": now.isoformat(),
+                "content": "创建任务",
+                "status": parsed.status.value,
+                "progress": 0,
+            }],
         )
         # Normalize raw_md through the formatter
         task.raw_md = self._formatter.format(task)
@@ -72,8 +79,10 @@ class TaskInputWidget(QWidget):
         self._input.selectAll()
 
     def _flash_error(self) -> None:
+        from ...utils.design_tokens import get_tokens
+        t = get_tokens()
         self._input.setStyleSheet(
-            "QLineEdit { border: 1px solid #e74c3c; background: #fdf0ef; }"
+            f"QLineEdit {{ border: 1px solid {t.danger}; background: {t.danger_bg}; }}"
         )
         from PySide6.QtCore import QTimer
 

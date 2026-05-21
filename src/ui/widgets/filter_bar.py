@@ -52,7 +52,7 @@ class FilterBar(QWidget):
 
         # Sort combo
         sort_label = QLabel("排序：")
-        sort_label.setStyleSheet("font-size: 11px; color: #888;")
+        sort_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(sort_label)
         self._sort = QComboBox()
         self._sort.setObjectName("sortCombo")

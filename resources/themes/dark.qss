@@ -21,12 +21,12 @@ QMenuBar {
     border-bottom: 1px solid #2f3040;
     padding: 2px 4px;
     font-size: 12px;
-    color: #c9d1d9;
+    
 }
 QMenuBar::item:selected {
     background-color: #2f3648;
     border-radius: 4px;
-    color: #7aa2f7;
+    
 }
 QMenu {
     background-color: #24253a;
@@ -38,11 +38,11 @@ QMenu::item {
     padding: 7px 28px 7px 14px;
     border-radius: 4px;
     font-size: 12px;
-    color: #c9d1d9;
+    
 }
 QMenu::item:selected {
     background-color: #7aa2f7;
-    color: #ffffff;
+    
 }
 QMenu::separator {
     height: 1px;
@@ -62,11 +62,11 @@ QToolBar QToolButton {
     border-radius: 5px;
     padding: 4px 10px;
     font-size: 12px;
-    color: #8b949e;
+    
 }
 QToolBar QToolButton:hover {
     background-color: #2f3040;
-    color: #c9d1d9;
+    
 }
 QToolBar QToolButton:pressed {
     background-color: #363850;
@@ -77,7 +77,7 @@ QToolBar QComboBox#partitionToolCombo {
     border-radius: 5px;
     padding: 2px 8px;
     font-size: 12px;
-    color: #c9d1d9;
+    
     font-weight: bold;
 }
 QToolBar QComboBox#partitionToolCombo:hover {
@@ -94,11 +94,11 @@ QStatusBar {
     border-top: 1px solid #2f3040;
     padding: 4px 10px;
     font-size: 12px;
-    color: #8b949e;
+    
     min-height: 28px;
 }
 QStatusBar QLabel {
-    color: #8b949e;
+    
     font-size: 12px;
     padding: 0 6px;
 }
@@ -110,7 +110,7 @@ QPushButton {
     border-radius: 5px;
     padding: 5px 14px;
     font-size: 12px;
-    color: #c9d1d9;
+    
     min-height: 22px;
 }
 QPushButton:hover {
@@ -151,7 +151,7 @@ QLineEdit {
     border-radius: 6px;
     padding: 6px 10px;
     font-size: 13px;
-    color: #c9d1d9;
+    
     selection-background-color: #2f4360;
 }
 QLineEdit:focus {
@@ -175,7 +175,7 @@ QComboBox {
     border-radius: 5px;
     padding: 4px 8px;
     font-size: 12px;
-    color: #c9d1d9;
+    
     min-width: 60px;
 }
 QComboBox:hover {
@@ -200,7 +200,7 @@ QComboBox QAbstractItemView {
     selection-background-color: #2f3648;
     selection-color: #c9d1d9;
     outline: none;
-    color: #c9d1d9;
+    
 }
 
 /* ── Text Edit ───────────────────────────────────────────────── */
@@ -210,7 +210,7 @@ QTextEdit {
     border-radius: 6px;
     padding: 8px;
     font-size: 13px;
-    color: #c9d1d9;
+    
     selection-background-color: #2f4360;
 }
 QTextEdit:focus {
@@ -240,7 +240,7 @@ QTableView::item {
 }
 QTableView::item:selected {
     background-color: #2f3648;
-    color: #c9d1d9;
+    
 }
 QTableView::item:hover {
     background-color: #252638;
@@ -252,7 +252,7 @@ QHeaderView::section {
     padding: 6px 4px;
     font-size: 11px;
     font-weight: bold;
-    color: #8b949e;
+    
     text-transform: uppercase;
 }
 
@@ -289,7 +289,7 @@ QScrollBar::add-line, QScrollBar::sub-line {
 
 /* ── Labels ──────────────────────────────────────────────────── */
 QLabel {
-    color: #c9d1d9;
+    
     font-size: 12px;
 }
 
@@ -300,12 +300,12 @@ QPushButton[preset="true"] {
     border-radius: 14px;
     padding: 3px 8px;
     font-size: 11px;
-    color: #8b949e;
+    
 }
 QPushButton[preset="true"]:hover {
     background-color: #383a50;
     border-color: #555770;
-    color: #c9d1d9;
+    
 }
 
 /* ── Calendar Heatmap ────────────────────────────────────────── */
@@ -328,7 +328,7 @@ QLineEdit#mdEdit {
 }
 QLineEdit#mdPreview {
     font-family: "Consolas", "Cascadia Code", "Courier New", monospace;
-    color: #8b949e;
+    
     background: #1a1b26;
     padding: 4px 8px;
     border-radius: 4px;
@@ -336,45 +336,30 @@ QLineEdit#mdPreview {
 
 /* ── Date / Time pickers ─────────────────────────────────────── */
 QDateEdit, QTimeEdit, QDateTimeEdit {
+    color: #c9d1d9;
     background-color: #1e1f2e;
     border: 1px solid #3d3f52;
     border-radius: 5px;
-    padding: 4px 6px;
+    padding: 3px 6px;
     font-size: 12px;
-    color: #c9d1d9;
+    min-height: 22px;
 }
 QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
     border-color: #7aa2f7;
     background-color: #1a1b26;
 }
 QDateEdit::drop-down, QTimeEdit::drop-down, QDateTimeEdit::drop-down {
-    subcontrol-origin: padding;
-    subcontrol-position: top right;
-    width: 20px;
-    border-left: 1px solid #3d3f52;
-    border-top-right-radius: 5px;
-    border-bottom-right-radius: 5px;
+    width: 0;
 }
-QDateEdit::up-button, QTimeEdit::up-button,
-QDateEdit::down-button, QTimeEdit::down-button {
-    width: 16px;
-    height: 10px;
-}
-QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {
-    background-color: #2f3040;
-    border: 1px solid #3d3f52;
-}
-QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {
-    background-color: #383a50;
-}
+
 QCalendarWidget {
     background-color: #24253a;
     border: 1px solid #2f3040;
     border-radius: 6px;
-    color: #c9d1d9;
+    
 }
 QCalendarWidget QToolButton {
-    color: #c9d1d9;
+    
     background-color: transparent;
     border: none;
     padding: 4px 8px;
@@ -386,12 +371,18 @@ QCalendarWidget QToolButton:hover {
 }
 QCalendarWidget QMenu {
     background-color: #24253a;
-    color: #c9d1d9;
+    
 }
 QCalendarWidget QTableView {
     background-color: #24253a;
     selection-background-color: #2f3648;
     selection-color: #c9d1d9;
+}
+QCalendarWidget QAbstractItemView:enabled {
+    color: #c9d1d9;
+}
+QCalendarWidget QAbstractItemView:disabled {
+    color: #555770;
 }
 
 /* ── Tag Chips ────────────────────────────────────────────────── */
@@ -446,6 +437,55 @@ QWidget#entryCard[selected="true"] {
     border-color: #7aa2f7;
 }
 
+/* ── Calendar Popup ─────────────────────────────────────────────── */
+QDialog#calendarPopup {
+    background-color: #24253a;
+    border: 1px solid #2f3040;
+    border-radius: 8px;
+}
+QLabel#calNavBtn {
+    color: #555770;
+    font-size: 18px;
+    font-weight: bold;
+}
+QLabel#calNavBtn:hover {
+    color: #c9d1d9;
+}
+QLabel#calTitleBtn {
+    color: #c9d1d9;
+    font-size: 13px;
+    font-weight: bold;
+}
+QLabel#calTitleBtn:hover {
+    color: #7aa2f7;
+}
+QLabel#calWeekday {
+    color: #555770;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+/* ── Time Popup ─────────────────────────────────────────────────── */
+QDialog#timePopup {
+    background-color: #24253a;
+    border: 1px solid #2f3040;
+    border-radius: 8px;
+}
+QLabel#timePopupTitle {
+    color: #c9d1d9;
+    font-size: 13px;
+    font-weight: bold;
+}
+QLabel#timeColLabel {
+    color: #555770;
+    font-size: 10px;
+    font-weight: bold;
+}
+QScrollArea#timeColScroll {
+    background-color: #1e1f2e;
+    border: 1px solid #2f3040;
+    border-radius: 6px;
+}
 /* ── Sidebar ─────────────────────────────────────────────────── */
 QWidget#sidebar {
     background-color: #212236;

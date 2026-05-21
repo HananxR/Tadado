@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...services.md_formatter import MarkdownTaskFormatter
+from ...utils.design_tokens import get_tokens
 from ...utils.signal_bus import get_signal_bus
 
 
@@ -60,7 +61,7 @@ class TimelineDetailDialog(QDialog):
             f"状态: {task.status.display_name}  |  "
             f"创建: {task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at else '—'}"
         )
-        status_label.setStyleSheet("color: #888; font-size: 11px;")
+        status_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(status_label)
 
         # Tag editing row
@@ -86,16 +87,16 @@ class TimelineDetailDialog(QDialog):
         timeline = QTextBrowser()
         timeline.setReadOnly(True)
         timeline.setStyleSheet(
-            "QTextBrowser { background: #fafaf8; border: 1px solid #ddd9d0;"
-            " border-radius: 6px; font-size: 12px; padding: 6px; color: #444; }"
+            "QTextBrowser { font-size: 12px; padding: 6px; }"
         )
 
+        t = get_tokens()
         def _row(icon: str, color: str, ts: str, content: str) -> str:
             return (
                 f'<p style="margin:3px 0;font-family:Consolas,monospace;font-size:12px;">'
                 f'<span style="color:{color};font-weight:bold;">{icon}</span>'
                 f' <span style="color:{color};">{ts:>11}</span>'
-                f' <span style="color:#444;">{content}</span>'
+                f' <span style="color:{t.text_primary};">{content}</span>'
                 f'</p>'
             )
 
@@ -104,14 +105,11 @@ class TimelineDetailDialog(QDialog):
         rows.append(_row("▶", sc, _fmt_ts(datetime.now().isoformat(), True),
                           f"当前: {task.status.display_name}"))
         if task.completed_at:
-            rows.append(_row("●", "#27ae60", _fmt_ts(task.completed_at.isoformat(), True),
+            rows.append(_row("●", t.timeline_done, _fmt_ts(task.completed_at.isoformat(), True),
                               "任务完成 ✓"))
         for e in reversed(task.activity_log[:10]):
             ts = _fmt_ts(e.get("ts", ""), True)
-            rows.append(_row("●", "#f39c12", ts, e.get("content", "")))
-        if task.created_at:
-            rows.append(_row("○", "#aaa", _fmt_ts(task.created_at.isoformat(), True),
-                              "创建任务"))
+            rows.append(_row("●", t.timeline_dot, ts, e.get("content", "")))
 
         timeline.setHtml(f'<div>{"".join(rows)}</div>')
         layout.addWidget(timeline, 1)
@@ -144,8 +142,6 @@ class TimelineDetailDialog(QDialog):
     def _on_copy_md(self) -> None:
         task = self._task
         lines: list[str] = [f"## 活动时间线 — {task.title}", ""]
-        if task.created_at:
-            lines.append(f"- {task.created_at.strftime('%Y-%m-%d %H:%M')} 创建任务")
         for e in task.activity_log:
             ts = e.get("ts", "")
             try:

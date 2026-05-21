@@ -5,6 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
+from ...utils.design_tokens import get_tokens
+
 
 class CarouselBanner(QWidget):
     """Auto-scrolling banner showing recent tasks.
@@ -40,7 +42,7 @@ class CarouselBanner(QWidget):
         for _ in range(self._group_size):
             lbl = QLabel()
             lbl.setStyleSheet(
-                "QLabel { color: #555; font-size: 11px; background: transparent; }"
+                "QLabel { font-size: 11px; background: transparent; }"
             )
             lbl.setWordWrap(False)
             lbl.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -75,7 +77,7 @@ class CarouselBanner(QWidget):
             if i < shown:
                 idx = (self._current_offset + i) % max(n, 1)
                 item = self._items[idx]
-                color = item.get("color", "#5b8def")
+                color = item.get("color", get_tokens().accent)
                 text = item.get("text", "")
                 lbl.setText(f'<span style="color:{color};">●</span> {text}')
                 lbl.setToolTip(text)

@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from ...config import AppConfig
 from ...models.repository import TaskRepository
+from ...utils.design_tokens import get_tokens
 from .heatmap_model import HeatmapModel
 
 _CELL_SIZE = 14
@@ -75,7 +76,7 @@ class _HeatmapGrid(QWidget):
         for row, label in enumerate(self._DAY_LABELS):
             if label:
                 y = _TOP_MARGIN + row * _CELL_STEP + _CELL_SIZE
-                p.setPen(QColor("#888"))
+                p.setPen(QColor(get_tokens().text_secondary))
                 p.drawText(
                     QRect(0, y - 8, _LEFT_MARGIN - 4, 16),
                     Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
@@ -102,7 +103,7 @@ class _HeatmapGrid(QWidget):
         font = p.font()
         font.setPointSize(8)
         p.setFont(font)
-        p.setPen(QColor("#888"))
+        p.setPen(QColor(get_tokens().text_secondary))
         month_names = [
             "", "1月", "2月", "3月", "4月", "5月", "6月",
             "7月", "8月", "9月", "10月", "11月", "12月",
@@ -139,7 +140,7 @@ class _HeatmapGrid(QWidget):
         p.drawRoundedRect(rect, 2, 2)
 
         if cell_date == self._hovered_date:
-            p.setPen(QPen(QColor("#333"), 1))
+            p.setPen(QPen(QColor(get_tokens().text_primary), 1))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRoundedRect(rect.adjusted(-1, -1, 1, 1), 3, 3)
 
@@ -257,7 +258,7 @@ class CalendarHeatmapWidget(QWidget):
         tag_row.addWidget(self._tag_btn)
 
         self._tag_pills_label = QLabel("全部标签")
-        self._tag_pills_label.setStyleSheet("color: #888; font-size: 10px;")
+        self._tag_pills_label.setStyleSheet("font-size: 10px;")
         tag_row.addWidget(self._tag_pills_label)
 
         tag_row.addSpacing(16)
@@ -293,7 +294,7 @@ class CalendarHeatmapWidget(QWidget):
         # --- Hover tooltip ---
         self._tooltip = QLabel()
         self._tooltip.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._tooltip.setStyleSheet("color: #888; font-size: 11px;")
+        self._tooltip.setStyleSheet("font-size: 11px;")
         self._tooltip.setFixedHeight(18)
         layout.addWidget(self._tooltip)
 
@@ -460,7 +461,7 @@ class CalendarHeatmapWidget(QWidget):
                 self._tag_grids[tag] = grid
 
                 label = QLabel(f"  #{tag}")
-                label.setStyleSheet("font-weight: bold; color: #888; font-size: 11px;")
+                label.setStyleSheet("font-weight: bold; font-size: 11px;")
                 self._grid_stack.addWidget(label)
                 self._grid_stack.addWidget(grid)
 

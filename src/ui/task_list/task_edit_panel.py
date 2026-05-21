@@ -7,8 +7,8 @@ import re
 from datetime import date, datetime, timedelta
 from typing import Callable
 
-from PySide6.QtCore import QDate, QSize, QTime, Qt, QTimer, Signal
-from PySide6.QtGui import QPainter, QBrush, QColor, QPen, QPixmap, QTextDocument
+from PySide6.QtCore import QDate, QEvent, QPointF, QRect, QSize, QTime, Qt, QTimer, Signal
+from PySide6.QtGui import QPainter, QBrush, QColor, QIntValidator, QPen, QPixmap, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -17,10 +17,10 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
-    QSpinBox,
-    QTextBrowser,
+    QScrollArea,
     QSizePolicy,
     QTextBrowser,
     QTextEdit,
@@ -37,6 +37,7 @@ from ...models.task import Task
 from ...models.task_status import TaskStatus
 from ...services.md_formatter import MarkdownTaskFormatter
 from ...services.md_parser import MarkdownTaskParser
+from ...utils.design_tokens import get_tokens
 from ...utils.signal_bus import get_signal_bus
 
 
@@ -94,7 +95,7 @@ class _TimelineEntryWidget(QWidget):
         content_label = QLabel(content)
         content_label.setWordWrap(False)
         content_label.setStyleSheet(
-            "color: #444; font-size: 11px; border: none; background: transparent;"
+            "font-size: 11px; border: none; background: transparent;"
         )
         right.addWidget(content_label)
 
@@ -136,6 +137,18 @@ class _TimelineBrowser(QTextBrowser):
                 except (ValueError, IndexError):
                     pass
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            anchor = self.anchorAt(event.pos())
+            if anchor.startswith("entry:"):
+                return
+        super().mouseReleaseEvent(event)
+
+    def setSource(self, url) -> None:
+        if url.scheme() == "entry":
+            return
+        super().setSource(url)
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +193,8 @@ class _BannerWidget(QWidget):
                 )
             p.drawPixmap(0, 0, self._scaled_bg)
         else:
-            p.setBrush(QBrush(QColor("#fffdf7")))
+            t = get_tokens()
+            p.setBrush(QBrush(QColor(t.bg_welcome_fallback)))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRect(0, 0, w, h)
 
@@ -230,8 +244,16 @@ class TaskEditPanel(QWidget):
         # Preload welcome background
         self._welcome_pixmap = QPixmap(_welcome_bg_path()) if _welcome_bg_path() else QPixmap()
 
-        # Direct layout (headers fixed, timeline scrolls internally)
-        layout = QVBoxLayout(self)
+        # Outer layout: just a scroll area wrapping all content
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        self._scroll_content = QWidget()
+        layout = QVBoxLayout(self._scroll_content)
         layout.setContentsMargins(10, 8, 10, 6)
         layout.setSpacing(6)
 
@@ -251,7 +273,6 @@ class TaskEditPanel(QWidget):
         self._collapse_btn.setToolTip("折叠编辑区")
         self._collapse_btn.clicked.connect(self._on_toggle_collapse)
         self._collapse_btn.setVisible(False)
-        # (Button will be positioned in layout after header)
 
         # Collapsible editor content
         self._editor_collapsible = QWidget()
@@ -272,9 +293,9 @@ class TaskEditPanel(QWidget):
         self._preview.setTextFormat(Qt.TextFormat.RichText)
         self._preview.setWordWrap(True)
         self._preview.setStyleSheet(
-            "QLabel { color: #555; background: #f8f8f8; padding: 6px 8px;"
-            " border-radius: 4px; font-size: 12px; }"
+            "QLabel#taskPreview { padding: 6px 8px; border-radius: 4px; font-size: 12px; }"
         )
+        self._preview.setObjectName("taskPreview")
         self._preview.setMinimumHeight(36)
         self._preview.setMaximumHeight(52)
         ec.addWidget(self._preview)
@@ -289,35 +310,45 @@ class TaskEditPanel(QWidget):
         created_row.setSpacing(6)
         created_row.addWidget(QLabel("创建时间："))
         self._created_label = QLabel("—")
-        self._created_label.setStyleSheet("color: #888; font-size: 11px;")
+        self._created_label.setStyleSheet("font-size: 11px;")
         created_row.addWidget(self._created_label)
         created_row.addStretch()
         meta_layout.addLayout(created_row)
         deadline_row = QHBoxLayout()
-        deadline_row.setSpacing(6)
-        deadline_row.addWidget(QLabel("截止时间："))
+        deadline_row.setSpacing(4)
+        dl_label = QLabel("截止时间：")
+        deadline_row.addWidget(dl_label, alignment=Qt.AlignmentFlag.AlignVCenter)
         self._deadline_date_edit = QDateEdit()
-        self._deadline_date_edit.setCalendarPopup(True)
+        self._deadline_date_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self._deadline_date_edit.setDisplayFormat("yyyy-MM-dd")
         self._deadline_date_edit.setDate(QDate.currentDate())
         self._deadline_date_edit.setMinimumDate(QDate(2000, 1, 1))
         self._deadline_date_edit.setMaximumDate(QDate(2100, 12, 31))
-        self._deadline_date_edit.setFixedWidth(138)
+        self._deadline_date_edit.setFixedWidth(115)
         self._deadline_date_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._deadline_date_edit.setToolTip("点击选择日期")
+        self._deadline_date_edit.setCursor(Qt.CursorShape.PointingHandCursor)
         self._deadline_date_edit.dateChanged.connect(self._on_deadline_picker_changed)
-        deadline_row.addWidget(self._deadline_date_edit)
+        self._deadline_date_edit.lineEdit().installEventFilter(self)
+
         self._deadline_time_edit = QTimeEdit()
-        self._deadline_time_edit.setDisplayFormat("HH:mm")
-        self._deadline_time_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._deadline_time_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self._deadline_time_edit.setDisplayFormat("HH:mm")
         self._deadline_time_edit.setTime(QTime(23, 59))
+        self._deadline_time_edit.setFixedWidth(55)
+        self._deadline_time_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._deadline_time_edit.setToolTip("点击选择时间")
+        self._deadline_time_edit.setCursor(Qt.CursorShape.PointingHandCursor)
         self._deadline_time_edit.timeChanged.connect(self._on_deadline_picker_changed)
-        deadline_row.addWidget(self._deadline_time_edit)
-        self._time_toggle = QCheckBox("时间")
-        self._time_toggle.setChecked(True)
-        self._time_toggle.setStyleSheet("font-size: 10px; color: #888;")
-        self._time_toggle.toggled.connect(self._on_time_toggle_changed)
-        deadline_row.addWidget(self._time_toggle)
+        self._deadline_time_edit.lineEdit().installEventFilter(self)
+
+        # Date + time compact sub-layout (no gap)
+        dt_sub = QHBoxLayout()
+        dt_sub.setContentsMargins(0, 0, 0, 0)
+        dt_sub.setSpacing(0)
+        dt_sub.addWidget(self._deadline_date_edit)
+        dt_sub.addWidget(self._deadline_time_edit)
+        deadline_row.addLayout(dt_sub)
         deadline_row.addStretch()
         meta_layout.addLayout(deadline_row)
         ec.addWidget(meta_widget)
@@ -328,8 +359,7 @@ class TaskEditPanel(QWidget):
         self._task_summary.setTextFormat(Qt.TextFormat.RichText)
         self._task_summary.setWordWrap(True)
         self._task_summary.setStyleSheet(
-            "QLabel { color: #444; font-size: 12px; padding: 4px 0;"
-            " background: transparent; }"
+            "QLabel { font-size: 12px; padding: 4px 0; background: transparent; }"
         )
         self._task_summary.setVisible(False)
         layout.addWidget(self._task_summary)
@@ -363,20 +393,18 @@ class TaskEditPanel(QWidget):
 
         # -- Section header --
         tl_header = QLabel("活动时间线")
-        tl_header.setStyleSheet("font-weight: bold; font-size: 14px; color: #444;")
+        tl_header.setStyleSheet("font-weight: bold; font-size: 14px;")
         tc.addWidget(tl_header)
 
         # -- Timeline log (rich text with aligned timestamps) --
         self._timeline_log = _TimelineBrowser()
         self._timeline_log.setReadOnly(True)
-        self._timeline_log.setMinimumHeight(120)
-        self._timeline_log.setMaximumHeight(350)
+        self._timeline_log.setMinimumHeight(100)
         self._timeline_log.setStyleSheet(
-            "QTextBrowser { background: #fafaf8; border: 1px solid #ddd9d0;"
-            " border-radius: 6px; font-size: 12px; padding: 6px; color: #444; }"
+            "QTextBrowser { font-size: 12px; padding: 6px; }"
         )
         self._entry_placeholder = QLabel("  (选择任务查看活动时间线)")
-        self._entry_placeholder.setStyleSheet("color: #aaa; font-size: 11px; padding: 8px;")
+        self._entry_placeholder.setStyleSheet("font-size: 11px; padding: 8px;")
         self._entry_placeholder.setVisible(False)
         tc.addWidget(self._entry_placeholder)
         self._timeline_log.entry_clicked.connect(self._on_timeline_entry_clicked)
@@ -385,13 +413,12 @@ class TaskEditPanel(QWidget):
 
         # -- Progress input (status combo + text + button) --
         progress_label = QLabel("追加进展")
-        progress_label.setStyleSheet("font-size: 11px; color: #888; font-weight: bold;")
+        progress_label.setStyleSheet("font-size: 11px; font-weight: bold;")
         tc.addWidget(progress_label)
 
         self._log_edit = QTextEdit()
         self._log_edit.setPlaceholderText("输入进展内容…")
         self._log_edit.setMinimumHeight(46)
-        self._log_edit.setMaximumHeight(72)
         self._log_edit.setEnabled(False)
         tc.addWidget(self._log_edit)
 
@@ -410,14 +437,14 @@ class TaskEditPanel(QWidget):
         self._status_combo.setFixedWidth(90)
         progress_btn_row.addWidget(self._status_combo)
 
-        self._progress_spin = QSpinBox()
-        self._progress_spin.setRange(0, 100)
-        self._progress_spin.setValue(0)
-        self._progress_spin.setSuffix("%")
-        self._progress_spin.setFixedWidth(62)
-        self._progress_spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._progress_spin.setEnabled(False)
-        progress_btn_row.addWidget(self._progress_spin)
+        self._progress_edit = QLineEdit()
+        self._progress_edit.setValidator(QIntValidator(0, 100))
+        self._progress_edit.setText("0")
+        self._progress_edit.setFixedWidth(52)
+        self._progress_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._progress_edit.setEnabled(False)
+        progress_btn_row.addWidget(self._progress_edit)
+        progress_btn_row.addWidget(QLabel("%"))
 
         self._log_save_btn = QPushButton("追加进展")
         self._log_save_btn.setObjectName("saveBtn")
@@ -427,8 +454,11 @@ class TaskEditPanel(QWidget):
         progress_btn_row.addStretch()
         tc.addLayout(progress_btn_row)
 
-        layout.addWidget(self._timeline_card, 6)
+        layout.addWidget(self._timeline_card, 4)
         self._timeline_card.setVisible(False)
+
+        self._scroll_area.setWidget(self._scroll_content)
+        outer.addWidget(self._scroll_area)
 
     # ------------------------------------------------------------------
     # Public API
@@ -466,7 +496,6 @@ class TaskEditPanel(QWidget):
         if task.deadline_date:
             qd = QDate(task.deadline_date.year, task.deadline_date.month, task.deadline_date.day)
             self._deadline_date_edit.setDate(qd)
-            self._time_toggle.setChecked(True)
             if task.deadline_time:
                 h, m = task.deadline_time.split(":")
                 self._deadline_time_edit.setTime(QTime(int(h), int(m)))
@@ -474,7 +503,6 @@ class TaskEditPanel(QWidget):
                 self._deadline_time_edit.setTime(QTime(23, 59))
         else:
             self._deadline_date_edit.setDate(QDate.currentDate())
-            self._time_toggle.setChecked(True)
             self._deadline_time_edit.setTime(QTime(23, 59))
         self._updating_from_md = False
 
@@ -484,8 +512,8 @@ class TaskEditPanel(QWidget):
         else:
             self._created_label.setText("—")
 
-        self._progress_spin.setValue(task.progress)
-        self._progress_spin.setEnabled(True)
+        self._progress_edit.setText(str(task.progress))
+        self._progress_edit.setEnabled(True)
         self._update_preview()
         self._refresh_timeline()
         self._reset_log_editor()
@@ -510,29 +538,49 @@ class TaskEditPanel(QWidget):
 
         self._updating_from_md = True
         self._deadline_date_edit.setDate(QDate.currentDate())
-        self._time_toggle.setChecked(True)
         self._deadline_time_edit.setTime(QTime(23, 59))
         self._created_label.setText("—")
         self._updating_from_md = False
         self._clear_entries()
         self._hide_log_detail()
+    
+    def _build_welcome_html(self) -> str:
+        t = get_tokens()
+        c = t.text_welcome_accent
+        s = t.text_welcome_sub
+        return (
+            f'<span style="font-size:12px;color:{c};letter-spacing:4px;">'
+            '─ 宜 ─</span><br>'
+            '<span style="font-size:28px;">🎉</span><br>'
+            f'<span style="font-size:20px;color:{c};font-weight:bold;">'
+            '今日无事</span><br>'
+            f'<span style="font-size:13px;color:{s};letter-spacing:2px;">'
+            '宜狂欢 · 忌加班</span><br>'
+            f'<span style="font-size:12px;color:{c};letter-spacing:4px;">'
+            '─ 忌 ─</span>'
+        )
+
+    def _build_draft_html(self) -> str:
+        t = get_tokens()
+        c = t.text_welcome_accent
+        s = t.text_welcome_sub
+        return (
+            f'<span style="font-size:12px;color:{c};letter-spacing:4px;">'
+            '─ 宜 ─</span><br>'
+            '<span style="font-size:28px;">✍️</span><br>'
+            f'<span style="font-size:20px;color:{c};font-weight:bold;">'
+            '今日无事</span><br>'
+            f'<span style="font-size:13px;color:{s};letter-spacing:2px;">'
+            '宜创作 · 忌虚度</span><br>'
+            f'<span style="font-size:12px;color:{c};letter-spacing:4px;">'
+            '─ 忌 ─</span>'
+        )
 
     def show_empty(self) -> None:
         """Show encouraging empty-state — 60% banner + 40% editor."""
         self._current_task = None
         self._original_md = ""
-        html = (
-            '<span style="font-size:12px;color:#c0392b;letter-spacing:4px;">'
-            '─ 宜 ─</span><br>'
-            '<span style="font-size:28px;">🎉</span><br>'
-            '<span style="font-size:20px;color:#c0392b;font-weight:bold;">'
-            '今日无事</span><br>'
-            '<span style="font-size:13px;color:#eee;letter-spacing:2px;">'
-            '宜狂欢 · 忌加班</span><br>'
-            '<span style="font-size:12px;color:#c0392b;letter-spacing:4px;">'
-            '─ 忌 ─</span>'
-        )
-        self._draft_banner.set_html(html)
+        self._draft_banner.set_html(self._build_welcome_html())
         self._draft_banner.set_bg_pixmap(self._welcome_pixmap)
         self._draft_banner.setVisible(True)
         # Editor section (40%)
@@ -553,12 +601,11 @@ class TaskEditPanel(QWidget):
 
         self._updating_from_md = True
         self._deadline_date_edit.setDate(QDate.currentDate())
-        self._time_toggle.setChecked(True)
         self._deadline_time_edit.setTime(QTime(23, 59))
         self._created_label.setText("—")
         self._updating_from_md = False
-        self._progress_spin.setValue(0)
-        self._progress_spin.setEnabled(False)
+        self._progress_edit.setText(str(0))
+        self._progress_edit.setEnabled(False)
         self._clear_entries()
         self._hide_log_detail()
 
@@ -603,18 +650,7 @@ class TaskEditPanel(QWidget):
         self._md_edit.setText(template)
         self._md_edit.blockSignals(False)
 
-        html = (
-            '<span style="font-size:12px;color:#c0392b;letter-spacing:4px;">'
-            '─ 宜 ─</span><br>'
-            '<span style="font-size:28px;">✍️</span><br>'
-            '<span style="font-size:20px;color:#c0392b;font-weight:bold;">'
-            '今日无事</span><br>'
-            '<span style="font-size:13px;color:#eee;letter-spacing:2px;">'
-            '宜创作 · 忌虚度</span><br>'
-            '<span style="font-size:12px;color:#c0392b;letter-spacing:4px;">'
-            '─ 忌 ─</span>'
-        )
-        self._draft_banner.set_html(html)
+        self._draft_banner.set_html(self._build_draft_html())
         self._draft_banner.set_bg_pixmap(self._welcome_pixmap)
         self._draft_banner.setVisible(True)
         self._collapse_btn.setVisible(False)
@@ -635,14 +671,13 @@ class TaskEditPanel(QWidget):
                 self._status_combo.setCurrentIndex(i)
                 break
         self._status_combo.setEnabled(True)
-        self._progress_spin.setValue(0)
-        self._progress_spin.setEnabled(True)
+        self._progress_edit.setText(str(0))
+        self._progress_edit.setEnabled(True)
         self._timeline_card.setVisible(False)
         self._timeline_log.clear()
         # Set pickers for draft — deadline defaults to nearest Friday
         self._updating_from_md = True
         self._deadline_date_edit.setDate(QDate(target.year, target.month, target.day))
-        self._time_toggle.setChecked(True)
         self._deadline_time_edit.setTime(QTime(23, 59))
         self._updating_from_md = False
         self._created_label.setText(
@@ -659,6 +694,19 @@ class TaskEditPanel(QWidget):
         """Discard the current draft without saving to DB."""
         if self.has_unsaved_draft():
             self.clear()
+
+    def refresh_theme(self) -> None:
+        """Re-apply theme-dependent colours after a theme switch."""
+        t = get_tokens()
+        # Rebuild welcome/draft banner HTML with current tokens
+        if self._draft_banner.isVisible():
+            if self._current_task is not None and self._current_task.id == "":
+                self._draft_banner.set_html(self._build_draft_html())
+            elif self._current_task is None:
+                self._draft_banner.set_html(self._build_welcome_html())
+        # Refresh timeline display if a task is loaded
+        if self._current_task is not None and self._current_task.id != "":
+            self._refresh_timeline()
 
     # ------------------------------------------------------------------
     # Markdown editing
@@ -691,19 +739,15 @@ class TaskEditPanel(QWidget):
             self._deadline_date_edit.blockSignals(True)
             self._deadline_date_edit.setDate(qdate)
             self._deadline_date_edit.blockSignals(False)
-            self._time_toggle.setChecked(True)
             if parsed.deadline_time:
                 h, m = parsed.deadline_time.split(":")
-                self._deadline_time_edit.blockSignals(True)
                 self._deadline_time_edit.setTime(QTime(int(h), int(m)))
-                self._deadline_time_edit.blockSignals(False)
             else:
                 self._deadline_time_edit.setTime(QTime(23, 59))
         else:
             self._deadline_date_edit.blockSignals(True)
             self._deadline_date_edit.setDate(QDate.currentDate())
             self._deadline_date_edit.blockSignals(False)
-            self._time_toggle.setChecked(True)
             self._deadline_time_edit.setTime(QTime(23, 59))
         self._updating_from_md = False
 
@@ -713,28 +757,29 @@ class TaskEditPanel(QWidget):
             self._preview.setText("(空)")
             return
         try:
+            t = get_tokens()
             parsed = self._parser.parse(text)
             title = parsed.clean_title
             tags_str = " ".join(
-                f"<span style='color:#5b8def;font-size:10px;'>{t}</span>"
-                for t in (parsed.tags or [])
+                f"<span style='color:{t.accent};font-size:10px;'>{tag}</span>"
+                for tag in (parsed.tags or [])
             )
             sc = parsed.status.display_color
 
             # Status badge — same visual as left table delegate
             html = (
-                f"<span style='background:{sc};color:#fff;padding:1px 7px;"
+                f"<span style='background:{sc};color:{t.text_on_accent};padding:1px 7px;"
                 f"border-radius:3px;font-size:10px;'>{parsed.status.display_name}</span>"
             )
 
             if parsed.scheduled_date:
                 html += (
-                    f" <span style='color:#888;font-size:10px;'>"
+                    f" <span style='color:{t.text_secondary};font-size:10px;'>"
                     f"📅{parsed.scheduled_date.isoformat()}</span>"
                 )
             if parsed.deadline_date:
                 html += (
-                    f" <span style='color:#c66;font-size:10px;'>"
+                    f" <span style='color:{t.danger};font-size:10px;'>"
                     f"⏰{parsed.deadline_date.isoformat()}</span>"
                 )
             html += f" <span style='font-size:12px;'>{title}</span>"
@@ -742,7 +787,59 @@ class TaskEditPanel(QWidget):
                 html += f" {tags_str}"
             self._preview.setText(html)
         except ValueError:
-            self._preview.setText('<span style="color:#e74c3c;">⚠ 无法解析</span>')
+            self._preview.setText(f'<span style="color:{get_tokens().danger};">⚠ 无法解析</span>')
+
+    # ------------------------------------------------------------------
+    # Custom calendar popup
+    # ------------------------------------------------------------------
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() != QEvent.Type.MouseButtonPress:
+            return super().eventFilter(obj, event)
+        if obj is self._deadline_date_edit.lineEdit():
+            self._show_picker("date")
+            return True
+        if obj is self._deadline_time_edit.lineEdit():
+            self._show_picker("time")
+            return True
+        return super().eventFilter(obj, event)
+
+    def _show_picker(self, kind: str) -> None:
+        if kind == "date":
+            from ...ui.widgets.calendar_popup import CalendarPopup
+            current = self._deadline_date_edit.date()
+            task = self._current_task
+            # Build range info from task if available
+            rf, rt, rk = None, None, ""
+            if task is not None:
+                if task.created_at:
+                    rf = task.created_at.date()
+                if task.deadline_date:
+                    rt = task.deadline_date
+                elif rf:
+                    rt = rf  # fallback: single-day range
+                if rf and rt:
+                    if task.status == TaskStatus.DONE:
+                        rk = "done"
+                    elif task.deadline_date and rf <= date.today() and not task.archived:
+                        rk = "overdue"
+            popup = CalendarPopup(current, self, range_from=rf, range_to=rt, range_kind=rk)
+            popup.date_selected.connect(self._on_calendar_date_selected)
+            popup.smart_place(self._deadline_date_edit)
+            popup.exec()
+        else:
+            from ...ui.widgets.time_popup import TimePopup
+            current = self._deadline_time_edit.time()
+            popup = TimePopup(current, self)
+            popup.time_selected.connect(self._on_time_popup_selected)
+            popup.smart_place(self._deadline_time_edit)
+            popup.exec()
+
+    def _on_calendar_date_selected(self, qdate: QDate) -> None:
+        self._deadline_date_edit.setDate(qdate)
+
+    def _on_time_popup_selected(self, t: QTime) -> None:
+        self._deadline_time_edit.setTime(t)
 
     # ------------------------------------------------------------------
     # Deadline picker → Markdown sync
@@ -763,11 +860,8 @@ class TaskEditPanel(QWidget):
         import re as _re
         # Match existing deadline pattern <YYYY-MM-DD> or <YYYY-MM-DD HH:MM>
         dl_pattern = _re.compile(r"<(\d{4}-\d{2}-\d{2})(?:[T ]\d{2}:\d{2})?>")
-        if self._time_toggle.isChecked():
-            qt = self._deadline_time_edit.time()
-            new_dl = f"<{new_date} {qt.toString('HH:mm')}>"
-        else:
-            new_dl = f"<{new_date}>"
+        qt = self._deadline_time_edit.time()
+        new_dl = f"<{new_date} {qt.toString('HH:mm')}>"
         if dl_pattern.search(text):
             text = dl_pattern.sub(new_dl, text, count=1)
         else:
@@ -794,11 +888,6 @@ class TaskEditPanel(QWidget):
             self._save_btn.setEnabled(current_text != self._original_md.strip())
         self._updating_from_md = False
 
-    def _on_time_toggle_changed(self, checked: bool) -> None:
-        """Show or hide the time editor."""
-        self._deadline_time_edit.setVisible(checked)
-        if not self._updating_from_md:
-            self._on_deadline_picker_changed()
 
     def _on_save(self) -> None:
         is_new = self._current_task is None
@@ -858,6 +947,13 @@ class TaskEditPanel(QWidget):
             task.id = str(uuid.uuid4())
             if self._draft_partition_id:
                 task.partition_id = self._draft_partition_id
+            now = datetime.now()
+            task.activity_log.insert(0, {
+                "ts": now.isoformat(),
+                "content": "创建任务",
+                "status": task.status.value,
+                "progress": 0,
+            })
             self._repository.insert(task)
         else:
             self._repository.update(task)
@@ -936,15 +1032,25 @@ class TaskEditPanel(QWidget):
 
         self._entry_placeholder.setVisible(False)
         self._timeline_log.setVisible(True)
+        t = get_tokens()
 
         def _row(icon: str, color: str, ts: str, content: str, entry_idx: int | None = None) -> str:
-            anchor = f'<a name="entry:{entry_idx}"></a>' if entry_idx is not None else ""
+            txt = t.text_primary
+            if entry_idx is not None:
+                return (
+                    f'<p style="margin:3px 0;font-family:Consolas,monospace;font-size:12px;">'
+                    f'<a href="entry:{entry_idx}" style="text-decoration:none;color:inherit;">'
+                    f'<span style="color:{color};font-weight:bold;">{icon}</span>'
+                    f' <span style="color:{color};">{ts:>11}</span>'
+                    f' <span style="color:{txt};">{content}</span>'
+                    f'</a>'
+                    f'</p>'
+                )
             return (
                 f'<p style="margin:3px 0;font-family:Consolas,monospace;font-size:12px;">'
-                f'{anchor}'
                 f'<span style="color:{color};font-weight:bold;">{icon}</span>'
                 f' <span style="color:{color};">{ts:>11}</span>'
-                f' <span style="color:#444;">{content}</span>'
+                f' <span style="color:{txt};">{content}</span>'
                 f'</p>'
             )
 
@@ -966,19 +1072,14 @@ class TaskEditPanel(QWidget):
                 sc = st.display_color
                 sn = st.display_name
             except Exception:
-                sc = "#888"
+                sc = t.text_secondary
                 sn = st_val
             is_done = "任务完成" in content
-            color = "#27ae60" if is_done else "#f39c12"
+            color = t.timeline_done if is_done else t.timeline_dot
             progress_val = e.get("progress", task.progress)
             rows.append(_row("●", color, ts,
                               f'<span style="color:{sc};">[{sn}|{progress_val}%]</span> {content}',
                               entry_idx=orig_idx))
-        # Always show creation marker (oldest entry), unless a real one exists
-        if task.created_at and not any("创建任务" in e.get("content", "") for e in task.activity_log):
-            rows.append(_row("○", "#aaa", _fmt_ts(task.created_at.isoformat(), True),
-                              "创建任务"))
-
         self._timeline_log.setHtml(f'<div>{"".join(rows)}</div>')
         self._reset_log_editor()
 
@@ -1013,7 +1114,7 @@ class TaskEditPanel(QWidget):
                 pass
 
         progress_val = entry.get("progress", self._current_task.progress)
-        self._progress_spin.setValue(progress_val)
+        self._progress_edit.setText(str(progress_val))
 
         self._log_save_btn.setText("更新进展")
 
@@ -1031,7 +1132,7 @@ class TaskEditPanel(QWidget):
         self._log_save_btn.setVisible(True)
         self._log_save_btn.setEnabled(True)
         if self._current_task:
-            self._progress_spin.setValue(self._current_task.progress)
+            self._progress_edit.setText(str(self._current_task.progress))
 
     # ------------------------------------------------------------------
     # Log editor actions
@@ -1054,8 +1155,8 @@ class TaskEditPanel(QWidget):
                 return
             entry["content"] = content
             entry["status"] = new_status.value if new_status else entry.get("status", "")
-            entry["progress"] = self._progress_spin.value()
-            task.progress = self._progress_spin.value()
+            entry["progress"] = int(self._progress_edit.text() or 0)
+            task.progress = int(self._progress_edit.text() or 0)
             if new_status and new_status != old_status:
                 task.status = new_status
                 if new_status == TaskStatus.DONE:
@@ -1084,7 +1185,7 @@ class TaskEditPanel(QWidget):
             task.raw_md = self._formatter.format(task)
         # Record one entry with current status
         entry_content = content if content else f"状态变更为 {task.status.display_name}"
-        task.progress = self._progress_spin.value()
+        task.progress = int(self._progress_edit.text() or 0)
         task.activity_log.append({
             "ts": datetime.now().isoformat(),
             "content": entry_content,
@@ -1117,7 +1218,7 @@ class TaskEditPanel(QWidget):
 def _h_sep() -> QWidget:
     w = QWidget()
     w.setFixedHeight(1)
-    w.setStyleSheet("background: #e8e6e0; border: none;")
+    w.setObjectName("toolSeparator")
     return w
 
 

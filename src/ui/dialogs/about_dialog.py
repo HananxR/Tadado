@@ -32,7 +32,7 @@ class AboutDialog(QDialog):
 
         version = QLabel("v0.1.0")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version.setStyleSheet("color: #888;")
+        version.setStyleSheet("")
         layout.addWidget(version)
 
         desc = QLabel("基于 Markdown 的 Windows 桌面任务管理工具")
@@ -57,7 +57,7 @@ class AboutDialog(QDialog):
 
         license_label = QLabel("MIT License")
         license_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        license_label.setStyleSheet("color: #888;")
+        license_label.setStyleSheet("")
         layout.addWidget(license_label)
 
         author = QLabel("作者: Hanxy")

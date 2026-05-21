@@ -192,7 +192,7 @@ class SettingsDialog(QDialog):
         layout.setSpacing(8)
 
         hint = QLabel("勾选的分区将显示在筛选栏中，取消勾选可隐藏分区。")
-        hint.setStyleSheet("color: #888; font-size: 11px;")
+        hint.setStyleSheet("font-size: 11px;")
         layout.addWidget(hint)
 
         # Partition table: 可见 | 名称 | 密码 | 删除
@@ -257,14 +257,15 @@ class SettingsDialog(QDialog):
             has_pwd = bool(p.get("password", ""))
             pwd_btn = QPushButton("🔒" if has_pwd else "🔓")
             pwd_btn.setStyleSheet(
-                "QPushButton { font-size: 12px; padding: 2px 6px; border: none; background: transparent; }"
+                "QPushButton { font-size: 12px; padding: 2px 6px; border: none; }"
             )
             pwd_btn.clicked.connect(lambda checked=False, pid=p["id"]: self._on_set_partition_password(pid))
             self._partition_table.setCellWidget(row, 2, pwd_btn)
 
             # Delete button per row
             del_btn = QPushButton("删除")
-            del_btn.setStyleSheet("QPushButton { color: #c0392b; font-size: 10px; padding: 2px 6px; }")
+            del_btn.setObjectName("deleteBtn")
+            del_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }")
             del_btn.clicked.connect(lambda checked=False, pid=p["id"]: self._on_delete_single_partition(pid))
             self._partition_table.setCellWidget(row, 3, del_btn)
 
@@ -401,18 +402,22 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(w)
         layout.setContentsMargins(0, 0, 0, 0)
 
+        from ...utils.design_tokens import get_tokens
+        t = get_tokens()
+        ac, on_ac, ts = t.accent, t.text_on_accent, t.text_secondary
+
         browser = QTextBrowser()
         browser.setOpenExternalLinks(True)
         browser.setStyleSheet("QTextBrowser { font-size: 13px; line-height: 1.6; }")
 
         help_html = """
-<h1 style="color:#2c3e50;border-bottom:2px solid #3498db;padding-bottom:8px;">DeskTodoSeq 帮助文档</h1>
+<h1 style="border-bottom:2px solid __AC__;padding-bottom:8px;">DeskTodoSeq 帮助文档</h1>
 
-<h2 style="color:#2980b9;">一、核心设计理念</h2>
+<h2 style="color:__AC__;">一、核心设计理念</h2>
 
 <h3>1.1 Markdown 即数据</h3>
 <p>DeskTodoSeq 以 <b>Markdown 文本行为任务的最小单元</b>。每一条任务都是一行标准的 Markdown：</p>
-<pre style="background:#f5f6fa;padding:8px;border-radius:4px;">- [ ] TODO &lt;2026-05-20&gt; 重构认证模块 #backend</pre>
+<pre style="padding:8px;border-radius:4px;">- [ ] TODO &lt;2026-05-20&gt; 重构认证模块 #backend</pre>
 <p>这条文本 <b>既是用户看到的，也是数据库存储的规范格式</b>。结构化字段（状态、日期、标签）从 Markdown 派生，始终可通过解析器重新生成——<b>raw_md 是唯一真相源（Single Source of Truth）</b>。</p>
 
 <h3>1.2 本地优先 · 隐私至上</h3>
@@ -426,10 +431,10 @@ class SettingsDialog(QDialog):
 
 <hr>
 
-<h2 style="color:#2980b9;">二、系统架构</h2>
+<h2 style="color:__AC__;">二、系统架构</h2>
 
 <h3>2.1 分层设计</h3>
-<pre style="background:#f5f6fa;padding:8px;border-radius:4px;">
+<pre style="padding:8px;border-radius:4px;">
 ┌─────────────────────────────────────────────┐
 │  UI 层 (src/ui/)                            │
 │  main_window · system_tray · task_list/     │
@@ -449,7 +454,7 @@ class SettingsDialog(QDialog):
 └─────────────────────────────────────────────┘</pre>
 
 <h3>2.2 核心数据流</h3>
-<pre style="background:#f5f6fa;padding:8px;border-radius:4px;">
+<pre style="padding:8px;border-radius:4px;">
 用户输入 Markdown
     │
     ▼ MarkdownTaskParser.parse()
@@ -465,7 +470,7 @@ SQLite (raw_md + 结构化列 + FTS5 全文索引)
 <h3>2.3 信号总线（SignalBus）</h3>
 <p>各模块通过 Qt 信号解耦通信，不直接相互调用：</p>
 <table style="width:100%;border-collapse:collapse;font-size:12px;" border="1" cellpadding="4" cellspacing="0">
-<tr style="background:#3498db;color:white;"><th>信号</th><th>触发场景</th><th>响应组件</th></tr>
+<tr style="background:__AC__;color:__ON_AC__;"><th>信号</th><th>触发场景</th><th>响应组件</th></tr>
 <tr><td><code>task_created</code></td><td>新建任务保存</td><td>MainWindow 刷新列表、统计栏、轮播</td></tr>
 <tr><td><code>task_updated</code></td><td>任务字段修改</td><td>同上</td></tr>
 <tr><td><code>task_deleted</code></td><td>删除任务</td><td>同上 + 清理引用</td></tr>
@@ -476,12 +481,12 @@ SQLite (raw_md + 结构化列 + FTS5 全文索引)
 
 <hr>
 
-<h2 style="color:#2980b9;">三、功能详解</h2>
+<h2 style="color:__AC__;">三、功能详解</h2>
 <p><i>以下功能说明结合「功能演示」分区中的样例任务进行演示。</i></p>
 
 <h3>3.1 任务创建与 Markdown 编辑</h3>
 <p>点击工具栏 <b>+ 新建</b> 按钮（或 <kbd>Ctrl+N</kbd>），编辑面板自动生成今日日期的 TODO 模板：</p>
-<pre style="background:#f5f6fa;padding:8px;border-radius:4px;">- [ ] TODO &lt;2026-05-15&gt; 新任务</pre>
+<pre style="padding:8px;border-radius:4px;">- [ ] TODO &lt;2026-05-15&gt; 新任务</pre>
 <p><b>Markdown 语法规则：</b></p>
 <ul>
 <li><b>状态关键字</b>：<code>TODO</code> / <code>DOING</code> / <code>DONE</code> / <code>URGENT</code>——位于 <code>- [ ]</code> 之后</li>
@@ -491,7 +496,7 @@ SQLite (raw_md + 结构化列 + FTS5 全文索引)
 
 <h3>3.2 任务状态与生命周期</h3>
 <p>任务状态按以下循环流转：</p>
-<pre style="background:#f5f6fa;padding:8px;border-radius:4px;">
+<pre style="padding:8px;border-radius:4px;">
 URGENT ──→ DOING ──→ DONE ──→ TODO
   ↑                            │
   └──────── TODO ←─────────────┘
@@ -570,18 +575,18 @@ URGENT ──→ DOING ──→ DONE ──→ TODO
 
 <h3>3.12 快捷键</h3>
 <table style="width:100%;border-collapse:collapse;font-size:12px;" border="1" cellpadding="4" cellspacing="0">
-<tr style="background:#3498db;color:white;"><th>快捷键</th><th>功能</th></tr>
+<tr style="background:__AC__;color:__ON_AC__;"><th>快捷键</th><th>功能</th></tr>
 <tr><td><kbd>Ctrl+N</kbd></td><td>新建任务</td></tr>
 <tr><td><kbd>Ctrl+Alt+T</kbd></td><td>显示/隐藏主窗口</td></tr>
 </table>
 
 <hr>
 
-<h2 style="color:#2980b9;">四、「功能演示」分区样例说明</h2>
+<h2 style="color:__AC__;">四、「功能演示」分区样例说明</h2>
 <p>切换到「功能演示」分区可查看以下演示场景：</p>
 
 <table style="width:100%;border-collapse:collapse;font-size:12px;" border="1" cellpadding="4" cellspacing="0">
-<tr style="background:#3498db;color:white;"><th>任务</th><th>演示要点</th></tr>
+<tr style="background:__AC__;color:__ON_AC__;"><th>任务</th><th>演示要点</th></tr>
 <tr><td>📊 准备季度汇报 PPT</td><td>完整状态流转（TODO→DOING→DONE）+ 活动时间线</td></tr>
 <tr><td>🏃 每周三次有氧运动</td><td>循环任务 + 标签 #健康</td></tr>
 <tr><td>📖 阅读《系统设计面试》</td><td>DOING 状态 + 多次追加进展</td></tr>
@@ -596,7 +601,7 @@ URGENT ──→ DOING ──→ DONE ──→ TODO
 
 <hr>
 
-<h2 style="color:#2980b9;">五、数据存储</h2>
+<h2 style="color:__AC__;">五、数据存储</h2>
 <ul>
 <li><b>数据库</b>：SQLite，位于 <code>resources/tasks.db</code></li>
 <li><b>配置文件</b>：JSON，位于 <code>resources/config.json</code></li>
@@ -607,7 +612,7 @@ URGENT ──→ DOING ──→ DONE ──→ TODO
 
 <hr>
 
-<h2 style="color:#2980b9;">六、常见问题</h2>
+<h2 style="color:__AC__;">六、常见问题</h2>
 
 <p><b>Q: 任务是否可以跨分区移动？</b><br>
 A: 目前需在编辑面板中切换分区下拉来迁移任务。</p>
@@ -621,10 +626,11 @@ A: 直接复制 <code>resources/</code> 目录下的 <code>tasks.db</code> 和 <
 <p><b>Q: Markdown 格式写错了会怎样？</b><br>
 A: 保存时解析器会尝试容错解析，如果完全无法解析会提示"解析失败"。</p>
 
-<p style="margin-top:30px;color:#95a5a6;font-size:11px;">
+<p style="margin-top:30px;color:__TS__;font-size:11px;">
 DeskTodoSeq — 用 Markdown 管理时间，用数据可视化进度。
 </p>
 """
+        help_html = help_html.replace("__AC__", ac).replace("__ON_AC__", on_ac).replace("__TS__", ts)
         browser.setHtml(help_html)
         layout.addWidget(browser)
         return w

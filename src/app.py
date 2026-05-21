@@ -17,12 +17,93 @@ from .models.repository import TaskRepository
 from .models.task import Task
 from .services.archiver import TaskArchiver
 from .services.notifier import TaskNotifier
+from .utils.design_tokens import init_tokens, refresh_tokens
 from .services.recurrence import TaskRecurrence
 from .services.scheduler import TaskScheduler
 from .ui.main_window import MainWindow
 from .ui.system_tray import SystemTrayManager
 from .utils.icon_loader import get_icon_loader
 from .utils.signal_bus import get_signal_bus
+
+
+def _ensure_test_partition(repo: TaskRepository) -> None:
+    """Create the 「测试分区」with optimization-tracking tasks in dev mode only."""
+    if getattr(sys, "frozen", False):
+        return
+
+    partitions = repo.get_all_partitions()
+    if any(p["name"] == "测试分区" for p in partitions):
+        return
+
+    from .services.md_parser import MarkdownTaskParser
+
+    parser = MarkdownTaskParser()
+    test = repo.upsert_partition("测试分区", sort_order=200)
+    pid = test["id"]
+    today = date.today()
+    now = datetime.now()
+
+    def _ts(d: int = 0, h: int = 0) -> str:
+        return (now - timedelta(days=d, hours=h)).isoformat()
+
+    # Optimization tracking tasks organized by module
+    optimizations = [
+        (
+            f"- [ ] DONE<{today}> 优化：新建任务活动时间线缺少初始状态和进度 #任务创建",
+            "优化：新建任务活动时间线缺少初始状态和进度",
+            [
+                {"ts": _ts(1), "content": "【问题】新建任务时 activity_log 为空，活动时间线中通过 created_at 派生的「创建任务」行不显示状态和进度信息", "status": "TODO", "progress": 0},
+                {"ts": _ts(0, 2), "content": "【方案】在四个创建入口（task_input/task_dialog/task_edit_panel/main_window_import）添加初始 activity_log 条目，记录 status+progress，移除展示层的派生回退逻辑", "status": "DOING", "progress": 50},
+                {"ts": _ts(0), "content": "【完成】所有新建任务自动记录「创建任务」条目（含状态和进度），38 个测试通过", "status": "DONE", "progress": 100},
+            ],
+            now,
+        ),
+        (
+            f"- [ ] DONE<{today}> 优化：进度输入控件过于复杂 #编辑面板",
+            "优化：进度输入控件 QSpinBox 替换为简单 QLineEdit",
+            [
+                {"ts": _ts(1), "content": "【问题】活动时间线中的进度输入使用 QSpinBox（带上下箭头），交互复杂，用户只需输入 0~100 数字即可", "status": "TODO", "progress": 0},
+                {"ts": _ts(0, 1), "content": "【方案】用 QLineEdit + QIntValidator(0,100) 替换 QSpinBox，添加 % 后缀标签，简化交互", "status": "DOING", "progress": 50},
+                {"ts": _ts(0), "content": "【完成】进度输入简化为纯数字输入框，0~100 范围验证，38 个测试通过", "status": "DONE", "progress": 100},
+            ],
+            now,
+        ),
+        (
+            f"- [ ] TODO<{today + timedelta(days=7)}> 优化：左侧任务列表默认排序规则 #任务列表",
+            "优化：左侧任务列表默认排序规则（暂缓）",
+            [
+                {"ts": _ts(0), "content": "【问题】当前默认按 status 排序，用户期望按 status+deadline 联合排序，但 FilterBar 仅支持单字段排序", "status": "TODO", "progress": 0},
+                {"ts": _ts(0), "content": "【分析】TaskFilter.sort_by 已支持 list[SortCriterion]，需改造 FilterBar.set_sort/build_filter 支持逗号分隔的多字段排序，settings_dialog 增加联合排序选项", "status": "TODO", "progress": 10},
+            ],
+            None,
+        ),
+        (
+            f"- [ ] TODO<{today + timedelta(days=14)}> 优化待办 #任务列表",
+            "（示例）在此分区记录新的优化问题",
+            [
+                {"ts": _ts(0), "content": "【问题】描述发现的问题或需要优化的点", "status": "TODO", "progress": 0},
+                {"ts": _ts(0), "content": "【方案】描述解决思路和改动点", "status": "TODO", "progress": 0},
+            ],
+            None,
+        ),
+    ]
+
+    for raw_md, title, log, completed in optimizations:
+        parsed = parser.parse(raw_md)
+        task = Task(
+            id=str(uuid.uuid4()),
+            raw_md=raw_md,
+            title=title,
+            status=parsed.status,
+            tags=parsed.tags,
+            deadline_date=parsed.deadline_date,
+            deadline_time=parsed.deadline_time,
+            scheduled_date=parsed.scheduled_date,
+            partition_id=pid,
+            activity_log=log,
+            completed_at=completed,
+        )
+        repo.insert(task)
 
 
 def _ensure_demo_partition(repo: TaskRepository) -> None:
@@ -148,11 +229,14 @@ class DeskTodoSeqApp(QApplication):
 
         # Core services
         self._config = AppConfig()
+        init_tokens(self._config)
         self._repository = TaskRepository(self._config.db_path())
         self._repository.open()
 
         # Ensure demo partition exists on first launch
         _ensure_demo_partition(self._repository)
+        # Ensure test partition exists in dev mode
+        _ensure_test_partition(self._repository)
 
         # Load theme and icons early
         self._load_theme()
@@ -197,10 +281,18 @@ class DeskTodoSeqApp(QApplication):
     # ------------------------------------------------------------------
 
     def _load_theme(self) -> None:
+        from .utils.design_tokens import build_palette, refresh_tokens
+
         theme_name = self._config.theme
         if theme_name == "system":
             theme_name = self._detect_system_theme()
+        refresh_tokens()
 
+        # Apply QPalette — handles text and standard widget colours globally
+        self.setPalette(build_palette())
+
+        # Apply QSS for shapes (borders, padding, fonts; colours are kept
+        # for structural elements like toolbar/card backgrounds and borders)
         qss_path = self._resource_path("themes", f"{theme_name}.qss")
         if qss_path and qss_path.exists():
             with open(qss_path, "r", encoding="utf-8") as f:
@@ -266,5 +358,7 @@ class DeskTodoSeqApp(QApplication):
 
     def _on_config_changed(self) -> None:
         self._load_theme()
+        refresh_tokens()
         get_icon_loader().clear_cache()
         self._load_icons()
+        self._main_window.refresh_theme()

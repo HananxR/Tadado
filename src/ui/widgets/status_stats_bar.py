@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 from ...models.repository import TaskRepository
 from ...models.task_filter import SortCriterion, TaskFilter
 from ...models.task_status import TaskStatus
+from ...utils.design_tokens import get_tokens
 
 
 class _StatBadge(QLabel):
@@ -85,7 +86,7 @@ class StatusStatsBar(QWidget):
             lbl = QLabel(label)
             lbl.setCursor(Qt.CursorShape.PointingHandCursor)
             lbl.setStyleSheet(
-                "QLabel { color: #aaa; font-size: 10px; padding: 1px 6px; }"
+                "QLabel { font-size: 10px; padding: 1px 6px; }"
             )
             lbl.mousePressEvent = lambda e, k=key: self._on_period_clicked(k)
             self._period_labels[key] = lbl
@@ -146,8 +147,10 @@ class StatusStatsBar(QWidget):
 
         for key, lbl in self._period_labels.items():
             active = key == self._active_period
+            t = get_tokens()
+            c = t.text_primary if active else t.text_secondary
             lbl.setStyleSheet(
-                f"QLabel {{ color: {'#333' if active else '#aaa'};"
+                f"QLabel {{ color: {c};"
                 f" font-size: 10px; padding: 1px 6px;"
                 f" font-weight: {'bold' if active else 'normal'}; }}"
             )

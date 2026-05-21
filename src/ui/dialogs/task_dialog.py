@@ -162,6 +162,7 @@ class TaskDialog(QDialog):
             self._repository.update(self._task)
             self._signal_bus.task_updated.emit(self._task)
         else:
+            now = datetime.now()
             task = Task(
                 id=str(uuid.uuid4()),
                 raw_md=text,
@@ -172,8 +173,14 @@ class TaskDialog(QDialog):
                 deadline_date=parsed.deadline_date,
                 notes=notes,
                 recurrence_rule=recurrence,
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
+                created_at=now,
+                updated_at=now,
+                activity_log=[{
+                    "ts": now.isoformat(),
+                    "content": "创建任务",
+                    "status": parsed.status.value,
+                    "progress": 0,
+                }],
             )
             self._repository.insert(task)
             self._signal_bus.task_created.emit(task)

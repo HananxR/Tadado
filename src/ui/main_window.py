@@ -88,12 +88,17 @@ class MainWindow(QMainWindow):
         geom = screen.availableGeometry()
         w = min(int(geom.width() * 0.82), geom.width() - 40)
         h = min(int(geom.height() * 0.80), geom.height() - 80)
-        self.setMinimumSize(800, 500)
+        self.setMinimumSize(900, 600)
         self.resize(w, h)
         self.move(
             (geom.width() - w) // 2 + geom.x(),
             (geom.height() - h) // 2 + geom.y(),
         )
+
+    def resizeEvent(self, event) -> None:
+        """Re-apply splitter proportions on window resize."""
+        super().resizeEvent(event)
+        self._apply_splitter_sizes()
 
     def _apply_splitter_sizes(self) -> None:
         """Lock splitter to 65/35 proportion based on current width."""
@@ -102,6 +107,10 @@ class MainWindow(QMainWindow):
         total = self._splitter.width()
         if total > 100:
             self._splitter.setSizes([int(total * 0.65), int(total * 0.35)])
+
+    def refresh_theme(self) -> None:
+        """Refresh theme-dependent styles after a theme switch."""
+        self._edit_panel.refresh_theme()
 
     # ------------------------------------------------------------------
     # Menu bar — all actions live here
@@ -137,12 +146,13 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _make_partition_icon() -> QIcon:
-        """Draw a bookmark icon 🔖 to represent partition switching."""
+        """Draw a bookmark icon to represent partition switching."""
+        from ..utils.design_tokens import get_tokens
         px = QPixmap(64, 64)
         px.fill(Qt.GlobalColor.transparent)
         p = QPainter(px)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor("#5b8def")
+        color = QColor(get_tokens().accent)
         p.setBrush(QBrush(color))
         p.setPen(QPen(color.darker(130), 2.5))
         # Bookmark shape: rounded top rect + triangular bottom
@@ -193,7 +203,6 @@ class MainWindow(QMainWindow):
         self._partition_btn.setMenu(self._partition_menu)
         self._partition_btn.setStyleSheet(
             "QToolButton { border: none; padding: 4px 10px; }"
-            "QToolButton:hover { background-color: #f0eee8; border-radius: 5px; }"
         )
         toolbar.addWidget(self._partition_btn)
 
@@ -256,7 +265,7 @@ class MainWindow(QMainWindow):
         # Row 5: Separator
         sep = QWidget()
         sep.setFixedHeight(1)
-        sep.setStyleSheet("background-color: #e0ddd6;")
+        sep.setObjectName("toolSeparator")
         task_layout.addWidget(sep)
 
         # Row 6: Splitter with password mask overlay
@@ -273,15 +282,12 @@ class MainWindow(QMainWindow):
         # Password mask overlay (hidden by default)
         self._partition_mask = QWidget()
         self._partition_mask.setObjectName("partitionMask")
-        self._partition_mask.setStyleSheet(
-            "QWidget#partitionMask { background-color: #f5f4f0; }"
-        )
         mask_layout = QVBoxLayout(self._partition_mask)
         mask_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         mask_hint = QLabel("🔒 此分区已加密\n请输入密码查看内容")
         mask_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         mask_hint.setStyleSheet(
-            "QLabel { color: #888; font-size: 16px; font-weight: bold;"
+            "QLabel { font-size: 16px; font-weight: bold;"
             " background: transparent; border: none; }"
         )
         mask_layout.addWidget(mask_hint)
@@ -302,13 +308,13 @@ class MainWindow(QMainWindow):
         self._task_model = TaskListModel()
         self._task_view = TaskListView(self._repository)
         self._task_view.set_model(self._task_model)
+        self._task_view.setMinimumWidth(240)
         self._task_view.task_selected.connect(self._on_task_selected)
         self._task_view.detail_requested.connect(self._on_detail_requested)
         self._splitter.addWidget(self._task_view)
 
         # Right: edit panel
         self._edit_panel = TaskEditPanel(self._repository, self._task_model)
-        self._edit_panel.setMinimumWidth(260)
         self._splitter.addWidget(self._edit_panel)
 
         task_layout.addWidget(self._splitter_container, 1)
@@ -324,7 +330,7 @@ class MainWindow(QMainWindow):
         page_row.addWidget(self._page_prev_btn)
 
         self._page_label = QLabel("0 / 0")
-        self._page_label.setStyleSheet("font-size: 11px; color: #666;")
+        self._page_label.setStyleSheet("font-size: 11px;")
         self._page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._page_label.setFixedWidth(50)
         page_row.addWidget(self._page_label)
@@ -403,7 +409,7 @@ class MainWindow(QMainWindow):
     def _update_clock(self) -> None:
         from datetime import datetime as _dt
         self._status_clock.setText(_dt.now().strftime("%Y-%m-%d %H:%M:%S"))
-        self._status_clock.setStyleSheet("color: #888; font-size: 11px; padding: 0 8px;")
+        self._status_clock.setStyleSheet("font-size: 11px; padding: 0 8px;")
 
     def _setup_idle_lock(self) -> None:
         """Set up auto-lock timer for password-protected partitions."""
@@ -518,8 +524,9 @@ class MainWindow(QMainWindow):
         if self._splitter_stack.currentIndex() == 1:
             name = self._get_partition_name(self._active_partition_id)
             self._status_partition.setText(f"  🔒 {name} · 已锁定，点击解锁按钮重试")
+            from ..utils.design_tokens import get_tokens as _gt
             self._status_partition.setStyleSheet(
-                "color: #c0392b; font-size: 12px; font-weight: bold; padding: 2px 10px;"
+                f"color: {_gt().danger}; font-size: 12px; font-weight: bold; padding: 2px 10px;"
             )
             return
         name = self._get_partition_name(self._active_partition_id)
@@ -543,8 +550,9 @@ class MainWindow(QMainWindow):
             key_map = {"今日": "today", "本周": "week", "逾期": "overdue", "全部": "all"}
             msg = motd.get(key_map.get(ctx, "all"), "")
             self._status_partition.setText(f"  📂 {name} :: [{ctx}] {msg}")
+            from ..utils.design_tokens import get_tokens as _gt3
             self._status_partition.setStyleSheet(
-                "color: #888; font-size: 12px; padding: 2px 10px;"
+                f"color: {_gt3().text_secondary}; font-size: 12px; padding: 2px 10px;"
             )
         else:
             counts = self._stats_bar.get_counts()
@@ -557,8 +565,9 @@ class MainWindow(QMainWindow):
                 f"  📂 {name} :: [{ctx}] 紧急{u} 待办{t} 进行中{d} 已完成{dn}"
                 f" (共{total}条)  |  合理安排时间 ⏰"
             )
+            from ..utils.design_tokens import get_tokens as _gt4
             self._status_partition.setStyleSheet(
-                "color: #5b8def; font-size: 12px; font-weight: bold;"
+                f"color: {_gt4().accent}; font-size: 12px; font-weight: bold;"
                 " padding: 2px 10px;"
             )
 
@@ -711,8 +720,9 @@ class MainWindow(QMainWindow):
             self._activate_partition(target_id)
             # Ensure partition is always visible in status bar
             self._status_partition.setText(f"  📂 {name}")
+            from ..utils.design_tokens import get_tokens as _gt5
             self._status_partition.setStyleSheet(
-                "color: #5b8def; font-size: 12px; font-weight: bold; padding: 2px 10px;"
+                f"color: {_gt5().accent}; font-size: 12px; font-weight: bold; padding: 2px 10px;"
             )
 
     def _update_partition_menu_check(self) -> None:
@@ -822,8 +832,9 @@ class MainWindow(QMainWindow):
     def _flash_status(self, msg: str) -> None:
         """Show a temporary message in the status bar (3 seconds)."""
         self._status_partition.setText(f"  {msg}")
+        from ..utils.design_tokens import get_tokens as _gt2
         self._status_partition.setStyleSheet(
-            "color: #c0392b; font-size: 12px; font-weight: bold; padding: 2px 10px;"
+            f"color: {_gt2().danger}; font-size: 12px; font-weight: bold; padding: 2px 10px;"
         )
         QTimer.singleShot(3000, self._update_status_partition_label)
 
@@ -1019,6 +1030,7 @@ class MainWindow(QMainWindow):
         errors = 0
         for parsed, raw_line, err in results:
             if parsed is not None:
+                now = datetime.now()
                 task = Task(
                     id="",
                     raw_md=raw_line,
@@ -1027,6 +1039,14 @@ class MainWindow(QMainWindow):
                     tags=parsed.tags,
                     scheduled_date=parsed.scheduled_date,
                     deadline_date=parsed.deadline_date,
+                    created_at=now,
+                    updated_at=now,
+                    activity_log=[{
+                        "ts": now.isoformat(),
+                        "content": "创建任务",
+                        "status": parsed.status.value,
+                        "progress": 0,
+                    }],
                 )
                 self._repository.insert(task)
                 imported += 1
