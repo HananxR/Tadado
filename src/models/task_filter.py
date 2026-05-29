@@ -27,6 +27,8 @@ class TaskFilter:
     date_to: Optional[date] = None
     overdue_only: bool = False
     show_archived: bool = False
+    show_suspended: bool = True  # always show, use visual dimming instead
+    suspended_only: bool = False
     sort_by: list[SortCriterion] = field(
         default_factory=lambda: [SortCriterion("deadline", ascending=True)]
     )

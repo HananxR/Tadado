@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -26,13 +27,8 @@ DEFAULT_CONFIG: dict = {
         "theme": "system",
         "font_size": 12,
         "heatmap_start_year": 2026,
-        "heatmap_colors": {
-            "level_0": "#ebedf0",
-            "level_1": "#9be9a8",
-            "level_2": "#40c463",
-            "level_3": "#30a14e",
-            "level_4": "#216e39",
-        },
+        "heatmap_colors": {"levels": 8},
+        "max_heatmap_tags": 3,
     },
     "reminders": {
         "enabled": True,
@@ -48,6 +44,15 @@ DEFAULT_CONFIG: dict = {
         "new_task": "Ctrl+N",
     },
     "statuses": {},
+    "progress_bar": {
+        "enabled_periods": ["yesterday", "today", "week", "month"],
+    },
+    "deadline_calculator": {
+        "default_type": "temporary",
+        "weekly_day": 5,
+        "weekly_next_week": False,
+        "monthly_end_of_month": True,
+    },
     "motd": {
         "today": "今日无事，宜放松身心 🌿",
         "week": "本周清风徐来，按自己的节奏前行 🚶",
@@ -58,19 +63,21 @@ DEFAULT_CONFIG: dict = {
 
 
 def _default_data_dir() -> Path:
-    """Return the default data directory — portable mode preferred."""
-    # Portable: exe 同目录 `data/`
-    portable = Path(__file__).resolve().parents[1] / "resources"
-    if portable.exists() or not _is_frozen():
-        return portable
-    # Standard: %APPDATA%/DeskTodoSeq
-    appdata = os.environ.get("APPDATA", os.path.expanduser("~"))
-    return Path(appdata) / "DeskTodoSeq"
+    """Always use resources/ next to the source tree (portable-first)."""
+    return Path(__file__).resolve().parents[1] / "resources"
 
 
 def _is_frozen() -> bool:
-    """True when running as a PyInstaller bundle."""
-    return getattr(os.sys, "frozen", False)
+    """True when running as a PyInstaller or Nuitka bundle."""
+    return getattr(os.sys, "frozen", False) or "__compiled__" in dir(sys)
+
+
+def _migrate_old_database(data_dir: Path) -> None:
+    """Rename tasks.db → desktodoseq.data if the old file exists and new doesn't."""
+    old_db = data_dir / "tasks.db"
+    new_db = data_dir / "desktodoseq.data"
+    if old_db.exists() and not new_db.exists():
+        old_db.rename(new_db)
 
 
 class AppConfig(QObject):
@@ -100,6 +107,7 @@ class AppConfig(QObject):
                 self._data = {}
         # Merge with defaults for any missing keys
         self._data = _deep_merge(DEFAULT_CONFIG, self._data)
+        _migrate_old_database(self._data_dir)
 
     def save(self) -> None:
         """Persist current config to disk."""
@@ -117,7 +125,7 @@ class AppConfig(QObject):
         return self._data_dir
 
     def db_path(self) -> str:
-        return str(self._data_dir / "tasks.db")
+        return str(self._data_dir / "desktodoseq.data")
 
     def _config_path(self) -> Path:
         return self._data_dir / "config.json"
@@ -161,6 +169,14 @@ class AppConfig(QObject):
     @property
     def archive_enabled(self) -> bool:
         return bool(self._get("archive", "enabled"))
+
+    @property
+    def progress_enabled_periods(self) -> list[str]:
+        return list(self._get("progress_bar", "enabled_periods"))
+
+    @property
+    def deadline_calculator_config(self) -> dict:
+        return dict(self._data.get("deadline_calculator", {}))
 
     # ------------------------------------------------------------------
     # Getters / Setters

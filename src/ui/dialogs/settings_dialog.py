@@ -5,7 +5,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -30,6 +29,8 @@ from PySide6.QtWidgets import (
 from ...config import AppConfig
 from ...models.repository import TaskRepository
 from ...utils.signal_bus import get_signal_bus
+from ...utils.widget_utils import combo_width
+from ..widgets.dropdown import DropdownWidget
 
 
 class SettingsDialog(QDialog):
@@ -53,11 +54,8 @@ class SettingsDialog(QDialog):
         tabs = QTabWidget()
         tabs.addTab(self._build_general_tab(), "通用")
         tabs.addTab(self._build_display_tab(), "显示")
-        tabs.addTab(self._build_reminders_tab(), "提醒")
-        tabs.addTab(self._build_archive_tab(), "归档")
+        tabs.addTab(self._build_automation_tab(), "自动化")
         tabs.addTab(self._build_partitions_tab(), "分区管理")
-        tabs.addTab(self._build_motd_tab(), "激励语")
-        tabs.addTab(self._build_help_tab(), "帮助")
         layout.addWidget(tabs)
 
         buttons = QDialogButtonBox(
@@ -97,7 +95,9 @@ class SettingsDialog(QDialog):
         )
         form.addRow("默认每页条数", self._page_size_spin)
 
-        self._default_sort_combo = QComboBox()
+        self._default_sort_combo = DropdownWidget()
+        self._default_sort_combo.setObjectName("settingsSortCombo")
+        self._default_sort_combo.setFixedWidth(combo_width(4))
         SORT_LABELS = {"status": "状态", "deadline": "截止日", "created": "创建时间", "title": "标题"}
         for key, label in SORT_LABELS.items():
             self._default_sort_combo.addItem(label, key)
@@ -106,6 +106,25 @@ class SettingsDialog(QDialog):
         if idx >= 0:
             self._default_sort_combo.setCurrentIndex(idx)
         form.addRow("默认排序", self._default_sort_combo)
+
+        # MOTD fields (merged from 激励语 tab)
+        motd_sep = QLabel("<b>激励语</b>")
+        form.addRow(motd_sep)
+
+        motd = self._config.get("motd", default={})
+        labels = [
+            ("today", "今日无事时："),
+            ("week", "本周无事时："),
+            ("overdue", "无逾期时："),
+            ("all", "全部为空时："),
+        ]
+        self._motd_edits: dict[str, QLineEdit] = {}
+        for key, label_text in labels:
+            edit = QLineEdit()
+            edit.setText(motd.get(key, ""))
+            edit.setPlaceholderText("输入激励语…")
+            self._motd_edits[key] = edit
+            form.addRow(label_text, edit)
 
         return w
 
@@ -118,7 +137,9 @@ class SettingsDialog(QDialog):
         form = QFormLayout(w)
         form.setSpacing(10)
 
-        self._theme_combo = QComboBox()
+        self._theme_combo = DropdownWidget()
+        self._theme_combo.setObjectName("settingsThemeCombo")
+        self._theme_combo.setFixedWidth(combo_width(4))
         self._theme_combo.addItem("跟随系统", "system")
         self._theme_combo.addItem("浅色", "light")
         self._theme_combo.addItem("深色", "dark")
@@ -132,7 +153,14 @@ class SettingsDialog(QDialog):
         self._heatmap_start_year = QSpinBox()
         self._heatmap_start_year.setRange(2000, 2100)
         self._heatmap_start_year.setValue(start_year)
-        form.addRow("热力图起始年份", self._heatmap_start_year)
+        form.addRow("热度日历起始年份", self._heatmap_start_year)
+
+        self._max_heatmap_tags_spin = QSpinBox()
+        self._max_heatmap_tags_spin.setRange(1, 20)
+        self._max_heatmap_tags_spin.setValue(
+            self._config.get("display", "max_heatmap_tags", default=3)
+        )
+        form.addRow("热度日历独立显示最多标签数", self._max_heatmap_tags_spin)
 
         return w
 
@@ -140,10 +168,16 @@ class SettingsDialog(QDialog):
     # Reminders tab
     # ------------------------------------------------------------------
 
-    def _build_reminders_tab(self) -> QWidget:
+    def _build_automation_tab(self) -> QWidget:
+        """Merged tab: reminders + archive."""
+        from PySide6.QtCore import QTime
+
         w = QWidget()
         form = QFormLayout(w)
         form.setSpacing(10)
+
+        # -- Reminders --
+        form.addRow(QLabel("<b>提醒</b>"))
 
         self._reminders_cb = QCheckBox()
         self._reminders_cb.setChecked(self._config.reminders_enabled)
@@ -151,7 +185,6 @@ class SettingsDialog(QDialog):
 
         self._quiet_start = QTimeEdit()
         parts = self._config.get("reminders", "quiet_hours_start", default="22:00").split(":")
-        from PySide6.QtCore import QTime
         self._quiet_start.setTime(QTime(int(parts[0]), int(parts[1])))
         form.addRow("安静时段开始", self._quiet_start)
 
@@ -160,16 +193,9 @@ class SettingsDialog(QDialog):
         self._quiet_end.setTime(QTime(int(parts[0]), int(parts[1])))
         form.addRow("安静时段结束", self._quiet_end)
 
-        return w
-
-    # ------------------------------------------------------------------
-    # Archive tab
-    # ------------------------------------------------------------------
-
-    def _build_archive_tab(self) -> QWidget:
-        w = QWidget()
-        form = QFormLayout(w)
-        form.setSpacing(10)
+        # -- Archive --
+        form.addRow(QLabel(""))
+        form.addRow(QLabel("<b>归档</b>"))
 
         self._archive_cb = QCheckBox()
         self._archive_cb.setChecked(self._config.archive_enabled)
@@ -225,7 +251,10 @@ class SettingsDialog(QDialog):
         layout.addLayout(btn_row)
 
         default_label = QLabel("默认分区：")
-        self._default_partition_combo = QComboBox()
+        self._default_partition_combo = DropdownWidget()
+        self._default_partition_combo.setObjectName("settingsPartitionCombo")
+        max_chars = self._config.get("display", "max_partition_name_chars", default=5)
+        self._default_partition_combo.setMinimumWidth(combo_width(max_chars))
         layout.addWidget(default_label)
         layout.addWidget(self._default_partition_combo)
 
@@ -376,34 +405,12 @@ class SettingsDialog(QDialog):
     # MOTD tab (encouragement messages)
     # ------------------------------------------------------------------
 
-    def _build_motd_tab(self) -> QWidget:
-        w = QWidget()
-        form = QFormLayout(w)
-        form.setSpacing(10)
-
-        motd = self._config.get("motd", default={})
-        labels = [
-            ("today", "今日无事时："),
-            ("week", "本周无事时："),
-            ("overdue", "无逾期时："),
-            ("all", "全部为空时："),
-        ]
-        self._motd_edits: dict[str, QLineEdit] = {}
-        for key, label_text in labels:
-            edit = QLineEdit()
-            edit.setText(motd.get(key, ""))
-            edit.setPlaceholderText("输入激励语…")
-            self._motd_edits[key] = edit
-            form.addRow(label_text, edit)
-
-        return w
-
     # ------------------------------------------------------------------
     # Save
     # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
-    # Help tab
+    # Help tab (kept as a method but removed from tabs — used by standalone help dialog)
     # ------------------------------------------------------------------
 
     def _build_help_tab(self) -> QWidget:
@@ -659,6 +666,7 @@ DeskTodoSeq — 用 Markdown 管理时间，用数据可视化进度。
         self._config.set("general", "default_sort", value=self._default_sort_combo.currentData())
         self._config.set("display", "theme", value=self._theme_combo.currentData())
         self._config.set("display", "heatmap_start_year", value=self._heatmap_start_year.value())
+        self._config.set("display", "max_heatmap_tags", value=self._max_heatmap_tags_spin.value())
         self._config.set("reminders", "enabled", value=self._reminders_cb.isChecked())
         self._config.set(
             "reminders", "quiet_hours_start",

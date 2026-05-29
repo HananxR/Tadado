@@ -51,6 +51,38 @@ QMenu::separator {
 }
 
 /* ── Tool Bar ────────────────────────────────────────────────── */
+/* ── Custom Title Bar ──────────────────────────────────────────── */
+QWidget#customTitleBar {
+    background-color: #ffffff;
+    border-bottom: 1px solid #e0ddd6;
+}
+QWidget#customTitleBar QMenuBar {
+    background: transparent;
+    color: #2c2c2c;
+    font-size: 12px;
+}
+QWidget#customTitleBar QMenuBar::item:selected {
+    background: #e8e6e0;
+    border-radius: 4px;
+}
+QWidget#customTitleBar QPushButton#titleBtn {
+    border: none;
+    background: transparent;
+    padding: 0px;
+}
+QWidget#customTitleBar QPushButton#titleBtn:hover {
+    background: #e8e6e0;
+}
+QWidget#customTitleBar QPushButton#closeBtn {
+    border: none;
+    background: transparent;
+    padding: 0px;
+}
+QWidget#customTitleBar QPushButton#closeBtn:hover {
+    background: #c0392b;
+    color: #ffffff;
+}
+
 QToolBar {
     background-color: #ffffff;
     border-bottom: 1px solid #e8e6e0;
@@ -73,24 +105,6 @@ QToolBar QToolButton:hover {
 QToolBar QToolButton:pressed {
     background-color: #e4e2da;
 }
-QToolBar QComboBox#partitionToolCombo {
-    color: #444;
-    background-color: #fafaf8;
-    border: 1px solid #ddd9d0;
-    border-radius: 5px;
-    padding: 2px 8px;
-    font-size: 12px;
-    
-    font-weight: bold;
-}
-QToolBar QComboBox#partitionToolCombo:hover {
-    border-color: #5b8def;
-}
-QToolBar QComboBox#partitionToolCombo::drop-down {
-    width: 16px;
-    border: none;
-}
-
 /* ── Status Bar ──────────────────────────────────────────────── */
 QStatusBar {
     color: #888;
@@ -114,10 +128,16 @@ QPushButton {
     background-color: #f0eee8;
     border: 1px solid #ddd9d0;
     border-radius: 5px;
-    padding: 5px 14px;
+    padding: 5px 10px;
     font-size: 12px;
-    
+
     min-height: 22px;
+}
+QPushButton#navBtn {
+    padding: 2px 4px;
+    font-size: 11px;
+    min-width: 24px;
+    min-height: 24px;
 }
 QPushButton:hover {
     background-color: #e6e3da;
@@ -183,7 +203,6 @@ QComboBox {
     border-radius: 5px;
     padding: 4px 8px;
     font-size: 12px;
-    
     min-width: 60px;
 }
 QComboBox:hover {
@@ -192,14 +211,14 @@ QComboBox:hover {
 QComboBox:focus {
     border-color: #5b8def;
 }
-QComboBox::drop-down {
-    subcontrol-origin: padding;
-    subcontrol-position: top right;
-    width: 18px;
-    border-left: 1px solid #e8e6e0;
-    border-top-right-radius: 5px;
-    border-bottom-right-radius: 5px;
-}
+/* Compact Combo Boxes */
+QComboBox#pageSizeCombo              { min-width: 60px; max-width: 60px; }
+QComboBox#sortCombo                  { min-width: 84px; max-width: 84px; }
+QComboBox#timelineStatusCombo        { min-width: 90px; max-width: 90px; }
+QComboBox#settingsSortCombo          { min-width: 84px; max-width: 84px; }
+QComboBox#settingsThemeCombo         { min-width: 84px; max-width: 84px; }
+QComboBox#settingsPartitionCombo     { min-width: 96px; }
+QComboBox#calcTypeCombo              { min-width: 60px; max-width: 60px; }
 QComboBox QAbstractItemView {
     background-color: #ffffff;
     border: 1px solid #e0ded8;
@@ -208,6 +227,13 @@ QComboBox QAbstractItemView {
     selection-background-color: #edf2fb;
     selection-color: #2c2c2c;
     outline: none;
+    color: #2c2c2c;
+}
+
+/* ── Status Badge Strip ─────────────────────────────────────── */
+QPushButton#statusBadge {
+    font-size: 11px;
+    min-height: 24px;
 }
 
 /* ── Text Edit ───────────────────────────────────────────────── */
@@ -228,6 +254,8 @@ QTextEdit:focus {
 QTextEdit#mdEditor {
     font-family: "Consolas", "Cascadia Code", "Courier New", monospace;
     font-size: 12px;
+    color: #2c2c2c;
+    background-color: #ffffff;
 }
 
 /* ── Table View (Task List) ──────────────────────────────────── */
@@ -255,46 +283,9 @@ QTableView::item:hover {
     background-color: #f8f7f4;
 }
 QHeaderView::section {
-    color: #888;
-    background-color: #fafaf8;
-    border: none;
-    border-bottom: 2px solid #e8e6e0;
-    padding: 6px 4px;
     font-size: 11px;
     font-weight: bold;
-    
-    text-transform: uppercase;
-}
-
-/* ── Scrollbars ──────────────────────────────────────────────── */
-QScrollBar:horizontal {
-    height: 8px;
-    background: transparent;
-    border: none;
-}
-QScrollBar::handle:horizontal {
-    background: #d0cec8;
-    border-radius: 4px;
-    min-width: 30px;
-}
-QScrollBar::handle:horizontal:hover {
-    background: #b0aea8;
-}
-QScrollBar:vertical {
-    width: 8px;
-    background: transparent;
-    border: none;
-}
-QScrollBar::handle:vertical {
-    background: #d0cec8;
-    border-radius: 4px;
-    min-height: 30px;
-}
-QScrollBar::handle:vertical:hover {
-    background: #b0aea8;
-}
-QScrollBar::add-line, QScrollBar::sub-line {
-    height: 0; width: 0;
+    padding: 6px 4px;
 }
 
 /* ── Labels ──────────────────────────────────────────────────── */
@@ -325,7 +316,52 @@ QPushButton[preset="true"]:hover {
 QWidget#calendarHeatmap {
     background-color: #ffffff;
     border: 1px solid #e8e6e0;
-    border-radius: 8px;
+    border-radius: 6px;
+}
+
+QComboBox#heatmapTagCombo {
+    min-width: 100px;
+    max-width: 100px;
+    font-size: 11px;
+}
+
+QDialog#heatmapTooltip {
+    background-color: #fafaf8;
+    border: 1px solid #ddd9d0;
+    border-radius: 6px;
+}
+
+/* ── Activity Report Panel ──────────────────────────────────── */
+QWidget#activityReportPanel {
+    background-color: transparent;
+}
+
+QWidget#reportHeader {
+    background-color: #f5f4f0;
+    border-bottom: 1px solid #ddd9d0;
+}
+
+QPushButton#exportBtn {
+    background-color: #f0eee8;
+    border: 1px solid #ddd9d0;
+    border-radius: 4px;
+    padding: 3px 12px;
+    font-size: 11px;
+    color: #2c2c2c;
+}
+QPushButton#exportBtn:hover {
+    background-color: #e0ddd6;
+}
+
+QTreeWidget {
+    background-color: #ffffff;
+    border: none;
+    color: #2c2c2c;
+    font-size: 11px;
+}
+QTreeWidget::item:selected {
+    background-color: #f0eee8;
+    color: #5b8def;
 }
 
 /* ── Task Dialog ─────────────────────────────────────────────── */
@@ -362,9 +398,8 @@ QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
     border-color: #5b8def;
     background-color: #ffffff;
 }
-QDateEdit::drop-down, QTimeEdit::drop-down, QDateTimeEdit::drop-down {
-    width: 0;
-}
+
+
 
 /* ── Calendar Widget (date picker popup) ───────────────────────── */
 QCalendarWidget {
@@ -404,22 +439,7 @@ QCalendarWidget QAbstractItemView:disabled {
     color: #ccc;
 }
 
-/* ── Tag Chips ────────────────────────────────────────────────── */
-QPushButton#tagChip {
-    background-color: #edf2fb;
-    border: 1px solid #c5d8f8;
-    border-radius: 10px;
-    padding: 2px 8px;
-    font-size: 10px;
-    color: #3b6edc;
-}
-QPushButton#tagChip:hover {
-    background-color: #d0e0f8;
-}
-QPushButton#tagChip:checked {
-    background-color: #5b8def;
-    color: #ffffff;
-}
+
 
 /* ── Quick-access zone (carousel + preset buttons) ───────────── */
 QWidget#quickZone {
@@ -431,11 +451,17 @@ QWidget#carouselBanner {
     background: transparent;
 }
 
-/* ── Timeline Card ────────────────────────────────────────────── */
-QWidget#timelineCard {
+/* ── Editor Card ─────────────────────────────────────────────── */
+QWidget#editorCard[bordered="true"] {
     background-color: #fafaf8;
     border: 1px solid #e0ddd6;
     border-radius: 8px;
+}
+
+/* ── Timeline Card ────────────────────────────────────────────── */
+QWidget#timelineCard {
+    background: transparent;
+    border: none;
 }
 QWidget#entryCard {
     background: #f5f4f0;
@@ -458,7 +484,7 @@ QDialog#calendarPopup {
     border-radius: 8px;
 }
 QLabel#calNavBtn {
-    color: #aaa;
+    color: #888;
     font-size: 18px;
     font-weight: bold;
 }
@@ -505,3 +531,4 @@ QWidget#sidebar {
     background-color: #fafaf8;
     border-right: 1px solid #e8e6e0;
 }
+

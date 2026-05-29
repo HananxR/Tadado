@@ -31,12 +31,18 @@ class SignalBus(QObject):
 
     # Heatmap
     date_selected = Signal(date)
+    date_range_selected = Signal(date, date)
+    heatmap_create_task = Signal(date)
 
     # Partitions
     partitions_changed = Signal()
 
     # Config
     config_changed = Signal()
+
+    # Batch operations
+    batch_operation_completed = Signal(dict)  # summary dict
+    tasks_bulk_created = Signal(int)  # count
 
     # App lifecycle
     application_quit = Signal()

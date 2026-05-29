@@ -39,7 +39,7 @@ class TaskListView(QTableView):
 
         self.setObjectName("taskListView")
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.setAlternatingRowColors(True)
         self.verticalHeader().hide()
@@ -62,6 +62,18 @@ class TaskListView(QTableView):
             return idx.data(Qt.ItemDataRole.UserRole)
         return None
 
+    def selected_task_ids(self) -> list[str]:
+        """Return task IDs of all selected rows."""
+        sm = self.selectionModel()
+        if not sm:
+            return []
+        ids: list[str] = []
+        for idx in sm.selectedRows():
+            task = idx.data(Qt.ItemDataRole.UserRole)
+            if task:
+                ids.append(task.id)
+        return ids
+
     def set_model(self, model: TaskListModel) -> None:
         self.setModel(model)
         model.modelReset.connect(self._apply_column_widths)
@@ -69,21 +81,23 @@ class TaskListView(QTableView):
         self._apply_column_widths()
 
     def _apply_column_widths(self) -> None:
-        """7 columns: #, created, content, deadline, progress, status, tags."""
+        """8 columns: checkbox, #, created, content, deadline, progress, status, tags."""
         h = self.horizontalHeader()
         h.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(0, 36)    # 序号
+        h.resizeSection(0, 36)    # 复选框
         h.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(1, 90)    # 创建时间 (YYYY-MM-DD)
-        h.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # 任务内容
-        h.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(3, 100)   # 截止时间
+        h.resizeSection(1, 36)    # 序号
+        h.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(2, 100)   # 创建时间
+        h.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # 任务内容
         h.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(4, 50)    # 进度
+        h.resizeSection(4, 105)   # 截止时间
         h.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(5, 55)    # 状态
+        h.resizeSection(5, 55)    # 进度
         h.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(6, 80)    # 标签
+        h.resizeSection(6, 65)    # 状态
+        h.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(7, 90)    # 标签
 
     # ------------------------------------------------------------------
     # Context menu
@@ -141,9 +155,12 @@ class TaskListView(QTableView):
             self.task_selected.emit(task)
 
     def _on_selection_changed(self) -> None:
-        task = self.selected_task()
-        if task:
-            self.task_selected.emit(task)
+        # Only emit task_selected for single-row selections (not batch)
+        ids = self.selected_task_ids()
+        if len(ids) == 1:
+            task = self.selected_task()
+            if task:
+                self.task_selected.emit(task)
 
     def _on_double_clicked(self, index: QModelIndex) -> None:
         task: Task | None = index.data(Qt.ItemDataRole.UserRole)

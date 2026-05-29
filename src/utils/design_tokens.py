@@ -43,10 +43,35 @@ class DesignTokens:
     danger_bg: str            # danger button background
     success: str              # completion (green)
 
+    # ── Heatmap ────────────────────────────────────────────────────
+    heatmap_empty: str         # cell with no tasks
+
     # ── Misc ──────────────────────────────────────────────────────
     separator: str            # horizontal rule / divider
     timeline_dot: str         # default timeline dot colour
     timeline_done: str        # timeline dot for completed entries
+
+    # ── Methods ────────────────────────────────────────────────────
+
+    def heatmap_gradient(self, levels: int = 8) -> list[str]:
+        """Return a gradient from bg_primary toward accent, *levels* steps.
+
+        The returned list has *levels* entries.  Index 0 is the lightest
+        (closest to bg_primary) and index -1 is accent.
+        """
+        from PySide6.QtGui import QColor as _QColor
+        bg = _QColor(self.bg_primary)
+        accent = _QColor(self.accent)
+        result: list[str] = []
+        for i in range(levels):
+            ratio = i / (levels - 1) if levels > 1 else 0.0
+            # Use a slight curve so low-activity cells are more distinguishable
+            curved = ratio ** 0.7
+            r = int(bg.red() + (accent.red() - bg.red()) * curved)
+            g = int(bg.green() + (accent.green() - bg.green()) * curved)
+            b = int(bg.blue() + (accent.blue() - bg.blue()) * curved)
+            result.append(f"#{r:02x}{g:02x}{b:02x}")
+        return result
 
 
 # ── Light palette ──────────────────────────────────────────────────────────
@@ -70,6 +95,7 @@ LIGHT_TOKENS = DesignTokens(
     danger_hover="#e07070",
     danger_bg="#fdf0ef",
     success="#27ae60",
+    heatmap_empty="#dad6cc",
     separator="#e0ddd6",
     timeline_dot="#f39c12",
     timeline_done="#27ae60",
@@ -84,7 +110,7 @@ DARK_TOKENS = DesignTokens(
     bg_welcome_fallback="#1a1b26",
     text_primary="#c9d1d9",
     text_secondary="#8b949e",
-    text_disabled="#555770",
+    text_disabled="#7a7c94",
     text_welcome_accent="#ff7675",
     text_welcome_sub="#a0a4b0",
     text_on_accent="#1a1b26",
@@ -96,6 +122,7 @@ DARK_TOKENS = DesignTokens(
     danger_hover="#c05050",
     danger_bg="#362430",
     success="#27ae60",
+    heatmap_empty="#35374a",
     separator="#2f3040",
     timeline_dot="#f39c12",
     timeline_done="#27ae60",
@@ -203,6 +230,9 @@ def build_palette() -> QPalette:
 
     # BrightText (used for e.g. selected tab text on Windows)
     p.setColor(QPalette.ColorRole.BrightText, QColor(t.danger))
+
+    # Placeholder text
+    p.setColor(QPalette.ColorRole.PlaceholderText, QColor(t.text_disabled))
 
     # Disabled states
     p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor(t.text_disabled))

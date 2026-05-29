@@ -9,27 +9,53 @@ from PySide6.QtGui import QColor, QFont as QtFont
 
 from ...models.task import Task
 
-_COLUMN_HEADERS = ["#", "创建时间", "任务内容", "截止时间", "进度", "状态", "标签"]
+_COLUMN_HEADERS = ["", "#", "创建时间", "任务内容", "截止时间", "进度", "状态", "标签"]
 
-COL_ROW = 0
-COL_CREATED = 1
-COL_CONTENT = 2
-COL_DEADLINE = 3
-COL_PROGRESS = 4
-COL_STATUS = 5
-COL_TAGS = 6
+COL_CHECK = 0
+COL_ROW = 1
+COL_CREATED = 2
+COL_CONTENT = 3
+COL_DEADLINE = 4
+COL_PROGRESS = 5
+COL_STATUS = 6
+COL_TAGS = 7
 
 
 class TaskListModel(QAbstractTableModel):
-    """7-column table: row#, created, content, deadline, priority, status, tags."""
+    """8-column table: checkbox, row#, created, content, deadline, progress, status, tags."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._tasks: list[Task] = []
         self._offset: int = 0
+        self._checked_ids: set[str] = set()
 
     def set_offset(self, offset: int) -> None:
         self._offset = offset
+
+    def checked_task_ids(self) -> list[str]:
+        return list(self._checked_ids)
+
+    def set_checked_ids(self, ids: set[str]) -> None:
+        self._checked_ids = set(ids)
+        if self._tasks:
+            top = self.index(0, COL_CHECK)
+            bot = self.index(len(self._tasks) - 1, COL_CHECK)
+            self.dataChanged.emit(top, bot, [Qt.ItemDataRole.CheckStateRole])
+
+    def select_all(self) -> None:
+        self._checked_ids = {t.id for t in self._tasks}
+        if self._tasks:
+            top = self.index(0, COL_CHECK)
+            bot = self.index(len(self._tasks) - 1, COL_CHECK)
+            self.dataChanged.emit(top, bot, [Qt.ItemDataRole.CheckStateRole])
+
+    def deselect_all(self) -> None:
+        self._checked_ids.clear()
+        if self._tasks:
+            top = self.index(0, COL_CHECK)
+            bot = self.index(len(self._tasks) - 1, COL_CHECK)
+            self.dataChanged.emit(top, bot, [Qt.ItemDataRole.CheckStateRole])
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self._tasks)
@@ -43,6 +69,9 @@ class TaskListModel(QAbstractTableModel):
         task = self._tasks[index.row()]
         col = index.column()
 
+        if role == Qt.ItemDataRole.CheckStateRole and col == COL_CHECK:
+            return Qt.CheckState.Checked if task.id in self._checked_ids else Qt.CheckState.Unchecked
+
         if role == Qt.ItemDataRole.DisplayRole:
             if col == COL_ROW:
                 return str(self._offset + index.row() + 1)
@@ -53,9 +82,9 @@ class TaskListModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.FontRole:
             if col == COL_CONTENT:
-                return QtFont("Consolas", 10)
-            if col in (COL_CREATED, COL_DEADLINE):
                 return QtFont("Consolas", 9)
+            if col in (COL_CREATED, COL_DEADLINE):
+                return QtFont("Consolas", 8)
 
         if role == Qt.ItemDataRole.UserRole:
             return task
@@ -71,9 +100,24 @@ class TaskListModel(QAbstractTableModel):
 
         return None
 
+    def setData(self, index: QModelIndex, value, role: int = Qt.ItemDataRole.EditRole) -> bool:
+        if not index.isValid() or index.column() != COL_CHECK:
+            return False
+        if role == Qt.ItemDataRole.CheckStateRole:
+            task = self._tasks[index.row()]
+            if value == Qt.CheckState.Checked:
+                self._checked_ids.add(task.id)
+            else:
+                self._checked_ids.discard(task.id)
+            self.dataChanged.emit(index, index, [Qt.ItemDataRole.CheckStateRole])
+            return True
+        return False
+
     def flags(self, index: QModelIndex) -> Qt.ItemFlags:
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
+        if index.column() == COL_CHECK:
+            return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable  # type: ignore[return-value]
         return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable  # type: ignore[return-value]
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
@@ -147,7 +191,7 @@ class TaskListModel(QAbstractTableModel):
 
     @staticmethod
     def _alignment(col: int) -> Qt.AlignmentFlag:
-        if col in (COL_ROW, COL_CREATED, COL_DEADLINE, COL_PROGRESS, COL_STATUS):
+        if col in (COL_CHECK, COL_ROW, COL_CREATED, COL_DEADLINE, COL_PROGRESS, COL_STATUS):
             return Qt.AlignmentFlag.AlignCenter
         return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
 

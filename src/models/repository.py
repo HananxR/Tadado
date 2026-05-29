@@ -8,61 +8,10 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
+from .migrations import migrate
 from .task import Task
 from .task_filter import SortCriterion, TaskFilter
 from .task_status import TaskStatus
-
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS tasks (
-    id TEXT PRIMARY KEY,
-    raw_md TEXT NOT NULL,
-    title TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'TODO',
-    priority INTEGER NOT NULL DEFAULT 0,
-    tags TEXT DEFAULT '[]',
-    scheduled_date TEXT,
-    deadline_date TEXT,
-    deadline_time TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    completed_at TEXT,
-    archived INTEGER NOT NULL DEFAULT 0,
-    archived_at TEXT,
-    recurrence_rule TEXT,
-    parent_id TEXT,
-    partition_id TEXT,
-    notes TEXT DEFAULT '',
-    activity_log TEXT DEFAULT '[]',
-    FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE SET NULL
-);
-
-CREATE TABLE IF NOT EXISTS notification_log (
-    task_id TEXT NOT NULL,
-    interval_minutes INTEGER NOT NULL,
-    sent_at TEXT NOT NULL,
-    PRIMARY KEY (task_id, interval_minutes)
-);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
-    raw_md, title, notes, tags, content='tasks', tokenize='unicode61'
-);
-
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_deadline ON tasks(deadline_date);
-CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_date);
-CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
-CREATE INDEX IF NOT EXISTS idx_tasks_archived ON tasks(archived);
-CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_id);
-
-CREATE TABLE IF NOT EXISTS partitions (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    password TEXT DEFAULT '',
-    archive_days INTEGER NOT NULL DEFAULT 9999,
-    created_at TEXT NOT NULL
-);
-"""
 
 _TASK_COLUMNS = [
     "id", "raw_md", "title", "status", "priority", "tags",
@@ -72,6 +21,7 @@ _TASK_COLUMNS = [
     "partition_id", "notes",
     "activity_log",
     "progress",
+    "suspended",
 ]
 
 
@@ -82,7 +32,7 @@ def _row_to_task(row: tuple) -> Task:
         scheduled_str, deadline_str, deadline_time_str,
         created_str, updated_str, completed_str,
         archived_int, archived_str, recurrence, parent_id, partition_id, notes,
-        activity_log_json, progress_int,
+        activity_log_json, progress_int, suspended_int,
     ) = row
 
     return Task(
@@ -105,6 +55,7 @@ def _row_to_task(row: tuple) -> Task:
         notes=notes,
         activity_log=json.loads(activity_log_json) if activity_log_json else [],
         progress=progress_int if progress_int else 0,
+        suspended=bool(suspended_int),
     )
 
 
@@ -131,6 +82,7 @@ def _task_to_row(task: Task) -> tuple:
         task.notes,
         json.dumps(task.activity_log, ensure_ascii=False) if task.activity_log else "[]",
         task.progress,
+        int(task.suspended),
     )
 
 
@@ -164,62 +116,10 @@ class TaskRepository:
     # ------------------------------------------------------------------
 
     def open(self) -> None:
-        """Open (or create) the database and initialize schema."""
+        """Open (or create) the database and run pending migrations."""
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._conn.executescript(SCHEMA_SQL)
-        try:
-            self._conn.execute("ALTER TABLE tasks ADD COLUMN activity_log TEXT DEFAULT '[]'")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            self._conn.execute("ALTER TABLE tasks ADD COLUMN deadline_time TEXT")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            self._conn.execute("ALTER TABLE tasks ADD COLUMN partition_id TEXT REFERENCES partitions(id) ON DELETE SET NULL")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            self._conn.execute("ALTER TABLE partitions ADD COLUMN password TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            self._conn.execute("ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            self._conn.execute("ALTER TABLE partitions ADD COLUMN archive_days INTEGER NOT NULL DEFAULT 9999")
-        except sqlite3.OperationalError:
-            pass
-        # Migrate legacy WAIT/LATER/URGENT status to TODO
-        self._conn.execute("UPDATE tasks SET status = 'TODO' WHERE status IN ('WAIT', 'LATER', 'URGENT')")
-        # Auto-mark overdue tasks on DB open
-        self._conn.execute(
-            "UPDATE tasks SET status = 'OVERDUE' WHERE deadline_date < ? "
-            "AND archived = 0 AND status NOT IN ('DONE', 'OVERDUE')",
-            (date.today().isoformat(),),
-        )
-        # Seed default partitions if none exist
-        cur = self._conn.execute("SELECT COUNT(*) FROM partitions")
-        if cur.fetchone()[0] == 0:
-            from .partition import DEFAULT_PARTITIONS
-            import uuid as _uuid
-            now = datetime.now().isoformat()
-            for i, name in enumerate(DEFAULT_PARTITIONS):
-                self._conn.execute(
-                    "INSERT INTO partitions (id, name, sort_order, created_at) VALUES (?, ?, ?, ?)",
-                    (str(_uuid.uuid4()), name, i, now),
-                )
-        # Migrate tasks with NULL partition_id to "工作" (first partition)
-        work_row = self._conn.execute(
-            "SELECT id FROM partitions ORDER BY sort_order LIMIT 1"
-        ).fetchone()
-        if work_row:
-            self._conn.execute(
-                "UPDATE tasks SET partition_id = ? WHERE partition_id IS NULL",
-                (work_row[0],),
-            )
+        migrate(self._conn)
         self._conn.commit()
 
     def close(self) -> None:
@@ -341,6 +241,12 @@ class TaskRepository:
             where_clauses.append("deadline_date < ?")
             params.append(today)
 
+        # Suspended filter (default: hide suspended)
+        if not filter_.show_suspended:
+            where_clauses.append("suspended = 0")
+        elif filter_.suspended_only:
+            where_clauses.append("suspended = 1")
+
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
         # Sorting
@@ -395,6 +301,10 @@ class TaskRepository:
             today = _date.today().isoformat()
             where_clauses.append("deadline_date < ?")
             params.append(today)
+        if not filter_.show_suspended:
+            where_clauses.append("suspended = 0")
+        elif filter_.suspended_only:
+            where_clauses.append("suspended = 1")
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
         row = self.conn.execute(f"SELECT COUNT(*) FROM tasks {where_sql}", params).fetchone()
@@ -410,8 +320,8 @@ class TaskRepository:
     # Aggregations
     # ------------------------------------------------------------------
 
-    def get_heatmap_data(self, year: int, tags: list[str] | None = None) -> dict[date, int]:
-        """Return a mapping of date -> task count for the heatmap, optionally filtered by tags."""
+    def get_heatmap_data(self, year: int, tags: list[str] | None = None, partition_id: str | None = None) -> dict[date, int]:
+        """Return a mapping of date -> task count for the heatmap, optionally filtered by tags and partition."""
         start = f"{year}-01-01"
         end = f"{year}-12-31"
         query = """SELECT COALESCE(deadline_date, scheduled_date, created_at) as d, COUNT(*)
@@ -422,6 +332,9 @@ class TaskRepository:
             tag_clauses = " AND ".join("tags LIKE ?" for _ in tags)
             query += f" AND ({tag_clauses})"
             params.extend(f'%"{t}"%' for t in tags)
+        if partition_id:
+            query += " AND partition_id = ?"
+            params.append(partition_id)
         query += " GROUP BY d"
         rows = self.conn.execute(query, params).fetchall()
         result: dict[date, int] = {}
@@ -429,6 +342,60 @@ class TaskRepository:
             parsed = _parse_date(row[0])
             if parsed:
                 result[parsed] = row[1]
+        return result
+
+    def get_heatmap_activity_data(self, year: int, tags: list[str] | None = None, partition_id: str | None = None) -> tuple[dict[date, int], dict[date, int]]:
+        """Return (entry_counts, task_counts) per date, based on activity_log timestamps."""
+        query = """SELECT id, activity_log FROM tasks WHERE archived = 0"""
+        params: list = []
+        if tags:
+            tag_clauses = " AND ".join("tags LIKE ?" for _ in tags)
+            query += f" AND ({tag_clauses})"
+            params.extend(f'%"{t}"%' for t in tags)
+        if partition_id:
+            query += " AND partition_id = ?"
+            params.append(partition_id)
+        rows = self.conn.execute(query, params).fetchall()
+        entry_counts: dict[date, int] = {}
+        task_counts: dict[date, set[str]] = {}
+        for task_id, activity_log_json in rows:
+            if not activity_log_json:
+                continue
+            try:
+                entries = json.loads(activity_log_json)
+            except (json.JSONDecodeError, TypeError):
+                continue
+            for entry in entries:
+                ts_str = entry.get("ts", "")
+                try:
+                    ts = datetime.fromisoformat(ts_str)
+                except (ValueError, TypeError):
+                    continue
+                if ts.date().year == year:
+                    d = ts.date()
+                    entry_counts[d] = entry_counts.get(d, 0) + 1
+                    task_counts.setdefault(d, set()).add(task_id)
+        task_count_result = {d: len(ids) for d, ids in task_counts.items()}
+        return entry_counts, task_count_result
+
+    def get_heatmap_tag_breakdown(self, year: int, d: date, partition_id: str | None = None) -> dict[str, int]:
+        """Return per-tag task counts for a specific date."""
+        start = f"{year}-01-01"
+        end = f"{year}-12-31"
+        query = """SELECT tags FROM tasks
+                   WHERE COALESCE(deadline_date, scheduled_date, created_at) = ?
+                     AND COALESCE(deadline_date, scheduled_date, created_at) BETWEEN ? AND ?
+                     AND archived = 0"""
+        params: list = [d.isoformat(), start, end]
+        if partition_id:
+            query += " AND partition_id = ?"
+            params.append(partition_id)
+        rows = self.conn.execute(query, params).fetchall()
+        result: dict[str, int] = {}
+        for (tags_json,) in rows:
+            if tags_json:
+                for t in json.loads(tags_json):
+                    result[t] = result.get(t, 0) + 1
         return result
 
     # ------------------------------------------------------------------
@@ -504,11 +471,14 @@ class TaskRepository:
         self.conn.commit()
         return True
 
-    def get_all_tags(self) -> list[str]:
-        """Return all unique tags from non-archived tasks."""
-        rows = self.conn.execute(
-            "SELECT DISTINCT tags FROM tasks WHERE archived = 0"
-        ).fetchall()
+    def get_all_tags(self, partition_id: str | None = None) -> list[str]:
+        """Return all unique tags from non-archived tasks, optionally filtered by partition."""
+        query = "SELECT DISTINCT tags FROM tasks WHERE archived = 0"
+        params: list = []
+        if partition_id:
+            query += " AND partition_id = ?"
+            params.append(partition_id)
+        rows = self.conn.execute(query, params).fetchall()
         tag_set: set[str] = set()
         for (tags_json,) in rows:
             if tags_json:
@@ -516,12 +486,154 @@ class TaskRepository:
                     tag_set.add(t)
         return sorted(tag_set)
 
-    def get_status_counts(self) -> dict[TaskStatus, int]:
-        """Return counts grouped by task status."""
+    def get_status_counts(
+        self, partition_id: str | None = None,
+        date_from: date | None = None, date_to: date | None = None,
+    ) -> dict[TaskStatus, int]:
+        """Return counts grouped by task status, excluding suspended and archived."""
+        clauses = ["archived=0", "suspended=0"]
+        params: list = []
+        if partition_id:
+            clauses.append("partition_id=?")
+            params.append(partition_id)
+        if date_from:
+            clauses.append("(deadline_date >= ? OR scheduled_date >= ? OR (deadline_date IS NULL AND scheduled_date IS NULL))")
+            params.extend([date_from.isoformat(), date_from.isoformat()])
+        if date_to:
+            clauses.append("(deadline_date <= ? OR scheduled_date <= ? OR (deadline_date IS NULL AND scheduled_date IS NULL))")
+            params.extend([date_to.isoformat(), date_to.isoformat()])
+        where = " AND ".join(clauses)
         rows = self.conn.execute(
-            "SELECT status, COUNT(*) FROM tasks WHERE archived=0 GROUP BY status"
+            f"SELECT status, COUNT(*) FROM tasks WHERE {where} GROUP BY status", params
         ).fetchall()
         return {TaskStatus.from_string(r[0]): r[1] for r in rows}
+
+    # ------------------------------------------------------------------
+    # Batch operations
+    # ------------------------------------------------------------------
+
+    def batch_update_status(self, task_ids: list[str], new_status: TaskStatus) -> int:
+        """Bulk update status for multiple tasks, recording activity_log entries."""
+        from ..services.md_formatter import MarkdownTaskFormatter
+
+        formatter = MarkdownTaskFormatter()
+        now = datetime.now().isoformat()
+        status_value = new_status.value
+        count = 0
+
+        for task_id in task_ids:
+            task = self.get_by_id(task_id)
+            if task is None:
+                continue
+            old_status = task.status.value
+            entry = {
+                "ts": now,
+                "content": f"[批量操作] 状态变更: {old_status} -> {status_value}",
+                "status": status_value,
+                "progress": task.progress,
+            }
+            log = list(task.activity_log) + [entry]
+            self.conn.execute(
+                "UPDATE tasks SET status=?, activity_log=?, updated_at=? WHERE id=?",
+                (status_value, json.dumps(log, ensure_ascii=False), now, task_id),
+            )
+            # Update task for FTS and raw_md sync
+            task.status = new_status
+            task.activity_log = log
+            task.updated_at = _parse_datetime(now)
+            task.raw_md = formatter.format(task)
+            self.conn.execute(
+                "UPDATE tasks SET raw_md=? WHERE id=?",
+                (task.raw_md, task_id),
+            )
+            self._update_fts(task)
+            count += 1
+
+        self.conn.commit()
+        return count
+
+    def batch_delete(self, task_ids: list[str]) -> int:
+        """Permanently delete multiple tasks and their FTS entries."""
+        placeholders = ", ".join("?" for _ in task_ids)
+        self.conn.execute(
+            f"DELETE FROM tasks_fts WHERE rowid IN (SELECT rowid FROM tasks WHERE id IN ({placeholders}))",
+            task_ids,
+        )
+        cursor = self.conn.execute(
+            f"DELETE FROM tasks WHERE id IN ({placeholders})", task_ids
+        )
+        self.conn.commit()
+        return cursor.rowcount
+
+    def batch_suspend(self, task_ids: list[str]) -> int:
+        """Suspend multiple tasks (exclude from statistics)."""
+        now = datetime.now().isoformat()
+        count = 0
+        for task_id in task_ids:
+            task = self.get_by_id(task_id)
+            if task is None:
+                continue
+            entry = {
+                "ts": now,
+                "content": "[批量操作] 任务已中止",
+                "status": task.status.value,
+                "progress": task.progress,
+            }
+            log = list(task.activity_log) + [entry]
+            self.conn.execute(
+                "UPDATE tasks SET suspended=1, activity_log=?, updated_at=? WHERE id=?",
+                (json.dumps(log, ensure_ascii=False), now, task_id),
+            )
+            task.activity_log = log
+            self._update_fts(task)
+            count += 1
+        self.conn.commit()
+        return count
+
+    def batch_restart(self, task_ids: list[str]) -> int:
+        """Restart multiple suspended tasks (re-include in statistics)."""
+        now = datetime.now().isoformat()
+        count = 0
+        for task_id in task_ids:
+            task = self.get_by_id(task_id)
+            if task is None:
+                continue
+            entry = {
+                "ts": now,
+                "content": "[批量操作] 任务已恢复",
+                "status": task.status.value,
+                "progress": task.progress,
+            }
+            log = list(task.activity_log) + [entry]
+            self.conn.execute(
+                "UPDATE tasks SET suspended=0, activity_log=?, updated_at=? WHERE id=?",
+                (json.dumps(log, ensure_ascii=False), now, task_id),
+            )
+            task.activity_log = log
+            self._update_fts(task)
+            count += 1
+        self.conn.commit()
+        return count
+
+    def count_by_status(self, task_ids: list[str]) -> dict[str, int]:
+        """Return status distribution for a specific set of tasks."""
+        if not task_ids:
+            return {"overdue": 0, "doing": 0, "done": 0, "todo": 0}
+        placeholders = ", ".join("?" for _ in task_ids)
+        rows = self.conn.execute(
+            f"SELECT status, COUNT(*) FROM tasks WHERE id IN ({placeholders}) GROUP BY status",
+            task_ids,
+        ).fetchall()
+        result = {s: 0 for s in ("overdue", "doing", "done", "todo")}
+        for status_str, cnt in rows:
+            key = status_str.lower()
+            if key in result:
+                result[key] = cnt
+        return result
+
+    # ------------------------------------------------------------------
+    # Reminder helpers (Phase 2)
+    # ------------------------------------------------------------------
 
     # ------------------------------------------------------------------
     # Reminder helpers (Phase 2)

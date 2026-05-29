@@ -30,6 +30,7 @@ class Task:
     notes: Optional[str] = None
     activity_log: list[dict] = field(default_factory=list)
     progress: int = 0
+    suspended: bool = False
 
     @property
     def is_overdue(self) -> bool:

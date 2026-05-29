@@ -27,68 +27,133 @@ from .utils.signal_bus import get_signal_bus
 
 
 def _ensure_test_partition(repo: TaskRepository) -> None:
-    """Create the 「测试分区」with optimization-tracking tasks in dev mode only."""
-    if getattr(sys, "frozen", False):
+    """Create the 「测试分区」with optimization-tracking tasks in dev mode only.
+
+    Uses per-task title dedup so new tracking tasks are added on each launch.
+    """
+    if getattr(sys, "frozen", False) or "__compiled__" in dir(sys):
         return
 
     partitions = repo.get_all_partitions()
     if any(p["name"] == "测试分区" for p in partitions):
+        # Partition exists — only add missing tasks (incremental)
+        existing = repo.get_all_partitions()
+        test_p = next((p for p in existing if p["name"] == "测试分区"), None)
+        if test_p is None:
+            return
+        pid = test_p["id"]
+        _seed_optimization_tasks(repo, pid)
         return
 
+    from .models.task_filter import TaskFilter
+
+    test = repo.upsert_partition("测试分区", sort_order=200)
+    pid = test["id"]
+    _seed_optimization_tasks(repo, pid)
+
+
+def _seed_optimization_tasks(repo: TaskRepository, pid: str) -> None:
+    """Incrementally seed Sprint 8 tracking tasks into a partition."""
     from .services.md_parser import MarkdownTaskParser
 
     parser = MarkdownTaskParser()
-    test = repo.upsert_partition("测试分区", sort_order=200)
-    pid = test["id"]
     today = date.today()
     now = datetime.now()
 
     def _ts(d: int = 0, h: int = 0) -> str:
         return (now - timedelta(days=d, hours=h)).isoformat()
 
-    # Optimization tracking tasks organized by module
+    # Get existing task titles for dedup
+    existing_titles: set[str] = set()
+    from .models.task_filter import TaskFilter
+    existing = repo.search(TaskFilter(partition_id=pid))
+    for t in existing:
+        existing_titles.add(t.title)
+
+    # Comprehensive test cases — incremental: only insert if title not already present
     optimizations = [
-        (
-            f"- [ ] DONE<{today}> 优化：新建任务活动时间线缺少初始状态和进度 #任务创建",
-            "优化：新建任务活动时间线缺少初始状态和进度",
-            [
-                {"ts": _ts(1), "content": "【问题】新建任务时 activity_log 为空，活动时间线中通过 created_at 派生的「创建任务」行不显示状态和进度信息", "status": "TODO", "progress": 0},
-                {"ts": _ts(0, 2), "content": "【方案】在四个创建入口（task_input/task_dialog/task_edit_panel/main_window_import）添加初始 activity_log 条目，记录 status+progress，移除展示层的派生回退逻辑", "status": "DOING", "progress": 50},
-                {"ts": _ts(0), "content": "【完成】所有新建任务自动记录「创建任务」条目（含状态和进度），38 个测试通过", "status": "DONE", "progress": 100},
-            ],
-            now,
-        ),
-        (
-            f"- [ ] DONE<{today}> 优化：进度输入控件过于复杂 #编辑面板",
-            "优化：进度输入控件 QSpinBox 替换为简单 QLineEdit",
-            [
-                {"ts": _ts(1), "content": "【问题】活动时间线中的进度输入使用 QSpinBox（带上下箭头），交互复杂，用户只需输入 0~100 数字即可", "status": "TODO", "progress": 0},
-                {"ts": _ts(0, 1), "content": "【方案】用 QLineEdit + QIntValidator(0,100) 替换 QSpinBox，添加 % 后缀标签，简化交互", "status": "DOING", "progress": 50},
-                {"ts": _ts(0), "content": "【完成】进度输入简化为纯数字输入框，0~100 范围验证，38 个测试通过", "status": "DONE", "progress": 100},
-            ],
-            now,
-        ),
-        (
-            f"- [ ] TODO<{today + timedelta(days=7)}> 优化：左侧任务列表默认排序规则 #任务列表",
-            "优化：左侧任务列表默认排序规则（暂缓）",
-            [
-                {"ts": _ts(0), "content": "【问题】当前默认按 status 排序，用户期望按 status+deadline 联合排序，但 FilterBar 仅支持单字段排序", "status": "TODO", "progress": 0},
-                {"ts": _ts(0), "content": "【分析】TaskFilter.sort_by 已支持 list[SortCriterion]，需改造 FilterBar.set_sort/build_filter 支持逗号分隔的多字段排序，settings_dialog 增加联合排序选项", "status": "TODO", "progress": 10},
-            ],
-            None,
-        ),
-        (
-            f"- [ ] TODO<{today + timedelta(days=14)}> 优化待办 #任务列表",
-            "（示例）在此分区记录新的优化问题",
-            [
-                {"ts": _ts(0), "content": "【问题】描述发现的问题或需要优化的点", "status": "TODO", "progress": 0},
-                {"ts": _ts(0), "content": "【方案】描述解决思路和改动点", "status": "TODO", "progress": 0},
-            ],
-            None,
-        ),
+        # === TEST CASES for comprehensive feature verification ===
+        (f"- [ ] TODO<{today}> T1: 速览栏预设切换验证 #测试 #速览栏", "T1: 速览栏预设切换验证", [
+            {"ts": _ts(0), "content": "【步骤1】点击'今天'按钮 → 验证任务列表刷新为今日任务", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】点击'本周'按钮 → 验证统计栏计数变化", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】点击'本月'按钮 → 验证轮播栏更新", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T2: 速览栏默认选中+高亮 #测试 #速览栏", "T2: 速览栏默认选中+高亮", [
+            {"ts": _ts(0), "content": "【步骤1】重启应用 → 验证速览栏默认选中'今天'", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】验证选中按钮蓝色背景高亮", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】切换分区 → 验证默认回到'今天'", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T3: 进度栏联动 #测试 #进度栏", "T3: 进度栏联动", [
+            {"ts": _ts(0), "content": "【步骤1】速览点击'今天' → 验证进度栏仅'今天'可点击", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】点击进度栏'今天' → 验证任务列表排序变化但总数不变", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】新建任务 → 验证进度栏恢复未点击状态", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T4: 统计栏计数正确性 #测试 #统计栏", "T4: 统计栏计数正确性", [
+            {"ts": _ts(0), "content": "【步骤1】验证FilterBar右侧显示各状态计数", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】切换速览预设 → 验证计数随日期范围更新", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】底部状态栏数据与统计栏一致", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T5: 批量操作复选框 #测试 #批量操作", "T5: 批量操作复选框", [
+            {"ts": _ts(0), "content": "【步骤1】点击复选框 → 验证绿色对勾显示+批量工具栏更新计数", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】点击全选/取消 → 验证所有复选框联动", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】选3任务 → 状态变更→进行中 → 验证activity_log记录", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤4】选2任务 → 中止 → 验证变灰+重启后恢复", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T6: 编辑器单任务 #测试 #编辑器 #单任务", "T6: 编辑器单任务", [
+            {"ts": _ts(0), "content": "【步骤1】新建 → 验证编辑器打开+默认时间+标签模板", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】输入无标签内容 → 保存 → 验证'标签缺失'提示", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】输入正确格式 → 保存 → 验证列表新增+右侧加载新任务", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T7: 编辑器多任务拆分 #测试 #编辑器 #多任务", "T7: 编辑器多任务拆分", [
+            {"ts": _ts(0), "content": "【步骤1】新建多任务 → 验证3行模板显示", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】保存 → 验证一次保存创建3条独立任务", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】验证每条可独立选中/编辑/删除", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T8: 截止计算器(快速计算) #测试 #快速计算", "T8: 截止计算器(快速计算)", [
+            {"ts": _ts(0), "content": "【步骤1】点击快速计算 → 验证弹窗显示", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】切换临时/周/月 → 验证选项正确切换", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】验证不触发全局刷新(BUG修复验证)", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T9: 活动时间线+智能进度 #测试 #时间线", "T9: 活动时间线+智能进度", [
+            {"ts": _ts(0), "content": "【步骤1】选中任务 → 追加进展 → 状态选已完成 → 验证进度自动100%", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】输入空内容点追加 → 验证'内容为空'提醒", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】验证时间线新增记录+列表状态更新", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T10: 分区切换 #测试 #分区", "T10: 分区切换", [
+            {"ts": _ts(0), "content": "【步骤1】切换分区 → 验证按钮文字更新+任务列表刷新", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】验证无重名分区", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T11: 主题切换 #测试 #主题", "T11: 主题切换", [
+            {"ts": _ts(0), "content": "【步骤1】设置→显示→深色 → 验证菜单/按钮/文字可见", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】验证紧急程度行背景在深色下可见", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】切回浅色 → 验证正常", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T12: 翻页+序号 #测试 #翻页", "T12: 翻页+序号", [
+            {"ts": _ts(0), "content": "【步骤1】创建12+任务 → 验证翻页按钮可用", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】切换每页数量 → 验证重排", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T13: 设置-分区管理+加密 #测试 #设置", "T13: 设置-分区管理+加密", [
+            {"ts": _ts(0), "content": "【步骤1】新建分区→设置密码 → 切换需密码验证", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】错误密码 → 验证蒙版提示+锁定", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤3】解锁 → 验证恢复正常", "status": "TODO", "progress": 0},
+        ], None),
+        (f"- [ ] TODO<{today}> T14: 联动测试L1-L9 #测试 #联动", "T14: 联动测试L1-L9", [
+            {"ts": _ts(0), "content": "【L1】速览→任务列表+统计栏+状态栏三处数据一致", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【L2】速览→进度栏对应按钮可点击", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【L3】进度栏→任务列表仅排序不变筛选", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【L4】编辑器→列表刷新+自动选中", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【L5】批量操作→列表+状态栏摘要", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【L6】分区切换→全部联动重置", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【L7】时间线→编辑器+列表同步", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【L8】快速计算→不触发全局刷新", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【L9】深浅主题→所有组件可读", "status": "TODO", "progress": 0},
+        ], None),
     ]
 
+    inserted = 0
     for raw_md, title, log, completed in optimizations:
+        if title in existing_titles:
+            continue
         parsed = parser.parse(raw_md)
         task = Task(
             id=str(uuid.uuid4()),
@@ -104,19 +169,26 @@ def _ensure_test_partition(repo: TaskRepository) -> None:
             completed_at=completed,
         )
         repo.insert(task)
+        inserted += 1
 
 
 def _ensure_demo_partition(repo: TaskRepository) -> None:
-    """Create the 「功能演示」partition with demo tasks if it doesn't exist."""
-    partitions = repo.get_all_partitions()
-    if any(p["name"] == "功能演示" for p in partitions):
-        return  # already exists
-
+    """Seed the 「功能演示」partition with demo tasks if empty or missing."""
     from .services.md_parser import MarkdownTaskParser
+    from .models.task_filter import TaskFilter
+
+    partitions = repo.get_all_partitions()
+    demo_p = next((p for p in partitions if p["name"] == "功能演示"), None)
+    if demo_p is not None:
+        existing = repo.search(TaskFilter(partition_id=demo_p["id"], limit=1))
+        if existing:
+            return  # already seeded
+        pid = demo_p["id"]
+    else:
+        demo = repo.upsert_partition("功能演示", sort_order=100)
+        pid = demo["id"]
 
     parser = MarkdownTaskParser()
-    demo = repo.upsert_partition("功能演示", sort_order=100)
-    pid = demo["id"]
     today = date.today()
 
     def _ago(d: int) -> str:
@@ -296,10 +368,9 @@ class DeskTodoSeqApp(QApplication):
         refresh_tokens()
 
         # Apply QPalette — handles text and standard widget colours globally
-        self.setPalette(build_palette())
+        QApplication.instance().setPalette(build_palette())
 
-        # Apply QSS for shapes (borders, padding, fonts; colours are kept
-        # for structural elements like toolbar/card backgrounds and borders)
+        # Apply QSS with injected icons-path placeholder replacement
         qss_path = self._resource_path("themes", f"{theme_name}.qss")
         if qss_path and qss_path.exists():
             with open(qss_path, "r", encoding="utf-8") as f:

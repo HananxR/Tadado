@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QLineEdit, QWidget
+from PySide6.QtCore import QTimer, Signal
+from PySide6.QtWidgets import (
+    QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QWidget,
+)
 
 from ...models.task_filter import SortCriterion, TaskFilter
 from ...models.task_status import TaskStatus
+
+from ...utils.widget_utils import combo_width
+
+from .dropdown import DropdownWidget
 
 
 class FilterBar(QWidget):
@@ -42,25 +48,27 @@ class FilterBar(QWidget):
         self._search.textChanged.connect(lambda: self._debounce.start())
         layout.addWidget(self._search, 2)
 
-        # Status combo (4 main statuses only)
-        self._status = QComboBox()
+        # Status combo — compact fixed width (longest item "进行中" ≈ 3 chars)
+        self._status = DropdownWidget()
         self._status.setObjectName("statusFilter")
         self._status.addItem("状态", None)
         for s in (TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE, TaskStatus.OVERDUE):
             self._status.addItem(s.display_name, s)
         self._status.currentIndexChanged.connect(self._on_filter_changed)
-        layout.addWidget(self._status, 1)
+        layout.addWidget(self._status)
 
-        # Sort combo
+        # Sort combo — compact fixed width (longest item "紧急程度" ≈ 4 chars)
         sort_label = QLabel("排序：")
         sort_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(sort_label)
-        self._sort = QComboBox()
+        self._sort = DropdownWidget()
         self._sort.setObjectName("sortCombo")
         for label in self._SORT_MAP:
             self._sort.addItem(label)
+        self._sort.setFixedWidth(combo_width(4))
+        self._sort.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._sort.currentIndexChanged.connect(self._on_filter_changed)
-        layout.addWidget(self._sort, 1)
+        layout.addWidget(self._sort)
 
     # ------------------------------------------------------------------
     # Public API
