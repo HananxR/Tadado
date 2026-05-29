@@ -29,13 +29,12 @@ uv run ruff check src/ tests/                 # lint 检查
 uv run ruff check --select=F src/             # 仅 pyflakes 规则
 
 # 构建打包
-# 免安装便携版（单文件）：
-uv run pyinstaller --name="DeskTodoSeq" --windowed --onefile --icon="resources/icons/app.ico" --add-data="resources;resources" main.py
+# 免安装便携版：
+#   执行 build.bat（调用 Nuitka --standalone），输出到 dist/main.dist/
 
 # 安装版（用户可选路径，需先安装 Inno Setup）：
-# 1. 用 --onedir 打包（启动更快）
-uv run pyinstaller --name="DeskTodoSeq" --windowed --onedir --icon="resources/icons/app.ico" --add-data="resources;resources" main.py
-# 2. 用 Inno Setup Compiler 打开 installer.iss 编译 → 生成 Setup.exe
+#   1. 执行 build.bat
+#   2. 用 Inno Setup Compiler 打开 installer.iss 编译 → 生成 Setup.exe
 ```
 
 ## 架构
@@ -81,18 +80,39 @@ SQLite（raw_md 原文 + 解析后的结构化列 + FTS5 索引）
 
 ```
 TODO → DOING → DONE → TODO
-URGENT → DOING → DONE → URGENT
-WAIT → DOING → DONE → WAIT
-LATER → TODO → DOING → DONE
+OVERDUE → (修改截止日) → DOING
 ```
 
-点击状态标签即调用 `TaskStatus.next_status` 推进状态，formatter 重新生成含新关键字和复选框的 raw_md。
+点击状态标签即调用 `TaskStatus.next_status` 推进状态，formatter 重新生成含新关键字和复选框的 raw_md。OVERDUE 状态由系统自动设置（截止日过期），不可手动更改。
 
 ### SQLite 要点
 
 - 标签以 JSON 数组字符串存储（`'["tag1","tag2"]'`），过滤时用 `LIKE '%"tag"%'` 匹配。
 - `notification_log` 用复合主键 `(task_id, interval_minutes)` 去重 — 同一任务+同一时间粒度的通知不会重复发送。
 - Repository 用 `check_same_thread=False` 打开连接，因为 Qt 信号可能从任意线程触发回调。
+
+## UI 组件规范
+
+### QComboBox 下拉列表样式
+
+- **紧凑宽度**：使用 `setFixedWidth()` 或紧凑的 `min-width`，刚好容纳最长选项 + 下拉箭头 + 少量 padding，不留多余空白
+  - 中文字号 12px 时每个字约 12px 宽，2 个字 ≈ 24px + 左 padding 8px + 下拉区 18px ≈ 50px，取 48px
+- **加粗规则**：位于菜单栏（`QMenuBar`）或工具栏（`QToolBar`）中的 QComboBox，其选中项文本加粗（`font-weight: bold`）；其余位置（对话框、面板等）默认不加粗
+- **下拉箭头**：QSS 中 `QComboBox::down-arrow` 使用自定义 SVG 图标（`resources/icons/chevron-down-{light,dark}.svg`），避免 Windows 原生样式在暗色主题下箭头不可见
+  - 暗色主题：`chevron-down-light.svg`（`#c9d1d9`）
+  - 亮色主题：`chevron-down-dark.svg`（`#555`）
+- **图标路径**：QSS 中用 `url(__ICONS__/chevron-down-*.svg)` 占位符，`app.py` 加载时自动替换为实际 icons 目录绝对路径
+- **弹出列表**：`QComboBox QAbstractItemView` 必须显式设置 `color` 属性（暗色 `#c9d1d9` / 亮色 `#2c2c2c`），确保选项文字可见
+
+### QPushButton 小导航按钮
+
+- 小导航按钮（`<` `>` `◀` `▶`）使用 `objectName="navBtn"`，QSS 规则：`padding: 2px 4px; font-size: 11px; min-width: 24px; min-height: 24px;`
+- 全局 QPushButton 的 `padding` 不宜过大（当前 `5px 10px`），否则 `setFixedWidth(28)` 的小按钮文字会被挤出可视区
+
+### 主题颜色
+
+- 所有组件颜色优先使用 `design_tokens.py` 的 `get_tokens()`，避免硬编码色值
+- `QPalette` 必须设置在 `QApplication.instance()` 级别（非 MainWindow），使弹出窗口（QComboBox 下拉列表等）继承正确的调色板
 
 ## PEP8 命名规范
 
@@ -111,12 +131,159 @@ LATER → TODO → DOING → DONE
 
 **已完成（全部 Sprint）**：
 
-- **Sprint 1**：models（Task/TaskStatus/Priority/TaskFilter/TaskRepository）、Markdown 解析器/格式化器、SignalBus、date_utils、测试套件
-- **Sprint 2**：app.py、config.py、main_window（框架+侧边栏+状态栏）、system_tray、light/dark 主题 QSS、main.py
-- **Sprint 3**：TaskInputWidget、FilterBar、TaskListModel、TaskListDelegate、TaskListView、TaskListPanel、TaskDialog、AboutDialog
-- **Sprint 4**：HeatmapModel、CalendarHeatmapWidget（自定义绘制 GitHub 风格热力图，含年份导航和点击筛选）
+- **Sprint 1**：models（Task/TaskStatus/TaskFilter/TaskRepository）、Markdown 解析器/格式化器、SignalBus、date_utils、测试套件
+- **Sprint 2**：app.py、config.py、main_window（frameless 自定义标题栏 + Win32 拖拽）、system_tray、light/dark 主题 QSS、main.py
+- **Sprint 3**：TaskInputWidget、FilterBar、TaskListModel、TaskListDelegate、TaskListView、TaskListPanel、TaskEditPanel、AboutDialog
+- **Sprint 4**：HeatmapModel、CalendarHeatmapWidget（12 月×7 行×5 列矩阵布局、accent 单色渐变）、HeatmapTooltip、HeatmapCollapsePanel、ActivityReportPanel、ReportExporter
 - **Sprint 5**：SettingsDialog、导入/导出 Markdown、TaskScheduler、TaskNotifier、TaskArchiver、TaskRecurrence
+- **Sprint 6**：活动时间线、StatusBadgeStrip、草稿模式、编辑区折叠、进度追踪（ProgressDynamicsBar）
+- **Sprint 7**：分区管理（密码保护+自动锁定）、截止时间日历（CalendarPopup/TimePopup）、时间线重构、统计联动
+- **Sprint 8**：速览栏（QuickOverviewBar）、批量操作（BatchToolbar）、编辑器分栏重构、截止区间计算器（DeadlineCalculator）、多任务创建（MultiTaskDialog）、suspended 列、DropdownWidget、widget_utils（combo_width）
+- **已移除**：Priority 系统（合并到 status）、CarouselBanner（被 QuickOverviewBar 替代）、TaskDialog（被 TaskEditPanel 替代）、热力图点击/拖选/右键交互（数据源不匹配）
 
-**测试覆盖**：parser（20 用例）、formatter（5 用例）、repository（12 用例）— 共 32 用例全部通过。
+**测试覆盖**：parser（20 用例）、formatter（7 用例）、repository（21 用例）、task（7 用例）— 共 57 用例全部通过。
 
 **依赖安装**：PySide6 的 wheel 包约 160MB，网络慢时可能超时。失败时用 `UV_HTTP_TIMEOUT=300 uv sync` 重试。
+
+## 工作流程规则
+
+### 1. 优化验证与活动记录
+
+所有测试和优化问题均需按功能模块创建 TODO 任务，并在对应任务的**活动时间线**记录优化信息：
+- 作用一：验证软件功能，确保优化完成且无回归
+- 作用二：检查软件使用缺陷，促进软件迭代更新
+
+### 2. 避免历史问题复现
+
+当前优化不能引起历史已解决问题再次复现。若当前需求与历史需求出现**重大冲突**，需整理以下内容并向用户沟通确认，确认后归档保存（可在"测试分区"以"需求变更"为标签记录）：
+- 历史需求
+- 当前需求
+- 冲突点
+- 推荐的解决方案
+
+### 3. 复用成熟技术栈
+
+项目开发中尽可能复用已有成熟的技术栈，避免重复造轮子。优先检索开源、可靠、可复用的项目和组件。
+
+### 4. 新增需求：推荐成熟设计方案
+
+在设计阶段推荐比较成熟的设计方案，避免仅解决当前问题而不兼顾全局，导致整体功能因局部设计不合理而影响后续扩展和优化。
+
+### 5. 待办与任务拆分
+
+当前因需求不明或技术实现复杂的问题，可以以待办（TODO）、任务拆分的方式进行备忘、分步完成，避免阻塞整体进度。
+
+### 6. 主题色适配
+
+系统设计中涉及主题色适配：所有 UI 交互、组件选择、logo 设计、配色等问题，均需严格遵守 `design_tokens.py` 的设计令牌体系。暗色/亮色主题必须同时适配。
+
+### 7. 全局一致性与设置验证
+
+功能开发必须保证全局一致。与设置（Config）有关的配置信息，需验证是否在全局生效。若存在需求不明或不确定的情况，主动向用户确认。
+
+### 8. 开发环境与生产环境隔离
+
+严格区分开发环境和生产环境：
+- **生产环境**：仅存在"功能演示分区"，"工作"、"个人"、"学习"为默认分区名称但无对应任务
+- **打包时以生产环境的包为主**，避免项目信息泄露
+- 开发环境和生产环境使用不同的数据库和配置
+
+### 9. 优化完成确认与备份
+
+1. 每次完成一个功能优化或准备切换到新的优化问题时，**必须先向用户确认当前问题是否已解决**，再继续后续操作
+2. 用户确认问题已解决后，**必须先通过 `git commit` 提交当前代码作为备份**，再进行下一个任务的修改
+
+## 当前进度（按功能模块）
+
+### 任务列表（TaskListView / TaskListModel / TaskListDelegate）
+- ✅ Markdown 格式任务展示（8 列：复选框、序号、创建时间、内容、截止日、进度、状态、标签）
+- ✅ 状态行颜色标识（TODO/DOING/DONE/OVERDUE）
+- ✅ 行选择 + 多选 + 批量操作工具栏
+- ✅ 分页（20/50/100）+ 排序
+- ✅ Suspended 列（视觉 dimming）
+- 待办：拖拽排序、列宽记忆
+
+### 编辑任务（TaskEditPanel）
+- ✅ Markdown 源码编辑 + 实时预览
+- ✅ 草稿模式（蓝色高亮、自动聚焦）
+- ✅ 截止日历选择器（CalendarPopup）+ 时间选择器（TimePopup）
+- ✅ 活动时间线（activity_log 编辑 + 锁定）
+- ✅ 分区选择器
+- 待办：标签快捷插入、Markdown 语法提示
+
+### 底部状态栏（StatusBar）
+- ✅ 任务总数 + 筛选状态
+- ✅ 分页信息
+- ✅ 闲置自动锁定计时
+
+### 搜索栏（FilterBar）
+- ✅ 全文搜索（FTS5）
+- ✅ 状态筛选（Dropdown）
+- ✅ 排序切换
+
+### 统计栏
+- ✅ StatusBadgeStrip：按状态统计 + 点击筛选
+- ✅ ProgressDynamicsBar：昨日/今日/本周/本月进度动态
+- ✅ 速览栏（QuickOverviewBar）：预设时间范围 + 循环轮播
+
+### 热度日历（CalendarHeatmapWidget）
+- ✅ 12 月 × 7 行 × 5 列矩阵布局
+- ✅ Accent 单色渐变（activity_log 数据源）
+- ✅ 悬浮 tooltip（HeatmapTooltip）
+- ✅ 年份导航 + 标签筛选
+- ✅ 速览栏联动高亮
+- ✅ 活动报告面板（ActivityReportPanel）+ 导出（Markdown/Excel）
+- ✅ 折叠面板（HeatmapCollapsePanel）
+- ❌ 已移除：点击筛选、拖选范围、右键菜单（数据源不匹配）
+
+### 分区管理
+- ✅ 分区 CRUD（设置对话框）
+- ✅ 分区切换（DropdownWidget）
+- ✅ 密码保护 + 自动锁定
+- ✅ 闲置计时器自动锁定
+- ✅ 默认分区设置
+
+### 设置对话框（SettingsDialog）
+- ✅ 通用（语言、开机启动、最小化到托盘、闲置锁定时间）
+- ✅ 显示（主题、字号、热力图起始年份、配色）
+- ✅ 自动化（提醒间隔、安静时段、归档）
+- ✅ 分区管理（CRUD + 密码）
+
+### 系统托盘（SystemTray）
+- ✅ 托盘图标 + 右键菜单（显示/隐藏、新建任务、退出）
+- ✅ 双击托盘显示/隐藏
+- ✅ 提醒通知弹窗
+
+### 后台服务
+- ✅ TaskScheduler：APScheduler 定时检查到期任务
+- ✅ TaskNotifier：托盘提醒（尊重安静时段）
+- ✅ TaskArchiver：每日自动归档已完成任务
+- ✅ TaskRecurrence：循环任务自动创建下一实例
+
+### 导入/导出
+- ✅ 导入 Markdown 文件
+- ✅ 导出 Markdown 文件
+- ✅ 活动报告导出（Markdown / Excel）
+
+### 窗口管理
+- ✅ Frameless 自定义标题栏（VS Code 风格）
+- ✅ Win32 原生拖拽 + 边框调整大小
+- ✅ 最大化/还原/最小化按钮
+- ✅ 初始尺寸屏幕 65%
+- 待办：最大化/还原按钮在某些场景下响应异常
+
+### 主题系统
+- ✅ Light / Dark 双主题 QSS
+- ✅ design_tokens.py 设计令牌体系
+- ✅ QPalette 全局设置
+- ✅ 主题热切换
+
+### 测试
+- ✅ parser（20 用例）、formatter（7 用例）、repository（21 用例）、task（7 用例）— 共 57 用例全部通过
+- 待办：UI 自动化测试（pytest-qt）
+
+### 已移除的功能
+- ❌ Priority 系统（合并到 TaskStatus）
+- ❌ CarouselBanner（被 QuickOverviewBar 替代）
+- ❌ TaskDialog（被 TaskEditPanel 替代）
+- ❌ 热力图点击/拖选/右键交互（数据源不匹配）
