@@ -105,10 +105,12 @@ class MainWindow(QMainWindow):
             (geom.width() - w) // 2 + geom.x(),
             (geom.height() - h) // 2 + geom.y(),
         )
+        QTimer.singleShot(100, self._sync_header_alignment)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._apply_splitter_sizes()
+        self._sync_header_alignment()
 
     def _apply_splitter_sizes(self) -> None:
         if self._splitter is None:
@@ -116,6 +118,14 @@ class MainWindow(QMainWindow):
         total = self._splitter.width()
         if total > 100:
             self._splitter.setSizes([int(total * 0.5), int(total * 0.5)])
+
+    def _sync_header_alignment(self) -> None:
+        """Sync editor header height to match table header for vertical alignment."""
+        hh = self._task_view.horizontalHeader()
+        if hh:
+            h = hh.height()
+            if h > 0:
+                self._edit_panel.set_header_height(h)
 
     def refresh_theme(self) -> None:
         self._edit_panel.refresh_theme()
@@ -507,11 +517,24 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self._stack)
 
     def _on_new_multi_task(self) -> None:
-        from ..utils.signal_bus import get_signal_bus
-        from .dialogs.multi_task_dialog import MultiTaskDialog
-        dlg = MultiTaskDialog(self._repository, self._config, self)
-        if dlg.exec() == MultiTaskDialog.DialogCode.Accepted:
-            get_signal_bus().tasks_bulk_created.emit()
+        if not self.isVisible() and self._edit_panel.has_unsaved_draft():
+            self._edit_panel.discard_draft()
+        elif not self._guard_draft():
+            return
+        if self._splitter_stack.currentIndex() == 1:
+            if self._partition_passwords.get(self._active_partition_id, ""):
+                self._on_unlock_partition()
+                if self._splitter_stack.currentIndex() == 1:
+                    return
+            else:
+                self._splitter_stack.setCurrentIndex(0)
+        self._stack.setCurrentIndex(0)
+        self.show()
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.raise_()
+        self.activateWindow()
+        self._edit_panel.create_draft_multi()
+        self._apply_splitter_sizes()
 
     # ------------------------------------------------------------------
     # Status bar
@@ -894,7 +917,10 @@ class MainWindow(QMainWindow):
         self._on_new_draft()
 
     def _on_new_draft(self) -> None:
-        if not self._guard_draft():
+        # From tray (window hidden): silently discard draft, no popup
+        if not self.isVisible() and self._edit_panel.has_unsaved_draft():
+            self._edit_panel.discard_draft()
+        elif not self._guard_draft():
             return
         if self._splitter_stack.currentIndex() == 1:
             if self._partition_passwords.get(self._active_partition_id, ""):
@@ -905,6 +931,7 @@ class MainWindow(QMainWindow):
                 self._splitter_stack.setCurrentIndex(0)
         self._stack.setCurrentIndex(0)
         self.show()
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
         self.raise_()
         self.activateWindow()
         self._edit_panel.create_draft()
@@ -913,18 +940,19 @@ class MainWindow(QMainWindow):
     def _guard_draft(self) -> bool:
         if not self._edit_panel.has_unsaved_draft():
             return True
-        result = QMessageBox.question(
-            self, "未保存的草稿",
-            "当前有未保存的新建任务，是否保存？",
-            QMessageBox.StandardButton.Save
-            | QMessageBox.StandardButton.Discard
-            | QMessageBox.StandardButton.Cancel,
-        )
-        if result == QMessageBox.StandardButton.Save:
+        msg = QMessageBox(self)
+        msg.setWindowTitle("未保存的草稿")
+        msg.setText("当前有未保存的新建任务，是否保存？")
+        save_btn = msg.addButton("保存", QMessageBox.ButtonRole.AcceptRole)
+        discard_btn = msg.addButton("放弃", QMessageBox.ButtonRole.DestructiveRole)
+        cancel_btn = msg.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked == save_btn:
             self._edit_panel._on_save()
             return True
-        if result == QMessageBox.StandardButton.Discard:
-            self._edit_panel._on_discard_draft()
+        if clicked == discard_btn:
+            self._edit_panel.discard_draft()
             return True
         return False
 

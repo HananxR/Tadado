@@ -256,8 +256,9 @@ class TaskEditPanel(QWidget):
         # --- Section header ("首页" or "编辑任务") — fixed, outside scroll area ---
         self._editor_header_widget = QWidget()
         header_row = QHBoxLayout(self._editor_header_widget)
-        header_row.setContentsMargins(10, 6, 10, 6)
+        header_row.setContentsMargins(10, 0, 10, 0)
         self._section_label = QLabel("首页")
+        self._section_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self._section_label.setStyleSheet(
             "font-weight: bold; font-size: 11px;"
         )
@@ -280,7 +281,7 @@ class TaskEditPanel(QWidget):
         self._scroll_content = QWidget()
         layout = QVBoxLayout(self._scroll_content)
         layout.setContentsMargins(10, 0, 10, 6)
-        layout.setSpacing(6)
+        layout.setSpacing(1)
 
         # --- Draft banner ---
         self._draft_banner = _BannerWidget()
@@ -288,10 +289,17 @@ class TaskEditPanel(QWidget):
         self._draft_banner.setMinimumHeight(120)
         layout.addWidget(self._draft_banner)
 
+        # Separator between banner and editor sections
+        self._section_separator = QWidget()
+        self._section_separator.setFixedHeight(1)
+        self._section_separator.setStyleSheet("background: palette(mid);")
+        self._section_separator.setVisible(False)
+        layout.addWidget(self._section_separator)
+
         # --- 编辑任务 section header (visible in welcome/empty state) ---
         self._editor_section_label = QLabel("编辑任务")
         self._editor_section_label.setStyleSheet(
-            "font-weight: bold; font-size: 11px; padding: 6px 0;"
+            "font-weight: bold; font-size: 11px; padding: 2px 0;"
         )
         self._editor_section_label.setVisible(True)
         layout.addWidget(self._editor_section_label)
@@ -322,21 +330,21 @@ class TaskEditPanel(QWidget):
         self._preview_render.setWordWrap(True)
         self._preview_render.setObjectName("taskPreview")
         self._preview_render.setStyleSheet(
-            "QLabel#taskPreview { padding: 4px 8px; border-radius: 4px; font-size: 12px; background: rgba(128,128,128,0.05); }"
+            "QLabel#taskPreview { padding: 2px 8px; border-radius: 4px; font-size: 12px; background: rgba(128,128,128,0.05); }"
         )
-        self._preview_render.setMinimumHeight(36)
+        self._preview_render.setMinimumHeight(20)
         ec.addWidget(self._preview_render)
 
         # Compact single row: time metadata + action buttons
         time_row = QHBoxLayout()
-        time_row.setSpacing(6)
+        time_row.setSpacing(3)
         self._created_label = QLabel("创建: —")
         self._created_label.setStyleSheet(
-            f"font-size: 11px; color: {get_tokens().text_secondary};"
+            f"font-size: 10px; color: {get_tokens().text_secondary};"
         )
         time_row.addWidget(self._created_label)
         dl_label = QLabel("截止:")
-        dl_label.setStyleSheet("font-size: 11px;")
+        dl_label.setStyleSheet(f"font-size: 10px; color: {get_tokens().text_secondary};")
         time_row.addWidget(dl_label)
         self._deadline_date_edit = QDateEdit()
         self._deadline_date_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
@@ -344,7 +352,8 @@ class TaskEditPanel(QWidget):
         self._deadline_date_edit.setDate(QDate.currentDate())
         self._deadline_date_edit.setMinimumDate(QDate(2000, 1, 1))
         self._deadline_date_edit.setMaximumDate(QDate(2100, 12, 31))
-        self._deadline_date_edit.setFixedWidth(105)
+        self._deadline_date_edit.setFixedWidth(95)
+        self._deadline_date_edit.setStyleSheet("font-size: 10px;")
         self._deadline_date_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._deadline_date_edit.setToolTip("点击选择日期")
         self._deadline_date_edit.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -355,7 +364,8 @@ class TaskEditPanel(QWidget):
         self._deadline_time_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self._deadline_time_edit.setDisplayFormat("HH:mm")
         self._deadline_time_edit.setTime(QTime(23, 59))
-        self._deadline_time_edit.setFixedWidth(60)
+        self._deadline_time_edit.setFixedWidth(52)
+        self._deadline_time_edit.setStyleSheet("font-size: 10px;")
         self._deadline_time_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._deadline_time_edit.setToolTip("点击选择时间")
         self._deadline_time_edit.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -363,38 +373,38 @@ class TaskEditPanel(QWidget):
         self._deadline_time_edit.lineEdit().installEventFilter(self)
         time_row.addWidget(self._deadline_time_edit)
         self._quick_set_btn = QPushButton("快速计算")
-        self._quick_set_btn.setFixedWidth(72)
-        self._quick_set_btn.setStyleSheet("font-size: 10px; padding: 2px 4px;")
+        self._quick_set_btn.setFixedWidth(60)
+        self._quick_set_btn.setStyleSheet("font-size: 10px; padding: 1px 3px;")
         self._quick_set_btn.clicked.connect(self._on_quick_set_deadline)
         time_row.addWidget(self._quick_set_btn)
         time_row.addStretch()
         self._edit_toggle_btn = QPushButton("编辑")
         self._edit_toggle_btn.setCheckable(True)
         self._edit_toggle_btn.setChecked(False)
-        self._edit_toggle_btn.setFixedWidth(56)
-        self._edit_toggle_btn.setStyleSheet("font-size: 10px; padding: 2px 4px;")
+        self._edit_toggle_btn.setFixedWidth(48)
+        self._edit_toggle_btn.setStyleSheet("font-size: 10px; padding: 1px 3px;")
         self._edit_toggle_btn.clicked.connect(self._on_toggle_edit)
         time_row.addWidget(self._edit_toggle_btn)
         self._save_btn = QPushButton("保存")
         self._save_btn.setObjectName("saveBtn")
         self._save_btn.clicked.connect(self._on_save)
         self._save_btn.setEnabled(False)
-        self._save_btn.setFixedWidth(56)
-        self._save_btn.setStyleSheet("font-size: 10px; padding: 2px 4px;")
+        self._save_btn.setFixedWidth(48)
+        self._save_btn.setStyleSheet("font-size: 10px; padding: 1px 3px;")
         time_row.addWidget(self._save_btn)
         self._delete_btn = QPushButton("删除")
         self._delete_btn.setObjectName("deleteBtn")
         self._delete_btn.clicked.connect(self._on_delete)
         self._delete_btn.setEnabled(False)
-        self._delete_btn.setFixedWidth(56)
-        self._delete_btn.setStyleSheet("font-size: 10px; padding: 2px 4px;")
+        self._delete_btn.setFixedWidth(48)
+        self._delete_btn.setStyleSheet("font-size: 10px; padding: 1px 3px;")
         time_row.addWidget(self._delete_btn)
         ec.addLayout(time_row)
         # Editor card (bordered wrapper, collapse button in top-right corner)
         self._editor_card = QWidget()
         self._editor_card.setObjectName("editorCard")
         card_layout = QVBoxLayout(self._editor_card)
-        card_layout.setContentsMargins(8, 8, 8, 6)
+        card_layout.setContentsMargins(6, 2, 6, 4)
         card_layout.setSpacing(4)
         card_layout.addWidget(self._editor_collapsible)
         # Task summary (visible when collapsed)
@@ -407,13 +417,6 @@ class TaskEditPanel(QWidget):
         self._task_summary.setVisible(False)
         card_layout.addWidget(self._task_summary)
         layout.addWidget(self._editor_card)
-
-        # Separator between editor and timeline sections
-        self._section_separator = QWidget()
-        self._section_separator.setFixedHeight(1)
-        self._section_separator.setStyleSheet("background: palette(mid);")
-        self._section_separator.setVisible(False)
-        layout.addWidget(self._section_separator)
 
         # Timeline section header
         self._timeline_header = QLabel("活动时间线")
@@ -499,6 +502,7 @@ class TaskEditPanel(QWidget):
 
         layout.addWidget(self._timeline_card, 4)
         self._timeline_card.setVisible(False)
+        layout.addStretch()
 
         self._scroll_area.setWidget(self._scroll_content)
         outer.addWidget(self._scroll_area, 1)
@@ -658,14 +662,13 @@ class TaskEditPanel(QWidget):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         if self._banner_active:
-            self._adjust_banner_height()
+            QTimer.singleShot(0, self._adjust_banner_height)
 
     def _adjust_banner_height(self) -> None:
         """Set banner to 60% of viewport height for welcome/draft states."""
         vh = self._scroll_area.viewport().height()
         if vh > 0:
-            banner_h = max(120, int(vh * 0.6))
-            self._draft_banner.setFixedHeight(banner_h)
+            self._draft_banner.setFixedHeight(max(120, int(vh * 0.6)))
 
     def show_empty(self) -> None:
         """Show welcome state — banner + directly editable Markdown template."""
@@ -687,10 +690,10 @@ class TaskEditPanel(QWidget):
         self._section_label.setText("首页")
         self._editor_section_label.setVisible(True)
         self._editor_header_widget.setVisible(True)
-        self._editor_card.setProperty("bordered", False)
+        self._editor_card.setProperty("bordered", True)
         self._editor_card.style().unpolish(self._editor_card)
         self._editor_card.style().polish(self._editor_card)
-        self._section_separator.setVisible(False)
+        self._section_separator.setVisible(True)
         self._timeline_header.setVisible(False)
         self._collapse_btn.setVisible(False)
         self._editor_collapsible.setVisible(True)
@@ -781,10 +784,10 @@ class TaskEditPanel(QWidget):
         self._section_label.setText("首页")
         self._editor_section_label.setVisible(True)
         self._editor_header_widget.setVisible(True)
-        self._editor_card.setProperty("bordered", False)
+        self._editor_card.setProperty("bordered", True)
         self._editor_card.style().unpolish(self._editor_card)
         self._editor_card.style().polish(self._editor_card)
-        self._section_separator.setVisible(False)
+        self._section_separator.setVisible(True)
         self._timeline_header.setVisible(False)
         self._collapse_btn.setVisible(False)
         self._editor_collapsible.setVisible(True)
@@ -834,6 +837,7 @@ class TaskEditPanel(QWidget):
         self.create_draft()
         self._md_edit.blockSignals(True)
         self._md_edit.setText(template)
+        self._md_edit.setFixedHeight(72)  # 3 lines
         self._md_edit.blockSignals(False)
         self._md_editor_wrapper.setVisible(True)
         self._edit_toggle_btn.setText("关闭编辑")
@@ -846,6 +850,10 @@ class TaskEditPanel(QWidget):
         """Discard the current draft without saving to DB."""
         if self.has_unsaved_draft():
             self.clear()
+
+    def set_header_height(self, h: int) -> None:
+        """Sync header height to match table header for alignment."""
+        self._editor_header_widget.setFixedHeight(h)
 
     def refresh_theme(self) -> None:
         """Re-apply theme-dependent colours after a theme switch."""

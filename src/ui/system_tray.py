@@ -57,10 +57,11 @@ class SystemTrayManager:
 
     def _toggle_window(self) -> None:
         win = self._main_window
-        if win.isVisible():
+        if win.isVisible() and not win.isMinimized():
             win.hide()
         else:
             win.show()
+            win.setWindowState(win.windowState() & ~Qt.WindowState.WindowMinimized)
             win.raise_()
             win.activateWindow()
 

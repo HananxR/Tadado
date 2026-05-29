@@ -77,7 +77,7 @@ class ProgressDynamicsBar(QWidget):
 
     def _build_ui(self) -> None:
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 2, 0, 2)
+        layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(4)
 
         self._period_buttons: dict[str, QPushButton] = {}
@@ -89,7 +89,7 @@ class ProgressDynamicsBar(QWidget):
             btn.setChecked(key == self._active_period)
             t = get_tokens()
             btn.setStyleSheet(
-                f"QPushButton {{ font-size: 11px; padding: 3px 6px; color: {t.text_primary}; background: transparent; border: 1px solid {t.border_primary}; }}"
+                f"QPushButton {{ font-size: 10px; padding: 2px 6px; color: {t.text_primary}; background: transparent; border: 1px solid {t.border_primary}; }}"
                 f"QPushButton:checked {{ background: {t.accent}; color: {t.text_on_accent}; font-weight: bold; border: none; }}"
                 f"QPushButton:disabled {{ color: rgba(128,128,128,0.35); background: transparent; border: 1px solid transparent; }}"
             )
