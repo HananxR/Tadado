@@ -42,7 +42,7 @@ class SignalBus(QObject):
 
     # Batch operations
     batch_operation_completed = Signal(dict)  # summary dict
-    tasks_bulk_created = Signal(int)  # count
+    tasks_bulk_created = Signal(int, list)  # count, task_ids
 
     # App lifecycle
     application_quit = Signal()

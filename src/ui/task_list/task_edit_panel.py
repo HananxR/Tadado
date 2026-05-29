@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from typing import Callable
 
 from PySide6.QtCore import QDate, QDateTime, QEvent, QPointF, QRect, QSize, QTime, Qt, QTimer, Signal
-from PySide6.QtGui import QPainter, QBrush, QColor, QIntValidator, QPen, QPixmap, QTextDocument
+from PySide6.QtGui import QFont, QPainter, QBrush, QColor, QIntValidator, QPen, QPixmap, QTextDocument
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -277,11 +277,12 @@ class TaskEditPanel(QWidget):
         self._scroll_area = QScrollArea()
         self._scroll_area.setWidgetResizable(True)
         self._scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         self._scroll_content = QWidget()
         layout = QVBoxLayout(self._scroll_content)
         layout.setContentsMargins(10, 0, 10, 6)
-        layout.setSpacing(1)
+        layout.setSpacing(3)
 
         # --- Draft banner ---
         self._draft_banner = _BannerWidget()
@@ -298,8 +299,9 @@ class TaskEditPanel(QWidget):
 
         # --- 编辑任务 section header (visible in welcome/empty state) ---
         self._editor_section_label = QLabel("编辑任务")
+        self._editor_section_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         self._editor_section_label.setStyleSheet(
-            "font-weight: bold; font-size: 11px; padding: 2px 0;"
+            "font-weight: bold; font-size: 11px;"
         )
         self._editor_section_label.setVisible(True)
         layout.addWidget(self._editor_section_label)
@@ -308,7 +310,7 @@ class TaskEditPanel(QWidget):
         self._editor_collapsible = QWidget()
         ec = QVBoxLayout(self._editor_collapsible)
         ec.setContentsMargins(0, 0, 0, 0)
-        ec.setSpacing(2)
+        ec.setSpacing(5)
 
         # Markdown editor (hidden by default)
         self._md_editor_wrapper = QWidget()
@@ -319,23 +321,32 @@ class TaskEditPanel(QWidget):
         self._md_edit = QTextEdit()
         self._md_edit.setObjectName("mdEditor")
         self._md_edit.setPlaceholderText("- [ ]  <YYYY-MM-DD HH:MM> 标题 #标签")
-        self._md_edit.setFixedHeight(48)  # compact 2-line default
+        self._md_edit.setMinimumHeight(60)
+        self._md_edit.setStyleSheet(
+            "QTextEdit#mdEditor { font-size: 12px; padding: 4px 8px; border-radius: 4px; "
+            "background: rgba(128,128,128,0.05); border: 1px solid palette(mid); }"
+        )
         self._md_edit.textChanged.connect(self._on_text_changed)
         md_l.addWidget(self._md_edit)
         self._md_editor_wrapper.setVisible(False)
         ec.addWidget(self._md_editor_wrapper)
+
+        self._preview_label = QLabel("预览：")
+        self._preview_label.setStyleSheet("font-size: 10px; color: palette(text);")
+        ec.addWidget(self._preview_label)
 
         self._preview_render = QLabel("(选择任务进行编辑)")
         self._preview_render.setTextFormat(Qt.TextFormat.RichText)
         self._preview_render.setWordWrap(True)
         self._preview_render.setObjectName("taskPreview")
         self._preview_render.setStyleSheet(
-            "QLabel#taskPreview { padding: 2px 8px; border-radius: 4px; font-size: 12px; background: rgba(128,128,128,0.05); }"
+            "QLabel#taskPreview { padding: 2px 8px; border-radius: 4px; "
+            "background: rgba(128,128,128,0.05); border: 1px solid palette(mid); }"
         )
-        self._preview_render.setMinimumHeight(20)
+        self._preview_render.setMinimumHeight(60)
         ec.addWidget(self._preview_render)
 
-        # Compact single row: time metadata + action buttons
+        # Row 1: time metadata (left-aligned)
         time_row = QHBoxLayout()
         time_row.setSpacing(3)
         self._created_label = QLabel("创建: —")
@@ -378,28 +389,34 @@ class TaskEditPanel(QWidget):
         self._quick_set_btn.clicked.connect(self._on_quick_set_deadline)
         time_row.addWidget(self._quick_set_btn)
         time_row.addStretch()
+        ec.addLayout(time_row)
+
+        # Row 2: action buttons (right-aligned)
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(3)
+        btn_row.addStretch()
         self._edit_toggle_btn = QPushButton("编辑")
         self._edit_toggle_btn.setCheckable(True)
         self._edit_toggle_btn.setChecked(False)
         self._edit_toggle_btn.setFixedWidth(48)
         self._edit_toggle_btn.setStyleSheet("font-size: 10px; padding: 1px 3px;")
         self._edit_toggle_btn.clicked.connect(self._on_toggle_edit)
-        time_row.addWidget(self._edit_toggle_btn)
+        btn_row.addWidget(self._edit_toggle_btn)
         self._save_btn = QPushButton("保存")
         self._save_btn.setObjectName("saveBtn")
         self._save_btn.clicked.connect(self._on_save)
         self._save_btn.setEnabled(False)
         self._save_btn.setFixedWidth(48)
         self._save_btn.setStyleSheet("font-size: 10px; padding: 1px 3px;")
-        time_row.addWidget(self._save_btn)
+        btn_row.addWidget(self._save_btn)
         self._delete_btn = QPushButton("删除")
         self._delete_btn.setObjectName("deleteBtn")
         self._delete_btn.clicked.connect(self._on_delete)
         self._delete_btn.setEnabled(False)
         self._delete_btn.setFixedWidth(48)
         self._delete_btn.setStyleSheet("font-size: 10px; padding: 1px 3px;")
-        time_row.addWidget(self._delete_btn)
-        ec.addLayout(time_row)
+        btn_row.addWidget(self._delete_btn)
+        ec.addLayout(btn_row)
         # Editor card (bordered wrapper, collapse button in top-right corner)
         self._editor_card = QWidget()
         self._editor_card.setObjectName("editorCard")
@@ -514,8 +531,20 @@ class TaskEditPanel(QWidget):
     def load_task(self, task: Task) -> None:
         self._current_task = task
         self._original_md = task.raw_md
+        # Build display from structured fields (status shown via badge, always [ ])
+        parts = ["- [ ]"]
+        dl = task.deadline_date or task.scheduled_date
+        if dl:
+            if task.deadline_time:
+                parts.append(f"<{dl.isoformat()} {task.deadline_time}>")
+            else:
+                parts.append(f"<{dl.isoformat()}>")
+        parts.append(task.title)
+        if task.tags:
+            parts.append(" ".join(f"#{t}" for t in task.tags))
+        display_md = " ".join(parts)
         self._md_edit.blockSignals(True)
-        self._md_edit.setText(task.raw_md)
+        self._md_edit.setText(display_md)
         self._md_edit.blockSignals(False)
 
         self._banner_active = False
@@ -536,7 +565,7 @@ class TaskEditPanel(QWidget):
         self._md_editor_wrapper.setVisible(False)
         self._edit_toggle_btn.setText("编辑")
         # Show task summary when collapsed
-        self._task_summary.setText(f'任务：<b>{task.title}</b>')
+        self._task_summary.setText(f"<span style='font-weight:bold;'>任务：{task.title}</span>")
         self._task_summary.setVisible(True)
         self._save_btn.setEnabled(False)
         self._delete_btn.setEnabled(True)
@@ -668,7 +697,7 @@ class TaskEditPanel(QWidget):
         """Set banner to 60% of viewport height for welcome/draft states."""
         vh = self._scroll_area.viewport().height()
         if vh > 0:
-            self._draft_banner.setFixedHeight(max(120, int(vh * 0.6)))
+            self._draft_banner.setFixedHeight(max(120, int(vh * 0.5)))
 
     def show_empty(self) -> None:
         """Show welcome state — banner + directly editable Markdown template."""
@@ -690,7 +719,7 @@ class TaskEditPanel(QWidget):
         self._section_label.setText("首页")
         self._editor_section_label.setVisible(True)
         self._editor_header_widget.setVisible(True)
-        self._editor_card.setProperty("bordered", True)
+        self._editor_card.setProperty("bordered", False)
         self._editor_card.style().unpolish(self._editor_card)
         self._editor_card.style().polish(self._editor_card)
         self._section_separator.setVisible(True)
@@ -705,7 +734,10 @@ class TaskEditPanel(QWidget):
         self._md_edit.setStyleSheet(
             "QTextEdit#mdEditor { border: 2px solid #5b8def; background: #f0f4ff; }"
         )
-        QTimer.singleShot(800, lambda: self._md_edit.setStyleSheet(""))
+        QTimer.singleShot(800, lambda: self._md_edit.setStyleSheet(
+            "QTextEdit#mdEditor { font-size: 12px; padding: 4px 8px; border-radius: 4px; "
+            "background: rgba(128,128,128,0.05); border: 1px solid palette(mid); }"
+        ))
         self._save_btn.setEnabled(True)
         self._delete_btn.setEnabled(False)
 
@@ -784,7 +816,7 @@ class TaskEditPanel(QWidget):
         self._section_label.setText("首页")
         self._editor_section_label.setVisible(True)
         self._editor_header_widget.setVisible(True)
-        self._editor_card.setProperty("bordered", True)
+        self._editor_card.setProperty("bordered", False)
         self._editor_card.style().unpolish(self._editor_card)
         self._editor_card.style().polish(self._editor_card)
         self._section_separator.setVisible(True)
@@ -800,7 +832,10 @@ class TaskEditPanel(QWidget):
         self._md_edit.setStyleSheet(
             "QTextEdit#mdEditor { border: 2px solid #5b8def; background: #f0f4ff; }"
         )
-        QTimer.singleShot(800, lambda: self._md_edit.setStyleSheet(""))
+        QTimer.singleShot(800, lambda: self._md_edit.setStyleSheet(
+            "QTextEdit#mdEditor { font-size: 12px; padding: 4px 8px; border-radius: 4px; "
+            "background: rgba(128,128,128,0.05); border: 1px solid palette(mid); }"
+        ))
         self._save_btn.setEnabled(True)
         self._delete_btn.setEnabled(False)
         self._status_combo.blockSignals(True)
@@ -830,15 +865,15 @@ class TaskEditPanel(QWidget):
         now = datetime.now()
         now_str = now.strftime("%Y-%m-%d %H:%M")
         template = (
-            f"- [ ]  <{now_str}> 新任务1 #标签\n"
-            f"- [ ]  <{now_str}> 新任务2 #标签\n"
-            f"- [ ]  <{now_str}> 新任务3 #标签"
+            f"- [ ]  <{now_str}> 需求分析 #工作\n"
+            f"- [ ]  <{now_str}> 代码开发 #开发\n"
+            f"- [ ]  <{now_str}> 测试验证 #测试"
         )
         self.create_draft()
         self._md_edit.blockSignals(True)
         self._md_edit.setText(template)
-        self._md_edit.setFixedHeight(72)  # 3 lines
         self._md_edit.blockSignals(False)
+        self._update_preview()
         self._md_editor_wrapper.setVisible(True)
         self._edit_toggle_btn.setText("关闭编辑")
 
@@ -925,46 +960,78 @@ class TaskEditPanel(QWidget):
         if not text:
             self._preview_render.setText("(空)")
             self._created_label.setText("创建: —")
-            # removed _preview_deadline("截止: —")
             return
-        try:
-            t = get_tokens()
-            parsed = self._parser.parse(text)
-            title = parsed.clean_title
-            tags_str = " ".join(
-                f"<span style='color:{t.accent};font-size:10px;'>{tag}</span>"
-                for tag in (parsed.tags or [])
-            )
-            sc = parsed.status.display_color
-
-            # Status badge
-            html = (
-                f"<span style='background:{sc};color:{t.text_on_accent};padding:1px 7px;"
-                f"border-radius:3px;font-size:10px;'>{parsed.status.display_name}</span>"
-            )
-
-            if parsed.scheduled_date:
-                html += (
-                    f" <span style='color:{t.text_secondary};font-size:10px;'>"
-                    f"📅{parsed.scheduled_date.isoformat()}</span>"
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        if not lines:
+            self._preview_render.setText("(空)")
+            return
+        t = get_tokens()
+        parts = []
+        for line in lines:
+            try:
+                parsed = self._parser.parse(line)
+                sc = parsed.status.display_color
+                part = (
+                    f"<span style='background:{sc};color:{t.text_on_accent};padding:1px 5px;"
+                    f"border-radius:3px;font-size:10px;'>{parsed.status.display_name}</span>"
+                    f" <span style='font-size:11px;'>{parsed.clean_title}</span>"
                 )
-            if parsed.deadline_date:
-                html += (
-                    f" <span style='color:{t.danger};font-size:10px;'>"
-                    f"⏰{parsed.deadline_date.isoformat()}</span>"
+                if parsed.tags:
+                    tags_str = " ".join(
+                        f"<span style='color:{t.accent};font-size:10px;'>{tag}</span>"
+                        for tag in parsed.tags
+                    )
+                    part += f" {tags_str}"
+                parts.append(part)
+            except ValueError:
+                parts.append(
+                    f"<span style='color:{t.danger};font-size:10px;'>"
+                    f"⚠ 第{len(parts)+1}行无法解析</span>"
                 )
-            html += f" <span style='font-size:12px;'>{title}</span>"
-            if tags_str:
-                html += f" {tags_str}"
-            self._preview_render.setText(html)
-
-            # Update time labels
-        except ValueError:
-            self._preview_render.setText(
-                f'<span style="color:{get_tokens().danger};">⚠ 无法解析</span>'
+        if len(lines) > 1:
+            parts.insert(0,
+                f"<span style='color:{t.text_secondary};font-size:10px;'>"
+                f"共 {len(lines)} 个任务：</span>"
             )
-            self._created_label.setText("创建: —")
-            # removed _preview_deadline("截止: —")
+        self._preview_render.setText("<br>".join(parts))
+        # Dynamic height: 60px base, +28px per extra line
+        h = max(60, line_count * 28) if (line_count := len(lines)) else 60
+        self._md_edit.setFixedHeight(h)
+        self._preview_render.setFixedHeight(h)
+
+        # Auto-duplicate detection: highlight lines with same title+tags
+        if len(lines) > 1:
+            seen = set()
+            dupe_positions = []
+            pos = 0
+            for i, line in enumerate(lines):
+                try:
+                    p = self._parser.parse(line)
+                    key = (p.clean_title, tuple(sorted(p.tags or [])))
+                    if key in seen:
+                        start = text.index(line, pos)
+                        dupe_positions.append((start, start + len(line)))
+                    seen.add(key)
+                except ValueError:
+                    pass
+                next_nl = text.index("\n", pos) if "\n" in text[pos:] else len(text)
+                pos = next_nl + 1
+            if dupe_positions:
+                from PySide6.QtGui import QColor as _QColor, QTextCharFormat
+                fmt = QTextCharFormat()
+                fmt.setBackground(_QColor(255, 60, 60, 100))
+                extra_sels = []
+                for dp in dupe_positions:
+                    c = self._md_edit.textCursor()
+                    c.setPosition(dp[0])
+                    c.setPosition(dp[1], c.MoveMode.KeepAnchor)
+                    sel = self._md_edit.ExtraSelection()
+                    sel.format = fmt
+                    sel.cursor = c
+                    extra_sels.append(sel)
+                self._md_edit.setExtraSelections(extra_sels)
+            else:
+                self._md_edit.setExtraSelections([])
 
     # ------------------------------------------------------------------
     # Custom calendar popup
@@ -1191,13 +1258,34 @@ class TaskEditPanel(QWidget):
         self._collapse_btn.setVisible(True)
         self._editor_collapsible.setVisible(False)
         self._collapse_btn.setText("▼")
-        self._task_summary.setText(f'任务：<b>{task.title}</b>')
+        self._task_summary.setText(f"<span style='font-weight:bold;'>任务：{task.title}</span>")
         self._task_summary.setVisible(True)
 
     def _save_multi_tasks(self, lines: list[str]) -> None:
         """Split multi-line input into individual tasks and save them."""
         import uuid
         from ...models.task import Task as TaskCls
+
+        # Check for duplicate titles+tags within the batch
+        seen = set()
+        dupe_count = 0
+        for line in lines:
+            try:
+                p = self._parser.parse(line)
+                key = (p.clean_title, tuple(sorted(p.tags or [])))
+                if key in seen:
+                    dupe_count += 1
+                seen.add(key)
+            except ValueError:
+                pass
+        if dupe_count > 0:
+            result = QMessageBox.warning(
+                self, "重复任务",
+                f"有 {dupe_count} 个任务内容重复，是否继续保存？",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if result == QMessageBox.StandardButton.No:
+                return
 
         # Discard draft immediately so signals don't interfere
         self._current_task = None
@@ -1215,6 +1303,8 @@ class TaskEditPanel(QWidget):
         pid = self._draft_partition_id
         created = 0
         errors = []
+        first_task = None
+        batch_ids = []
 
         for i, line in enumerate(lines, 1):
             try:
@@ -1249,6 +1339,9 @@ class TaskEditPanel(QWidget):
             # Apply formatter for canonical raw_md
             task.raw_md = self._formatter.format(task)
             self._repository.insert(task)
+            if first_task is None:
+                first_task = task
+            batch_ids.append(task.id)
             created += 1
 
         if errors:
@@ -1256,9 +1349,9 @@ class TaskEditPanel(QWidget):
                 self, "部分创建失败",
                 "\n".join(errors) + f"\n\n成功创建 {created} 个任务。"
             )
-        if created > 0:
-            self._signal_bus.tasks_bulk_created.emit(created)
         self.clear()
+        if created > 0:
+            self._signal_bus.tasks_bulk_created.emit(created, batch_ids)
 
     def _on_delete(self) -> None:
         if not self._current_task:
@@ -1359,7 +1452,10 @@ class TaskEditPanel(QWidget):
             self._md_edit.setFocus()
         else:
             self._section_label.setText("首页")
-            self._md_edit.setStyleSheet("")
+            self._md_edit.setStyleSheet(
+                "QTextEdit#mdEditor { font-size: 12px; padding: 4px 8px; border-radius: 4px; "
+                "background: rgba(128,128,128,0.05); border: 1px solid palette(mid); }"
+            )
 
     def _on_quick_set_deadline(self) -> None:
         """Open deadline calculator popup."""

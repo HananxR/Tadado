@@ -533,6 +533,7 @@ class MainWindow(QMainWindow):
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
         self.raise_()
         self.activateWindow()
+        self._edit_panel.set_active_partition(self._active_partition_id)
         self._edit_panel.create_draft_multi()
         self._apply_splitter_sizes()
 
@@ -596,7 +597,7 @@ class MainWindow(QMainWindow):
         bus.task_deleted.connect(self._on_task_deleted)
         bus.task_status_changed.connect(self._on_data_changed)
         bus.batch_operation_completed.connect(self._on_batch_completed)
-        bus.tasks_bulk_created.connect(self._on_data_changed)
+        bus.tasks_bulk_created.connect(self._on_tasks_bulk_created)
         self._filter_bar.filter_changed.connect(self._on_filter_changed)
         bus.partitions_changed.connect(self._on_partitions_changed)
         bus.config_changed.connect(self._on_config_changed)
@@ -628,6 +629,18 @@ class MainWindow(QMainWindow):
         f = self._carousel_filter or TaskFilter()
         self._refresh_all_views(f, reset_page=False)
 
+    def _on_tasks_bulk_created(self, count: int, task_ids: list) -> None:
+        """Handle multi-task creation: refresh + bold all + move to top + open first."""
+        self._on_data_changed()
+        self._task_model.set_bold_tasks(set(task_ids))
+        # Move all batch tasks to top (reverse preserves order)
+        for tid in reversed(task_ids):
+            for row in range(self._task_model.rowCount()):
+                if self._task_model.tasks[row].id == tid and row > 0:
+                    self._task_model.move_to_top(row)
+                    break
+        self._on_task_selected(self._task_model.tasks[0])
+
     def _refresh_all_views(self, filter_: TaskFilter, reset_page: bool = True) -> None:
         if reset_page:
             self._reset_pagination()
@@ -639,12 +652,30 @@ class MainWindow(QMainWindow):
         self._update_status_bar(filter_)
         self._status_badge.refresh(filter_.date_from, filter_.date_to)
         self._progress_bar.refresh()
-        self._auto_select_first()
 
-    def _on_task_created(self, task_id: str) -> None:
-        self._carousel_filter = None
+    def _on_task_created(self, task) -> None:
         self._filter_bar.reset()
         self._on_data_changed()
+        # Move new task to top
+        for row in range(self._task_model.rowCount()):
+            if self._task_model.tasks[row].id == task.id and row > 0:
+                self._task_model.move_to_top(row)
+                break
+        self._on_task_selected(task)
+
+    def _select_and_load_task(self, task_id: str) -> None:
+        """Select a task in the list and load it in the edit panel."""
+        model = self._task_view.model()
+        if model is None:
+            return
+        for row in range(model.rowCount()):
+            idx = model.index(row, 0)
+            t = idx.data(Qt.ItemDataRole.UserRole)
+            if t and t.id == task_id:
+                self._task_view.selectRow(row)
+                self._task_view.scrollTo(idx)
+                self._on_task_selected(t)
+                return
 
     def _on_task_deleted(self, task_id: str) -> None:
         self._on_data_changed()
@@ -697,6 +728,8 @@ class MainWindow(QMainWindow):
         self._refresh_all_views(f)
 
     def _on_task_selected(self, task: Task) -> None:
+        self._task_model.set_highlighted_task(task.id)
+        self._task_model.set_bold_tasks(set())  # clear batch bold
         self._edit_panel.load_task(task)
         self._last_activity = dt.datetime.now()
 
@@ -769,8 +802,10 @@ class MainWindow(QMainWindow):
     def _auto_select_first(self) -> None:
         model = self._task_model
         if model.rowCount() > 0:
-            idx = model.index(0, 0)
-            self._task_view.setCurrentIndex(idx)
+            first_task = model.tasks[0]
+            model.set_highlighted_task(first_task.id)
+            self._task_view.setCurrentIndex(model.index(0, 0))
+            self._on_task_selected(first_task)
 
     # ------------------------------------------------------------------
     # Status bar helpers
@@ -841,6 +876,11 @@ class MainWindow(QMainWindow):
         self._heatmap_widget.set_partition_id(pid or None)
         self._on_data_changed()
         self._heatmap_widget.force_refresh()
+        # Auto-open first task or show welcome page
+        if self._task_model.rowCount() > 0:
+            self._on_task_selected(self._task_model.tasks[0])
+        else:
+            self._edit_panel.show_empty()
 
     def _on_unlock_partition(self) -> None:
         pid = self._active_partition_id
@@ -934,6 +974,7 @@ class MainWindow(QMainWindow):
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
         self.raise_()
         self.activateWindow()
+        self._edit_panel.set_active_partition(self._active_partition_id)
         self._edit_panel.create_draft()
         self._apply_splitter_sizes()
 

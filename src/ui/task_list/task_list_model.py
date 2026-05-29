@@ -29,6 +29,8 @@ class TaskListModel(QAbstractTableModel):
         self._tasks: list[Task] = []
         self._offset: int = 0
         self._checked_ids: set[str] = set()
+        self._highlighted_task_id: str | None = None
+        self._bold_task_ids: set[str] = set()
 
     def set_offset(self, offset: int) -> None:
         self._offset = offset
@@ -82,7 +84,10 @@ class TaskListModel(QAbstractTableModel):
 
         if role == Qt.ItemDataRole.FontRole:
             if col == COL_CONTENT:
-                return QtFont("Consolas", 9)
+                font = QtFont("Consolas", 9)
+                if task.id == self._highlighted_task_id or task.id in self._bold_task_ids:
+                    font.setBold(True)
+                return font
             if col in (COL_CREATED, COL_DEADLINE):
                 return QtFont("Consolas", 8)
 
@@ -133,6 +138,37 @@ class TaskListModel(QAbstractTableModel):
     def task_at(self, row: int) -> Task:
         return self._tasks[row]
 
+    def prepend_task(self, task: Task) -> None:
+        """Insert task at position 0 (top of list)."""
+        self.beginInsertRows(QModelIndex(), 0, 0)
+        self._tasks.insert(0, task)
+        self.endInsertRows()
+
+    def move_to_top(self, row: int) -> None:
+        """Move task at given row to position 0."""
+        if row <= 0:
+            return
+        self.beginMoveRows(QModelIndex(), row, row, QModelIndex(), 0)
+        task = self._tasks.pop(row)
+        self._tasks.insert(0, task)
+        self.endMoveRows()
+
+    def set_bold_tasks(self, task_ids: set[str]) -> None:
+        """Mark tasks for bold rendering (multi-task batch members)."""
+        self._bold_task_ids = task_ids
+        if self._tasks:
+            top = self.index(0, 0)
+            bot = self.index(len(self._tasks) - 1, self.columnCount() - 1)
+            self.dataChanged.emit(top, bot)
+
+    def set_highlighted_task(self, task_id: str | None) -> None:
+        """Set the task to highlight in red+bold (first in list)."""
+        self._highlighted_task_id = task_id
+        if self._tasks:
+            top = self.index(0, 0)
+            bot = self.index(len(self._tasks) - 1, self.columnCount() - 1)
+            self.dataChanged.emit(top, bot)
+
     def load_tasks(self, tasks: list[Task]) -> None:
         self.beginResetModel()
         self._tasks = tasks
@@ -178,8 +214,9 @@ class TaskListModel(QAbstractTableModel):
             return " ".join(f"#{t}" for t in task.tags)
         return ""
 
-    @staticmethod
-    def _foreground_color(task: Task, col: int) -> QColor | None:
+    def _foreground_color(self, task: Task, col: int) -> QColor | None:
+        if col == COL_CONTENT and task.id == self._highlighted_task_id:
+            return QColor("red")
         if col == COL_STATUS:
             return QColor(task.status.display_color)
         return None

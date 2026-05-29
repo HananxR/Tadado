@@ -97,13 +97,26 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.restore()
             self._paint_status_badge(painter, option, task)
         else:
-            super().paint(painter, option, index)
             if not is_selected:
                 bg = self._urgency_bg_color(task)
                 if bg is not None:
                     painter.save()
                     painter.fillRect(option.rect, bg)
                     painter.restore()
+            # Force red for highlighted task content
+            if col == 3:
+                fg = index.data(Qt.ItemDataRole.ForegroundRole)
+                font = index.data(Qt.ItemDataRole.FontRole)
+                if fg is not None and font is not None:
+                    painter.save()
+                    painter.setPen(QPen(fg))
+                    painter.setFont(font)
+                    text = index.data(Qt.ItemDataRole.DisplayRole)
+                    painter.drawText(option.rect.adjusted(4, 0, -4, 0),
+                                     Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
+                    painter.restore()
+                    return
+            super().paint(painter, option, index)
 
     def editorEvent(self, event, model, option, index) -> bool:
         """Handle checkbox toggle on mouse click."""
