@@ -765,6 +765,8 @@ class MainWindow(QMainWindow):
             self._heatmap_widget.force_refresh()
 
     def _on_go_home(self) -> None:
+        if self._heatmap_mode != "hidden":
+            self._set_heatmap_mode("hidden")
         self._carousel_filter = None
         self._filter_bar.reset()
         self._on_data_changed()
