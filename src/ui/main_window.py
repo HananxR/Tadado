@@ -648,6 +648,7 @@ class MainWindow(QMainWindow):
         tasks = self._repository.search(filter_)
         self._total_count = self._repository.count(filter_)
         self._task_model.load_tasks(tasks)
+        self._quick_overview.set_items(tasks)
         self._update_page_label()
         self._update_status_bar(filter_)
         self._status_badge.refresh(filter_.date_from, filter_.date_to)

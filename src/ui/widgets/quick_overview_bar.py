@@ -103,6 +103,13 @@ class QuickOverviewBar(QWidget):
     def set_partition_id(self, pid: str | None) -> None:
         self._partition_id = pid
 
+    def refresh(self) -> None:
+        if not hasattr(self, '_repository') or self._repository is None:
+            return
+        filter_ = self.build_filter()
+        tasks = self._repository.search(filter_)
+        self.set_items(tasks)
+
     def set_items(self, tasks: list[Task]) -> None:
         """Populate carousel with tasks sorted by active preset urgency (ascending)."""
         scored = [(t, self._urgency_for_preset(t)) for t in tasks]
