@@ -9,7 +9,7 @@ from datetime import date
 
 from PySide6.QtCore import QDateTime, QSize, Qt, QTime, QTimer
 from PySide6.QtGui import (
-    QAction, QBrush, QColor, QGuiApplication, QIcon, QPainter, QPen, QPixmap,
+    QGuiApplication,
     QShortcut, QKeySequence,
 )
 from PySide6.QtWidgets import (
@@ -146,6 +146,7 @@ class MainWindow(QMainWindow):
         tb.setContentsMargins(0, 0, 0, 0)
         tb.setSpacing(0)
 
+        # Logo button
         icon_btn = QPushButton()
         icon_btn.setIcon(load_icon("app"))
         icon_btn.setIconSize(QSize(20, 20))
@@ -159,77 +160,78 @@ class MainWindow(QMainWindow):
         )
         tb.addWidget(icon_btn)
 
-        self._menu_bar = QMenuBar()
-        self._menu_bar.setNativeMenuBar(False)
-        self._menu_bar.setFixedHeight(bar_h)
-        file_menu = self._menu_bar.addMenu("文件(&F)")
-        file_menu.addAction("新建单任务(&N)\tCtrl+N", self._on_new_task)
-        file_menu.addAction("新建多任务(&M)", self._on_new_multi_task)
-        file_menu.addSeparator()
-        file_menu.addAction("导入 Markdown...(&I)", self._on_import)
-        file_menu.addAction("导出 Markdown...(&E)", self._on_export)
-        file_menu.addSeparator()
-        file_menu.addAction("退出(&Q)", self._on_quit)
+        # Nav buttons (icon + text, flat style)
+        btn_style = (
+            f"QPushButton {{ border: none; background: transparent; padding: 2px 8px; "
+            f"color: {t.text_primary}; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: {t.accent}20; }}"
+        )
+        icon_sz = QSize(18, 18)
 
-        self._partition_menu = self._menu_bar.addMenu("分区(&P)")
+        nav_items = [
+            ("new_task", "新建单任务", self._on_new_draft),
+            ("new_multi_task", "新建多任务", self._on_new_multi_task),
+            ("heatmap", "活动分析", lambda: self._switch_view("dashboard")),
+            ("task_manage", "任务管理", lambda: self._switch_view("batch")),
+            ("settings", "设置", self._on_settings),
+        ]
+        for icon_name, text, slot in nav_items:
+            btn = QPushButton()
+            btn.setIcon(load_icon(icon_name))
+            btn.setIconSize(icon_sz)
+            btn.setText(text)
+            btn.setFlat(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(btn_style)
+            btn.clicked.connect(slot)
+            tb.addWidget(btn)
 
-        view_menu = self._menu_bar.addMenu("视图(&V)")
-        view_menu.addAction("📋 任务编辑(&E)\tCtrl+1", lambda: self._switch_view("edit"))
-        view_menu.addAction("📊 活动分析(&D)\tCtrl+2", lambda: self._switch_view("dashboard"))
-        view_menu.addAction("⚙ 批量处理(&B)\tCtrl+3", lambda: self._switch_view("batch"))
-
-        help_menu = self._menu_bar.addMenu("帮助(&H)")
-        help_menu.addAction("设置(&S)", self._on_settings)
+        # Help button with dropdown
+        help_btn = QPushButton()
+        help_btn.setIcon(load_icon("help"))
+        help_btn.setIconSize(icon_sz)
+        help_btn.setText("帮助")
+        help_btn.setFlat(True)
+        help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        help_btn.setStyleSheet(btn_style)
+        help_menu = QMenu(help_btn)
         help_menu.addAction("帮助文档(&D)", self._on_help_docs)
         help_menu.addSeparator()
         help_menu.addAction("关于(&A)", self._on_about)
-        tb.addWidget(self._menu_bar)
+        help_btn.setMenu(help_menu)
+        help_btn.clicked.connect(lambda: help_btn.showMenu())
+        tb.addWidget(help_btn)
 
         tb.addStretch()
 
-        for kind, slot, tip, btn_name in [
-            ("minimize", self.showMinimized, "最小化", "titleBtn"),
-            ("maximize", self._toggle_maximize, "最大化", "titleBtn"),
-            ("close",    self.close,             "关闭",   "closeBtn"),
-        ]:
-            btn = QPushButton()
-            btn.setIcon(self._make_window_button_icon(kind))
-            btn.setIconSize(QSize(20, 20))
-            btn.setFixedSize(bar_h, bar_h)
+        # Right-side window buttons
+        right_btn_style = (
+            f"QPushButton {{ border: none; background: transparent; padding: 4px 8px; "
+            f"color: {t.text_secondary}; font-size: 10px; }}"
+            f"QPushButton:hover {{ background: {t.accent}20; color: {t.text_primary}; }}"
+        )
+        right_items = [
+            ("⤓ 缩小到托盘", self.hide),
+            ("⛶ 切换全屏", self._toggle_fullscreen),
+            ("✕ 关闭", self.close),
+        ]
+        for text, slot in right_items:
+            btn = QPushButton(text)
             btn.setFlat(True)
-            btn.setToolTip(tip)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(right_btn_style)
+            btn.setFixedHeight(bar_h)
             btn.clicked.connect(slot)
-            btn.setObjectName(btn_name)
             tb.addWidget(btn)
-            if kind == "maximize":
-                self._maximize_btn = btn
 
         self.setMenuWidget(title_bar)
 
-    def _toggle_maximize(self) -> None:
-        if self.isMaximized():
+    def _toggle_fullscreen(self) -> None:
+        if self.isFullScreen():
             self.showNormal()
+            self.apply_screen_size()
         else:
-            self.showMaximized()
-
-    def _make_window_button_icon(self, kind: str) -> QIcon:
-        from ..utils.design_tokens import get_tokens
-        color = QColor(get_tokens().text_secondary)
-        px = QPixmap(64, 64)
-        px.fill(Qt.GlobalColor.transparent)
-        p = QPainter(px)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.setPen(QPen(color, 3.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        if kind == "minimize":
-            p.drawLine(20, 32, 44, 32)
-        elif kind == "maximize":
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(18, 18, 28, 28, 4, 4)
-        elif kind == "close":
-            p.drawLine(20, 20, 44, 44)
-            p.drawLine(44, 20, 20, 44)
-        p.end()
-        return QIcon(px)
+            self.showFullScreen()
 
     # ------------------------------------------------------------------
     # Win32 native event — window resize + title-bar drag
@@ -497,6 +499,19 @@ class MainWindow(QMainWindow):
         self._batch_filter_bar = FilterBar()
         self._batch_filter_bar.filter_changed.connect(self._on_batch_filter_changed)
         batch_filter_row_layout.addWidget(self._batch_filter_bar, 1)
+        # Import / Export
+        import_btn = QPushButton("📥 导入 MD")
+        import_btn.setFixedHeight(28)
+        import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        import_btn.clicked.connect(self._on_import)
+        batch_filter_row_layout.addWidget(import_btn)
+
+        export_btn = QPushButton("📤 导出 MD")
+        export_btn.setFixedHeight(28)
+        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        export_btn.clicked.connect(self._on_export)
+        batch_filter_row_layout.addWidget(export_btn)
+
         back_btn2 = QPushButton("↩ 返回编辑")
         back_btn2.setFixedHeight(28)
         back_btn2.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -600,11 +615,30 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _setup_status_bar(self) -> None:
+        from ..utils.design_tokens import get_tokens as _gt2
+        t = _gt2()
+
         self._status_bar = QStatusBar()
         self._status_bar.setSizeGripEnabled(True)
-        # Left: partition icon + name :: stats + motd
+
+        # Partition selector button (prominent, left side)
+        self._status_partition_btn = QPushButton("📁 切换分区")
+        self._status_partition_btn.setFlat(True)
+        self._status_partition_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._status_partition_btn.setStyleSheet(
+            f"QPushButton {{ border: none; background: transparent; padding: 2px 8px; "
+            f"font-size: 11px; font-weight: bold; color: {t.accent if t else '#5b8def'}; }}"
+            f"QPushButton:hover {{ background: {t.accent}15; border-radius: 4px; }}"
+        )
+        self._status_partition_menu = QMenu(self._status_partition_btn)
+        self._status_partition_btn.setMenu(self._status_partition_menu)
+        self._status_partition_btn.clicked.connect(lambda: self._status_partition_btn.showMenu())
+        self._status_bar.addWidget(self._status_partition_btn)
+
+        # Stats + motd text
         self._status_msg = QLabel("就绪")
         self._status_bar.addWidget(self._status_msg, 1)
+
         # Right: clock
         self._status_clock = QLabel()
         self._status_clock.setStyleSheet("QLabel { margin-right: 4px; }")
@@ -1003,13 +1037,11 @@ class MainWindow(QMainWindow):
         todo = counts.get(TaskStatus.TODO, 0)
         done = counts.get(TaskStatus.DONE, 0)
         total = sum(counts.values())
-        name_map = self._repository.get_partition_name_map()
-        pname = name_map.get(self._active_partition_id or "", "默认分区")
         preset = self._quick_overview._active_preset if hasattr(self._quick_overview, '_active_preset') else "all"
         motd = self._config.get("motd", preset, default=self._config.get("motd", "all", default=""))
         breakdown = f"逾期 {overdue} | 进行中 {doing} | 待办 {todo} | 已完成 {done} | 共{total}项"
         self._status_msg.setText(
-            f"📁 {pname} :: {breakdown} | {motd}" if motd else f"📁 {pname} :: {breakdown}"
+            f"{breakdown} | {motd}" if motd else breakdown
         )
 
     def _flash_status(self, msg: str) -> None:
@@ -1022,18 +1054,18 @@ class MainWindow(QMainWindow):
 
     def _load_partitions(self) -> None:
         partitions = self._repository.get_all_partitions()
-        self._partition_menu.clear()
+        self._status_partition_menu.clear()
         name_map = self._repository.get_partition_name_map()
         current_pid = self._active_partition_id or ""
         for p in partitions:
             pid, pname = p["id"], p["name"]
             locked = "🔒" if self._partition_passwords.get(pid, "") else ""
             check = "✓ " if pid == current_pid else "  "
-            action = self._partition_menu.addAction(
+            action = self._status_partition_menu.addAction(
                 f"{check}{locked} {pname}",
                 lambda checked=False, i=pid: self._activate_partition(i),
             )
-        self._update_partition_menu_title()
+        self._update_partition_status_btn()
         if not self._active_partition_id:
             current = self._config.get("general", "last_partition_id", default="")
             if current:
@@ -1043,13 +1075,13 @@ class MainWindow(QMainWindow):
                 if first:
                     self._activate_partition(first)
 
-    def _update_partition_menu_title(self) -> None:
+    def _update_partition_status_btn(self) -> None:
         pid = self._active_partition_id or ""
         name_map = self._repository.get_partition_name_map()
         pname = name_map.get(pid, "")
         locked = "🔒" if self._partition_passwords.get(pid, "") else ""
-        title = f"分区(&P) · {locked}{pname}" if pname else "分区(&P)"
-        self._partition_menu.setTitle(title)
+        txt = f"📁 {locked}{pname}" if pname else "📁 切换分区"
+        self._status_partition_btn.setText(txt)
 
     def _activate_partition(self, pid: str) -> None:
         if self._partition_passwords.get(self._active_partition_id or "", ""):
@@ -1067,7 +1099,7 @@ class MainWindow(QMainWindow):
         self._carousel_filter.date_from = today
         self._carousel_filter.date_to = today
         self._page = 0
-        self._update_partition_menu_title()
+        self._update_partition_status_btn()
         self._heatmap_widget.set_partition_id(pid or None)
         self._status_badge.set_partition_id(pid or None)
         self._progress_bar.set_partition_id(pid or None)

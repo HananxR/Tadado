@@ -214,6 +214,96 @@ def draw_new(p, sz):
     p.drawLine(QPointF(cx, cy - arm), QPointF(cx, cy + arm))
 
 
+def draw_new_multi(p, sz):
+    """Multi task: two overlapping document tiles with a small plus badge."""
+    m = sz * 0.12
+    bw, bh = sz * 0.48, sz * 0.52
+    # Back document
+    bx = sz * 0.20
+    by_ = sz * 0.16
+    p.setPen(QPen(PRIMARY.darker(120), 1.5))
+    p.setBrush(QBrush(PRIMARY.lighter(140)))
+    p.drawRoundedRect(QRectF(bx, by_, bw, bh), 3, 3)
+    # Front document
+    fx = sz * 0.32
+    fy = sz * 0.28
+    p.setPen(QPen(PRIMARY, 2.0))
+    p.setBrush(QBrush(PRIMARY))
+    p.drawRoundedRect(QRectF(fx, fy, bw, bh), 3, 3)
+    # Lines on front document
+    lw2 = max(1, sz * 0.04)
+    p.setPen(QPen(WHITE, lw2))
+    lx = fx + sz * 0.09
+    lmax = bw - sz * 0.18
+    p.drawLine(QPointF(lx, fy + bh * 0.35), QPointF(lx + lmax, fy + bh * 0.35))
+    p.drawLine(QPointF(lx, fy + bh * 0.55), QPointF(lx + lmax * 0.7, fy + bh * 0.55))
+    p.drawLine(QPointF(lx, fy + bh * 0.75), QPointF(lx + lmax * 0.5, fy + bh * 0.75))
+    # Small plus badge
+    badge_cx = fx + bw - sz * 0.02
+    badge_cy = fy + sz * 0.02
+    badge_r = sz * 0.12
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(WHITE))
+    p.drawEllipse(QPointF(badge_cx, badge_cy), badge_r, badge_r)
+    p.setPen(QPen(PRIMARY, max(1.5, sz * 0.05)))
+    arm2 = badge_r * 0.5
+    p.drawLine(QPointF(badge_cx - arm2, badge_cy), QPointF(badge_cx + arm2, badge_cy))
+    p.drawLine(QPointF(badge_cx, badge_cy - arm2), QPointF(badge_cx, badge_cy + arm2))
+
+
+def draw_task_manage(p, sz):
+    """Task management: checklist with checkbox on top line."""
+    m = sz * 0.16
+    # Document background
+    p.setPen(QPen(DARK, 2.0))
+    p.setBrush(QBrush(QColor("#f0efe9")))
+    p.drawRoundedRect(QRectF(m, m, sz - 2 * m, sz - 2 * m), 4, 4)
+    # Three lines
+    lx = sz * 0.22
+    lw_max = sz * 0.60
+    gap = sz * 0.16
+    cy_c = sz / 2
+    lw3 = max(1.5, sz * 0.05)
+    p.setPen(QPen(DARK, lw3))
+    p.drawLine(QPointF(lx, cy_c - gap), QPointF(lx + lw_max, cy_c - gap))
+    p.drawLine(QPointF(lx, cy_c), QPointF(lx + lw_max * 0.8, cy_c))
+    p.drawLine(QPointF(lx, cy_c + gap), QPointF(lx + lw_max * 0.6, cy_c + gap))
+    # Checkbox on top line
+    cb_size = sz * 0.18
+    cb_x = lx - sz * 0.04
+    cb_y = cy_c - gap - cb_size / 2
+    p.setPen(QPen(PRIMARY, 1.5))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(QRectF(cb_x, cb_y, cb_size, cb_size), 2, 2)
+    # Checkmark
+    p.setPen(QPen(PRIMARY, max(1.5, sz * 0.05)))
+    cm2 = cb_size * 0.3
+    cx2 = cb_x + cb_size * 0.22
+    cy2 = cb_y + cb_size * 0.5
+    p.drawLine(QPointF(cx2, cy2), QPointF(cx2 + cm2, cy2 + cm2))
+    p.drawLine(QPointF(cx2 + cm2, cy2 + cm2), QPointF(cx2 + cm2 * 2.2, cy2 - cm2 * 0.8))
+
+
+def draw_help(p, sz):
+    """Help: question mark inside a circle."""
+    cx, cy = sz / 2, sz / 2
+    r = sz * 0.34
+    p.setPen(QPen(DARK, 2.0))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QPointF(cx, cy), r, r)
+    # Question mark
+    qm = sz * 0.12
+    p.setPen(QPen(DARK, max(2, sz * 0.07)))
+    # Top curve of ?
+    qx, qy = cx, cy - r * 0.3
+    p.drawArc(QRectF(qx - qm, qy - qm, qm * 2, qm * 2), 0, 180 * 16)
+    # Vertical stroke
+    p.drawLine(QPointF(cx + qm * 0.4, cy + r * 0.05), QPointF(cx, cy - r * 0.05))
+    # Dot
+    p.setBrush(QBrush(DARK))
+    p.drawEllipse(QPointF(cx, cy + r * 0.45), sz * 0.04, sz * 0.04)
+
+
 def build_ico(draw_func, sizes):
     frames = [render(draw_func, s)[0] for s in sizes]
     buf = struct.pack("<HHH", 0, 1, len(sizes))
@@ -243,6 +333,9 @@ ICONS = {
     "export": draw_export,
     "settings": draw_settings,
     "new_task": draw_new,
+    "new_multi_task": draw_new_multi,
+    "task_manage": draw_task_manage,
+    "help": draw_help,
 }
 
 for name, func in ICONS.items():
