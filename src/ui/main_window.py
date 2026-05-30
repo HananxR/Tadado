@@ -758,9 +758,7 @@ class MainWindow(QMainWindow):
         pass
 
     def _on_carousel_clicked(self, task_id: str) -> None:
-        task = self._repository.get_by_id(task_id)
-        if task:
-            self._edit_panel.load_task(task)
+        self._select_and_load_task(task_id)
 
     def _on_heatmap_data_changed(self, *args) -> None:
         if hasattr(self, '_heatmap_widget'):
