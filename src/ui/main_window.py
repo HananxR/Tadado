@@ -257,14 +257,15 @@ class MainWindow(QMainWindow):
             y = int(y / dpr)
         border = 6
         g = self.geometry()
-        if g.y() <= y < g.y() + 36:
-            if x >= g.x() + g.width() - 108:
+        title_h = 36
+        if g.y() <= y < g.y() + title_h:
+            # Right-side window buttons area (approx 320px for 3 text buttons)
+            if x >= g.x() + g.width() - 320:
                 return False, 0
+            # Logo area (36px)
             if x < g.x() + 36:
                 return False, 0
-            menu_w = self._title_menu_bar.width()
-            if x < g.x() + 36 + menu_w:
-                return False, 0
+            # Rest of titlebar = draggable (QPushButtons still handle clicks)
             return True, 2  # HTCAPTION
         left = x < g.x() + border
         right = x > g.x() + g.width() - border
