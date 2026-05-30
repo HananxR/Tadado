@@ -54,23 +54,33 @@ class DesignTokens:
     # ── Methods ────────────────────────────────────────────────────
 
     def heatmap_gradient(self, levels: int = 8) -> list[str]:
-        """Return a gradient from bg_primary toward accent, *levels* steps.
+        """Cool gradient: deep indigo → vivid blue → bright cyan.
 
-        The returned list has *levels* entries.  Index 0 is the lightest
-        (closest to bg_primary) and index -1 is accent.
+        Produces a 'glowing' heatmap effect. Index 0 is the darkest/emptiest,
+        index -1 is the brightest/most active.
         """
         from PySide6.QtGui import QColor as _QColor
-        bg = _QColor(self.bg_primary)
-        accent = _QColor(self.accent)
+        # Fixed cool-toned stops (not dependent on accent/bg_primary)
+        stops = [
+            (25, 30, 60),     # deep navy (empty)
+            (40, 55, 120),    # dark blue
+            (55, 90, 180),    # medium blue
+            (70, 130, 220),   # light blue
+            (90, 165, 240),   # sky blue
+            (120, 195, 250),  # pale blue
+            (60, 210, 220),   # teal
+            (0, 230, 200),    # bright cyan (max activity)
+        ]
         result: list[str] = []
         for i in range(levels):
-            ratio = i / (levels - 1) if levels > 1 else 0.0
-            # Use a slight curve so low-activity cells are more distinguishable
-            curved = ratio ** 0.7
-            r = int(bg.red() + (accent.red() - bg.red()) * curved)
-            g = int(bg.green() + (accent.green() - bg.green()) * curved)
-            b = int(bg.blue() + (accent.blue() - bg.blue()) * curved)
-            result.append(f"#{r:02x}{g:02x}{b:02x}")
+            idx = i * (len(stops) - 1) / max(levels - 1, 1)
+            lo = int(idx)
+            hi = min(lo + 1, len(stops) - 1)
+            frac = idx - lo
+            r = int(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * frac)
+            g = int(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * frac)
+            b_val = int(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * frac)
+            result.append(f"#{r:02x}{g:02x}{b_val:02x}")
         return result
 
 

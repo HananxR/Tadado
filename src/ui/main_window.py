@@ -43,7 +43,7 @@ from .calendar_heatmap.calendar_heatmap_widget import CalendarHeatmapWidget
 from .calendar_heatmap.collapse_panel import HeatmapCollapsePanel
 from .calendar_heatmap.period_selector import PeriodSelectorBar
 from .calendar_heatmap.task_tree_panel import TaskTreePanel
-from .calendar_heatmap.timeline_detail_panel import TimelineDetailPanel
+from .calendar_heatmap.activity_content_view import ActivityContentView
 from ..utils.widget_utils import combo_width
 from .widgets.dropdown import DropdownWidget
 from .dialogs.about_dialog import AboutDialog
@@ -434,57 +434,64 @@ class MainWindow(QMainWindow):
 
         self._stack.addWidget(task_page)
 
-        # === Page 1: Activity Analysis (merged dashboard + reports) ===
+        # === Page 1: Activity Analysis ===
         analysis_page = QWidget()
         analysis_layout = QVBoxLayout(analysis_page)
-        analysis_layout.setContentsMargins(8, 4, 8, 4)
-        analysis_layout.setSpacing(4)
+        analysis_layout.setContentsMargins(12, 8, 12, 8)
+        analysis_layout.setSpacing(8)
 
-        # Row 1: Nav bar + back button
-        analysis_top = QWidget()
-        analysis_top_row = QHBoxLayout(analysis_top)
-        analysis_top_row.setContentsMargins(0, 0, 0, 0)
-        analysis_top_row.addWidget(self._heatmap_widget.nav_bar)
-        analysis_top_row.addStretch()
-        back_btn = QPushButton("↩ 返回编辑")
-        back_btn.setFixedHeight(28)
-        back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        back_btn.clicked.connect(lambda: self._switch_view("edit"))
-        analysis_top_row.addWidget(back_btn)
-        analysis_layout.addWidget(analysis_top)
+        from .calendar_heatmap.heatmap_stats_panel import HeatmapStatsPanel
+        from ..utils.design_tokens import get_tokens as _gt3
+        t_tok = _gt3()
+        sec_style = (
+            f"font-size: 12px; font-weight: bold; color: {t_tok.text_primary}; "
+            f"padding: 2px 0 4px 0; border-bottom: 1px solid {t_tok.border_primary};"
+        )
 
-        # Row 2: Heatmap grid (compact)
+        # ── Section: Heatmap ──
+        heatmap_label = QLabel("活动热力图")
+        heatmap_label.setStyleSheet(sec_style)
+        analysis_layout.addWidget(heatmap_label)
+
+        # Nav bar + stats (same row)
+        heatmap_top_row = QWidget()
+        heatmap_top_layout = QHBoxLayout(heatmap_top_row)
+        heatmap_top_layout.setContentsMargins(0, 0, 0, 0)
+        heatmap_top_layout.addWidget(self._heatmap_widget.nav_bar)
+        heatmap_top_layout.addStretch()
+        self._analysis_stats = HeatmapStatsPanel()
+        self._analysis_stats.setFixedHeight(28)
+        heatmap_top_layout.addWidget(self._analysis_stats)
+        analysis_layout.addWidget(heatmap_top_row)
+
+        # Heatmap grid
         collapsible = HeatmapCollapsePanel(self._heatmap_widget)
         analysis_layout.addWidget(collapsible, 0)
 
-        # Row 3: Stats + Period selector (same row, compact)
-        from .calendar_heatmap.heatmap_stats_panel import HeatmapStatsPanel
-        stats_period_row = QWidget()
-        stats_period_layout = QHBoxLayout(stats_period_row)
-        stats_period_layout.setContentsMargins(0, 2, 0, 2)
-        stats_period_layout.setSpacing(8)
-        self._analysis_stats = HeatmapStatsPanel()
-        self._analysis_stats.setFixedHeight(36)
-        stats_period_layout.addWidget(self._analysis_stats, 1)
+        # ── Section: Report ──
+        report_label = QLabel("活动报告")
+        report_label.setStyleSheet(sec_style)
+        analysis_layout.addWidget(report_label)
+
+        # Period selector bar
         self._analysis_period_selector = PeriodSelectorBar()
         self._analysis_period_selector.period_changed.connect(self._on_analysis_period_changed)
-        stats_period_layout.addWidget(self._analysis_period_selector)
-        analysis_layout.addWidget(stats_period_row)
+        analysis_layout.addWidget(self._analysis_period_selector)
 
-        # Row 4: Task tree (left) + Timeline detail (right)
+        # Tag list (left) + Content view (right)
         self._analysis_splitter = QSplitter(Qt.Orientation.Horizontal)
         self._analysis_splitter.setHandleWidth(1)
         self._analysis_splitter.setChildrenCollapsible(False)
 
         self._analysis_task_tree = TaskTreePanel(self._repository)
-        self._analysis_task_tree.task_selected.connect(self._on_analysis_task_selected)
+        self._analysis_task_tree.tag_selected.connect(self._on_analysis_tag_selected)
         self._analysis_splitter.addWidget(self._analysis_task_tree)
 
-        self._analysis_timeline = TimelineDetailPanel()
-        self._analysis_splitter.addWidget(self._analysis_timeline)
+        self._analysis_content_view = ActivityContentView()
+        self._analysis_splitter.addWidget(self._analysis_content_view)
 
-        self._analysis_splitter.setStretchFactor(0, 2)  # 40%
-        self._analysis_splitter.setStretchFactor(1, 3)  # 60%
+        self._analysis_splitter.setStretchFactor(0, 1)  # ~25%
+        self._analysis_splitter.setStretchFactor(1, 3)  # ~75%
         analysis_layout.addWidget(self._analysis_splitter, 1)
 
         # Connect heatmap grid signals
@@ -937,7 +944,6 @@ class MainWindow(QMainWindow):
         self._refresh_all_views(f)
         self._progress_bar.set_synced_period(preset)
         if self._current_view != "edit":
-            self._refresh_report()
             self._heatmap_widget.highlight_range(f.date_from, f.date_to, preset)
 
     def _on_status_clicked(self, status: TaskStatus) -> None:
@@ -1203,25 +1209,20 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_analysis_task_tree'):
             self._analysis_task_tree.refresh(d_from, d_to, self._active_partition_id)
 
-    def _on_analysis_task_selected(self, task_id: str) -> None:
-        """Task selected in tree → show timeline in right panel."""
-        if not task_id or not hasattr(self, '_analysis_timeline'):
-            if hasattr(self, '_analysis_timeline'):
-                self._analysis_timeline.show_hint()
+    def _on_analysis_tag_selected(self, tag: str) -> None:
+        """Tag selected → show flowing activity content for tasks in that tag."""
+        if not tag or not hasattr(self, '_analysis_content_view'):
+            if hasattr(self, '_analysis_content_view'):
+                self._analysis_content_view.show_hint()
             return
-        task = self._repository.get_by_id(task_id)
-        if not task:
-            return
+        tasks = self._analysis_task_tree.get_tasks_for_tag(tag)
         d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
-        self._analysis_timeline.show_task(task, d_from, d_to)
+        self._analysis_content_view.show_tag_activity(tag, tasks, d_from, d_to)
 
     def _on_heatmap_date_clicked(self, d: date) -> None:
         """Handle date click on heatmap grid."""
         if hasattr(self, '_analysis_period_selector'):
             self._analysis_period_selector.set_custom_range(d, d)
-
-    def _refresh_report(self) -> None:
-        pass  # No longer used; kept for compatibility
 
     # ------------------------------------------------------------------
     # Task operations
