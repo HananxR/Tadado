@@ -373,37 +373,16 @@ app = QApplication(sys.argv)
 
 SIZES = [16, 24, 32, 48, 256]
 
-ICONS = {
+# ICO files only — runtime icons are drawn by icon_draw.py
+ICO_ICONS = {
     "app": draw_app,
     "tray_normal": draw_tray,
-    "refresh": draw_refresh,
-    "heatmap": draw_heatmap,
-    "import": draw_import,
-    "export": draw_export,
-    "settings": draw_settings,
-    "new_task": draw_new,
-    "new_multi_task": draw_new_multi,
-    "task_manage": draw_task_manage,
-    "help": draw_help,
-    "tray_hide": draw_tray_hide,
-    "fullscreen_toggle": draw_fullscreen_toggle,
-    "window_close": draw_window_close,
 }
 
-for name, func in ICONS.items():
-    for sz in SIZES:
-        data, pm = render(func, sz)
-        save_png(pm, RESOURCES / f"{name}_{sz}.png")
-    # Default 24px
-    _, pm24 = render(func, 24)
-    save_png(pm24, RESOURCES / f"{name}.png")
-    print(f"  {name}.png (24px + {len(SIZES)} multi-size)")
-
-# ICO files
-for name, func in [("app", draw_app), ("tray_normal", draw_tray)]:
+for name, func in ICO_ICONS.items():
     ico = build_ico(func, [16, 32, 48, 256])
     save_png_bytes(ico, RESOURCES / f"{name}.ico")
     print(f"  {name}.ico (16/32/48/256)")
 
-print("All icons generated.")
+print("All .ico files generated.")
 app.quit()

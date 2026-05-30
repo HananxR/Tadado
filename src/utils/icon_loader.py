@@ -1,13 +1,16 @@
-"""Theme-aware icon loader — loads appropriate icons for light/dark themes."""
+"""Theme-aware icon loader — draws icons at runtime using design_tokens color."""
+
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QIconEngine, QPainter, QPixmap
+
+from ..ui.icon_draw import ICON_DRAW_FUNCS
 
 
 def _resource_path(*parts: str) -> Path:
-    """Locate a resource file relative to the project root."""
     import sys
 
     base = getattr(sys, "_MEIPASS", None)
@@ -16,35 +19,77 @@ def _resource_path(*parts: str) -> Path:
     return Path(__file__).resolve().parents[2] / "resources" / Path(*parts)
 
 
+class _ThemedIconEngine(QIconEngine):
+    """Icon engine that draws icons at runtime using the current theme color."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__()
+        self._name = name
+
+    def paint(self, painter: QPainter, rect: QRect, mode: QIcon.Mode, state: QIcon.State) -> None:
+        draw_func = ICON_DRAW_FUNCS.get(self._name)
+        if draw_func is None:
+            return
+        from .design_tokens import get_tokens
+        color = QColor(get_tokens().text_primary)
+
+        # Slightly dim when disabled
+        if mode == QIcon.Mode.Disabled:
+            color.setAlpha(100)
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # Draw within the target rect, preserving aspect ratio
+        target = QRectF(rect)
+        draw_func(painter, target, color)
+
+        painter.restore()
+
+    def pixmap(self, size: QSize, mode: QIcon.Mode, state: QIcon.State) -> QPixmap:
+        px = QPixmap(size)
+        px.fill(Qt.GlobalColor.transparent)
+        p = QPainter(px)
+        self.paint(p, QRect(QPoint(0, 0), size), mode, state)
+        p.end()
+        return px
+
+    def clone(self) -> QIconEngine:
+        return _ThemedIconEngine(self._name)
+
+    def key(self) -> str:
+        return f"ThemedIconEngine:{self._name}"
+
+
 class IconLoader:
-    """Loads icons from resources/icons/ with optional theme awareness."""
+    """Loads icons drawn at runtime with theme-aware colors. Caches QIcon instances."""
 
     def __init__(self) -> None:
         self._cache: dict[str, QIcon] = {}
 
     def icon(self, name: str) -> QIcon:
-        """Return a QIcon for the given icon name (without extension)."""
-        cache_key = name
-        if cache_key in self._cache:
-            return self._cache[cache_key]
-
-        icon = QIcon()
-        sizes = [16, 24, 32, 48, 256]
-        for sz in sizes:
-            path = _resource_path("icons", f"{name}_{sz}.png")
-            if path.exists():
-                icon.addPixmap(QPixmap(str(path)))
-        # Fallback: use the default size
-        if icon.isNull():
-            path = _resource_path("icons", f"{name}.png")
-            if path.exists():
-                icon.addPixmap(QPixmap(str(path)))
-
-        self._cache[cache_key] = icon
+        if name in self._cache:
+            return self._cache[name]
+        if name not in ICON_DRAW_FUNCS:
+            # Fallback: try loading from file
+            icon = QIcon()
+            sizes = [16, 24, 32, 48, 256]
+            for sz in sizes:
+                path = _resource_path("icons", f"{name}_{sz}.png")
+                if path.exists():
+                    icon.addPixmap(QPixmap(str(path)))
+            if icon.isNull():
+                path = _resource_path("icons", f"{name}.png")
+                if path.exists():
+                    icon.addPixmap(QPixmap(str(path)))
+            self._cache[name] = icon
+            return icon
+        engine = _ThemedIconEngine(name)
+        icon = QIcon(engine)
+        self._cache[name] = icon
         return icon
 
     def app_icon(self) -> QIcon:
-        """Return the application icon (from ICO file)."""
         path = _resource_path("icons", "app.ico")
         if path.exists():
             return QIcon(str(path))
