@@ -1435,10 +1435,17 @@ class TaskEditPanel(QWidget):
 
     def _on_toggle_collapse(self) -> None:
         collapsed = self._editor_collapsible.isVisible()
+        expanding = not collapsed  # currently hidden → expanding
         self._editor_collapsible.setVisible(not collapsed)
         self._collapse_btn.setText("▼" if collapsed else "▲")
         self._collapse_btn.setToolTip("展开编辑区" if collapsed else "折叠编辑区")
         self._task_summary.setVisible(collapsed)
+        # Sync markdown editor visibility: expand → directly editable, collapse → hide
+        self._md_editor_wrapper.setVisible(expanding)
+        self._edit_toggle_btn.setText("关闭编辑" if expanding else "编辑")
+        self._section_label.setText("编辑任务" if expanding else "首页")
+        if expanding:
+            self._md_edit.setFocus()
 
     def _on_toggle_edit(self) -> None:
         showing = self._md_editor_wrapper.isVisible()
