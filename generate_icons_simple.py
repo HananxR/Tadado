@@ -304,6 +304,57 @@ def draw_help(p, sz):
     p.drawEllipse(QPointF(cx, cy + r * 0.45), sz * 0.04, sz * 0.04)
 
 
+def draw_tray_hide(p, sz):
+    """Minimize to tray: downward arrow into a tray/bracket."""
+    m = sz * 0.15
+    # Tray bracket at bottom
+    bw = sz * 0.50
+    bh = sz * 0.14
+    p.setPen(QPen(DARK, 2.0))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    bx = sz / 2 - bw / 2
+    by_ = sz - m - bh
+    p.drawLine(QPointF(bx, by_ + bh), QPointF(bx + bw, by_ + bh))
+    p.drawLine(QPointF(bx, by_ + bh), QPointF(bx + sz * 0.06, by_))
+    p.drawLine(QPointF(bx + bw, by_ + bh), QPointF(bx + bw - sz * 0.06, by_))
+    # Downward arrow above
+    ax = sz / 2
+    ay_top = m + sz * 0.08
+    ay_bot = by_ - sz * 0.06
+    p.drawLine(QPointF(ax, ay_top), QPointF(ax, ay_bot))
+    arrow_head(p, QPointF(ax, ay_bot), 90, sz * 0.09)
+
+
+def draw_fullscreen_toggle(p, sz):
+    """Fullscreen toggle: diagonal arrows in corners."""
+    m = sz * 0.15
+    p.setPen(QPen(DARK, 2.0))
+    # Two diagonal arrows: top-left → and bottom-right ←
+    gap = sz * 0.12
+    # Top-left arrow (pointing outward to top-left)
+    l1, t1 = m + gap, m + gap
+    p.drawLine(QPointF(l1, t1), QPointF(m, t1))
+    p.drawLine(QPointF(l1, t1), QPointF(l1, m))
+    arrow_head(p, QPointF(m + sz * 0.03, t1), 180, sz * 0.07)
+    arrow_head(p, QPointF(l1, m + sz * 0.03), -90, sz * 0.07)
+    # Bottom-right arrow (pointing outward to bottom-right)
+    l2, t2 = sz - m - gap, sz - m - gap
+    p.drawLine(QPointF(l2, t2), QPointF(sz - m, t2))
+    p.drawLine(QPointF(l2, t2), QPointF(l2, sz - m))
+    arrow_head(p, QPointF(sz - m - sz * 0.03, t2), 0, sz * 0.07)
+    arrow_head(p, QPointF(l2, sz - m - sz * 0.03), 90, sz * 0.07)
+
+
+def draw_window_close(p, sz):
+    """Close window: X mark."""
+    m = sz * 0.22
+    cx, cy = sz / 2, sz / 2
+    arm = sz * 0.28
+    p.setPen(QPen(DARK, 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    p.drawLine(QPointF(cx - arm, cy - arm), QPointF(cx + arm, cy + arm))
+    p.drawLine(QPointF(cx + arm, cy - arm), QPointF(cx - arm, cy + arm))
+
+
 def build_ico(draw_func, sizes):
     frames = [render(draw_func, s)[0] for s in sizes]
     buf = struct.pack("<HHH", 0, 1, len(sizes))
@@ -336,6 +387,9 @@ ICONS = {
     "new_multi_task": draw_new_multi,
     "task_manage": draw_task_manage,
     "help": draw_help,
+    "tray_hide": draw_tray_hide,
+    "fullscreen_toggle": draw_fullscreen_toggle,
+    "window_close": draw_window_close,
 }
 
 for name, func in ICONS.items():

@@ -202,25 +202,30 @@ class MainWindow(QMainWindow):
         help_btn.clicked.connect(lambda: help_btn.showMenu())
         tb.addWidget(help_btn)
 
+        # Store the right edge of nav buttons for hit-test (logo 36 + ~110px per button * 6 + help ~80px)
+        self._title_nav_right = 36 + 110 * 6 + 80
+
         tb.addStretch()
 
-        # Right-side window buttons
+        # Right-side window buttons (icon only, matching left-side style)
         right_btn_style = (
-            f"QPushButton {{ border: none; background: transparent; padding: 4px 8px; "
-            f"color: {t.text_secondary}; font-size: 10px; }}"
-            f"QPushButton:hover {{ background: {t.accent}20; color: {t.text_primary}; }}"
+            f"QPushButton {{ border: none; background: transparent; padding: 0px; }}"
+            f"QPushButton:hover {{ background: {t.accent}20; }}"
         )
         right_items = [
-            ("⤓ 缩小到托盘", self.hide),
-            ("⛶ 切换全屏", self._toggle_fullscreen),
-            ("✕ 关闭", self.close),
+            ("tray_hide", "缩小到托盘", self.hide),
+            ("fullscreen_toggle", "切换全屏", self._toggle_fullscreen),
+            ("window_close", "关闭", self.close),
         ]
-        for text, slot in right_items:
-            btn = QPushButton(text)
+        for icon_name, tip, slot in right_items:
+            btn = QPushButton()
+            btn.setIcon(load_icon(icon_name))
+            btn.setIconSize(QSize(20, 20))
+            btn.setFixedSize(bar_h, bar_h)
             btn.setFlat(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setToolTip(tip)
             btn.setStyleSheet(right_btn_style)
-            btn.setFixedHeight(bar_h)
             btn.clicked.connect(slot)
             tb.addWidget(btn)
 
@@ -259,13 +264,14 @@ class MainWindow(QMainWindow):
         g = self.geometry()
         title_h = 36
         if g.y() <= y < g.y() + title_h:
-            # Right-side window buttons area (approx 320px for 3 text buttons)
-            if x >= g.x() + g.width() - 320:
+            # Right-side window buttons area (3 * 36px icon buttons)
+            if x >= g.x() + g.width() - 108:
                 return False, 0
-            # Logo area (36px)
-            if x < g.x() + 36:
+            # Nav buttons area (logo + icon buttons — must NOT be HTCAPTION)
+            nav_right = getattr(self, '_title_nav_right', 700)
+            if x < g.x() + nav_right:
                 return False, 0
-            # Rest of titlebar = draggable (QPushButtons still handle clicks)
+            # Empty stretch area between nav and window buttons = draggable
             return True, 2  # HTCAPTION
         left = x < g.x() + border
         right = x > g.x() + g.width() - border

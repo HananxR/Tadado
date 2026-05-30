@@ -37,8 +37,11 @@ class SystemTrayManager:
 
         menu.addSeparator()
 
-        new_action = menu.addAction("新建任务...")
-        new_action.triggered.connect(self._main_window._on_new_task)
+        new_action = menu.addAction("新建单任务")
+        new_action.triggered.connect(self._main_window._on_new_draft)
+
+        multi_action = menu.addAction("新建多任务")
+        multi_action.triggered.connect(self._main_window._on_new_multi_task)
 
         menu.addSeparator()
 
