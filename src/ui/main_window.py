@@ -26,8 +26,6 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStackedWidget,
     QStatusBar,
-    QToolBar,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -81,7 +79,6 @@ class MainWindow(QMainWindow):
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
 
         self._setup_custom_title_bar()
-        self._setup_tool_bar()
         self._setup_status_bar()
         self._setup_central_widget()
         self._setup_idle_lock()
@@ -162,26 +159,31 @@ class MainWindow(QMainWindow):
         )
         tb.addWidget(icon_btn)
 
-        self._title_menu_bar = QMenuBar()
-        self._title_menu_bar.setNativeMenuBar(False)
-        self._title_menu_bar.setFixedHeight(bar_h)
-        file_menu = self._title_menu_bar.addMenu("文件(&F)")
-        file_menu.addAction("新建任务(&N)\tCtrl+N", self._on_new_task)
+        self._menu_bar = QMenuBar()
+        self._menu_bar.setNativeMenuBar(False)
+        self._menu_bar.setFixedHeight(bar_h)
+        file_menu = self._menu_bar.addMenu("文件(&F)")
+        file_menu.addAction("新建单任务(&N)\tCtrl+N", self._on_new_task)
+        file_menu.addAction("新建多任务(&M)", self._on_new_multi_task)
         file_menu.addSeparator()
         file_menu.addAction("导入 Markdown...(&I)", self._on_import)
         file_menu.addAction("导出 Markdown...(&E)", self._on_export)
         file_menu.addSeparator()
         file_menu.addAction("退出(&Q)", self._on_quit)
-        view_menu = self._title_menu_bar.addMenu("视图(&V)")
+
+        self._partition_menu = self._menu_bar.addMenu("分区(&P)")
+
+        view_menu = self._menu_bar.addMenu("视图(&V)")
         view_menu.addAction("📋 任务编辑(&E)\tCtrl+1", lambda: self._switch_view("edit"))
         view_menu.addAction("📊 活动分析(&D)\tCtrl+2", lambda: self._switch_view("dashboard"))
         view_menu.addAction("⚙ 批量处理(&B)\tCtrl+3", lambda: self._switch_view("batch"))
-        help_menu = self._title_menu_bar.addMenu("帮助(&H)")
+
+        help_menu = self._menu_bar.addMenu("帮助(&H)")
         help_menu.addAction("设置(&S)", self._on_settings)
         help_menu.addAction("帮助文档(&D)", self._on_help_docs)
         help_menu.addSeparator()
         help_menu.addAction("关于(&A)", self._on_about)
-        tb.addWidget(self._title_menu_bar)
+        tb.addWidget(self._menu_bar)
 
         tb.addStretch()
 
@@ -278,84 +280,6 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
     # Tool bar
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _make_partition_icon() -> QIcon:
-        from ..utils.design_tokens import get_tokens
-        px = QPixmap(64, 64)
-        px.fill(Qt.GlobalColor.transparent)
-        p = QPainter(px)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        color = QColor(get_tokens().accent)
-        p.setBrush(QBrush(color))
-        p.setPen(QPen(color.darker(130), 2.5))
-        r = 4
-        tab_l, tab_t, tab_w, tab_h = 16, 14, 14, 8
-        p.drawRoundedRect(tab_l, tab_t, tab_w, tab_h, r, r)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRect(tab_l, tab_t + tab_h - r, tab_w, r)
-        p.setPen(QPen(color.darker(130), 2.5))
-        body_l, body_t, body_w, body_h = 12, 20, 40, 28
-        p.drawRoundedRect(body_l, body_t, body_w, body_h, r, r)
-        p.setPen(Qt.PenStyle.NoPen)
-        p.drawRect(tab_l, body_t, tab_w, r)
-        p.end()
-        return QIcon(px)
-
-    def _setup_tool_bar(self) -> None:
-        toolbar = QToolBar()
-        toolbar.setWindowTitle("导航")
-        toolbar.setMovable(False)
-        toolbar.setIconSize(QSize(22, 22))
-        toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
-        self.addToolBar(toolbar)
-
-        # Partition selector — QToolButton + QMenu, matches "新建"/"视图" style
-        self._partition_btn = QToolButton()
-        self._partition_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self._partition_btn.setIcon(self._make_partition_icon())
-        self._partition_btn.setText("切换分区")
-        self._partition_btn.setToolTip("切换分区")
-        self._partition_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        self._partition_menu = QMenu(self._partition_btn)
-        self._partition_btn.setMenu(self._partition_menu)
-        self._partition_btn.clicked.connect(lambda: self._partition_btn.showMenu())
-        toolbar.addWidget(self._partition_btn)
-        self._partition_colors = ["#5b8def", "#e74c3c", "#2ecc71", "#f39c12", "#9b59b6", "#1abc9c"]
-
-        toolbar.addSeparator()
-
-        self._new_task_btn = QToolButton()
-        self._new_task_btn.setObjectName("newTaskBtn")
-        self._new_task_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self._new_task_btn.setIcon(load_icon("new_task"))
-        self._new_task_btn.setText("新建")
-        self._new_task_btn.setToolTip("新建任务")
-        self._new_task_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        self._new_task_btn.clicked.connect(self._on_new_draft)
-        new_menu = QMenu(self._new_task_btn)
-        single_action = new_menu.addAction("新增单任务")
-        single_action.triggered.connect(self._on_new_draft)
-        multi_action = new_menu.addAction("新增多任务")
-        multi_action.triggered.connect(self._on_new_multi_task)
-        self._new_task_btn.setMenu(new_menu)
-        toolbar.addWidget(self._new_task_btn)
-
-        toolbar.addSeparator()
-
-        self._view_btn = QToolButton()
-        self._view_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self._view_btn.setIcon(load_icon("heatmap"))
-        self._view_btn.setText("视图")
-        self._view_btn.setToolTip("切换视图")
-        self._view_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        self._view_btn.clicked.connect(lambda: self._view_btn.showMenu())
-        view_menu = QMenu(self._view_btn)
-        view_menu.addAction("📋 任务编辑", lambda: self._switch_view("edit"))
-        view_menu.addAction("📊 活动分析", lambda: self._switch_view("dashboard"))
-        view_menu.addAction("⚙ 批量处理", lambda: self._switch_view("batch"))
-        self._view_btn.setMenu(view_menu)
-        toolbar.addWidget(self._view_btn)
 
     # ------------------------------------------------------------------
     # Central widget
@@ -1099,15 +1023,17 @@ class MainWindow(QMainWindow):
     def _load_partitions(self) -> None:
         partitions = self._repository.get_all_partitions()
         self._partition_menu.clear()
+        name_map = self._repository.get_partition_name_map()
+        current_pid = self._active_partition_id or ""
         for p in partitions:
             pid, pname = p["id"], p["name"]
             locked = "🔒" if self._partition_passwords.get(pid, "") else ""
+            check = "✓ " if pid == current_pid else "  "
             action = self._partition_menu.addAction(
-                f"{locked} {pname}",
+                f"{check}{locked} {pname}",
                 lambda checked=False, i=pid: self._activate_partition(i),
             )
-        # Update button text to current partition
-        self._update_partition_btn_text()
+        self._update_partition_menu_title()
         if not self._active_partition_id:
             current = self._config.get("general", "last_partition_id", default="")
             if current:
@@ -1117,12 +1043,13 @@ class MainWindow(QMainWindow):
                 if first:
                     self._activate_partition(first)
 
-    def _update_partition_btn_text(self) -> None:
+    def _update_partition_menu_title(self) -> None:
         pid = self._active_partition_id or ""
         name_map = self._repository.get_partition_name_map()
         pname = name_map.get(pid, "")
         locked = "🔒" if self._partition_passwords.get(pid, "") else ""
-        self._partition_btn.setText(f"{locked} {pname}" if pname else "切换分区")
+        title = f"分区(&P) · {locked}{pname}" if pname else "分区(&P)"
+        self._partition_menu.setTitle(title)
 
     def _activate_partition(self, pid: str) -> None:
         if self._partition_passwords.get(self._active_partition_id or "", ""):
@@ -1140,7 +1067,7 @@ class MainWindow(QMainWindow):
         self._carousel_filter.date_from = today
         self._carousel_filter.date_to = today
         self._page = 0
-        self._update_partition_btn_text()
+        self._update_partition_menu_title()
         self._heatmap_widget.set_partition_id(pid or None)
         self._status_badge.set_partition_id(pid or None)
         self._progress_bar.set_partition_id(pid or None)
