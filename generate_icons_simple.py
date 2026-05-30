@@ -305,54 +305,52 @@ def draw_help(p, sz):
 
 
 def draw_tray_hide(p, sz):
-    """Minimize to tray: downward arrow into a tray/bracket."""
-    m = sz * 0.15
-    # Tray bracket at bottom
-    bw = sz * 0.50
-    bh = sz * 0.14
+    """Minimize to tray: simple box with down arrow — matches settings/help style."""
+    m = sz * 0.18
+    bw, bh = sz * 0.42, sz * 0.38
+    bx = (sz - bw) / 2
+    by_ = sz - m - bh
     p.setPen(QPen(DARK, 2.0))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    bx = sz / 2 - bw / 2
-    by_ = sz - m - bh
-    p.drawLine(QPointF(bx, by_ + bh), QPointF(bx + bw, by_ + bh))
-    p.drawLine(QPointF(bx, by_ + bh), QPointF(bx + sz * 0.06, by_))
-    p.drawLine(QPointF(bx + bw, by_ + bh), QPointF(bx + bw - sz * 0.06, by_))
-    # Downward arrow above
+    p.drawRoundedRect(QRectF(bx, by_, bw, bh), 3, 3)
+    # Downward arrow centered above the box
     ax = sz / 2
-    ay_top = m + sz * 0.08
+    ay_top = m + sz * 0.06
     ay_bot = by_ - sz * 0.06
     p.drawLine(QPointF(ax, ay_top), QPointF(ax, ay_bot))
-    arrow_head(p, QPointF(ax, ay_bot), 90, sz * 0.09)
+    arrow_head(p, QPointF(ax, ay_bot), 90, sz * 0.10)
+    # Horizontal line in box
+    lx = bx + sz * 0.10
+    lw = bw - sz * 0.20
+    ly = by_ + bh * 0.55
+    p.drawLine(QPointF(lx, ly), QPointF(lx + lw, ly))
 
 
 def draw_fullscreen_toggle(p, sz):
-    """Fullscreen toggle: diagonal arrows in corners."""
-    m = sz * 0.15
-    p.setPen(QPen(DARK, 2.0))
-    # Two diagonal arrows: top-left → and bottom-right ←
-    gap = sz * 0.12
-    # Top-left arrow (pointing outward to top-left)
-    l1, t1 = m + gap, m + gap
-    p.drawLine(QPointF(l1, t1), QPointF(m, t1))
-    p.drawLine(QPointF(l1, t1), QPointF(l1, m))
-    arrow_head(p, QPointF(m + sz * 0.03, t1), 180, sz * 0.07)
-    arrow_head(p, QPointF(l1, m + sz * 0.03), -90, sz * 0.07)
-    # Bottom-right arrow (pointing outward to bottom-right)
-    l2, t2 = sz - m - gap, sz - m - gap
-    p.drawLine(QPointF(l2, t2), QPointF(sz - m, t2))
-    p.drawLine(QPointF(l2, t2), QPointF(l2, sz - m))
-    arrow_head(p, QPointF(sz - m - sz * 0.03, t2), 0, sz * 0.07)
-    arrow_head(p, QPointF(l2, sz - m - sz * 0.03), 90, sz * 0.07)
+    """Fullscreen toggle: two corner brackets — matches settings/help style."""
+    m = sz * 0.16
+    inner = sz * 0.10
+    arm = sz * 0.24
+    p.setPen(QPen(DARK, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    # Top-left bracket (┌ shape)
+    p.drawLine(QPointF(m, m + arm), QPointF(m, m))
+    p.drawLine(QPointF(m, m), QPointF(m + arm, m))
+    # Bottom-right bracket (┘ shape)
+    brx = sz - m
+    bry = sz - m
+    p.drawLine(QPointF(brx - arm, bry), QPointF(brx, bry))
+    p.drawLine(QPointF(brx, bry - arm), QPointF(brx, bry))
+    # Arrow heads indicating outward expansion
+    arrow_head(p, QPointF(m, m), -135, sz * 0.08)
+    arrow_head(p, QPointF(brx, bry), 45, sz * 0.08)
 
 
 def draw_window_close(p, sz):
-    """Close window: X mark."""
-    m = sz * 0.22
-    cx, cy = sz / 2, sz / 2
-    arm = sz * 0.28
-    p.setPen(QPen(DARK, 2.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-    p.drawLine(QPointF(cx - arm, cy - arm), QPointF(cx + arm, cy + arm))
-    p.drawLine(QPointF(cx + arm, cy - arm), QPointF(cx - arm, cy + arm))
+    """Close window: clean X mark — matches settings/help style."""
+    m = sz * 0.24
+    p.setPen(QPen(DARK, 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    p.drawLine(QPointF(m, m), QPointF(sz - m, sz - m))
+    p.drawLine(QPointF(sz - m, m), QPointF(m, sz - m))
 
 
 def build_ico(draw_func, sizes):

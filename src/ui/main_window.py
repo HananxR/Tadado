@@ -169,8 +169,8 @@ class MainWindow(QMainWindow):
         icon_sz = QSize(18, 18)
 
         nav_items = [
-            ("new_task", "新建单任务", self._on_new_draft),
-            ("new_multi_task", "新建多任务", self._on_new_multi_task),
+            ("new_task", "新建单任务", self._on_menu_new_draft),
+            ("new_multi_task", "新建多任务", self._on_menu_new_multi),
             ("heatmap", "活动分析", lambda: self._switch_view("dashboard")),
             ("task_manage", "任务管理", lambda: self._switch_view("batch")),
             ("settings", "设置", self._on_settings),
@@ -1228,6 +1228,36 @@ class MainWindow(QMainWindow):
 
     def _on_new_task(self) -> None:
         self._on_new_draft()
+
+    def _on_menu_new_draft(self) -> None:
+        """Menu bar: show window, discard any draft silently, create new."""
+        if self._edit_panel.has_unsaved_draft():
+            self._edit_panel.discard_draft()
+        self._ensure_window_ready()
+        self._edit_panel.create_draft()
+        self._apply_splitter_sizes()
+
+    def _on_menu_new_multi(self) -> None:
+        """Menu bar: show window, discard any draft silently, create multi."""
+        if self._edit_panel.has_unsaved_draft():
+            self._edit_panel.discard_draft()
+        self._ensure_window_ready()
+        self._edit_panel.create_draft_multi()
+        self._apply_splitter_sizes()
+
+    def _ensure_window_ready(self) -> None:
+        """Show, raise, and switch to edit view."""
+        if self._splitter_stack.currentIndex() == 1:
+            if self._partition_passwords.get(self._active_partition_id, ""):
+                self._on_unlock_partition()
+            else:
+                self._splitter_stack.setCurrentIndex(0)
+        self._stack.setCurrentIndex(0)
+        self.show()
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        self.raise_()
+        self.activateWindow()
+        self._edit_panel.set_active_partition(self._active_partition_id)
 
     def _on_new_draft(self) -> None:
         # From tray (window hidden): silently discard draft, no popup
