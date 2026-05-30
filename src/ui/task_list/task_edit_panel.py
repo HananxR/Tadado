@@ -1674,8 +1674,6 @@ class TaskEditPanel(QWidget):
                 cur_p = 100
             elif old_status == TaskStatus.DONE and new_status == TaskStatus.DOING and cur_p == 0:
                 cur_p = 80
-            elif old_status == TaskStatus.TODO and cur_p == 0:
-                cur_p = 30
             self._progress_edit.setText(str(cur_p))
             task.raw_md = self._formatter.format(task)
         # Record one entry with current status

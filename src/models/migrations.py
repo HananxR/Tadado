@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json as _json
 import sqlite3
 import uuid as _uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Callable, Union
 
 # A migration step can be a raw SQL string or a callable that receives the connection.
@@ -134,6 +135,41 @@ _ALTER_COLUMNS = [
 # Migration registry
 # ------------------------------------------------------------------
 
+def compute_activity_counts(activity_log_json: str, today: date | None = None) -> tuple[int, int, int, int]:
+    """Return (yesterday, today, week, month) counts from activity_log JSON."""
+    if today is None:
+        today = date.today()
+    yesterday = today - timedelta(days=1)
+    monday = today - timedelta(days=today.isoweekday() - 1)
+    sunday = monday + timedelta(days=6)
+    month_start = today.replace(day=1)
+    if today.month == 12:
+        month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+    else:
+        month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+
+    counts = [0, 0, 0, 0]
+    try:
+        entries = _json.loads(activity_log_json) if activity_log_json else []
+    except (_json.JSONDecodeError, TypeError):
+        entries = []
+    for entry in entries:
+        ts = entry.get("ts", "")
+        try:
+            dt = datetime.fromisoformat(ts).date()
+        except (ValueError, TypeError):
+            continue
+        if dt == yesterday:
+            counts[0] += 1
+        if dt == today:
+            counts[1] += 1
+        if monday <= dt <= sunday:
+            counts[2] += 1
+        if month_start <= dt <= month_end:
+            counts[3] += 1
+    return tuple(counts)
+
+
 def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
     """Add activity count columns for progress bar sorting."""
     conn.executescript("""
@@ -142,9 +178,29 @@ def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
         ALTER TABLE tasks ADD COLUMN activity_week INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE tasks ADD COLUMN activity_month INTEGER NOT NULL DEFAULT 0;
     """)
+    # Backfill existing rows from activity_log data
+    rows = conn.execute("SELECT id, activity_log FROM tasks").fetchall()
+    for row in rows:
+        counts = compute_activity_counts(row[1])
+        conn.execute(
+            "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_week=?, activity_month=? WHERE id=?",
+            (*counts, row[0]),
+        )
+
+
+def _migrate_2_to_3(conn: sqlite3.Connection) -> None:
+    """Backfill activity count columns from existing activity_log data."""
+    rows = conn.execute("SELECT id, activity_log FROM tasks").fetchall()
+    for row in rows:
+        counts = compute_activity_counts(row[1])
+        conn.execute(
+            "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_week=?, activity_month=? WHERE id=?",
+            (*counts, row[0]),
+        )
 
 
 MIGRATIONS: list[tuple[int, int, MigrationStep]] = [
     (0, 1, _migrate_0_to_1),
     (1, 2, _migrate_1_to_2),
+    (2, 3, _migrate_2_to_3),
 ]

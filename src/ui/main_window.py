@@ -629,8 +629,11 @@ class MainWindow(QMainWindow):
             return
         if hasattr(self, '_progress_bar'):
             self._progress_bar.reset_to_unclicked()
+        _sizes = self._splitter.sizes() if hasattr(self, '_splitter') and self._splitter else None
         f = self._carousel_filter or TaskFilter()
         self._refresh_all_views(f, reset_page=False)
+        if _sizes:
+            self._splitter.setSizes(_sizes)
 
     def _on_tasks_bulk_created(self, count: int, task_ids: list) -> None:
         """Handle multi-task creation: refresh + bold all + move to top + open first."""

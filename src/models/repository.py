@@ -8,7 +8,7 @@ import uuid
 from datetime import date, datetime
 from typing import Optional
 
-from .migrations import migrate
+from .migrations import compute_activity_counts, migrate
 from .task import Task
 from .task_filter import SortCriterion, TaskFilter
 from .task_status import TaskStatus
@@ -157,6 +157,7 @@ class TaskRepository:
         if not task.created_at:
             task.created_at = datetime.fromisoformat(now_iso)
         task.updated_at = datetime.fromisoformat(now_iso)
+        self._recalc_activity_counts(task)
 
         row = _task_to_row(task)
         placeholders = ", ".join("?" * len(row))
@@ -180,37 +181,9 @@ class TaskRepository:
 
     def _recalc_activity_counts(self, task: Task) -> None:
         """Update the 4 activity count fields from activity_log timestamps."""
-        from datetime import timedelta as _td
-        today = date.today()
-        yesterday = today - _td(days=1)
-        monday = today - _td(days=today.isoweekday() - 1)
-        sunday = monday + _td(days=6)
-        month_start = today.replace(day=1)
-        if today.month == 12:
-            month_end = today.replace(year=today.year + 1, month=1, day=1) - _td(days=1)
-        else:
-            month_end = today.replace(month=today.month + 1, day=1) - _td(days=1)
-
-        counts = {"yesterday": 0, "today": 0, "week": 0, "month": 0}
-        for entry in task.activity_log:
-            ts = entry.get("ts", "")
-            try:
-                dt = datetime.fromisoformat(ts).date()
-            except (ValueError, TypeError):
-                continue
-            if dt == yesterday:
-                counts["yesterday"] += 1
-            if dt == today:
-                counts["today"] += 1
-            if monday <= dt <= sunday:
-                counts["week"] += 1
-            if month_start <= dt <= month_end:
-                counts["month"] += 1
-
-        task.activity_yesterday = counts["yesterday"]
-        task.activity_today = counts["today"]
-        task.activity_week = counts["week"]
-        task.activity_month = counts["month"]
+        log_json = json.dumps(task.activity_log, ensure_ascii=False) if task.activity_log else "[]"
+        (task.activity_yesterday, task.activity_today,
+         task.activity_week, task.activity_month) = compute_activity_counts(log_json)
 
     def delete(self, task_id: str) -> bool:
         """Delete a task by id. Returns True if a row was removed."""
@@ -593,6 +566,11 @@ class TaskRepository:
                 (task.raw_md, task_id),
             )
             self._update_fts(task)
+            self._recalc_activity_counts(task)
+            self.conn.execute(
+                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_week=?, activity_month=? WHERE id=?",
+                (task.activity_yesterday, task.activity_today, task.activity_week, task.activity_month, task_id),
+            )
             count += 1
 
         self.conn.commit()
@@ -632,6 +610,11 @@ class TaskRepository:
             )
             task.activity_log = log
             self._update_fts(task)
+            self._recalc_activity_counts(task)
+            self.conn.execute(
+                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_week=?, activity_month=? WHERE id=?",
+                (task.activity_yesterday, task.activity_today, task.activity_week, task.activity_month, task_id),
+            )
             count += 1
         self.conn.commit()
         return count
@@ -657,6 +640,11 @@ class TaskRepository:
             )
             task.activity_log = log
             self._update_fts(task)
+            self._recalc_activity_counts(task)
+            self.conn.execute(
+                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_week=?, activity_month=? WHERE id=?",
+                (task.activity_yesterday, task.activity_today, task.activity_week, task.activity_month, task_id),
+            )
             count += 1
         self.conn.commit()
         return count
