@@ -822,7 +822,7 @@ class MainWindow(QMainWindow):
         pname = name_map.get(self._active_partition_id or "", "默认分区")
         preset = self._quick_overview._active_preset if hasattr(self._quick_overview, '_active_preset') else "all"
         motd = self._config.get("motd", preset, default=self._config.get("motd", "all", default=""))
-        breakdown = f"逾期({overdue}个)、进行中({doing}个)、待办({todo}个)、已完成({done}个)，共计{total}个"
+        breakdown = f"逾期 {overdue} | 进行中 {doing} | 待办 {todo} | 已完成 {done} | 共{total}项"
         self._status_msg.setText(
             f"📁 {pname} :: {breakdown} | {motd}" if motd else f"📁 {pname} :: {breakdown}"
         )
