@@ -735,6 +735,8 @@ class MainWindow(QMainWindow):
     def _on_progress_filter(self, filter_: TaskFilter) -> None:
         self._carousel_filter = filter_
         self._refresh_all_views(filter_)
+        if self._task_model.tasks:
+            self._on_task_selected(self._task_model.tasks[0])
 
     def _on_task_selected(self, task: Task) -> None:
         self._task_model.set_highlighted_task(task.id)

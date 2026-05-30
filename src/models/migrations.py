@@ -134,6 +134,17 @@ _ALTER_COLUMNS = [
 # Migration registry
 # ------------------------------------------------------------------
 
+def _migrate_1_to_2(conn: sqlite3.Connection) -> None:
+    """Add activity count columns for progress bar sorting."""
+    conn.executescript("""
+        ALTER TABLE tasks ADD COLUMN activity_yesterday INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE tasks ADD COLUMN activity_today INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE tasks ADD COLUMN activity_week INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE tasks ADD COLUMN activity_month INTEGER NOT NULL DEFAULT 0;
+    """)
+
+
 MIGRATIONS: list[tuple[int, int, MigrationStep]] = [
     (0, 1, _migrate_0_to_1),
+    (1, 2, _migrate_1_to_2),
 ]

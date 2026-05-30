@@ -21,6 +21,7 @@ _TASK_COLUMNS = [
     "partition_id", "notes",
     "activity_log",
     "progress",
+    "activity_yesterday", "activity_today", "activity_week", "activity_month",
     "suspended",
 ]
 
@@ -32,7 +33,9 @@ def _row_to_task(row: tuple) -> Task:
         scheduled_str, deadline_str, deadline_time_str,
         created_str, updated_str, completed_str,
         archived_int, archived_str, recurrence, parent_id, partition_id, notes,
-        activity_log_json, progress_int, suspended_int,
+        activity_log_json, progress_int,
+        ay, at, aw, am,
+        suspended_int,
     ) = row
 
     return Task(
@@ -55,6 +58,10 @@ def _row_to_task(row: tuple) -> Task:
         notes=notes,
         activity_log=json.loads(activity_log_json) if activity_log_json else [],
         progress=progress_int if progress_int else 0,
+        activity_yesterday=ay if ay else 0,
+        activity_today=at if at else 0,
+        activity_week=aw if aw else 0,
+        activity_month=am if am else 0,
         suspended=bool(suspended_int),
     )
 
@@ -82,6 +89,10 @@ def _task_to_row(task: Task) -> tuple:
         task.notes,
         json.dumps(task.activity_log, ensure_ascii=False) if task.activity_log else "[]",
         task.progress,
+        task.activity_yesterday,
+        task.activity_today,
+        task.activity_week,
+        task.activity_month,
         int(task.suspended),
     )
 
@@ -158,6 +169,7 @@ class TaskRepository:
     def update(self, task: Task) -> Task:
         """Update an existing task."""
         task.updated_at = datetime.now()
+        self._recalc_activity_counts(task)
         row = _task_to_row(task)
         set_clause = ", ".join(f"{col}=?" for col in _TASK_COLUMNS)
         sql = f"UPDATE tasks SET {set_clause} WHERE id=?"
@@ -165,6 +177,40 @@ class TaskRepository:
         self._update_fts(task)
         self.conn.commit()
         return task
+
+    def _recalc_activity_counts(self, task: Task) -> None:
+        """Update the 4 activity count fields from activity_log timestamps."""
+        from datetime import timedelta as _td
+        today = date.today()
+        yesterday = today - _td(days=1)
+        monday = today - _td(days=today.isoweekday() - 1)
+        sunday = monday + _td(days=6)
+        month_start = today.replace(day=1)
+        if today.month == 12:
+            month_end = today.replace(year=today.year + 1, month=1, day=1) - _td(days=1)
+        else:
+            month_end = today.replace(month=today.month + 1, day=1) - _td(days=1)
+
+        counts = {"yesterday": 0, "today": 0, "week": 0, "month": 0}
+        for entry in task.activity_log:
+            ts = entry.get("ts", "")
+            try:
+                dt = datetime.fromisoformat(ts).date()
+            except (ValueError, TypeError):
+                continue
+            if dt == yesterday:
+                counts["yesterday"] += 1
+            if dt == today:
+                counts["today"] += 1
+            if monday <= dt <= sunday:
+                counts["week"] += 1
+            if month_start <= dt <= month_end:
+                counts["month"] += 1
+
+        task.activity_yesterday = counts["yesterday"]
+        task.activity_today = counts["today"]
+        task.activity_week = counts["week"]
+        task.activity_month = counts["month"]
 
     def delete(self, task_id: str) -> bool:
         """Delete a task by id. Returns True if a row was removed."""
@@ -793,6 +839,10 @@ class TaskRepository:
             "title": "title",
             "scheduled": "scheduled_date",
             "urgency": "urgency",
+            "activity_yesterday": "activity_yesterday",
+            "activity_today": "activity_today",
+            "activity_week": "activity_week",
+            "activity_month": "activity_month",
         }
         clauses: list[str] = []
         for sc in sort_by:

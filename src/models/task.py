@@ -30,6 +30,10 @@ class Task:
     notes: Optional[str] = None
     activity_log: list[dict] = field(default_factory=list)
     progress: int = 0
+    activity_yesterday: int = 0
+    activity_today: int = 0
+    activity_week: int = 0
+    activity_month: int = 0
     suspended: bool = False
 
     @property

@@ -203,13 +203,14 @@ class ProgressDynamicsBar(QWidget):
             self._enter_hint_mode()
 
     def build_filter(self) -> TaskFilter:
-        """Build TaskFilter for the active period, sorted by activity descending."""
+        """Build TaskFilter for the active period, sorted by activity count descending."""
         period_start, period_end = _get_period_range(self._active_period)
+        activity_field = f"activity_{self._active_period}" if self._active_period else "activity_today"
         return TaskFilter(
             partition_id=self._partition_id,
             date_from=period_start,
             date_to=period_end,
-            sort_by=[SortCriterion("progress", ascending=False)],
+            sort_by=[SortCriterion(activity_field, ascending=False)],
         )
 
     # ------------------------------------------------------------------
