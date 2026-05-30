@@ -888,7 +888,10 @@ class MainWindow(QMainWindow):
             self._splitter_stack.setCurrentIndex(1)
         else:
             self._splitter_stack.setCurrentIndex(0)
-        self._carousel_filter = None
+        today = date.today()
+        self._carousel_filter = TaskFilter()
+        self._carousel_filter.date_from = today
+        self._carousel_filter.date_to = today
         self._page = 0
         self._update_partition_btn_text()
         self._heatmap_widget.set_partition_id(pid or None)
