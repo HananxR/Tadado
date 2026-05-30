@@ -1168,14 +1168,15 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(1)
             self._heatmap_widget.nav_bar.setVisible(True)
             self._top_bar.hide()
-            self._refresh_analysis()
+            # Defer data loading so the view switch is instant
+            QTimer.singleShot(0, self._refresh_analysis)
             if hasattr(self, '_analysis_period_selector'):
-                self._analysis_period_selector.activate_preset("today")
+                QTimer.singleShot(10, lambda: self._analysis_period_selector.activate_preset("today"))
         elif view == "batch":
             self._stack.setCurrentIndex(2)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.hide()
-            self._refresh_batch_page()
+            QTimer.singleShot(0, self._refresh_batch_page)
 
     # ------------------------------------------------------------------
     # Activity analysis slots
