@@ -549,7 +549,7 @@ class MainWindow(QMainWindow):
         self._status_bar.addWidget(self._status_msg, 1)
         # Right: clock
         self._status_clock = QLabel()
-        self._status_clock.setStyleSheet("QLabel { font-weight: bold; margin-right: 4px; }")
+        self._status_clock.setStyleSheet("QLabel { margin-right: 4px; }")
         self._status_bar.addPermanentWidget(self._status_clock)
         self._update_status_clock()
         self._clock_timer = QTimer(self)
@@ -558,7 +558,7 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self._status_bar)
 
     def _update_status_clock(self) -> None:
-        self._status_clock.setText(dt.datetime.now().strftime("%H:%M:%S"))
+        self._status_clock.setText(dt.datetime.now().strftime("%Y年%m月%d日 %I:%M:%S %p"))
 
     # ------------------------------------------------------------------
     # Idle lock timer
