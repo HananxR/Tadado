@@ -564,14 +564,94 @@ class MainWindow(QMainWindow):
 
         self._stack.addWidget(reports_page)
 
-        # === Page 3: Batch Processing (placeholder) ===
+        # === Page 3: Batch Processing ===
         batch_page = QWidget()
         batch_layout = QVBoxLayout(batch_page)
         batch_layout.setContentsMargins(8, 4, 8, 4)
-        batch_label = QLabel("批量处理 — 开发中")
-        batch_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        batch_layout.addWidget(batch_label)
+        batch_layout.setSpacing(4)
+
+        # Top: filter bar (compact)
+        batch_filter_row = QWidget()
+        batch_filter_row_layout = QHBoxLayout(batch_filter_row)
+        batch_filter_row_layout.setContentsMargins(0, 0, 0, 0)
+        batch_filter_row_layout.setSpacing(6)
+        self._batch_filter_bar = FilterBar()
+        self._batch_filter_bar.filter_changed.connect(self._on_batch_filter_changed)
+        batch_filter_row_layout.addWidget(self._batch_filter_bar, 1)
+        back_btn2 = QPushButton("↩ 返回编辑")
+        back_btn2.setFixedHeight(28)
+        back_btn2.setCursor(Qt.CursorShape.PointingHandCursor)
+        back_btn2.clicked.connect(lambda: self._switch_view("edit"))
+        batch_filter_row_layout.addWidget(back_btn2)
+        batch_layout.addWidget(batch_filter_row)
+
+        # Operation toolbar
+        self._batch_toolbar2 = BatchToolbar()
+        self._batch_toolbar2.batch_status_change.connect(self._on_batch_status_change)
+        self._batch_toolbar2.batch_delete.connect(self._on_batch_delete)
+        self._batch_toolbar2.batch_suspend.connect(self._on_batch_suspend)
+        self._batch_toolbar2.batch_restart.connect(self._on_batch_restart)
+        self._batch_toolbar2.select_all_requested.connect(self._on_batch_select_all)
+        self._batch_toolbar2.deselect_all_requested.connect(self._on_batch_deselect_all)
+        batch_layout.addWidget(self._batch_toolbar2)
+
+        # Task table (full width, no edit panel)
+        self._batch_task_model = TaskListModel()
+        self._batch_task_view = TaskListView(self._repository)
+        self._batch_task_view.setModel(self._batch_task_model)
+        self._batch_task_view.setSelectionBehavior(
+            self._batch_task_view.SelectionBehavior.SelectRows
+        )
+        # Track checkbox changes via model dataChanged
+        self._batch_task_model.dataChanged.connect(self._on_batch_model_data_changed)
+        batch_layout.addWidget(self._batch_task_view, 1)
+
+        # Pagination row
+        batch_pager = QWidget()
+        batch_pager_layout = QHBoxLayout(batch_pager)
+        batch_pager_layout.setContentsMargins(0, 0, 0, 0)
+        batch_pager_layout.addStretch()
+        self._batch_total_label = QLabel("共 0 项")
+        self._batch_total_label.setStyleSheet("font-size: 10px;")
+        batch_pager_layout.addWidget(self._batch_total_label)
+        batch_pager_layout.addSpacing(8)
+        self._batch_prev_btn = QPushButton("‹ 上一页")
+        self._batch_prev_btn.setFixedHeight(24)
+        self._batch_prev_btn.clicked.connect(self._on_batch_page_prev)
+        batch_pager_layout.addWidget(self._batch_prev_btn)
+        self._batch_page_label = QLabel("1 / 1 页")
+        self._batch_page_label.setStyleSheet("font-size: 10px;")
+        batch_pager_layout.addWidget(self._batch_page_label)
+        self._batch_next_btn = QPushButton("下一页 ›")
+        self._batch_next_btn.setFixedHeight(24)
+        self._batch_next_btn.clicked.connect(self._on_batch_page_next)
+        batch_pager_layout.addWidget(self._batch_next_btn)
+        batch_pager_layout.addStretch()
+        batch_layout.addWidget(batch_pager)
+
+        # Confirm bar (hidden by default, slides up)
+        self._confirm_bar = QWidget()
+        self._confirm_bar.setFixedHeight(48)
+        self._confirm_bar.setVisible(False)
+        confirm_layout = QHBoxLayout(self._confirm_bar)
+        confirm_layout.setContentsMargins(12, 4, 12, 4)
+        self._confirm_label = QLabel("")
+        confirm_layout.addWidget(self._confirm_label, 1)
+        self._confirm_ok_btn = QPushButton("确认")
+        self._confirm_ok_btn.setFixedHeight(28)
+        confirm_layout.addWidget(self._confirm_ok_btn)
+        confirm_cancel_btn = QPushButton("取消")
+        confirm_cancel_btn.setFixedHeight(28)
+        confirm_cancel_btn.clicked.connect(self._hide_confirm)
+        confirm_layout.addWidget(confirm_cancel_btn)
+        batch_layout.addWidget(self._confirm_bar)
+
         self._stack.addWidget(batch_page)
+        self._batch_page = 0
+        self._batch_page_size = 20
+        self._batch_total_count = 0
+        self._batch_current_filter = TaskFilter()
+        self._batch_pending_action: dict = {}
 
         self.setCentralWidget(self._stack)
 
@@ -748,6 +828,120 @@ class MainWindow(QMainWindow):
 
     def _on_batch_completed(self) -> None:
         self._on_data_changed()
+
+    # ------------------------------------------------------------------
+    # Batch page methods
+    # ------------------------------------------------------------------
+
+    def _refresh_batch_page(self) -> None:
+        """Refresh the batch processing page."""
+        if not hasattr(self, '_batch_task_model'):
+            return
+        self._batch_page = 0
+        f = self._batch_current_filter or TaskFilter()
+        f.partition_id = self._active_partition_id
+        f.limit = self._batch_page_size
+        f.offset = self._batch_page * self._batch_page_size
+        tasks = self._repository.search(f)
+        self._batch_total_count = self._repository.count(f)
+        self._batch_task_model.load_tasks(tasks)
+        self._update_batch_pagination()
+
+    def _update_batch_pagination(self) -> None:
+        total_pages = max(1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size)
+        self._batch_total_label.setText(f"共 {self._batch_total_count} 项")
+        self._batch_page_label.setText(f"{self._batch_page + 1} / {total_pages} 页")
+        self._batch_prev_btn.setEnabled(self._batch_page > 0)
+        self._batch_next_btn.setEnabled(self._batch_page < total_pages - 1)
+
+    def _on_batch_filter_changed(self, filter_: TaskFilter) -> None:
+        self._batch_current_filter = filter_
+        self._refresh_batch_page()
+
+    def _on_batch_page_prev(self) -> None:
+        if self._batch_page > 0:
+            self._batch_page -= 1
+            self._refresh_batch_page()
+
+    def _on_batch_page_next(self) -> None:
+        total_pages = max(1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size)
+        if self._batch_page < total_pages - 1:
+            self._batch_page += 1
+            self._refresh_batch_page()
+
+    def _on_batch_select_all(self) -> None:
+        if hasattr(self, '_batch_task_model'):
+            ids = set(t.id for t in self._batch_task_model.tasks)
+            self._batch_task_model.set_checked_ids(ids)
+
+    def _on_batch_deselect_all(self) -> None:
+        if hasattr(self, '_batch_task_model'):
+            self._batch_task_model.set_checked_ids(set())
+
+    def _on_batch_model_data_changed(self) -> None:
+        if hasattr(self, '_batch_toolbar2'):
+            ids = self._batch_task_model.checked_ids()
+            self._batch_toolbar2.set_selected(ids)
+
+    def _on_batch_status_change(self, ids: list[str], status) -> None:
+        self._confirm_label.setText(f"确认更改 {len(ids)} 个任务的状态？")
+        self._confirm_bar.setVisible(True)
+        self._batch_pending_action = {"action": "status", "ids": ids, "status": status}
+        self._confirm_ok_btn.clicked.disconnect()
+        self._confirm_ok_btn.clicked.connect(self._execute_batch_status)
+
+    def _execute_batch_status(self) -> None:
+        action = self._batch_pending_action
+        self._repository.batch_update_status(action["ids"], action["status"])
+        self._hide_confirm()
+        self._refresh_batch_page()
+        self._on_data_changed()
+
+    def _on_batch_delete(self, ids: list[str]) -> None:
+        self._confirm_label.setText(f"⚠ 确认删除 {len(ids)} 个任务？此操作不可撤销。")
+        self._confirm_bar.setVisible(True)
+        self._batch_pending_action = {"action": "delete", "ids": ids}
+        self._confirm_ok_btn.clicked.disconnect()
+        self._confirm_ok_btn.clicked.connect(self._execute_batch_delete)
+
+    def _execute_batch_delete(self) -> None:
+        action = self._batch_pending_action
+        self._repository.batch_delete(action["ids"])
+        self._hide_confirm()
+        self._refresh_batch_page()
+        self._on_data_changed()
+
+    def _on_batch_suspend(self, ids: list[str]) -> None:
+        self._confirm_label.setText(f"确认中止 {len(ids)} 个任务？")
+        self._confirm_bar.setVisible(True)
+        self._batch_pending_action = {"action": "suspend", "ids": ids}
+        self._confirm_ok_btn.clicked.disconnect()
+        self._confirm_ok_btn.clicked.connect(self._execute_batch_suspend)
+
+    def _execute_batch_suspend(self) -> None:
+        action = self._batch_pending_action
+        self._repository.batch_suspend(action["ids"])
+        self._hide_confirm()
+        self._refresh_batch_page()
+        self._on_data_changed()
+
+    def _on_batch_restart(self, ids: list[str]) -> None:
+        self._confirm_label.setText(f"确认重启 {len(ids)} 个任务？")
+        self._confirm_bar.setVisible(True)
+        self._batch_pending_action = {"action": "restart", "ids": ids}
+        self._confirm_ok_btn.clicked.disconnect()
+        self._confirm_ok_btn.clicked.connect(self._execute_batch_restart)
+
+    def _execute_batch_restart(self) -> None:
+        action = self._batch_pending_action
+        self._repository.batch_restart(action["ids"])
+        self._hide_confirm()
+        self._refresh_batch_page()
+        self._on_data_changed()
+
+    def _hide_confirm(self) -> None:
+        self._confirm_bar.setVisible(False)
+        self._batch_pending_action = {}
 
     def _on_filter_changed(self, filter_: TaskFilter) -> None:
         self._carousel_filter = filter_
@@ -1025,6 +1219,7 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(3)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.hide()
+            self._refresh_batch_page()
 
     # ------------------------------------------------------------------
     # Dashboard slots
