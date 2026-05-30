@@ -547,13 +547,21 @@ class MainWindow(QMainWindow):
 
         self._stack.addWidget(dashboard_page)
 
-        # === Page 2: Work Reports (placeholder) ===
+        # === Page 2: Work Reports ===
         reports_page = QWidget()
         reports_layout = QVBoxLayout(reports_page)
         reports_layout.setContentsMargins(8, 4, 8, 4)
-        reports_label = QLabel("工作报告 — 开发中")
-        reports_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        reports_layout.addWidget(reports_label)
+        reports_layout.setSpacing(4)
+
+        # Period selector bar
+        self._reports_period_selector = PeriodSelectorBar()
+        self._reports_period_selector.period_changed.connect(self._on_reports_period_changed)
+        reports_layout.addWidget(self._reports_period_selector)
+
+        # Report panel
+        self._report_panel = ActivityReportPanel(self._repository)
+        reports_layout.addWidget(self._report_panel, 1)
+
         self._stack.addWidget(reports_page)
 
         # === Page 3: Batch Processing (placeholder) ===
@@ -1011,6 +1019,8 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(2)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.hide()
+            if hasattr(self, '_reports_period_selector'):
+                self._reports_period_selector.activate_preset("today")
         elif view == "batch":
             self._stack.setCurrentIndex(3)
             self._heatmap_widget.nav_bar.setVisible(False)
@@ -1050,6 +1060,16 @@ class MainWindow(QMainWindow):
     def _on_dash_report_requested(self, task_id: str, d_from, d_to, label: str) -> None:
         """Switch to reports view for a specific task."""
         self._switch_view("reports")
+        if d_from and d_to:
+            task = self._repository.get_by_id(task_id)
+            if task and hasattr(self, '_report_panel'):
+                self._reports_period_selector.set_custom_range(d_from, d_to)
+                self._report_panel.show_task_detail(task, d_from, d_to)
+
+    def _on_reports_period_changed(self, d_from, d_to, label: str) -> None:
+        """Handle period selector change on the reports page."""
+        if hasattr(self, '_report_panel'):
+            self._report_panel.refresh(d_from, d_to, self._active_partition_id, label)
 
     def _refresh_report(self) -> None:
         if self._carousel_filter:
