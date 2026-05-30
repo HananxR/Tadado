@@ -460,8 +460,11 @@ class MainWindow(QMainWindow):
 
         self._progress_bar = ProgressDynamicsBar(self._repository)
         right_layout.addWidget(self._progress_bar)
+        self._progress_bar.progress_filter_activated.connect(self._on_progress_filter)
+        self._progress_bar.task_clicked.connect(self._on_carousel_clicked)
+        self._progress_bar.set_synced_period("today")
 
-        self._edit_panel = TaskEditPanel(self._repository, self._config)
+        self._edit_panel = TaskEditPanel(self._repository, self._task_model)
         right_layout.addWidget(self._edit_panel, 1)
         self._splitter.addWidget(right_panel)
 
@@ -652,7 +655,7 @@ class MainWindow(QMainWindow):
         self._update_page_label()
         self._update_status_bar(filter_)
         self._status_badge.refresh(filter_.date_from, filter_.date_to)
-        self._progress_bar.refresh()
+        self._progress_bar.set_items(tasks)
 
     def _on_task_created(self, task) -> None:
         self._filter_bar.reset()
@@ -717,6 +720,7 @@ class MainWindow(QMainWindow):
                 pass
         self._carousel_filter = f
         self._refresh_all_views(f)
+        self._progress_bar.set_synced_period(preset)
         if self._heatmap_mode != "hidden":
             self._refresh_report()
             self._heatmap_widget.highlight_range(f.date_from, f.date_to, preset)
@@ -727,6 +731,10 @@ class MainWindow(QMainWindow):
             f.tags = list(self._carousel_filter.tags)
         self._carousel_filter = f
         self._refresh_all_views(f)
+
+    def _on_progress_filter(self, filter_: TaskFilter) -> None:
+        self._carousel_filter = filter_
+        self._refresh_all_views(filter_)
 
     def _on_task_selected(self, task: Task) -> None:
         self._task_model.set_highlighted_task(task.id)
