@@ -72,7 +72,7 @@ class MainWindow(QMainWindow):
         self._page: int = 0
         self._page_size: int = config.get("general", "page_size", default=20)
         self._total_count: int = 0
-        self._heatmap_mode: str = "hidden"
+        self._current_view: str = "edit"
 
         self.setWindowTitle("DeskTodoSeq")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
@@ -170,7 +170,10 @@ class MainWindow(QMainWindow):
         file_menu.addSeparator()
         file_menu.addAction("退出(&Q)", self._on_quit)
         view_menu = self._title_menu_bar.addMenu("视图(&V)")
-        view_menu.addAction("热度日历(&H)\tCtrl+H", self._on_toggle_heatmap)
+        view_menu.addAction("📋 任务编辑(&E)\tCtrl+1", lambda: self._switch_view("edit"))
+        view_menu.addAction("📊 活动看板(&D)\tCtrl+2", lambda: self._switch_view("dashboard"))
+        view_menu.addAction("📄 工作报告(&R)\tCtrl+3", lambda: self._switch_view("reports"))
+        view_menu.addAction("⚙ 批量处理(&B)\tCtrl+4", lambda: self._switch_view("batch"))
         help_menu = self._title_menu_bar.addMenu("帮助(&H)")
         help_menu.addAction("设置(&S)", self._on_settings)
         help_menu.addAction("帮助文档(&D)", self._on_help_docs)
@@ -344,10 +347,12 @@ class MainWindow(QMainWindow):
         self._view_btn.setText("视图")
         self._view_btn.setToolTip("切换视图")
         self._view_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        self._view_btn.clicked.connect(self._on_toggle_heatmap)
+        self._view_btn.clicked.connect(lambda: self._view_btn.showMenu())
         view_menu = QMenu(self._view_btn)
-        view_menu.addAction("热度日历", self._on_toggle_heatmap)
-        view_menu.addSeparator()
+        view_menu.addAction("📋 任务编辑", lambda: self._switch_view("edit"))
+        view_menu.addAction("📊 活动看板", lambda: self._switch_view("dashboard"))
+        view_menu.addAction("📄 工作报告", lambda: self._switch_view("reports"))
+        view_menu.addAction("⚙ 批量处理", lambda: self._switch_view("batch"))
         self._view_btn.setMenu(view_menu)
         toolbar.addWidget(self._view_btn)
 
@@ -378,7 +383,7 @@ class MainWindow(QMainWindow):
 
         # Heatmap widget (created here, used in heatmap page)
         self._heatmap_widget = CalendarHeatmapWidget(self._repository, self._config)
-        self._heatmap_widget.back_requested.connect(lambda: self._set_heatmap_mode("hidden"))
+        self._heatmap_widget.back_requested.connect(lambda: self._switch_view("edit"))
 
         # Row 2: FilterBar + StatusBadgeStrip (same row, StatusBadgeStrip right-aligned)
         filter_row = QWidget()
@@ -495,7 +500,7 @@ class MainWindow(QMainWindow):
 
         self._stack.addWidget(task_page)
 
-        # === Page 1: Heatmap + Activity Report ===
+        # === Page 1: Activity Dashboard ===
         heatmap_page = QWidget()
         heatmap_layout = QVBoxLayout(heatmap_page)
         heatmap_layout.setContentsMargins(8, 4, 8, 4)
@@ -517,6 +522,25 @@ class MainWindow(QMainWindow):
         heatmap_layout.addWidget(self._report_panel)
 
         self._stack.addWidget(heatmap_page)
+
+        # === Page 2: Work Reports (placeholder) ===
+        reports_page = QWidget()
+        reports_layout = QVBoxLayout(reports_page)
+        reports_layout.setContentsMargins(8, 4, 8, 4)
+        reports_label = QLabel("工作报告 — 开发中")
+        reports_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        reports_layout.addWidget(reports_label)
+        self._stack.addWidget(reports_page)
+
+        # === Page 3: Batch Processing (placeholder) ===
+        batch_page = QWidget()
+        batch_layout = QVBoxLayout(batch_page)
+        batch_layout.setContentsMargins(8, 4, 8, 4)
+        batch_label = QLabel("批量处理 — 开发中")
+        batch_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        batch_layout.addWidget(batch_label)
+        self._stack.addWidget(batch_page)
+
         self.setCentralWidget(self._stack)
 
     def _on_new_multi_task(self) -> None:
@@ -617,7 +641,10 @@ class MainWindow(QMainWindow):
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._on_new_task)
         QShortcut(QKeySequence("Ctrl+R"), self, activated=self._on_refresh)
-        QShortcut(QKeySequence("Ctrl+H"), self, activated=self._on_toggle_heatmap)
+        QShortcut(QKeySequence("Ctrl+1"), self, activated=lambda: self._switch_view("edit"))
+        QShortcut(QKeySequence("Ctrl+2"), self, activated=lambda: self._switch_view("dashboard"))
+        QShortcut(QKeySequence("Ctrl+3"), self, activated=lambda: self._switch_view("reports"))
+        QShortcut(QKeySequence("Ctrl+4"), self, activated=lambda: self._switch_view("batch"))
         QShortcut(QKeySequence("Escape"), self, activated=self._on_escape)
 
     # ------------------------------------------------------------------
@@ -724,7 +751,7 @@ class MainWindow(QMainWindow):
         self._carousel_filter = f
         self._refresh_all_views(f)
         self._progress_bar.set_synced_period(preset)
-        if self._heatmap_mode != "hidden":
+        if self._current_view != "edit":
             self._refresh_report()
             self._heatmap_widget.highlight_range(f.date_from, f.date_to, preset)
 
@@ -765,16 +792,16 @@ class MainWindow(QMainWindow):
             self._heatmap_widget.force_refresh()
 
     def _on_go_home(self) -> None:
-        if self._heatmap_mode != "hidden":
-            self._set_heatmap_mode("hidden")
+        if self._current_view != "edit":
+            self._switch_view("edit")
         self._carousel_filter = None
         self._filter_bar.reset()
         self._on_data_changed()
         self._last_activity = dt.datetime.now()
 
     def _on_escape(self) -> None:
-        if self._heatmap_mode != "hidden":
-            self._set_heatmap_mode("hidden")
+        if self._current_view != "edit":
+            self._switch_view("edit")
         else:
             self._on_go_home()
 
@@ -939,30 +966,32 @@ class MainWindow(QMainWindow):
         self._load_partitions()
 
     # ------------------------------------------------------------------
-    # Heatmap
+    # View switching
     # ------------------------------------------------------------------
 
-    def _set_heatmap_mode(self, mode: str) -> None:
-        if mode == self._heatmap_mode:
+    def _switch_view(self, view: str) -> None:
+        if view == self._current_view:
             return
-        self._heatmap_mode = mode
-        if mode == "hidden":
+        self._current_view = view
+
+        if view == "edit":
             self._stack.setCurrentIndex(0)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.show()
             self._report_panel.setVisible(False)
-        elif mode == "split":
+        elif view == "dashboard":
             self._stack.setCurrentIndex(1)
             self._heatmap_widget.nav_bar.setVisible(True)
             self._top_bar.hide()
-            self._report_panel.setVisible(True)
-            self._refresh_report()
-
-    def _on_toggle_heatmap(self) -> None:
-        if self._heatmap_mode == "hidden":
-            self._set_heatmap_mode("split")
-        else:
-            self._set_heatmap_mode("hidden")
+            self._report_panel.setVisible(False)
+        elif view == "reports":
+            self._stack.setCurrentIndex(2)
+            self._heatmap_widget.nav_bar.setVisible(False)
+            self._top_bar.hide()
+        elif view == "batch":
+            self._stack.setCurrentIndex(3)
+            self._heatmap_widget.nav_bar.setVisible(False)
+            self._top_bar.hide()
 
     def _refresh_report(self) -> None:
         if self._carousel_filter:
@@ -1095,7 +1124,7 @@ class MainWindow(QMainWindow):
 
     def _on_midnight_crossed(self) -> None:
         self._quick_overview.refresh()
-        if self._heatmap_mode != "hidden":
+        if self._current_view != "edit":
             self._refresh_report()
         self._on_data_changed()
         self._schedule_midnight_timer()
