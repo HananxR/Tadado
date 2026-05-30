@@ -41,10 +41,11 @@ from ..services.md_formatter import MarkdownTaskFormatter
 from ..services.md_parser import MarkdownTaskParser
 from ..utils.icon_loader import load_icon
 from ..utils.signal_bus import get_signal_bus
-from .calendar_heatmap.activity_report_panel import ActivityReportPanel
 from .calendar_heatmap.calendar_heatmap_widget import CalendarHeatmapWidget
 from .calendar_heatmap.collapse_panel import HeatmapCollapsePanel
 from .calendar_heatmap.period_selector import PeriodSelectorBar
+from .calendar_heatmap.task_tree_panel import TaskTreePanel
+from .calendar_heatmap.timeline_detail_panel import TimelineDetailPanel
 from ..utils.widget_utils import combo_width
 from .widgets.dropdown import DropdownWidget
 from .dialogs.about_dialog import AboutDialog
@@ -74,6 +75,7 @@ class MainWindow(QMainWindow):
         self._page_size: int = config.get("general", "page_size", default=20)
         self._total_count: int = 0
         self._current_view: str = "edit"
+        self._analysis_date_range: tuple = (None, None)
 
         self.setWindowTitle("DeskTodoSeq")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
@@ -536,9 +538,21 @@ class MainWindow(QMainWindow):
         stats_period_layout.addWidget(self._analysis_period_selector)
         analysis_layout.addWidget(stats_period_row)
 
-        # Row 4: Report panel (stretch)
-        self._report_panel = ActivityReportPanel(self._repository)
-        analysis_layout.addWidget(self._report_panel, 1)
+        # Row 4: Task tree (left) + Timeline detail (right)
+        self._analysis_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._analysis_splitter.setHandleWidth(1)
+        self._analysis_splitter.setChildrenCollapsible(False)
+
+        self._analysis_task_tree = TaskTreePanel(self._repository)
+        self._analysis_task_tree.task_selected.connect(self._on_analysis_task_selected)
+        self._analysis_splitter.addWidget(self._analysis_task_tree)
+
+        self._analysis_timeline = TimelineDetailPanel()
+        self._analysis_splitter.addWidget(self._analysis_timeline)
+
+        self._analysis_splitter.setStretchFactor(0, 2)  # 40%
+        self._analysis_splitter.setStretchFactor(1, 3)  # 60%
+        analysis_layout.addWidget(self._analysis_splitter, 1)
 
         # Connect heatmap grid signals
         self._heatmap_widget.grid.date_clicked.connect(self._on_heatmap_date_clicked)
@@ -1202,7 +1216,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _refresh_analysis(self) -> None:
-        """Refresh analysis page: heatmap stats."""
+        """Refresh analysis page: heatmap stats + task tree."""
         if hasattr(self, '_analysis_stats') and hasattr(self, '_heatmap_widget'):
             model = self._heatmap_widget._model
             self._analysis_stats.refresh(
@@ -1213,13 +1227,26 @@ class MainWindow(QMainWindow):
             )
 
     def _on_analysis_period_changed(self, d_from, d_to, label: str) -> None:
-        """Unified handler: period change → highlight heatmap + refresh report."""
+        """Period change → highlight heatmap + refresh task tree + select first task."""
+        self._analysis_date_range = (d_from, d_to)
         if d_from is not None and d_to is not None:
             self._heatmap_widget.highlight_range(d_from, d_to, label)
         else:
             self._heatmap_widget.highlight_range(None, None, "")
-        if hasattr(self, '_report_panel'):
-            self._report_panel.refresh(d_from, d_to, self._active_partition_id, label)
+        if hasattr(self, '_analysis_task_tree'):
+            self._analysis_task_tree.refresh(d_from, d_to, self._active_partition_id)
+
+    def _on_analysis_task_selected(self, task_id: str) -> None:
+        """Task selected in tree → show timeline in right panel."""
+        if not task_id or not hasattr(self, '_analysis_timeline'):
+            if hasattr(self, '_analysis_timeline'):
+                self._analysis_timeline.show_hint()
+            return
+        task = self._repository.get_by_id(task_id)
+        if not task:
+            return
+        d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
+        self._analysis_timeline.show_task(task, d_from, d_to)
 
     def _on_heatmap_date_clicked(self, d: date) -> None:
         """Handle date click on heatmap grid."""
@@ -1227,13 +1254,7 @@ class MainWindow(QMainWindow):
             self._analysis_period_selector.set_custom_range(d, d)
 
     def _refresh_report(self) -> None:
-        if self._carousel_filter:
-            self._report_panel.refresh(
-                self._carousel_filter.date_from,
-                self._carousel_filter.date_to,
-                self._active_partition_id,
-                "",
-            )
+        pass  # No longer used; kept for compatibility
 
     # ------------------------------------------------------------------
     # Task operations
