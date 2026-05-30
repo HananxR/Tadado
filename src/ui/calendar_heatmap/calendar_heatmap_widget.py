@@ -29,14 +29,14 @@ from .heatmap_model import HeatmapModel
 from .heatmap_tooltip import HeatmapTooltip
 
 # ── Layout constants ──────────────────────────────────────────────────────────
-_LEFT_MARGIN = 42
-_TOP_MARGIN = 20
-_RIGHT_MARGIN = 14
+_LEFT_MARGIN = 38
+_TOP_MARGIN = 18
+_RIGHT_MARGIN = 12
 _BOTTOM_MARGIN = 4
-_LEGEND_HEIGHT = 16
+_LEGEND_HEIGHT = 14
 _MIN_CELL = 10
-_TARGET_CELL = 14
-_MONTH_GAP = 4
+_TARGET_CELL = 12
+_MONTH_GAP = 3
 _WEEKS_PER_MONTH = 5
 _DAYS_PER_WEEK = 7
 _MONTHS_PER_YEAR = 12
@@ -51,6 +51,7 @@ class _HeatmapGrid(QWidget):
     """Month-partitioned contribution grid: 12 months × (7 days × 5 weeks)."""
 
     date_hovered = Signal(object)
+    date_clicked = Signal(object)
 
     _DAY_LABELS: list[str] = ["一", "二", "三", "四", "五", "六", "日"]
     _MONTH_NAMES = [
@@ -330,6 +331,11 @@ class _HeatmapGrid(QWidget):
             self.date_hovered.emit(d)
             self.update()
 
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        d = self._date_at_pos(event.pos())
+        if d is not None:
+            self.date_clicked.emit(d)
+
     def leaveEvent(self, event) -> None:
         self._hovered_date = None
         self.date_hovered.emit(None)
@@ -418,6 +424,11 @@ class CalendarHeatmapWidget(QWidget):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    @property
+    def grid(self):
+        """Expose the _HeatmapGrid for signal connections."""
+        return self._main_grid
 
     def refresh(self) -> None:
         self._model.load_year(self._model.current_year())

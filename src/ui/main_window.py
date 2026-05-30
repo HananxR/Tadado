@@ -44,6 +44,8 @@ from ..utils.signal_bus import get_signal_bus
 from .calendar_heatmap.activity_report_panel import ActivityReportPanel
 from .calendar_heatmap.calendar_heatmap_widget import CalendarHeatmapWidget
 from .calendar_heatmap.collapse_panel import HeatmapCollapsePanel
+from .calendar_heatmap.period_selector import PeriodSelectorBar
+from .calendar_heatmap.progress_overview_list import ProgressOverviewList
 from ..utils.widget_utils import combo_width
 from .widgets.dropdown import DropdownWidget
 from .dialogs.about_dialog import AboutDialog
@@ -501,27 +503,49 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(task_page)
 
         # === Page 1: Activity Dashboard ===
-        heatmap_page = QWidget()
-        heatmap_layout = QVBoxLayout(heatmap_page)
-        heatmap_layout.setContentsMargins(8, 4, 8, 4)
-        heatmap_layout.setSpacing(4)
+        dashboard_page = QWidget()
+        dashboard_layout = QVBoxLayout(dashboard_page)
+        dashboard_layout.setContentsMargins(8, 4, 8, 4)
+        dashboard_layout.setSpacing(4)
 
-        heatmap_top = QWidget()
-        heatmap_top_row = QHBoxLayout(heatmap_top)
-        heatmap_top_row.setContentsMargins(0, 0, 0, 0)
-        heatmap_top_row.addStretch()
-        heatmap_top_row.addWidget(self._heatmap_widget.nav_bar)
-        heatmap_top_row.addSpacing(4)
-        heatmap_layout.addWidget(heatmap_top)
+        # Row 1: Nav bar (year nav + tag filter) + back button
+        dash_top = QWidget()
+        dash_top_row = QHBoxLayout(dash_top)
+        dash_top_row.setContentsMargins(0, 0, 0, 0)
+        dash_top_row.addWidget(self._heatmap_widget.nav_bar)
+        dash_top_row.addStretch()
+        back_btn = QPushButton("↩ 返回编辑")
+        back_btn.setFixedHeight(28)
+        back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        back_btn.setObjectName("dashBackBtn")
+        back_btn.clicked.connect(lambda: self._switch_view("edit"))
+        dash_top_row.addWidget(back_btn)
+        dashboard_layout.addWidget(dash_top)
 
+        # Row 2: Heatmap grid (compact, fixed height)
         collapsible = HeatmapCollapsePanel(self._heatmap_widget)
-        heatmap_layout.addWidget(collapsible, 1)
+        dashboard_layout.addWidget(collapsible, 0)
 
-        self._report_panel = ActivityReportPanel(self._repository)
-        self._report_panel.setVisible(False)
-        heatmap_layout.addWidget(self._report_panel)
+        # Row 3: Stats panel (existing)
+        from .calendar_heatmap.heatmap_stats_panel import HeatmapStatsPanel
+        self._dash_stats = HeatmapStatsPanel()
+        self._dash_stats.setFixedHeight(42)
+        dashboard_layout.addWidget(self._dash_stats)
 
-        self._stack.addWidget(heatmap_page)
+        # Row 4: Period selector
+        self._dash_period_selector = PeriodSelectorBar()
+        self._dash_period_selector.period_changed.connect(self._on_dashboard_period_changed)
+        dashboard_layout.addWidget(self._dash_period_selector)
+
+        # Row 5: Progress overview (stretch)
+        self._dash_progress = ProgressOverviewList(self._repository)
+        self._dash_progress.report_requested.connect(self._on_dash_report_requested)
+        dashboard_layout.addWidget(self._dash_progress, 1)
+
+        # Connect heatmap grid signals
+        self._heatmap_widget.grid.date_clicked.connect(self._on_heatmap_date_clicked)
+
+        self._stack.addWidget(dashboard_page)
 
         # === Page 2: Work Reports (placeholder) ===
         reports_page = QWidget()
@@ -978,12 +1002,11 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(0)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.show()
-            self._report_panel.setVisible(False)
         elif view == "dashboard":
             self._stack.setCurrentIndex(1)
             self._heatmap_widget.nav_bar.setVisible(True)
             self._top_bar.hide()
-            self._report_panel.setVisible(False)
+            self._refresh_dashboard()
         elif view == "reports":
             self._stack.setCurrentIndex(2)
             self._heatmap_widget.nav_bar.setVisible(False)
@@ -992,6 +1015,41 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(3)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.hide()
+
+    # ------------------------------------------------------------------
+    # Dashboard slots
+    # ------------------------------------------------------------------
+
+    def _refresh_dashboard(self) -> None:
+        """Refresh dashboard: heatmap stats + progress overview."""
+        if hasattr(self, '_dash_stats') and hasattr(self, '_heatmap_widget'):
+            model = self._heatmap_widget._model
+            self._dash_stats.refresh(
+                total=model.total_count(),
+                active_days=model.active_days(),
+                longest_streak=model.longest_streak(),
+                daily_avg=model.daily_average(),
+            )
+        if hasattr(self, '_dash_progress'):
+            self._dash_progress.refresh(None, None, self._active_partition_id)
+
+    def _on_dashboard_period_changed(self, d_from, d_to, label: str) -> None:
+        """Handle period selector change on the dashboard."""
+        if d_from is not None and d_to is not None:
+            self._heatmap_widget.highlight_range(d_from, d_to, label)
+        else:
+            self._heatmap_widget.highlight_range(None, None, "")
+        if hasattr(self, '_dash_progress'):
+            self._dash_progress.refresh(d_from, d_to, self._active_partition_id)
+
+    def _on_heatmap_date_clicked(self, d: date) -> None:
+        """Handle date click on heatmap grid."""
+        if hasattr(self, '_dash_period_selector'):
+            self._dash_period_selector.set_custom_range(d, d)
+
+    def _on_dash_report_requested(self, task_id: str, d_from, d_to, label: str) -> None:
+        """Switch to reports view for a specific task."""
+        self._switch_view("reports")
 
     def _refresh_report(self) -> None:
         if self._carousel_filter:
