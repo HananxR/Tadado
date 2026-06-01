@@ -153,13 +153,11 @@ class ActivityContentView(QWidget):
                 f'</div>'
             )
             # Entry details: each on its own indented line
-            entry_html = "<br>".join(f"&emsp;&emsp;{e}" for e in item["entry_lines"])
-            html_parts.append(
-                f'<div style="margin: 0 0 8px 0; line-height: 1.7; '
-                f'color: {t.text_primary}; font-size: 11px;">'
-                f'{entry_html}'
-                f'</div>'
+            entry_html = "".join(
+                f'<div style="margin-left: 24px; line-height: 1.7;">{e}</div>'
+                for e in item["entry_lines"]
             )
+            html_parts.append(entry_html)
 
             plain_text += f"{idx}. {item['title']} [{status_change}, {prog_change}]:\n"
             for e in item["entry_lines"]:

@@ -1195,6 +1195,9 @@ class MainWindow(QMainWindow):
         if view == self._current_view:
             return
         self._current_view = view
+        # Cancel any pending deferred loads
+        if hasattr(self, '_deferred_timer') and self._deferred_timer.isActive():
+            self._deferred_timer.stop()
 
         if view == "edit":
             self._stack.setCurrentIndex(0)
@@ -1204,15 +1207,22 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(1)
             self._heatmap_widget.nav_bar.setVisible(True)
             self._top_bar.hide()
-            # Defer data loading so the view switch is instant
-            QTimer.singleShot(0, self._refresh_analysis)
-            if hasattr(self, '_analysis_period_selector'):
-                QTimer.singleShot(10, lambda: self._analysis_period_selector.activate_preset("today"))
+            # Defer heavy data loading so page renders immediately
+            self._deferred_timer = QTimer(self)
+            self._deferred_timer.setSingleShot(True)
+            self._deferred_timer.timeout.connect(self._load_dashboard_data)
+            self._deferred_timer.start(30)
         elif view == "batch":
             self._stack.setCurrentIndex(2)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.hide()
-            QTimer.singleShot(0, self._refresh_batch_page)
+            self._refresh_batch_page()
+
+    def _load_dashboard_data(self) -> None:
+        """Load dashboard data after view switch (deferred for responsiveness)."""
+        self._refresh_analysis()
+        if hasattr(self, '_analysis_period_selector'):
+            self._analysis_period_selector.activate_preset("today")
 
     # ------------------------------------------------------------------
     # Activity analysis slots

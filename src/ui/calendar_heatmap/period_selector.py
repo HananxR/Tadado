@@ -47,9 +47,9 @@ def _get_period_range(period_key: str) -> tuple[date, date]:
         return today, today
 
 
-def _make_date_edit() -> QDateEdit:
-    """Create a QDateEdit matching the task editor's style."""
-    w = QDateEdit()
+def _make_date_edit() -> _CalendarDateEdit:
+    """Create a date edit matching the task editor's style + CalendarPopup."""
+    w = _CalendarDateEdit()
     w.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
     w.setDisplayFormat("yyyy-MM-dd")
     w.setDate(QDate.currentDate())
@@ -61,37 +61,29 @@ def _make_date_edit() -> QDateEdit:
     w.setAlignment(Qt.AlignmentFlag.AlignCenter)
     w.setToolTip("点击选择日期")
     w.setCursor(Qt.CursorShape.PointingHandCursor)
-    w.setCalendarPopup(True)
     return w
 
 
-class _DateEditFilter(QWidget):
-    """Thin wrapper that opens CalendarPopup on click, matching task editor behavior."""
-    def __init__(self, date_edit: QDateEdit, on_changed, parent=None):
+class _CalendarDateEdit(QDateEdit):
+    """QDateEdit that opens CalendarPopup on click, matching task editor behavior."""
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self._edit = date_edit
-        self._on_changed = on_changed
-        self._edit.dateChanged.connect(lambda: self._on_changed())
-        # Install event filter for CalendarPopup
-        self._edit.lineEdit().installEventFilter(self)
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._edit)
+        self.lineEdit().installEventFilter(self)
 
     def eventFilter(self, obj, event):
-        if obj is self._edit.lineEdit() and event.type() == QEvent.Type.MouseButtonPress:
+        if obj is self.lineEdit() and event.type() == QEvent.Type.MouseButtonPress:
             from ..widgets.calendar_popup import CalendarPopup
-            qd = self._edit.date()
+            qd = self.date()
             cur = date(qd.year(), qd.month(), qd.day())
-            popup = CalendarPopup(cur, self._edit)
-            popup.date_selected.connect(self._on_popup_selected)
-            popup.smart_place(self._edit)
+            popup = CalendarPopup(cur, self)
+            popup.date_selected.connect(self._on_popup_date)
+            popup.smart_place(self)
             popup.exec()
             return True
         return super().eventFilter(obj, event)
 
-    def _on_popup_selected(self, qd: QDate) -> None:
-        self._edit.setDate(qd)
+    def _on_popup_date(self, qd: QDate) -> None:
+        self.setDate(qd)
 
 
 class PeriodSelectorBar(QWidget):
@@ -142,8 +134,8 @@ class PeriodSelectorBar(QWidget):
         cal_label.setFixedWidth(20)
         layout.addWidget(cal_label)
 
-        self._custom_from_edit = _make_date_edit()
-        self._custom_from = _DateEditFilter(self._custom_from_edit, self._on_custom_changed)
+        self._custom_from = _make_date_edit()
+        self._custom_from.dateChanged.connect(self._on_custom_changed)
         layout.addWidget(self._custom_from)
 
         dash = QLabel("~")
@@ -151,8 +143,8 @@ class PeriodSelectorBar(QWidget):
         dash.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(dash)
 
-        self._custom_to_edit = _make_date_edit()
-        self._custom_to = _DateEditFilter(self._custom_to_edit, self._on_custom_changed)
+        self._custom_to = _make_date_edit()
+        self._custom_to.dateChanged.connect(self._on_custom_changed)
         layout.addWidget(self._custom_to)
 
         layout.addStretch()
@@ -206,8 +198,8 @@ class PeriodSelectorBar(QWidget):
         self._debounce_timer.start()
 
     def _emit_custom_range(self) -> None:
-        qd_from = self._custom_from_edit.date()
-        qd_to = self._custom_to_edit.date()
+        qd_from = self._custom_from.date()
+        qd_to = self._custom_to.date()
         d_from = date(qd_from.year(), qd_from.month(), qd_from.day())
         d_to = date(qd_to.year(), qd_to.month(), qd_to.day())
         if d_from > d_to:
@@ -215,12 +207,12 @@ class PeriodSelectorBar(QWidget):
         self.period_changed.emit(d_from, d_to, "自定义")
 
     def _sync_date_widgets(self, d_from: date, d_to: date) -> None:
-        self._custom_from_edit.blockSignals(True)
-        self._custom_to_edit.blockSignals(True)
-        self._custom_from_edit.setDate(QDate(d_from.year, d_from.month, d_from.day))
-        self._custom_to_edit.setDate(QDate(d_to.year, d_to.month, d_to.day))
-        self._custom_from_edit.blockSignals(False)
-        self._custom_to_edit.blockSignals(False)
+        self._custom_from.blockSignals(True)
+        self._custom_to.blockSignals(True)
+        self._custom_from.setDate(QDate(d_from.year, d_from.month, d_from.day))
+        self._custom_to.setDate(QDate(d_to.year, d_to.month, d_to.day))
+        self._custom_from.blockSignals(False)
+        self._custom_to.blockSignals(False)
 
     def set_custom_range(self, d_from: date, d_to: date) -> None:
         t = get_tokens()
