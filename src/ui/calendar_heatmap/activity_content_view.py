@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QTextBrowser,
     QVBoxLayout,
@@ -18,6 +18,8 @@ from ...utils.design_tokens import get_tokens
 
 class ActivityContentView(QWidget):
     """Renders activity entries as an ordered list grouped by tag."""
+
+    scrolled_to_bottom = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -33,11 +35,18 @@ class ActivityContentView(QWidget):
             f"QTextBrowser {{ border: none; background: transparent; "
             f"color: {t.text_primary}; font-size: 11px; line-height: 1.6; }}"
         )
+        self._view.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
         layout.addWidget(self._view, 1)
 
         self._plain_text: str = ""
         self._search_text: str = ""
         self._cached_data: dict = {}
+
+        # Debounce timer for scroll-to-bottom detection (200ms)
+        self._scroll_debounce = QTimer(self)
+        self._scroll_debounce.setSingleShot(True)
+        self._scroll_debounce.setInterval(200)
+        self._scroll_debounce.timeout.connect(self._check_scroll_bottom)
 
         self.show_hint()
 
@@ -173,6 +182,22 @@ class ActivityContentView(QWidget):
         self._plain_text = plain_text
         self._cached_data = {"tag": tag, "tasks": tasks,
                              "date_from": date_from, "date_to": date_to}
+        # Reset scroll to top for new content
+        self._view.verticalScrollBar().setValue(0)
+
+    # ------------------------------------------------------------------
+    # Scroll detection
+    # ------------------------------------------------------------------
+
+    def _on_scroll_changed(self, value: int) -> None:
+        sb = self._view.verticalScrollBar()
+        if value >= sb.maximum():
+            self._scroll_debounce.start()
+
+    def _check_scroll_bottom(self) -> None:
+        sb = self._view.verticalScrollBar()
+        if sb.value() >= sb.maximum() and sb.maximum() > 0:
+            self.scrolled_to_bottom.emit()
 
     # ------------------------------------------------------------------
     # Helpers

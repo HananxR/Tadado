@@ -1,4 +1,4 @@
-"""Tag list panel — simple tag selector for activity analysis."""
+"""Tag list panel — checkable tag selector with select-all for activity analysis."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -19,25 +20,43 @@ from ...utils.design_tokens import get_tokens
 
 
 class TaskTreePanel(QWidget):
-    """List of tags with activity counts. Emits tag_selected(tag_name)."""
+    """List of checkable tags with activity counts. Emits tag_selected(tag_name)."""
 
-    tag_selected = Signal(str)  # tag name (or "__untagged__")
+    tag_selected = Signal(str)
+    checked_tags_changed = Signal()
 
     def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._repository = repository
         self._tag_task_map: dict[str, list[Task]] = {}
+        self._checked_tags: set[str] = set()
+        self._active_tag: str | None = None
+        self._all_checked = True
         self._build_ui()
 
     def _build_ui(self) -> None:
         t = get_tokens()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(2)
+
+        # Select-all toggle
+        self._toggle_btn = QPushButton("取消全选")
+        self._toggle_btn.setFixedHeight(24)
+        self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._toggle_btn.clicked.connect(self.toggle_all_checked)
+        self._toggle_btn.setStyleSheet(f"""
+            QPushButton {{ font-size: 10px; padding: 1px 8px;
+                color: {t.text_secondary}; background: transparent;
+                border: 1px solid {t.border_primary}; border-radius: 3px; }}
+            QPushButton:hover {{ background: {t.accent}10; }}
+        """)
+        layout.addWidget(self._toggle_btn)
 
         self._list = QListWidget()
         self._list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._list.currentItemChanged.connect(self._on_item_changed)
+        self._list.itemChanged.connect(self._on_check_changed)
         self._list.setStyleSheet(f"""
             QListWidget {{ border: none; background: transparent; font-size: 11px; }}
             QListWidget::item {{ padding: 5px 10px; border-radius: 4px; color: {t.text_primary}; }}
@@ -58,7 +77,6 @@ class TaskTreePanel(QWidget):
         f = TaskFilter(partition_id=partition_id)
         tasks = self._repository.search(f)
 
-        # Group tasks by tag, count activities in period
         tag_data: dict[str, tuple[int, list[Task]]] = {}
         for task in tasks:
             entries = self._filter_entries(task, date_from, date_to)
@@ -70,30 +88,87 @@ class TaskTreePanel(QWidget):
             count, task_list = tag_data[tag]
             tag_data[tag] = (count + len(entries), task_list + [task])
 
-        # Sort by activity count desc
         sorted_tags = sorted(tag_data.items(), key=lambda x: x[1][0], reverse=True)
 
         self._list.blockSignals(True)
         self._list.clear()
         self._tag_task_map.clear()
+        self._checked_tags.clear()
 
         for tag, (count, task_list) in sorted_tags:
             display = tag if tag != "__untagged__" else "未分类"
             item = QListWidgetItem(f"{display}  ({count})")
             item.setData(Qt.ItemDataRole.UserRole, tag)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            self._checked_tags.add(tag)
             self._list.addItem(item)
             self._tag_task_map[tag] = task_list
 
+        self._all_checked = True
+        self._toggle_btn.setText("取消全选")
         self._list.blockSignals(False)
 
-        # Auto-select first
         if self._list.count() > 0:
             self._list.setCurrentRow(0)
         else:
+            self._active_tag = None
             self.tag_selected.emit("")
 
     def get_tasks_for_tag(self, tag: str) -> list[Task]:
         return self._tag_task_map.get(tag, [])
+
+    def get_checked_tags(self) -> list[str]:
+        """Return checked tag names in list order."""
+        ordered = []
+        for i in range(self._list.count()):
+            item = self._list.item(i)
+            if item and item.checkState() == Qt.CheckState.Checked:
+                tag = item.data(Qt.ItemDataRole.UserRole)
+                if tag:
+                    ordered.append(tag)
+        return ordered
+
+    def get_next_checked_tag(self, current_tag: str) -> str | None:
+        """Return the next checked tag after current_tag, or None."""
+        checked = self.get_checked_tags()
+        try:
+            idx = checked.index(current_tag)
+            if idx + 1 < len(checked):
+                return checked[idx + 1]
+        except ValueError:
+            pass
+        return None
+
+    def select_tag(self, tag: str) -> None:
+        """Programmatically select and scroll to the given tag."""
+        for i in range(self._list.count()):
+            item = self._list.item(i)
+            if item and item.data(Qt.ItemDataRole.UserRole) == tag:
+                self._list.setCurrentItem(item)
+                self._list.scrollToItem(item, QListWidget.ScrollHint.EnsureVisible)
+                return
+
+    def toggle_all_checked(self) -> None:
+        """Toggle all tags between checked and unchecked."""
+        self._list.blockSignals(True)
+        new_state = Qt.CheckState.Unchecked if self._all_checked else Qt.CheckState.Checked
+        self._checked_tags.clear()
+        for i in range(self._list.count()):
+            item = self._list.item(i)
+            if item:
+                item.setCheckState(new_state)
+                if new_state == Qt.CheckState.Checked:
+                    tag = item.data(Qt.ItemDataRole.UserRole)
+                    if tag:
+                        self._checked_tags.add(tag)
+        self._all_checked = not self._all_checked
+        self._toggle_btn.setText("取消全选" if self._all_checked else "全选")
+        self._list.blockSignals(False)
+        self.checked_tags_changed.emit()
+
+    def get_active_tag(self) -> str | None:
+        return self._active_tag
 
     # ------------------------------------------------------------------
     # Helpers
@@ -127,5 +202,21 @@ class TaskTreePanel(QWidget):
         if current is None:
             return
         tag = current.data(Qt.ItemDataRole.UserRole)
-        if tag:
+        if tag and tag != self._active_tag:
+            self._active_tag = tag
             self.tag_selected.emit(tag)
+
+    def _on_check_changed(self, item: QListWidgetItem) -> None:
+        tag = item.data(Qt.ItemDataRole.UserRole)
+        if not tag:
+            return
+        if item.checkState() == Qt.CheckState.Checked:
+            self._checked_tags.add(tag)
+        else:
+            self._checked_tags.discard(tag)
+        self._all_checked = all(
+            self._list.item(i).checkState() == Qt.CheckState.Checked
+            for i in range(self._list.count())
+        )
+        self._toggle_btn.setText("取消全选" if self._all_checked else "全选")
+        self.checked_tags_changed.emit()

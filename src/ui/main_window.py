@@ -521,6 +521,7 @@ class MainWindow(QMainWindow):
         self._analysis_splitter.addWidget(self._analysis_task_tree)
 
         self._analysis_content_view = ActivityContentView()
+        self._analysis_content_view.scrolled_to_bottom.connect(self._on_content_scrolled_to_bottom)
         self._analysis_splitter.addWidget(self._analysis_content_view)
 
         self._analysis_splitter.setStretchFactor(0, 1)  # ~25%
@@ -1337,6 +1338,17 @@ class MainWindow(QMainWindow):
         d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
         self._analysis_content_view.show_tag_activity(tag, tasks, d_from, d_to)
 
+    def _on_content_scrolled_to_bottom(self) -> None:
+        """Auto-advance to next checked tag when user scrolls to bottom of content."""
+        if not hasattr(self, '_analysis_task_tree'):
+            return
+        current_tag = self._analysis_task_tree.get_active_tag()
+        if not current_tag:
+            return
+        next_tag = self._analysis_task_tree.get_next_checked_tag(current_tag)
+        if next_tag:
+            self._analysis_task_tree.select_tag(next_tag)
+
     def _on_heatmap_date_clicked(self, d: date) -> None:
         """Handle date click on heatmap grid."""
         if hasattr(self, '_analysis_period_selector'):
@@ -1357,22 +1369,38 @@ class MainWindow(QMainWindow):
         self._export_analysis("txt")
 
     def _export_analysis(self, fmt: str) -> None:
-        """Export current analysis content to file."""
-        text = ""
-        if hasattr(self, '_analysis_content_view'):
-            text = self._analysis_content_view.get_plain_text()
+        """Export analysis content for all checked tags to file."""
+        d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
+
+        # Collect plain text from all checked tags
+        texts: list[str] = []
+        if hasattr(self, '_analysis_task_tree') and hasattr(self, '_analysis_content_view'):
+            checked_tags = self._analysis_task_tree.get_checked_tags()
+            for tag in checked_tags:
+                tasks = self._analysis_task_tree.get_tasks_for_tag(tag)
+                self._analysis_content_view.show_tag_activity(tag, tasks, d_from, d_to)
+                t = self._analysis_content_view.get_plain_text()
+                if t:
+                    texts.append(t)
+            # Restore current view
+            current_tag = self._analysis_task_tree.get_active_tag()
+            if current_tag:
+                tasks = self._analysis_task_tree.get_tasks_for_tag(current_tag)
+                self._analysis_content_view.show_tag_activity(current_tag, tasks, d_from, d_to)
+
+        text = "\n".join(texts)
         if not text:
             return
 
-        # Build default filename
-        def_name = self._build_export_filename(fmt)
+        # Build default filename with tag count
+        def_name = self._build_export_filename(fmt, len(checked_tags) if hasattr(self, '_analysis_task_tree') else 0)
         filters = {"md": "Markdown (*.md)", "xlsx": "Excel (*.xlsx)", "txt": "文本文件 (*.txt)"}
         filepath, _ = QFileDialog.getSaveFileName(self, "导出报告", def_name, filters.get(fmt, ""))
         if not filepath:
             return
 
         if fmt == "xlsx":
-            self._export_xlsx_file(filepath)
+            self._export_xlsx_file(filepath, text)
         elif fmt == "md":
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(text)
@@ -1380,17 +1408,18 @@ class MainWindow(QMainWindow):
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(text)
 
-    def _build_export_filename(self, fmt: str) -> str:
-        """Build default export filename: 分区名_标签_时间范围.ext"""
+    def _build_export_filename(self, fmt: str, tag_count: int = 0) -> str:
+        """Build default export filename: 分区名_时间范围_n个标签.ext"""
         name_map = self._repository.get_partition_name_map()
         pname = name_map.get(self._active_partition_id or "", "默认分区")
         d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
         date_str = ""
         if d_from and d_to:
             date_str = f"{d_from.isoformat()}" if d_from == d_to else f"{d_from.isoformat()}~{d_to.isoformat()}"
-        return f"{pname}_{date_str}.{fmt}"
+        tag_suffix = f"_{tag_count}个标签" if tag_count > 0 else ""
+        return f"{pname}_{date_str}{tag_suffix}.{fmt}"
 
-    def _export_xlsx_file(self, filepath: str) -> None:
+    def _export_xlsx_file(self, filepath: str, text: str = "") -> None:
         """Export as Excel with split columns: 序号, 任务, 状态变更, 进度变更, 活动信息."""
         try:
             import openpyxl
@@ -1398,13 +1427,10 @@ class MainWindow(QMainWindow):
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "活动报告"
-            # Headers
             headers = ["序号", "任务", "状态变更", "进度变更", "活动信息"]
             for col, h in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col, value=h)
                 cell.font = Font(bold=True)
-            # Parse plain text into rows
-            text = self._analysis_content_view.get_plain_text() if hasattr(self, '_analysis_content_view') else ""
             rows = self._parse_export_rows(text)
             for r, row_data in enumerate(rows, 2):
                 for c, val in enumerate(row_data, 1):
