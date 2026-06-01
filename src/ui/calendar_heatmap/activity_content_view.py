@@ -35,7 +35,9 @@ class ActivityContentView(QWidget):
             f"QTextBrowser {{ border: none; background: transparent; "
             f"color: {t.text_primary}; font-size: 11px; line-height: 1.6; }}"
         )
-        self._view.verticalScrollBar().valueChanged.connect(self._on_scroll_changed)
+        sb = self._view.verticalScrollBar()
+        sb.valueChanged.connect(self._on_scroll_changed)
+        sb.rangeChanged.connect(self._on_scroll_range_changed)
         layout.addWidget(self._view, 1)
 
         self._plain_text: str = ""
@@ -189,14 +191,26 @@ class ActivityContentView(QWidget):
     # Scroll detection
     # ------------------------------------------------------------------
 
+    def _at_bottom(self, sb) -> bool:
+        """True if scrollbar is at or within 5px of the bottom."""
+        return sb.maximum() > 0 and sb.value() >= sb.maximum() - 5
+
     def _on_scroll_changed(self, value: int) -> None:
         sb = self._view.verticalScrollBar()
-        if value >= sb.maximum():
+        if self._at_bottom(sb):
+            self._scroll_debounce.start()
+        else:
+            self._scroll_debounce.stop()
+
+    def _on_scroll_range_changed(self, _min: int, _max: int) -> None:
+        """Re-check scroll position after layout/resize changes scrollbar range."""
+        sb = self._view.verticalScrollBar()
+        if self._at_bottom(sb):
             self._scroll_debounce.start()
 
     def _check_scroll_bottom(self) -> None:
         sb = self._view.verticalScrollBar()
-        if sb.value() >= sb.maximum() and sb.maximum() > 0:
+        if self._at_bottom(sb):
             self.scrolled_to_bottom.emit()
 
     # ------------------------------------------------------------------

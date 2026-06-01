@@ -40,17 +40,12 @@ class TaskTreePanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        # Select-all toggle
+        # Select-all toggle — match BatchToolbar style
         self._toggle_btn = QPushButton("取消全选")
-        self._toggle_btn.setFixedHeight(24)
+        self._toggle_btn.setMinimumWidth(64)
+        self._toggle_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }")
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.clicked.connect(self.toggle_all_checked)
-        self._toggle_btn.setStyleSheet(f"""
-            QPushButton {{ font-size: 10px; padding: 1px 8px;
-                color: {t.text_secondary}; background: transparent;
-                border: 1px solid {t.border_primary}; border-radius: 3px; }}
-            QPushButton:hover {{ background: {t.accent}10; }}
-        """)
         layout.addWidget(self._toggle_btn)
 
         self._list = QListWidget()
@@ -62,6 +57,14 @@ class TaskTreePanel(QWidget):
             QListWidget::item {{ padding: 5px 10px; border-radius: 4px; color: {t.text_primary}; }}
             QListWidget::item:selected {{ background: {t.accent}18; border-left: 3px solid {t.accent}; }}
             QListWidget::item:hover {{ background: {t.accent}08; }}
+            QListWidget::indicator {{
+                width: 14px; height: 14px;
+                border: 1.5px solid {t.border_primary};
+                border-radius: 3px; background: transparent;
+            }}
+            QListWidget::indicator:checked {{
+                background: {t.accent}; border-color: {t.accent};
+            }}
         """)
         layout.addWidget(self._list, 1)
 
