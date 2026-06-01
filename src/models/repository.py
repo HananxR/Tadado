@@ -544,10 +544,10 @@ class TaskRepository:
             task = self.get_by_id(task_id)
             if task is None:
                 continue
-            old_status = task.status.value
+            old_status = task.status.display_name
             entry = {
                 "ts": now,
-                "content": f"[批量操作] 状态变更: {old_status} -> {status_value}",
+                "content": f"[批量操作] 状态变更: {old_status} -> {new_status.display_name}",
                 "status": status_value,
                 "progress": task.progress,
             }

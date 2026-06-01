@@ -50,15 +50,8 @@ class BatchToolbar(QWidget):
         self._toggle_select_btn.clicked.connect(self._on_toggle_select)
         layout.addWidget(self._toggle_select_btn)
 
-        self._count_label = QLabel("已选 0 项")
-        self._count_label.setStyleSheet(f"font-size: 10px; color: {get_tokens().text_secondary};")
-        layout.addWidget(self._count_label)
-
-        layout.addSpacing(4)
-
-        self._status_btn = QPushButton("状态 ▾")
+        self._status_btn = QPushButton("更改状态")
         self._status_btn.setStyleSheet(BTN_STYLE)
-        self._status_btn.setMinimumWidth(52)
         self._status_menu = QMenu(self)
         for s, label in [(TaskStatus.DOING, "进行中"), (TaskStatus.DONE, "已完成")]:
             self._status_menu.addAction(label, lambda s=s: self._emit_status(s))
@@ -82,6 +75,10 @@ class BatchToolbar(QWidget):
         self._restart_btn.setMinimumWidth(52)
         self._restart_btn.clicked.connect(lambda: self._emit_restart())
         layout.addWidget(self._restart_btn)
+
+        self._count_label = QLabel("已选 0 项")
+        self._count_label.setStyleSheet(f"font-size: 10px; color: {get_tokens().text_secondary};")
+        layout.addWidget(self._count_label)
 
         layout.addStretch()
 
