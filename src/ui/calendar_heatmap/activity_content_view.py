@@ -34,6 +34,15 @@ class ActivityContentView(QWidget):
             f"color: {t.text_primary}; font-size: 11px; line-height: 1.6; }}"
         )
         layout.addWidget(self._view, 1)
+
+        self._plain_text: str = ""
+        self._search_text: str = ""
+        self._cached_html: str = ""
+        self._cached_tasks: list[Task] = []
+        self._cached_tag: str = ""
+        self._cached_dfrom: date | None = None
+        self._cached_dto: date | None = None
+
         self.show_hint()
 
     # ------------------------------------------------------------------
@@ -43,6 +52,11 @@ class ActivityContentView(QWidget):
     def show_tag_activity(self, tag: str, tasks: list[Task],
                           date_from: date | None, date_to: date | None) -> None:
         """Show all activity entries for tasks in a tag, as flowing text."""
+        self._cached_tasks = tasks
+        self._cached_tag = tag
+        self._cached_dfrom = date_from
+        self._cached_dto = date_to
+
         t = get_tokens()
         tag_display = tag if tag != "__untagged__" else "未分类"
 
@@ -67,22 +81,39 @@ class ActivityContentView(QWidget):
                 color: {t.text_secondary}; font-size: 11px;
             ">此时段内无活动记录</body></html>"""
             self._view.setHtml(html)
+            self._cached_html = ""
+            self._plain_text = ""
             return
 
         # Sort by time
         all_entries.sort(key=lambda x: x[0])
 
-        # Build flowing text — one line per task group, entries as inline text
         # Group entries by task
         task_entries: dict[str, list[str]] = {}
         task_order: list[str] = []
+        self._plain_text = ""
         for ts, content, task_title in all_entries:
             if task_title not in task_entries:
                 task_entries[task_title] = []
                 task_order.append(task_title)
             task_entries[task_title].append(f"{ts} {content}")
+            self._plain_text += f"{task_title}：{ts} {content}\n"
 
-        # Build HTML paragraphs
+        # Apply search filter
+        q = self._search_text.lower()
+        if q:
+            filtered_task_entries = {}
+            filtered_order = []
+            for task_title in task_order:
+                entries = task_entries[task_title]
+                matched = [e for e in entries if q in e.lower() or q in task_title.lower()]
+                if matched:
+                    filtered_task_entries[task_title] = matched
+                    filtered_order.append(task_title)
+            task_entries = filtered_task_entries
+            task_order = filtered_order
+
+        # Build HTML
         body_parts = [f'<div style="font-size: 11px; font-weight: bold; color: {t.accent}; '
                       f'margin-bottom: 8px;">#{tag_display}</div>']
 
@@ -103,7 +134,25 @@ class ActivityContentView(QWidget):
             p {{ margin: 0 0 10px 0; }}
         </style></head><body>{"".join(body_parts)}</body></html>"""
 
+        self._cached_html = html
         self._view.setHtml(html)
+
+    def _render_from_cache(self) -> None:
+        """Re-render from cached data with current search filter."""
+        if not self._cached_tasks:
+            return
+        self.show_tag_activity(self._cached_tag, self._cached_tasks,
+                               self._cached_dfrom, self._cached_dto)
+
+    def set_search_text(self, text: str) -> None:
+        """Filter displayed content by search text, re-rendering from cache."""
+        self._search_text = text
+        if self._cached_html:
+            self._render_from_cache()
+
+    def get_plain_text(self) -> str:
+        """Return the current content as plain text for export."""
+        return self._plain_text
 
     def show_hint(self) -> None:
         t = get_tokens()

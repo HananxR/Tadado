@@ -473,10 +473,35 @@ class MainWindow(QMainWindow):
         report_label.setStyleSheet(sec_style)
         analysis_layout.addWidget(report_label)
 
-        # Period selector bar
+        # Period selector + search + export (same row)
+        period_row = QWidget()
+        period_row_layout = QHBoxLayout(period_row)
+        period_row_layout.setContentsMargins(0, 0, 0, 0)
+        period_row_layout.setSpacing(6)
+
         self._analysis_period_selector = PeriodSelectorBar()
         self._analysis_period_selector.period_changed.connect(self._on_analysis_period_changed)
-        analysis_layout.addWidget(self._analysis_period_selector)
+        period_row_layout.addWidget(self._analysis_period_selector, 1)
+
+        self._analysis_search = QLineEdit()
+        self._analysis_search.setPlaceholderText("搜索活动内容...")
+        self._analysis_search.setFixedWidth(160)
+        self._analysis_search.setFixedHeight(28)
+        self._analysis_search.textChanged.connect(self._on_analysis_search_changed)
+        period_row_layout.addWidget(self._analysis_search)
+
+        export_menu = QMenu()
+        export_menu.addAction("导出 Markdown", self._on_export_analysis_md)
+        export_menu.addAction("导出 Excel", self._on_export_analysis_xlsx)
+        export_menu.addAction("导出 TXT", self._on_export_analysis_txt)
+        export_btn = QPushButton("导出 ▾")
+        export_btn.setFixedHeight(28)
+        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        export_btn.setMenu(export_menu)
+        export_btn.clicked.connect(lambda: export_btn.showMenu())
+        period_row_layout.addWidget(export_btn)
+
+        analysis_layout.addWidget(period_row)
 
         # Tag list (left) + Content view (right)
         self._analysis_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -1228,6 +1253,58 @@ class MainWindow(QMainWindow):
         """Handle date click on heatmap grid."""
         if hasattr(self, '_analysis_period_selector'):
             self._analysis_period_selector.set_custom_range(d, d)
+
+    def _on_analysis_search_changed(self, text: str) -> None:
+        """Filter activity content by search text."""
+        if hasattr(self, '_analysis_content_view'):
+            self._analysis_content_view.set_search_text(text)
+
+    def _on_export_analysis_md(self) -> None:
+        self._export_analysis("md")
+
+    def _on_export_analysis_xlsx(self) -> None:
+        self._export_analysis("xlsx")
+
+    def _on_export_analysis_txt(self) -> None:
+        self._export_analysis("txt")
+
+    def _export_analysis(self, fmt: str) -> None:
+        """Export current analysis content to file."""
+        text = ""
+        if hasattr(self, '_analysis_content_view'):
+            text = self._analysis_content_view.get_plain_text()
+        if not text:
+            return
+
+        filters = {"md": "Markdown (*.md)", "xlsx": "Excel (*.xlsx)", "txt": "文本文件 (*.txt)"}
+        filepath, _ = QFileDialog.getSaveFileName(self, "导出报告", "", filters.get(fmt, ""))
+        if not filepath:
+            return
+
+        if fmt == "xlsx":
+            self._export_xlsx_file(filepath)
+        else:
+            with open(filepath, "w", encoding="utf-8") as f:
+                if fmt == "md":
+                    f.write(f"# 活动报告\n\n{text}\n")
+                else:
+                    f.write(text)
+
+    def _export_xlsx_file(self, filepath: str) -> None:
+        """Export as Excel using openpyxl."""
+        try:
+            import openpyxl
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "活动报告"
+            ws.append(["活动内容"])
+            text = self._analysis_content_view.get_plain_text() if hasattr(self, '_analysis_content_view') else ""
+            for line in text.split("\n"):
+                if line.strip():
+                    ws.append([line.strip()])
+            wb.save(filepath)
+        except ImportError:
+            QMessageBox.warning(self, "错误", "需要安装 openpyxl 库才能导出 Excel")
 
     # ------------------------------------------------------------------
     # Task operations
