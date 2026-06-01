@@ -1349,7 +1349,7 @@ class MainWindow(QMainWindow):
             if current_num and current_entries:
                 rows.append((
                     int(current_num), current_title, current_status,
-                    current_prog.rstrip("%"), "\n".join(current_entries)
+                    current_prog, "\n".join(current_entries)
                 ))
 
         for line in text.split("\n"):

@@ -147,24 +147,23 @@ class ActivityContentView(QWidget):
 
             # Ordered item header: number + title bold, status/progress red bold
             html_parts.append(
-                f'<p style="margin: 0 0 2px 0; line-height: 1.7;">'
+                f'<div style="margin: 0 0 2px 0; line-height: 1.7;">'
                 f'<b>{idx}. {item["title"]}</b> '
                 f'<b style="color: {t.danger};">[{status_change}, {prog_change}]</b>:'
-                f'</p>'
+                f'</div>'
             )
             # Entry details: each on its own indented line
-            entry_html = "<br>".join(item["entry_lines"])
+            entry_html = "<br>".join(f"&emsp;&emsp;{e}" for e in item["entry_lines"])
             html_parts.append(
-                f'<p style="margin: 0 0 12px 0; padding-left: 20px; '
-                f'line-height: 1.7; color: {t.text_primary}; font-size: 11px;">'
+                f'<div style="margin: 0 0 8px 0; line-height: 1.7; '
+                f'color: {t.text_primary}; font-size: 11px;">'
                 f'{entry_html}'
-                f'</p>'
+                f'</div>'
             )
 
             plain_text += f"{idx}. {item['title']} [{status_change}, {prog_change}]:\n"
             for e in item["entry_lines"]:
                 plain_text += f"    {e}\n"
-            plain_text += "\n"
 
         html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
             body {{ font-family: -apple-system, 'Microsoft YaHei', sans-serif;
