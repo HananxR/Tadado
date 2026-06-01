@@ -662,11 +662,19 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addStretch()
 
-        back_btn2 = QPushButton("← 返回编辑")
-        back_btn2.setStyleSheet(SIDEBAR_BTN)
+        back_btn2 = QPushButton()
+        back_btn2.setIcon(load_icon("home"))
+        back_btn2.setIconSize(QSize(16, 16))
+        back_btn2.setFixedSize(24, 24)
+        back_btn2.setFlat(True)
+        back_btn2.setToolTip("返回主界面")
         back_btn2.setCursor(Qt.CursorShape.PointingHandCursor)
+        back_btn2.setStyleSheet(
+            f"QPushButton {{ border: none; background: transparent; padding: 0; }}"
+            f"QPushButton:hover {{ background: {tokens.accent}20; }}"
+        )
         back_btn2.clicked.connect(lambda: self._switch_view("edit"))
-        sidebar_layout.addWidget(back_btn2)
+        sidebar_layout.addWidget(back_btn2, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         batch_page_layout.addWidget(self._manage_sidebar)
 

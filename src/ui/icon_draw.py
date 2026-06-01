@@ -307,6 +307,36 @@ def draw_window_close(p: QPainter, r: QRectF, color: QColor) -> None:
     p.drawLine(QPointF(r.right() - m, r.y() + m), QPointF(r.x() + m, r.bottom() - m))
 
 
+def draw_home(p: QPainter, r: QRectF, color: QColor) -> None:
+    """Filled house: roof + walls + door."""
+    m = r.width() * 0.08
+    body_top = r.y() + r.height() * 0.42
+    body = QRectF(r.x() + m, body_top, r.width() - 2 * m, r.height() - m - body_top + r.y())
+    # Draw filled body
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(PRIMARY))
+    p.drawRoundedRect(body, r.width() * 0.06, r.width() * 0.06)
+    # Roof — triangle using QPainterPath
+    roof_path = QPainterPath()
+    roof_m = r.width() * 0.04
+    roof_left = r.x() + roof_m
+    roof_right = r.x() + r.width() - roof_m
+    roof_top = r.y() + m
+    roof_bottom = body_top + r.height() * 0.02
+    roof_path.moveTo(roof_left, roof_bottom)
+    roof_path.lineTo((roof_left + roof_right) / 2, roof_top)
+    roof_path.lineTo(roof_right, roof_bottom)
+    roof_path.closeSubpath()
+    p.drawPath(roof_path)
+    # Door — white cutout
+    door_w = r.width() * 0.18
+    door_h = r.height() * 0.28
+    door_x = r.center().x() - door_w / 2
+    door_y = body.bottom() - door_h - r.height() * 0.02
+    p.setBrush(QBrush(WHITE))
+    p.drawRoundedRect(QRectF(door_x, door_y, door_w, door_h), r.width() * 0.04, r.width() * 0.04)
+
+
 # ═══════════════════════════════════════════════════════════════
 # Registry
 # ═══════════════════════════════════════════════════════════════
@@ -323,4 +353,5 @@ ICON_DRAW_FUNCS = {
     "tray_hide": draw_tray_hide,
     "fullscreen_toggle": draw_fullscreen_toggle,
     "window_close": draw_window_close,
+    "home": draw_home,
 }

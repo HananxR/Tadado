@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from PySide6.QtCore import QPoint, QRect, QRectF, Qt, Signal
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QMouseEvent,
@@ -407,9 +407,13 @@ class CalendarHeatmapWidget(QWidget):
         top_row.addWidget(self._next_btn)
         top_row.addSpacing(8)
 
-        self._back_btn = QPushButton("↩")
+        from ...utils.icon_loader import load_icon
+        self._back_btn = QPushButton()
         self._back_btn.setObjectName("navBtn")
-        self._back_btn.setFixedWidth(26)
+        self._back_btn.setIcon(load_icon("home"))
+        self._back_btn.setIconSize(QSize(14, 14))
+        self._back_btn.setFixedWidth(24)
+        self._back_btn.setFlat(True)
         self._back_btn.setToolTip("返回主界面")
         self._back_btn.clicked.connect(self.back_requested.emit)
         top_row.addWidget(self._back_btn)
