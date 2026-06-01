@@ -498,7 +498,6 @@ class MainWindow(QMainWindow):
         export_btn.setFixedHeight(28)
         export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         export_btn.setMenu(export_menu)
-        export_btn.clicked.connect(lambda: export_btn.showMenu())
         period_row_layout.addWidget(export_btn)
 
         analysis_layout.addWidget(period_row)
