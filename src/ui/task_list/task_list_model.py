@@ -8,8 +8,9 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QColor, QFont as QtFont
 
 from ...models.task import Task
+from ...models.task_status import TaskStatus
 
-_COLUMN_HEADERS = ["", "#", "创建时间", "任务内容", "截止时间", "进度", "状态", "标签"]
+_COLUMN_HEADERS = ["", "#", "创建时间", "任务内容", "截止时间", "进度", "状态", "标签", "归档"]
 
 COL_CHECK = 0
 COL_ROW = 1
@@ -19,10 +20,11 @@ COL_DEADLINE = 4
 COL_PROGRESS = 5
 COL_STATUS = 6
 COL_TAGS = 7
+COL_ARCHIVED = 8
 
 
 class TaskListModel(QAbstractTableModel):
-    """8-column table: checkbox, row#, created, content, deadline, progress, status, tags."""
+    """9-column table: checkbox, row#, created, content, deadline, progress, status, tags, archived."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -212,6 +214,10 @@ class TaskListModel(QAbstractTableModel):
             return task.status.display_name
         if col == COL_TAGS:
             return " ".join(f"#{t}" for t in task.tags)
+        if col == COL_ARCHIVED:
+            if task.status == TaskStatus.DONE:
+                return "已归档" if task.archived else "未归档"
+            return "/"
         return ""
 
     def _foreground_color(self, task: Task, col: int) -> QColor | None:
@@ -228,7 +234,7 @@ class TaskListModel(QAbstractTableModel):
 
     @staticmethod
     def _alignment(col: int) -> Qt.AlignmentFlag:
-        if col in (COL_CHECK, COL_ROW, COL_CREATED, COL_DEADLINE, COL_PROGRESS, COL_STATUS):
+        if col in (COL_CHECK, COL_ROW, COL_CREATED, COL_DEADLINE, COL_PROGRESS, COL_STATUS, COL_ARCHIVED):
             return Qt.AlignmentFlag.AlignCenter
         return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
 

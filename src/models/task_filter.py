@@ -25,6 +25,10 @@ class TaskFilter:
     partition_id: Optional[str] = None  # None means all partitions
     date_from: Optional[date] = None
     date_to: Optional[date] = None
+    created_from: Optional[date] = None
+    created_to: Optional[date] = None
+    progress_min: int = 0
+    progress_max: int = 100
     overdue_only: bool = False
     show_archived: bool = False
     show_suspended: bool = True  # always show, use visual dimming instead

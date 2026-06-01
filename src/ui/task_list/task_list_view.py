@@ -81,23 +81,31 @@ class TaskListView(QTableView):
         self._apply_column_widths()
 
     def _apply_column_widths(self) -> None:
-        """8 columns: checkbox, #, created, content, deadline, progress, status, tags."""
+        """9 columns: checkbox(36), row#(36), created(90), content(Stretch), deadline(100), progress(50), status(70), tags(100), archived(70)."""
+        from .task_list_model import COL_CHECK, COL_ROW, COL_CREATED, COL_CONTENT
+        from .task_list_model import COL_DEADLINE, COL_PROGRESS, COL_STATUS, COL_TAGS, COL_ARCHIVED
+
         h = self.horizontalHeader()
-        h.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(0, 36)    # 复选框
-        h.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(1, 36)    # 序号
-        h.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(2, 100)   # 创建时间
-        h.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # 任务内容
-        h.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(4, 105)   # 截止时间
-        h.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(5, 55)    # 进度
-        h.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(6, 65)    # 状态
-        h.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(7, 90)    # 标签
+        col_count = self.model().columnCount() if self.model() else 0
+
+        h.setSectionResizeMode(COL_CHECK, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(COL_CHECK, 36)
+        h.setSectionResizeMode(COL_ROW, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(COL_ROW, 36)
+        h.setSectionResizeMode(COL_CREATED, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(COL_CREATED, 90)
+        h.setSectionResizeMode(COL_CONTENT, QHeaderView.ResizeMode.Stretch)
+        h.setSectionResizeMode(COL_DEADLINE, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(COL_DEADLINE, 100)
+        h.setSectionResizeMode(COL_PROGRESS, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(COL_PROGRESS, 50)
+        h.setSectionResizeMode(COL_STATUS, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(COL_STATUS, 70)
+        h.setSectionResizeMode(COL_TAGS, QHeaderView.ResizeMode.Fixed)
+        h.resizeSection(COL_TAGS, 100)
+        if col_count > COL_ARCHIVED:
+            h.setSectionResizeMode(COL_ARCHIVED, QHeaderView.ResizeMode.Fixed)
+            h.resizeSection(COL_ARCHIVED, 70)
 
     # ------------------------------------------------------------------
     # Context menu

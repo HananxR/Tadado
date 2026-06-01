@@ -96,6 +96,14 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.fillRect(option.rect, bg)
                     painter.restore()
             self._paint_status_badge(painter, option, task)
+        elif col == 8:  # COL_ARCHIVED — colored text
+            if not is_selected:
+                bg = self._urgency_bg_color(task)
+                if bg is not None:
+                    painter.save()
+                    painter.fillRect(option.rect, bg)
+                    painter.restore()
+            self._paint_archived(painter, option, task)
         else:
             if not is_selected:
                 bg = self._urgency_bg_color(task)
@@ -214,4 +222,29 @@ class TaskListDelegate(QStyledItemDelegate):
         painter.setPen(text_color)
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, text)
 
+        painter.restore()
+
+    # ------------------------------------------------------------------
+    # Archived column
+    # ------------------------------------------------------------------
+
+    def _paint_archived(
+        self, painter: QPainter, option: QStyleOptionViewItem, task: Task
+    ) -> None:
+        if task.status != TaskStatus.DONE:
+            text = "/"
+            t = get_tokens()
+            color = QColor(t.text_disabled)
+        elif task.archived:
+            text = "已归档"
+            t = get_tokens()
+            color = QColor(t.success)
+        else:
+            text = "未归档"
+            t = get_tokens()
+            color = QColor("#e67e22")  # orange
+
+        painter.save()
+        painter.setPen(color)
+        painter.drawText(option.rect, Qt.AlignmentFlag.AlignCenter, text)
         painter.restore()

@@ -45,12 +45,13 @@ from .calendar_heatmap.period_selector import PeriodSelectorBar
 from .calendar_heatmap.task_tree_panel import TaskTreePanel
 from .calendar_heatmap.activity_content_view import ActivityContentView
 from ..utils.widget_utils import combo_width
+from .widgets.calendar_popup import CalendarPopup
 from .widgets.dropdown import DropdownWidget
 from .dialogs.about_dialog import AboutDialog
 from .dialogs.settings_dialog import SettingsDialog
 from .task_list.batch_toolbar import BatchToolbar
 from .task_list.task_edit_panel import TaskEditPanel
-from .task_list.task_list_model import TaskListModel
+from .task_list.task_list_model import COL_ARCHIVED, TaskListModel
 from .task_list.task_list_view import TaskListView
 from .widgets.filter_bar import FilterBar
 from .widgets.progress_dynamics_bar import ProgressDynamicsBar
@@ -357,6 +358,7 @@ class MainWindow(QMainWindow):
         self._task_model = TaskListModel()
         self._task_view = TaskListView(self._repository)
         self._task_view.set_model(self._task_model)
+        self._task_view.setColumnHidden(COL_ARCHIVED, True)  # 归档列仅管理视图可见
         self._task_view.task_selected.connect(self._on_task_selected)
         self._task_view.detail_requested.connect(self._on_detail_requested)
         left_layout.addWidget(self._task_view, 1)
@@ -534,39 +536,145 @@ class MainWindow(QMainWindow):
 
         self._stack.addWidget(analysis_page)
 
-        # === Page 2: Batch Processing ===
+        # === Page 2: Task Management Console ===
+        from ..utils.design_tokens import get_tokens as _gt4
+
         batch_page = QWidget()
-        batch_layout = QVBoxLayout(batch_page)
-        batch_layout.setContentsMargins(8, 4, 8, 4)
-        batch_layout.setSpacing(4)
+        batch_page_layout = QHBoxLayout(batch_page)
+        batch_page_layout.setContentsMargins(0, 0, 0, 0)
+        batch_page_layout.setSpacing(0)
 
-        # Top: filter bar (compact)
-        batch_filter_row = QWidget()
-        batch_filter_row_layout = QHBoxLayout(batch_filter_row)
-        batch_filter_row_layout.setContentsMargins(0, 0, 0, 0)
-        batch_filter_row_layout.setSpacing(6)
-        self._batch_filter_bar = FilterBar()
-        self._batch_filter_bar.filter_changed.connect(self._on_batch_filter_changed)
-        batch_filter_row_layout.addWidget(self._batch_filter_bar, 1)
-        # Import / Export
-        import_btn = QPushButton("📥 导入 MD")
-        import_btn.setFixedHeight(28)
-        import_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        import_btn.clicked.connect(self._on_import)
-        batch_filter_row_layout.addWidget(import_btn)
+        # -- Left sidebar (180px) --
+        self._manage_sidebar = QWidget()
+        self._manage_sidebar.setFixedWidth(180)
+        tokens = _gt4()
+        self._manage_sidebar.setStyleSheet(
+            f"QWidget {{ background-color: {tokens.bg_secondary}; border-right: 1px solid {tokens.border_primary}; }}"
+        )
+        sidebar_layout = QVBoxLayout(self._manage_sidebar)
+        sidebar_layout.setContentsMargins(8, 6, 8, 6)
+        sidebar_layout.setSpacing(3)
 
-        export_btn = QPushButton("📤 导出 MD")
-        export_btn.setFixedHeight(28)
-        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        export_btn.clicked.connect(self._on_export)
-        batch_filter_row_layout.addWidget(export_btn)
+        SIDEBAR_LABEL = "font-size: 10px; font-weight: bold; border: none; padding-top: 4px;"
+        SIDEBAR_INPUT = "font-size: 10px; padding: 2px 4px;"
+        SIDEBAR_BTN = "QPushButton { font-size: 10px; padding: 4px 8px; }"
+        SIDEBAR_SEP = f"background-color: {tokens.separator}; border: none;"
 
-        back_btn2 = QPushButton("↩ 返回编辑")
-        back_btn2.setFixedHeight(28)
+        def _add_sep():
+            s = QWidget(); s.setFixedHeight(1); s.setStyleSheet(SIDEBAR_SEP)
+            sidebar_layout.addWidget(s)
+
+        def _add_label(text: str):
+            lb = QLabel(text); lb.setStyleSheet(SIDEBAR_LABEL); sidebar_layout.addWidget(lb)
+
+        def _add_date_row(placeholder: str) -> QLineEdit:
+            """Return a date QLineEdit wrapped in a row with a clear button."""
+            row = QWidget()
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(2)
+            le = QLineEdit()
+            le.setPlaceholderText(placeholder)
+            le.setStyleSheet(SIDEBAR_INPUT)
+            le.setReadOnly(True)
+            le.mousePressEvent = lambda e, le_=le: self._open_date_popup(le_)
+            row_layout.addWidget(le, 1)
+            clear_btn = QPushButton("×")
+            clear_btn.setFixedSize(16, 16)
+            clear_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 0; border: none; color: #999; }")
+            clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            clear_btn.clicked.connect(lambda _, le_=le: (le_.clear(), self._on_batch_filter_changed()))
+            row_layout.addWidget(clear_btn)
+            sidebar_layout.addWidget(row)
+            return le
+
+        # ---- 筛选 ----
+        _add_label("🔍 筛选")
+
+        _add_label("关键词")
+        self._batch_search = QLineEdit()
+        self._batch_search.setPlaceholderText("搜索...")
+        self._batch_search.setStyleSheet(SIDEBAR_INPUT)
+        self._batch_search_timer = QTimer(self)
+        self._batch_search_timer.setSingleShot(True)
+        self._batch_search_timer.timeout.connect(self._on_batch_search)
+        self._batch_search.textChanged.connect(lambda: self._batch_search_timer.start(300))
+        sidebar_layout.addWidget(self._batch_search)
+
+        _add_label("状态")
+        self._batch_status_combo = DropdownWidget()
+        self._batch_status_combo.addItem("全部", None)
+        for s in (TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE, TaskStatus.OVERDUE):
+            self._batch_status_combo.addItem(s.display_name, s)
+        self._batch_status_combo.currentIndexChanged.connect(self._on_batch_filter_changed)
+        sidebar_layout.addWidget(self._batch_status_combo)
+
+        _add_label("创建时间")
+        self._batch_created_from = _add_date_row("起始日期")
+        self._batch_created_to = _add_date_row("结束日期")
+
+        _add_label("截止时间")
+        self._batch_deadline_from = _add_date_row("起始日期")
+        self._batch_deadline_to = _add_date_row("结束日期")
+
+        _add_label("进度")
+        self._batch_progress_combo = DropdownWidget()
+        self._batch_progress_combo.addItem("全部", (0, 100))
+        for label, rng in [("0%", (0, 0)), ("1-25%", (1, 25)), ("26-50%", (26, 50)),
+                            ("51-75%", (51, 75)), ("100%", (100, 100))]:
+            self._batch_progress_combo.addItem(label, rng)
+        self._batch_progress_combo.currentIndexChanged.connect(self._on_batch_filter_changed)
+        sidebar_layout.addWidget(self._batch_progress_combo)
+
+        _add_label("标签")
+        self._batch_tag_input = QLineEdit()
+        self._batch_tag_input.setPlaceholderText("空格分隔多个标签")
+        self._batch_tag_input.setStyleSheet(SIDEBAR_INPUT)
+        self._batch_tag_timer = QTimer(self)
+        self._batch_tag_timer.setSingleShot(True)
+        self._batch_tag_timer.timeout.connect(self._on_batch_filter_changed)
+        self._batch_tag_input.textChanged.connect(lambda: self._batch_tag_timer.start(300))
+        sidebar_layout.addWidget(self._batch_tag_input)
+
+        _add_label("归档状态")
+        self._batch_archive_combo = DropdownWidget()
+        self._batch_archive_combo.addItem("全部", "all")
+        self._batch_archive_combo.addItem("未归档", "unarchived")
+        self._batch_archive_combo.addItem("已归档", "archived")
+        self._batch_archive_combo.currentIndexChanged.connect(self._on_batch_filter_changed)
+        sidebar_layout.addWidget(self._batch_archive_combo)
+
+        # ---- 分隔 + 操作 ----
+        _add_sep()
+        _add_label("🛠 操作")
+
+        self._archive_btn = QPushButton("归档已完成")
+        self._archive_btn.setStyleSheet(SIDEBAR_BTN)
+        self._archive_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._archive_btn.clicked.connect(self._on_manual_archive)
+        sidebar_layout.addWidget(self._archive_btn)
+
+        self._clear_archived_btn = QPushButton("清除已归档")
+        self._clear_archived_btn.setStyleSheet(SIDEBAR_BTN)
+        self._clear_archived_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clear_archived_btn.clicked.connect(self._on_clear_archived)
+        sidebar_layout.addWidget(self._clear_archived_btn)
+
+        sidebar_layout.addStretch()
+
+        back_btn2 = QPushButton("← 返回编辑")
+        back_btn2.setStyleSheet(SIDEBAR_BTN)
         back_btn2.setCursor(Qt.CursorShape.PointingHandCursor)
         back_btn2.clicked.connect(lambda: self._switch_view("edit"))
-        batch_filter_row_layout.addWidget(back_btn2)
-        batch_layout.addWidget(batch_filter_row)
+        sidebar_layout.addWidget(back_btn2)
+
+        batch_page_layout.addWidget(self._manage_sidebar)
+
+        # -- Main content area --
+        batch_main = QWidget()
+        batch_layout = QVBoxLayout(batch_main)
+        batch_layout.setContentsMargins(8, 4, 8, 4)
+        batch_layout.setSpacing(4)
 
         # Operation toolbar
         self._batch_toolbar2 = BatchToolbar()
@@ -576,16 +684,16 @@ class MainWindow(QMainWindow):
         self._batch_toolbar2.batch_restart.connect(self._on_batch_restart)
         self._batch_toolbar2.select_all_requested.connect(self._on_batch_select_all)
         self._batch_toolbar2.deselect_all_requested.connect(self._on_batch_deselect_all)
+        self._batch_toolbar2.export_requested.connect(self._on_batch_export)
         batch_layout.addWidget(self._batch_toolbar2)
 
         # Task table (full width, no edit panel)
         self._batch_task_model = TaskListModel()
         self._batch_task_view = TaskListView(self._repository)
-        self._batch_task_view.setModel(self._batch_task_model)
+        self._batch_task_view.set_model(self._batch_task_model)
         self._batch_task_view.setSelectionBehavior(
             self._batch_task_view.SelectionBehavior.SelectRows
         )
-        # Track checkbox changes via model dataChanged
         self._batch_task_model.dataChanged.connect(self._on_batch_model_data_changed)
         batch_layout.addWidget(self._batch_task_view, 1)
 
@@ -612,7 +720,7 @@ class MainWindow(QMainWindow):
         batch_pager_layout.addStretch()
         batch_layout.addWidget(batch_pager)
 
-        # Confirm bar (hidden by default, slides up)
+        # Confirm bar (hidden by default)
         self._confirm_bar = QWidget()
         self._confirm_bar.setFixedHeight(48)
         self._confirm_bar.setVisible(False)
@@ -629,11 +737,11 @@ class MainWindow(QMainWindow):
         confirm_layout.addWidget(confirm_cancel_btn)
         batch_layout.addWidget(self._confirm_bar)
 
+        batch_page_layout.addWidget(batch_main, 1)
         self._stack.addWidget(batch_page)
         self._batch_page = 0
         self._batch_page_size = 20
         self._batch_total_count = 0
-        self._batch_current_filter = TaskFilter()
         self._batch_pending_action: dict = {}
 
         self.setCentralWidget(self._stack)
@@ -842,18 +950,75 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _refresh_batch_page(self) -> None:
-        """Refresh the batch processing page."""
+        """Refresh the task management page applying all sidebar filters."""
         if not hasattr(self, '_batch_task_model'):
             return
-        self._batch_page = 0
-        f = self._batch_current_filter or TaskFilter()
+        f = TaskFilter()
         f.partition_id = self._active_partition_id
-        f.limit = self._batch_page_size
-        f.offset = self._batch_page * self._batch_page_size
-        tasks = self._repository.search(f)
-        self._batch_total_count = self._repository.count(f)
+        f.search_text = self._batch_search.text().strip()
+        # Status
+        sd = self._batch_status_combo.currentData()
+        if sd is not None:
+            f.statuses = {sd}
+        # Created time
+        f.created_from = self._read_date_edit('_batch_created_from')
+        f.created_to = self._read_date_edit('_batch_created_to')
+        # Deadline time
+        f.date_from = self._read_date_edit('_batch_deadline_from')
+        f.date_to = self._read_date_edit('_batch_deadline_to')
+        # Progress
+        lo, hi = self._batch_progress_combo.currentData()
+        f.progress_min = lo
+        f.progress_max = hi
+        # Tags
+        tag_text = self._batch_tag_input.text().strip()
+        if tag_text:
+            f.tags = set(t.strip() for t in tag_text.split() if t.strip())
+        # Archive status
+        arc = self._batch_archive_combo.currentData()
+        if arc == "all" or arc == "archived":
+            f.show_archived = True
+
+        if arc == "archived":
+            # Load all tasks (no limit), filter client-side, then paginate manually
+            f.limit = None
+            f.offset = 0
+            tasks = [t for t in self._repository.search(f) if t.archived]
+            self._batch_total_count = len(tasks)
+            start = self._batch_page * self._batch_page_size
+            tasks = tasks[start:start + self._batch_page_size]
+        else:
+            f.limit = self._batch_page_size
+            f.offset = self._batch_page * self._batch_page_size
+            tasks = self._repository.search(f)
+            self._batch_total_count = self._repository.count(f)
         self._batch_task_model.load_tasks(tasks)
         self._update_batch_pagination()
+
+    def _read_date_edit(self, attr: str) -> date | None:
+        """Parse yyyy-MM-dd from a QLineEdit attribute, return date or None."""
+        le = getattr(self, attr, None)
+        if le is None:
+            return None
+        txt = le.text().strip()
+        if not txt:
+            return None
+        try:
+            return date.fromisoformat(txt)
+        except ValueError:
+            return None
+
+    def _open_date_popup(self, line_edit: QLineEdit) -> None:
+        """Open CalendarPopup and set result into the QLineEdit."""
+        txt = line_edit.text().strip()
+        initial = date.fromisoformat(txt) if txt else date.today()
+        popup = CalendarPopup(initial, self)
+        popup.date_selected.connect(lambda qd: (
+            line_edit.setText(qd.toPython().isoformat()),
+            self._on_batch_filter_changed()
+        ))
+        popup.smart_place(line_edit)
+        popup.exec()
 
     def _update_batch_pagination(self) -> None:
         total_pages = max(1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size)
@@ -862,8 +1027,12 @@ class MainWindow(QMainWindow):
         self._batch_prev_btn.setEnabled(self._batch_page > 0)
         self._batch_next_btn.setEnabled(self._batch_page < total_pages - 1)
 
-    def _on_batch_filter_changed(self, filter_: TaskFilter) -> None:
-        self._batch_current_filter = filter_
+    def _on_batch_search(self) -> None:
+        self._batch_page = 0
+        self._refresh_batch_page()
+
+    def _on_batch_filter_changed(self) -> None:
+        self._batch_page = 0
         self._refresh_batch_page()
 
     def _on_batch_page_prev(self) -> None:
@@ -1003,6 +1172,112 @@ class MainWindow(QMainWindow):
     def _hide_confirm(self) -> None:
         self._confirm_bar.setVisible(False)
         self._batch_pending_action = {}
+
+    # ------------------------------------------------------------------
+    # Manual archive & clear
+    # ------------------------------------------------------------------
+
+    def _on_manual_archive(self) -> None:
+        """Archive all DONE tasks in current partition (ignore archive_days threshold)."""
+        pid = self._active_partition_id
+        if not pid:
+            return
+        f = TaskFilter()
+        f.partition_id = pid
+        f.statuses = {TaskStatus.DONE}
+        done_tasks = self._repository.search(f)
+        if not done_tasks:
+            QMessageBox.information(self, "归档", "当前分区没有已完成的任务。")
+            return
+        reply = QMessageBox.question(
+            self, "确认归档",
+            f"归档当前分区全部 {len(done_tasks)} 个已完成任务？",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Ok:
+            ids = [t.id for t in done_tasks if not t.archived]
+            if ids:
+                self._repository.archive_batch(ids)
+            self._batch_page = 0
+            self._refresh_batch_page()
+            self._on_data_changed()
+            self._flash_status(f"已归档 {len(ids)} 个任务")
+
+    def _on_clear_archived(self) -> None:
+        """Permanently delete all archived tasks in current partition."""
+        pid = self._active_partition_id
+        if not pid:
+            return
+        f = TaskFilter()
+        f.partition_id = pid
+        f.show_archived = True
+        all_tasks = self._repository.search(f)
+        archived = [t for t in all_tasks if t.archived]
+        if not archived:
+            QMessageBox.information(self, "清除", "当前分区没有已归档的任务。")
+            return
+        reply = QMessageBox.warning(
+            self, "⚠ 确认清除",
+            f"将永久删除 {len(archived)} 个已归档任务，此操作不可恢复！",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Ok:
+            ids = [t.id for t in archived]
+            self._repository.batch_delete(ids)
+            self._batch_page = 0
+            self._refresh_batch_page()
+            self._on_data_changed()
+            self._flash_status(f"已清除 {len(ids)} 个已归档任务")
+
+    # ------------------------------------------------------------------
+    # Batch export
+    # ------------------------------------------------------------------
+
+    def _on_batch_export(self, fmt: str) -> None:
+        """Export all tasks in current partition to MD or Excel."""
+        pid = self._active_partition_id
+        f = TaskFilter()
+        f.partition_id = pid
+        tasks = self._repository.search(f)
+        if not tasks:
+            QMessageBox.information(self, "导出", "当前分区没有任务。")
+            return
+
+        name_map = self._repository.get_partition_name_map()
+        pname = name_map.get(pid or "", "未知")
+        today = date.today().isoformat()
+
+        if fmt == "md":
+            path, _ = QFileDialog.getSaveFileName(
+                self, "导出 Markdown", f"{pname}_{today}.md",
+                "Markdown 文件 (*.md);;所有文件 (*)"
+            )
+            if path:
+                lines = [t.raw_md for t in tasks]
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write("\n".join(lines) + "\n")
+                self._flash_status(f"已导出 {len(tasks)} 个任务到 {path}")
+        elif fmt == "xlsx":
+            path, _ = QFileDialog.getSaveFileName(
+                self, "导出 Excel", f"{pname}_{today}.xlsx",
+                "Excel 文件 (*.xlsx);;所有文件 (*)"
+            )
+            if path:
+                from openpyxl import Workbook
+                wb = Workbook()
+                ws = wb.active
+                ws.title = pname
+                ws.append(["序号", "任务内容", "状态", "进度", "截止日期", "标签", "创建时间", "归档"])
+                for i, t in enumerate(tasks, 1):
+                    ws.append([
+                        i, t.title, t.status.display_name, f"{t.progress}%",
+                        t.deadline_date.isoformat() if t.deadline_date else "",
+                        " ".join(f"#{tag}" for tag in t.tags),
+                        t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "",
+                        "已归档" if t.archived else ("未归档" if t.status == TaskStatus.DONE else "/"),
+                    ])
+                wb.save(path)
+                self._flash_status(f"已导出 {len(tasks)} 个任务到 {path}")
 
     def _on_filter_changed(self, filter_: TaskFilter) -> None:
         self._carousel_filter = filter_
@@ -1298,6 +1573,9 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(2)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.hide()
+            if hasattr(self, '_batch_search'):
+                self._batch_search.clear()
+            self._batch_page = 0
             self._refresh_batch_page()
 
     def _load_dashboard_data(self) -> None:

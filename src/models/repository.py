@@ -260,6 +260,19 @@ class TaskRepository:
             )
             params.extend([filter_.date_to.isoformat(), filter_.date_to.isoformat()])
 
+        # Created time range filter
+        if filter_.created_from:
+            where_clauses.append("created_at >= ?")
+            params.append(filter_.created_from.isoformat())
+        if filter_.created_to:
+            where_clauses.append("created_at <= ?")
+            params.append(filter_.created_to.isoformat())
+
+        # Progress range filter
+        if filter_.progress_min > 0 or filter_.progress_max < 100:
+            where_clauses.append("progress >= ? AND progress <= ?")
+            params.extend([filter_.progress_min, filter_.progress_max])
+
         # Overdue only
         if filter_.overdue_only:
             today = date.today().isoformat()
@@ -321,6 +334,15 @@ class TaskRepository:
                 " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
             )
             params.extend([filter_.date_to.isoformat(), filter_.date_to.isoformat()])
+        if filter_.created_from:
+            where_clauses.append("created_at >= ?")
+            params.append(filter_.created_from.isoformat())
+        if filter_.created_to:
+            where_clauses.append("created_at <= ?")
+            params.append(filter_.created_to.isoformat())
+        if filter_.progress_min > 0 or filter_.progress_max < 100:
+            where_clauses.append("progress >= ? AND progress <= ?")
+            params.extend([filter_.progress_min, filter_.progress_max])
         if filter_.overdue_only:
             from datetime import date as _date
             today = _date.today().isoformat()

@@ -34,6 +34,7 @@ class BatchToolbar(QWidget):
     batch_restart = Signal(list)
     select_all_requested = Signal()
     deselect_all_requested = Signal()
+    export_requested = Signal(str)  # "md" or "xlsx"
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -75,6 +76,16 @@ class BatchToolbar(QWidget):
         self._restart_btn.setMinimumWidth(52)
         self._restart_btn.clicked.connect(lambda: self._emit_restart())
         layout.addWidget(self._restart_btn)
+
+        # Export dropdown
+        self._export_btn = QPushButton("导出")
+        self._export_btn.setStyleSheet(BTN_STYLE)
+        self._export_btn.setMinimumWidth(52)
+        self._export_menu = QMenu(self)
+        self._export_menu.addAction("导出 MD", lambda: self.export_requested.emit("md"))
+        self._export_menu.addAction("导出 Excel", lambda: self.export_requested.emit("xlsx"))
+        self._export_btn.setMenu(self._export_menu)
+        layout.addWidget(self._export_btn)
 
         self._count_label = QLabel("已选 0 项")
         self._count_label.setStyleSheet(f"font-size: 10px; color: {get_tokens().text_secondary};")
