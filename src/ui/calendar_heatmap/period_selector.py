@@ -102,7 +102,6 @@ class PeriodSelectorBar(QWidget):
         self._custom_from.setDate(QDateEdit().date())
         self._custom_from.setFixedWidth(110)
         self._custom_from.setFixedHeight(28)
-        self._custom_from.setEnabled(False)
         self._custom_from.dateChanged.connect(self._on_custom_changed)
         layout.addWidget(self._custom_from)
 
@@ -116,7 +115,6 @@ class PeriodSelectorBar(QWidget):
         self._custom_to.setDate(QDateEdit().date())
         self._custom_to.setFixedWidth(110)
         self._custom_to.setFixedHeight(28)
-        self._custom_to.setEnabled(False)
         self._custom_to.dateChanged.connect(self._on_custom_changed)
         layout.addWidget(self._custom_to)
 
@@ -145,7 +143,7 @@ class PeriodSelectorBar(QWidget):
             btn.setChecked(False)
             btn.setStyleSheet(self._button_style(t, active=False))
             self._active_period = None
-            self._disable_custom_range()
+            self._sync_date_widgets(date.today(), date.today())
             self.period_changed.emit(None, None, "")
             return
 
@@ -158,8 +156,9 @@ class PeriodSelectorBar(QWidget):
                 b.setChecked(False)
                 b.setStyleSheet(self._button_style(t, active=False))
         self._active_period = key
-        self._disable_custom_range()
         d_from, d_to = _get_period_range(key)
+        # Sync date widgets to show the preset range
+        self._sync_date_widgets(d_from, d_to)
         label_map = {"yesterday": "昨天", "today": "今天", "week": "本周", "month": "本月"}
         self.period_changed.emit(d_from, d_to, label_map[key])
 
@@ -182,17 +181,15 @@ class PeriodSelectorBar(QWidget):
             d_from, d_to = d_to, d_from
         self.period_changed.emit(d_from, d_to, "自定义")
 
-    def _disable_custom_range(self) -> None:
+    def _sync_date_widgets(self, d_from: date, d_to: date) -> None:
+        """Update custom date widgets to match a range, without triggering signals."""
         self._custom_from.blockSignals(True)
         self._custom_to.blockSignals(True)
-        self._custom_from.setEnabled(False)
-        self._custom_to.setEnabled(False)
+        from_qdate = type(self._custom_from.date())
+        self._custom_from.setDate(from_qdate(d_from.year, d_from.month, d_from.day))
+        self._custom_to.setDate(from_qdate(d_to.year, d_to.month, d_to.day))
         self._custom_from.blockSignals(False)
         self._custom_to.blockSignals(False)
-
-    def _enable_custom_range(self) -> None:
-        self._custom_from.setEnabled(True)
-        self._custom_to.setEnabled(True)
 
     def set_custom_range(self, d_from: date, d_to: date) -> None:
         """Programmatically set a custom date range."""
@@ -201,15 +198,7 @@ class PeriodSelectorBar(QWidget):
             b.setChecked(False)
             b.setStyleSheet(self._button_style(t, active=False))
         self._active_period = None
-        self._custom_from.setEnabled(True)
-        self._custom_to.setEnabled(True)
-        self._custom_from.blockSignals(True)
-        self._custom_to.blockSignals(True)
-        from_qdate = type(self._custom_from.date())
-        self._custom_from.setDate(from_qdate(d_from.year, d_from.month, d_from.day))
-        self._custom_to.setDate(from_qdate(d_to.year, d_to.month, d_to.day))
-        self._custom_from.blockSignals(False)
-        self._custom_to.blockSignals(False)
+        self._sync_date_widgets(d_from, d_to)
         self.period_changed.emit(d_from, d_to, "自定义")
 
     def clear_selection(self) -> None:
@@ -219,7 +208,7 @@ class PeriodSelectorBar(QWidget):
             b.setChecked(False)
             b.setStyleSheet(self._button_style(t, active=False))
         self._active_period = None
-        self._disable_custom_range()
+        self._sync_date_widgets(date.today(), date.today())
 
     def activate_preset(self, key: str) -> None:
         """Programmatically activate a preset button."""
