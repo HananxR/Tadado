@@ -117,21 +117,25 @@ def draw_new_task(p: QPainter, r: QRectF, color: QColor) -> None:
 
 
 def draw_new_multi_task(p: QPainter, r: QRectF, color: QColor) -> None:
-    """Two overlapping rounded squares with white lines (documents)."""
+    """Two overlapping rounded squares with white lines (documents), centered."""
     m = r.width() * 0.12
     sq = r.width() * 0.40
-    ox, oy = r.width() * 0.10, r.height() * 0.10
+    ox = r.width() * 0.12
+    oy = r.height() * 0.12
+    # Center the combined shape in the rect
+    cx = (r.width() - (sq + ox)) / 2
+    cy = (r.height() - (sq + oy)) / 2
 
-    # Back document
-    bx = r.x() + m + ox
-    by_ = r.y() + m + oy
+    # Back document (offset to bottom-right)
+    bx = r.x() + cx + ox
+    by_ = r.y() + cy + oy
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QBrush(PRIMARY_LIGHT))
     p.drawRoundedRect(QRectF(bx, by_, sq, sq), 5, 5)
 
-    # Front document
-    fx = r.x() + m
-    fy = r.y() + m
+    # Front document (top-left of the group)
+    fx = r.x() + cx
+    fy = r.y() + cy
     p.setBrush(QBrush(PRIMARY))
     p.drawRoundedRect(QRectF(fx, fy, sq, sq), 5, 5)
 
