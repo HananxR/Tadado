@@ -18,13 +18,13 @@ class _StatCard(QWidget):
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(6)
 
-        self._value_label = QLabel("--")
-        self._value_label.setStyleSheet("font-weight: bold; font-size: 15px;")
-        layout.addWidget(self._value_label)
-
         self._desc_label = QLabel(label)
         self._desc_label.setStyleSheet("font-size: 10px;")
         layout.addWidget(self._desc_label)
+
+        self._value_label = QLabel("--")
+        self._value_label.setStyleSheet("font-weight: bold; font-size: 15px;")
+        layout.addWidget(self._value_label)
 
         layout.addStretch()
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
