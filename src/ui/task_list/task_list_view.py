@@ -81,31 +81,32 @@ class TaskListView(QTableView):
         self._apply_column_widths()
 
     def _apply_column_widths(self) -> None:
-        """9 columns: checkbox(36), row#(36), created(90), content(Stretch), deadline(100), progress(50), status(70), tags(100), archived(70)."""
+        """9 columns: checkbox(30), row#(30), created(80), content(Stretch), deadline(95), progress(45), status(55), tags(80), archived(55)."""
         from .task_list_model import COL_CHECK, COL_ROW, COL_CREATED, COL_CONTENT
         from .task_list_model import COL_DEADLINE, COL_PROGRESS, COL_STATUS, COL_TAGS, COL_ARCHIVED
 
         h = self.horizontalHeader()
         col_count = self.model().columnCount() if self.model() else 0
+        h.setMinimumSectionSize(40)
 
         h.setSectionResizeMode(COL_CHECK, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(COL_CHECK, 36)
+        h.resizeSection(COL_CHECK, 30)
         h.setSectionResizeMode(COL_ROW, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(COL_ROW, 36)
+        h.resizeSection(COL_ROW, 30)
         h.setSectionResizeMode(COL_CREATED, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(COL_CREATED, 90)
+        h.resizeSection(COL_CREATED, 80)
         h.setSectionResizeMode(COL_CONTENT, QHeaderView.ResizeMode.Stretch)
         h.setSectionResizeMode(COL_DEADLINE, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(COL_DEADLINE, 100)
+        h.resizeSection(COL_DEADLINE, 95)
         h.setSectionResizeMode(COL_PROGRESS, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(COL_PROGRESS, 50)
+        h.resizeSection(COL_PROGRESS, 45)
         h.setSectionResizeMode(COL_STATUS, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(COL_STATUS, 70)
+        h.resizeSection(COL_STATUS, 55)
         h.setSectionResizeMode(COL_TAGS, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(COL_TAGS, 100)
+        h.resizeSection(COL_TAGS, 80)
         if col_count > COL_ARCHIVED:
             h.setSectionResizeMode(COL_ARCHIVED, QHeaderView.ResizeMode.Fixed)
-            h.resizeSection(COL_ARCHIVED, 70)
+            h.resizeSection(COL_ARCHIVED, 55)
 
     # ------------------------------------------------------------------
     # Context menu

@@ -118,7 +118,7 @@ class MainWindow(QMainWindow):
             return
         total = self._splitter.width()
         if total > 100:
-            self._splitter.setSizes([int(total * 0.5), int(total * 0.5)])
+            self._splitter.setSizes([int(total * 0.60), int(total * 0.40)])
 
     def _sync_header_alignment(self) -> None:
         """Sync editor header height to match table header for vertical alignment."""
