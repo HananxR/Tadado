@@ -45,7 +45,7 @@ DEFAULT_CONFIG: dict = {
     },
     "statuses": {},
     "progress_bar": {
-        "enabled_periods": ["yesterday", "today", "week", "month"],
+        "enabled_periods": ["yesterday", "today", "last_week", "week", "last_month", "month"],
     },
     "deadline_calculator": {
         "default_type": "temporary",

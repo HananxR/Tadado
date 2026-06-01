@@ -23,7 +23,9 @@ from ...utils.design_tokens import get_tokens
 PRESETS = [
     ("yesterday", "昨天"),
     ("today", "今天"),
+    ("last_week", "上周"),
     ("week", "本周"),
+    ("last_month", "上月"),
     ("month", "本月"),
 ]
 
@@ -67,18 +69,18 @@ class QuickOverviewBar(QWidget):
     def _build_ui(self) -> None:
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(6)
+        main_layout.setSpacing(4)
 
-        # Left: Preset buttons (昨天/今天/本周/本月)
+        # Left: Preset buttons
         self._preset_buttons: dict[str, QPushButton] = {}
         for key, label in PRESETS:
             btn = QPushButton(label)
-            btn.setMinimumWidth(52)
+            btn.setMinimumWidth(48)
             btn.setCheckable(True)
             btn.setChecked(key == self._active_preset)
             t = get_tokens()
             btn.setStyleSheet(
-                f"QPushButton {{ font-size: 11px; padding: 3px 6px; color: {t.text_secondary}; background: transparent; border: 1px solid {t.border_primary}; }}"
+                f"QPushButton {{ font-size: 10px; padding: 2px 5px; color: {t.text_secondary}; background: transparent; border: 1px solid {t.border_primary}; }}"
                 f"QPushButton:checked {{ background: {t.accent}; color: {t.text_on_accent}; font-weight: bold; border: none; }}"
             )
             btn.clicked.connect(lambda checked=False, k=key: self.activate_preset(k))
@@ -176,12 +178,23 @@ class QuickOverviewBar(QWidget):
         elif self._active_preset == "today":
             today_end = datetime.combine(date.today(), datetime.max.time())
             return (today_end - deadline_dt).total_seconds()
+        elif self._active_preset == "last_week":
+            today = date.today()
+            last_sunday = today - timedelta(days=today.isoweekday())
+            last_sunday_end = datetime.combine(last_sunday, datetime.max.time())
+            return (last_sunday_end - deadline_dt).total_seconds()
         elif self._active_preset == "week":
             today = date.today()
             days_until_sunday = 7 - today.isoweekday()
             sunday = today + timedelta(days=days_until_sunday)
             sunday_end = datetime.combine(sunday, datetime.max.time())
             return (sunday_end - deadline_dt).total_seconds()
+        elif self._active_preset == "last_month":
+            today = date.today()
+            first_of_this_month = today.replace(day=1)
+            last_day_of_last_month = first_of_this_month - timedelta(days=1)
+            last_month_end = datetime.combine(last_day_of_last_month, datetime.max.time())
+            return (last_month_end - deadline_dt).total_seconds()
         elif self._active_preset == "month":
             import calendar as _cal
             today = date.today()
@@ -256,12 +269,23 @@ class QuickOverviewBar(QWidget):
         elif self._active_preset == "today":
             filter_.date_from = today
             filter_.date_to = today
+        elif self._active_preset == "last_week":
+            last_monday = today - timedelta(days=today.isoweekday() + 6)
+            last_sunday = last_monday + timedelta(days=6)
+            filter_.date_from = last_monday
+            filter_.date_to = last_sunday
         elif self._active_preset == "week":
             days_until_sunday = 7 - today.isoweekday()
             sunday = today + timedelta(days=days_until_sunday)
             monday = sunday - timedelta(days=6)
             filter_.date_from = monday
             filter_.date_to = sunday
+        elif self._active_preset == "last_month":
+            first_of_this_month = today.replace(day=1)
+            last_day_of_last_month = first_of_this_month - timedelta(days=1)
+            first_of_last_month = last_day_of_last_month.replace(day=1)
+            filter_.date_from = first_of_last_month
+            filter_.date_to = last_day_of_last_month
         elif self._active_preset == "month":
             import calendar as _cal
             _, last = _cal.monthrange(today.year, today.month)

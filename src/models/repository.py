@@ -21,7 +21,7 @@ _TASK_COLUMNS = [
     "partition_id", "notes",
     "activity_log",
     "progress",
-    "activity_yesterday", "activity_today", "activity_week", "activity_month",
+    "activity_yesterday", "activity_today", "activity_last_week", "activity_week", "activity_last_month", "activity_month",
     "suspended",
 ]
 
@@ -34,7 +34,7 @@ def _row_to_task(row: tuple) -> Task:
         created_str, updated_str, completed_str,
         archived_int, archived_str, recurrence, parent_id, partition_id, notes,
         activity_log_json, progress_int,
-        ay, at, aw, am,
+        ay, at, alw, aw, alm, am,
         suspended_int,
     ) = row
 
@@ -60,7 +60,9 @@ def _row_to_task(row: tuple) -> Task:
         progress=progress_int if progress_int else 0,
         activity_yesterday=ay if ay else 0,
         activity_today=at if at else 0,
+        activity_last_week=alw if alw else 0,
         activity_week=aw if aw else 0,
+        activity_last_month=alm if alm else 0,
         activity_month=am if am else 0,
         suspended=bool(suspended_int),
     )
@@ -91,7 +93,9 @@ def _task_to_row(task: Task) -> tuple:
         task.progress,
         task.activity_yesterday,
         task.activity_today,
+        task.activity_last_week,
         task.activity_week,
+        task.activity_last_month,
         task.activity_month,
         int(task.suspended),
     )
@@ -180,10 +184,12 @@ class TaskRepository:
         return task
 
     def _recalc_activity_counts(self, task: Task) -> None:
-        """Update the 4 activity count fields from activity_log timestamps."""
+        """Update the 6 activity count fields from activity_log timestamps."""
         log_json = json.dumps(task.activity_log, ensure_ascii=False) if task.activity_log else "[]"
         (task.activity_yesterday, task.activity_today,
-         task.activity_week, task.activity_month) = compute_activity_counts(log_json)
+         task.activity_week, task.activity_month,
+         task.activity_last_week,
+         task.activity_last_month) = compute_activity_counts(log_json)
 
     def delete(self, task_id: str) -> bool:
         """Delete a task by id. Returns True if a row was removed."""
@@ -568,8 +574,8 @@ class TaskRepository:
             self._update_fts(task)
             self._recalc_activity_counts(task)
             self.conn.execute(
-                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_week=?, activity_month=? WHERE id=?",
-                (task.activity_yesterday, task.activity_today, task.activity_week, task.activity_month, task_id),
+                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
+                (task.activity_yesterday, task.activity_today, task.activity_last_week, task.activity_week, task.activity_last_month, task.activity_month, task_id),
             )
             count += 1
 
@@ -612,8 +618,8 @@ class TaskRepository:
             self._update_fts(task)
             self._recalc_activity_counts(task)
             self.conn.execute(
-                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_week=?, activity_month=? WHERE id=?",
-                (task.activity_yesterday, task.activity_today, task.activity_week, task.activity_month, task_id),
+                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
+                (task.activity_yesterday, task.activity_today, task.activity_last_week, task.activity_week, task.activity_last_month, task.activity_month, task_id),
             )
             count += 1
         self.conn.commit()
@@ -642,8 +648,8 @@ class TaskRepository:
             self._update_fts(task)
             self._recalc_activity_counts(task)
             self.conn.execute(
-                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_week=?, activity_month=? WHERE id=?",
-                (task.activity_yesterday, task.activity_today, task.activity_week, task.activity_month, task_id),
+                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
+                (task.activity_yesterday, task.activity_today, task.activity_last_week, task.activity_week, task.activity_last_month, task.activity_month, task_id),
             )
             count += 1
         self.conn.commit()
@@ -829,7 +835,9 @@ class TaskRepository:
             "urgency": "urgency",
             "activity_yesterday": "activity_yesterday",
             "activity_today": "activity_today",
+            "activity_last_week": "activity_last_week",
             "activity_week": "activity_week",
+            "activity_last_month": "activity_last_month",
             "activity_month": "activity_month",
         }
         clauses: list[str] = []

@@ -135,20 +135,29 @@ _ALTER_COLUMNS = [
 # Migration registry
 # ------------------------------------------------------------------
 
-def compute_activity_counts(activity_log_json: str, today: date | None = None) -> tuple[int, int, int, int]:
-    """Return (yesterday, today, week, month) counts from activity_log JSON."""
+def compute_activity_counts(activity_log_json: str, today: date | None = None) -> tuple[int, int, int, int, int, int]:
+    """Return (yesterday, today, week, month, last_week, last_month) counts from activity_log JSON."""
     if today is None:
         today = date.today()
     yesterday = today - timedelta(days=1)
+    # 本周
     monday = today - timedelta(days=today.isoweekday() - 1)
     sunday = monday + timedelta(days=6)
+    # 本月
     month_start = today.replace(day=1)
     if today.month == 12:
         month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
     else:
         month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+    # 上周
+    last_monday = today - timedelta(days=today.isoweekday() + 6)
+    last_sunday = last_monday + timedelta(days=6)
+    # 上月
+    first_of_this_month = today.replace(day=1)
+    last_day_of_last_month = first_of_this_month - timedelta(days=1)
+    first_of_last_month = last_day_of_last_month.replace(day=1)
 
-    counts = [0, 0, 0, 0]
+    counts = [0, 0, 0, 0, 0, 0]
     try:
         entries = _json.loads(activity_log_json) if activity_log_json else []
     except (_json.JSONDecodeError, TypeError):
@@ -167,6 +176,10 @@ def compute_activity_counts(activity_log_json: str, today: date | None = None) -
             counts[2] += 1
         if month_start <= dt <= month_end:
             counts[3] += 1
+        if last_monday <= dt <= last_sunday:
+            counts[4] += 1
+        if first_of_last_month <= dt <= last_day_of_last_month:
+            counts[5] += 1
     return tuple(counts)
 
 
@@ -199,8 +212,24 @@ def _migrate_2_to_3(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migrate_3_to_4(conn: sqlite3.Connection) -> None:
+    """Add last_week and last_month activity count columns."""
+    conn.executescript("""
+        ALTER TABLE tasks ADD COLUMN activity_last_week INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE tasks ADD COLUMN activity_last_month INTEGER NOT NULL DEFAULT 0;
+    """)
+    rows = conn.execute("SELECT id, activity_log FROM tasks").fetchall()
+    for row in rows:
+        counts = compute_activity_counts(row[1])
+        conn.execute(
+            "UPDATE tasks SET activity_last_week=?, activity_last_month=? WHERE id=?",
+            (counts[4], counts[5], row[0]),
+        )
+
+
 MIGRATIONS: list[tuple[int, int, MigrationStep]] = [
     (0, 1, _migrate_0_to_1),
     (1, 2, _migrate_1_to_2),
     (2, 3, _migrate_2_to_3),
+    (3, 4, _migrate_3_to_4),
 ]

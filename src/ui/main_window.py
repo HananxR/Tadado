@@ -1014,14 +1014,25 @@ class MainWindow(QMainWindow):
             today = date.today()
             f.date_from = today
             f.date_to = date.today()
-        elif preset == "week":
-            today = date.today()
-            f.date_from = today - dt.timedelta(days=today.isoweekday() - 1)
-            f.date_to = f.date_from + dt.timedelta(days=6)
         elif preset == "yesterday":
             yesterday = date.today() - dt.timedelta(days=1)
             f.date_from = yesterday
             f.date_to = yesterday
+        elif preset == "last_week":
+            today = date.today()
+            f.date_from = today - dt.timedelta(days=today.isoweekday() + 6)
+            f.date_to = f.date_from + dt.timedelta(days=6)
+        elif preset == "week":
+            today = date.today()
+            f.date_from = today - dt.timedelta(days=today.isoweekday() - 1)
+            f.date_to = f.date_from + dt.timedelta(days=6)
+        elif preset == "last_month":
+            today = date.today()
+            first_of_this_month = today.replace(day=1)
+            last_day_of_last_month = first_of_this_month - dt.timedelta(days=1)
+            first_of_last_month = last_day_of_last_month.replace(day=1)
+            f.date_from = first_of_last_month
+            f.date_to = last_day_of_last_month
         elif preset == "month":
             today = date.today()
             f.date_from = today.replace(day=1)

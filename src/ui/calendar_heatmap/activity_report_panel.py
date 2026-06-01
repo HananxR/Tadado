@@ -143,7 +143,7 @@ class ActivityReportPanel(QWidget):
                 <div style="font-size: 32px; margin-bottom: 12px;">📋</div>
                 <div style="font-size: 13px;">选择一个时段生成工作报告</div>
                 <div style="font-size: 10px; margin-top: 4px;">
-                    点击上方【昨天】【今天】【本周】【本月】或选择自定义日期范围
+                    点击上方【昨天】【今天】【上周】【本周】【上月】【本月】或选择自定义日期范围
                 </div>
             </div>
         </body></html>"""
@@ -265,7 +265,7 @@ class ActivityReportPanel(QWidget):
         weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
         weekday = weekday_names[date_from.weekday()] if date_from == date_to else ""
 
-        title_map = {"昨天": "昨天日报", "今天": "今天日报", "本周": "本周周报", "本月": "本月月报"}
+        title_map = {"昨天": "昨天日报", "今天": "今天日报", "上周": "上周周报", "本周": "本周周报", "上月": "上月月报", "本月": "本月月报"}
         title = title_map.get(label, f"{label}报告")
         self._header_title.setText(f"📋 {title}")
         self._header_meta.setText(f"{date_str} {weekday}")

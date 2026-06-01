@@ -32,7 +32,9 @@ class Task:
     progress: int = 0
     activity_yesterday: int = 0
     activity_today: int = 0
+    activity_last_week: int = 0
     activity_week: int = 0
+    activity_last_month: int = 0
     activity_month: int = 0
     suspended: bool = False
 

@@ -19,7 +19,9 @@ from ...utils.design_tokens import get_tokens
 _PERIODS = [
     ("yesterday", "昨天"),
     ("today", "今天"),
+    ("last_week", "上周"),
     ("week", "本周"),
+    ("last_month", "上月"),
     ("month", "本月"),
 ]
 
@@ -31,11 +33,20 @@ def _get_period_range(period_key: str) -> tuple[date, date]:
         return d, d
     elif period_key == "today":
         return today, today
+    elif period_key == "last_week":
+        last_monday = today - timedelta(days=today.isoweekday() + 6)
+        last_sunday = last_monday + timedelta(days=6)
+        return last_monday, last_sunday
     elif period_key == "week":
         days_since_monday = today.isoweekday() - 1
         monday = today - timedelta(days=days_since_monday)
         sunday = monday + timedelta(days=6)
         return monday, sunday
+    elif period_key == "last_month":
+        first_of_this_month = today.replace(day=1)
+        last_day_of_last_month = first_of_this_month - timedelta(days=1)
+        first_of_last_month = last_day_of_last_month.replace(day=1)
+        return first_of_last_month, last_day_of_last_month
     elif period_key == "month":
         start = today.replace(day=1)
         if today.month == 12:
@@ -111,7 +122,7 @@ class PeriodSelectorBar(QWidget):
         t = get_tokens()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(3)
 
         for key, label_text in _PERIODS:
             btn = QPushButton(label_text)
@@ -153,13 +164,13 @@ class PeriodSelectorBar(QWidget):
         if active:
             return (
                 f"QPushButton {{ background: {t.accent}; color: {t.text_on_accent}; "
-                f"border: none; border-radius: 4px; padding: 2px 10px; "
-                f"font-size: 11px; font-weight: bold; }}"
+                f"border: none; border-radius: 4px; padding: 2px 8px; "
+                f"font-size: 10px; font-weight: bold; }}"
             )
         return (
             f"QPushButton {{ background: transparent; color: {t.text_primary}; "
             f"border: 1px solid {t.border_primary}; border-radius: 4px; "
-            f"padding: 2px 10px; font-size: 11px; }}"
+            f"padding: 2px 8px; font-size: 10px; }}"
             f"QPushButton:hover {{ background: {t.accent}20; }}"
         )
 
@@ -185,7 +196,7 @@ class PeriodSelectorBar(QWidget):
         self._active_period = key
         d_from, d_to = _get_period_range(key)
         self._sync_date_widgets(d_from, d_to)
-        label_map = {"yesterday": "昨天", "today": "今天", "week": "本周", "month": "本月"}
+        label_map = {"yesterday": "昨天", "today": "今天", "last_week": "上周", "week": "本周", "last_month": "上月", "month": "本月"}
         self.period_changed.emit(d_from, d_to, label_map[key])
 
     def _on_custom_changed(self) -> None:

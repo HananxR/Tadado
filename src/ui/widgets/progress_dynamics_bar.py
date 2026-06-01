@@ -20,7 +20,9 @@ from ...utils.design_tokens import get_tokens
 PERIODS = [
     ("yesterday", "昨天"),
     ("today", "今天"),
+    ("last_week", "上周"),
     ("week", "本周"),
+    ("last_month", "上月"),
     ("month", "本月"),
 ]
 
@@ -33,11 +35,20 @@ def _get_period_range(period_key: str) -> tuple[date, date]:
         return d, d
     elif period_key == "today":
         return today, today
+    elif period_key == "last_week":
+        last_monday = today - timedelta(days=today.isoweekday() + 6)
+        last_sunday = last_monday + timedelta(days=6)
+        return last_monday, last_sunday
     elif period_key == "week":
         days_since_monday = today.isoweekday() - 1
         monday = today - timedelta(days=days_since_monday)
         sunday = monday + timedelta(days=6)
         return monday, sunday
+    elif period_key == "last_month":
+        first_of_this_month = today.replace(day=1)
+        last_day_of_last_month = first_of_this_month - timedelta(days=1)
+        first_of_last_month = last_day_of_last_month.replace(day=1)
+        return first_of_last_month, last_day_of_last_month
     elif period_key == "month":
         start = today.replace(day=1)
         if today.month == 12:
@@ -95,18 +106,18 @@ class ProgressDynamicsBar(QWidget):
     def _build_ui(self) -> None:
         layout = QHBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(4)
+        layout.setSpacing(3)
 
         self._period_buttons: dict[str, QPushButton] = {}
         for key, label in PERIODS:
             btn = QPushButton(label)
-            btn.setMinimumWidth(52)
+            btn.setMinimumWidth(48)
             btn.setCheckable(True)
             btn.setEnabled(key in self._enabled_periods)
             btn.setChecked(key == self._active_period)
             t = get_tokens()
             btn.setStyleSheet(
-                f"QPushButton {{ font-size: 10px; padding: 2px 6px; color: {t.text_primary}; background: transparent; border: 1px solid {t.border_primary}; }}"
+                f"QPushButton {{ font-size: 10px; padding: 2px 5px; color: {t.text_primary}; background: transparent; border: 1px solid {t.border_primary}; }}"
                 f"QPushButton:checked {{ background: {t.accent}; color: {t.text_on_accent}; font-weight: bold; border: none; }}"
                 f"QPushButton:disabled {{ color: rgba(128,128,128,0.35); background: transparent; border: 1px solid transparent; }}"
             )
