@@ -72,8 +72,7 @@ class ActivityContentView(QWidget):
         tag_display = tag if tag != "__untagged__" else "未分类"
 
         # Build ordered list data
-        items: list[dict] = []  # each: {title, status_from, status_to, prog_from, prog_to, entries}
-        plain_lines: list[str] = []
+        items: list[dict] = []  # each: {title, status_from, status_to, prog_from, prog_to, entry_lines}
 
         for task in tasks:
             entries = self._filter_entries(task, date_from, date_to)
@@ -106,13 +105,6 @@ class ActivityContentView(QWidget):
                 "prog_to": last_prog,
                 "entry_lines": entry_lines,
             })
-
-            # Plain text
-            status_label = _status_label(first_status) if first_status == last_status else f"{_status_label(first_status)}→{_status_label(last_status)}"
-            plain_lines.append(
-                f"{task.title} [{status_label}, {first_prog}%→{last_prog}%]:\n"
-                + "\n".join(f"    {e}" for e in entry_strs)
-            )
 
         if not items:
             html = f"""<!DOCTYPE html><html><body style="
