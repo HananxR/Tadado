@@ -62,7 +62,7 @@ class HeatmapStatsPanel(QWidget):
         longest_streak: int,
         daily_avg: float,
     ) -> None:
-        self._total_card.set_value(str(total))
-        self._active_card.set_value(str(active_days))
+        self._total_card.set_value(f"{total}个")
+        self._active_card.set_value(f"{active_days}天")
         self._streak_card.set_value(f"{longest_streak}天")
-        self._avg_card.set_value(f"{daily_avg:.1f}")
+        self._avg_card.set_value(f"{daily_avg:.1f}个")
