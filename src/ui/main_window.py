@@ -476,7 +476,7 @@ class MainWindow(QMainWindow):
         # Period selector + search + export (same row)
         period_row = QWidget()
         period_row_layout = QHBoxLayout(period_row)
-        period_row_layout.setContentsMargins(0, 0, 0, 0)
+        period_row_layout.setContentsMargins(0, 2, 0, 2)
         period_row_layout.setSpacing(6)
 
         self._analysis_period_selector = PeriodSelectorBar()
@@ -485,14 +485,22 @@ class MainWindow(QMainWindow):
 
         self._analysis_search = QLineEdit()
         self._analysis_search.setPlaceholderText("搜索活动内容...")
-        self._analysis_search.setFixedWidth(160)
+        self._analysis_search.setFixedWidth(150)
         self._analysis_search.setFixedHeight(28)
+        self._analysis_search.setStyleSheet("font-size: 11px;")
         self._analysis_search.textChanged.connect(self._on_analysis_search_changed)
         period_row_layout.addWidget(self._analysis_search)
 
+        btn_style = (
+            f"QPushButton {{ background: transparent; color: {t_tok.text_primary}; "
+            f"border: 1px solid {t_tok.border_primary}; border-radius: 4px; "
+            f"padding: 2px 10px; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: {t_tok.accent}20; }}"
+        )
         export_btn = QPushButton("导出 ▾")
         export_btn.setFixedHeight(28)
         export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        export_btn.setStyleSheet(btn_style)
         export_menu = QMenu(export_btn)
         export_menu.addAction("导出 Markdown", self._on_export_analysis_md)
         export_menu.addAction("导出 Excel", self._on_export_analysis_xlsx)
@@ -1207,11 +1215,13 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(1)
             self._heatmap_widget.nav_bar.setVisible(True)
             self._top_bar.hide()
-            # Defer heavy data loading so page renders immediately
+            # Flush paint events so the page renders before heavy data loading
+            from PySide6.QtWidgets import QApplication
+            QApplication.processEvents()
             self._deferred_timer = QTimer(self)
             self._deferred_timer.setSingleShot(True)
             self._deferred_timer.timeout.connect(self._load_dashboard_data)
-            self._deferred_timer.start(30)
+            self._deferred_timer.start(10)
         elif view == "batch":
             self._stack.setCurrentIndex(2)
             self._heatmap_widget.nav_bar.setVisible(False)
