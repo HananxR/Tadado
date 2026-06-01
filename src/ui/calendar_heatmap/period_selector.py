@@ -57,7 +57,7 @@ def _make_date_edit() -> _CalendarDateEdit:
     w.setMaximumDate(QDate(2100, 12, 31))
     w.setFixedWidth(95)
     w.setFixedHeight(28)
-    w.setStyleSheet("font-size: 10px;")
+    w.setStyleSheet("QDateEdit { font-size: 10px; padding: 0px 4px; border: none; }")
     w.setAlignment(Qt.AlignmentFlag.AlignCenter)
     w.setToolTip("点击选择日期")
     w.setCursor(Qt.CursorShape.PointingHandCursor)
