@@ -99,10 +99,11 @@ class PeriodSelectorBar(QWidget):
 
         self._custom_from = QDateEdit()
         self._custom_from.setCalendarPopup(True)
-        self._custom_from.setDisplayFormat("yyyy-MM-dd ddd")
+        self._custom_from.setDisplayFormat("yyyy-MM-dd")
         self._custom_from.setDate(QDateEdit().date())
-        self._custom_from.setFixedWidth(130)
+        self._custom_from.setFixedWidth(100)
         self._custom_from.setFixedHeight(28)
+        self._custom_from.setStyleSheet("font-size: 10px;")
         self._custom_from.dateChanged.connect(self._on_custom_changed)
         layout.addWidget(self._custom_from)
 
@@ -113,10 +114,11 @@ class PeriodSelectorBar(QWidget):
 
         self._custom_to = QDateEdit()
         self._custom_to.setCalendarPopup(True)
-        self._custom_to.setDisplayFormat("yyyy-MM-dd ddd")
+        self._custom_to.setDisplayFormat("yyyy-MM-dd")
         self._custom_to.setDate(QDateEdit().date())
-        self._custom_to.setFixedWidth(130)
+        self._custom_to.setFixedWidth(100)
         self._custom_to.setFixedHeight(28)
+        self._custom_to.setStyleSheet("font-size: 10px;")
         self._custom_to.dateChanged.connect(self._on_custom_changed)
         layout.addWidget(self._custom_to)
 

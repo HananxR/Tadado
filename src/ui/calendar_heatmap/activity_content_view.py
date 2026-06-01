@@ -87,8 +87,8 @@ class ActivityContentView(QWidget):
             first_prog = entries[0].get("progress", 0)
             last_prog = entries[-1].get("progress", 0)
 
-            # Format entries
-            entry_strs: list[str] = []
+            # Format entries with line breaks
+            entry_lines: list[str] = []
             for e in entries:
                 ts = e.get("ts", e.get("time", ""))
                 try:
@@ -96,7 +96,7 @@ class ActivityContentView(QWidget):
                 except (ValueError, TypeError):
                     ts_display = ts[:16] if ts else ""
                 content = e.get("content", "")
-                entry_strs.append(f"{ts_display} {content}")
+                entry_lines.append(f"{ts_display} {content}")
 
             items.append({
                 "title": task.title,
@@ -104,7 +104,7 @@ class ActivityContentView(QWidget):
                 "status_to": last_status,
                 "prog_from": first_prog,
                 "prog_to": last_prog,
-                "entries_text": "；".join(entry_strs),
+                "entry_lines": entry_lines,
             })
 
             # Plain text
@@ -128,7 +128,9 @@ class ActivityContentView(QWidget):
         # Apply search filter
         q = self._search_text.lower()
         if q:
-            items = [it for it in items if q in it["title"].lower() or q in it["entries_text"].lower()]
+            items = [it for it in items
+                     if q in it["title"].lower()
+                     or any(q in e.lower() for e in it["entry_lines"])]
 
         if not items:
             html = f"""<!DOCTYPE html><html><body style="
@@ -153,22 +155,23 @@ class ActivityContentView(QWidget):
 
             # Ordered item header: number + title bold, status/progress red bold
             html_parts.append(
-                f'<p style="margin: 0 0 4px 0; line-height: 1.7;">'
+                f'<p style="margin: 0 0 2px 0; line-height: 1.7;">'
                 f'<b>{idx}. {item["title"]}</b> '
                 f'<b style="color: {t.danger};">[{status_change}, {prog_change}]</b>:'
                 f'</p>'
             )
-            # Entry details indented
+            # Entry details: each on its own indented line
+            entry_html = "<br>".join(item["entry_lines"])
             html_parts.append(
-                f'<p style="margin: 0 0 10px 0; padding-left: 20px; '
+                f'<p style="margin: 0 0 12px 0; padding-left: 20px; '
                 f'line-height: 1.7; color: {t.text_primary}; font-size: 11px;">'
-                f'{item["entries_text"]}'
+                f'{entry_html}'
                 f'</p>'
             )
 
             plain_text += f"{idx}. {item['title']} [{status_change}, {prog_change}]:\n"
-            for e in item["entries_text"].split("；"):
-                plain_text += f"    {e.strip()}\n"
+            for e in item["entry_lines"]:
+                plain_text += f"    {e}\n"
             plain_text += "\n"
 
         html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>

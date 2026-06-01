@@ -1334,38 +1334,48 @@ class MainWindow(QMainWindow):
         """Parse plain text format into Excel rows.
         Format:
             #tag
-            1. title [status_change, prog_change]:
-                entries...
+            1. title [status, prog]:
+                entry line 1
+                entry line 2
         """
         rows = []
         current_num = ""
         current_title = ""
         current_status = ""
         current_prog = ""
+        current_entries: list[str] = []
+
+        def _flush():
+            if current_num and current_entries:
+                rows.append((
+                    int(current_num), current_title, current_status,
+                    current_prog.rstrip("%"), "\n".join(current_entries)
+                ))
+
         for line in text.split("\n"):
-            line = line.strip()
-            if not line or line.startswith("#"):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
                 continue
-            # Match ordered list item: "1. title [status, prog]:"
-            if line[0].isdigit() and ". " in line:
-                parts = line.split(". ", 1)
-                if len(parts) == 2:
-                    current_num = parts[0]
-                    rest = parts[1]
-                    if " [" in rest and "]: " in rest:
-                        title_part = rest.split(" [", 1)[0]
-                        bracket = rest.split("[", 1)[1].split("]", 1)[0]
-                        current_title = title_part
-                        if ", " in bracket:
-                            current_status, current_prog = bracket.split(", ", 1)
-                        else:
-                            current_status, current_prog = bracket, ""
+            # Ordered list item: "1. title [status, prog]:"
+            if stripped[0].isdigit() and ". " in stripped:
+                _flush()
+                current_entries = []
+                parts = stripped.split(". ", 1)
+                current_num = parts[0]
+                rest = parts[1]
+                if " [" in rest and "]:" in rest:
+                    current_title = rest.split(" [", 1)[0]
+                    bracket = rest.split("[", 1)[1].split("]", 1)[0]
+                    if ", " in bracket:
+                        current_status, current_prog = bracket.split(", ", 1)
                     else:
-                        current_title = rest.rstrip(":")
+                        current_status, current_prog = bracket, ""
+                else:
+                    current_title = rest.rstrip(":")
             elif line.startswith("    ") and current_num:
-                # Entry line
-                rows.append((int(current_num), current_title, current_status,
-                             current_prog.rstrip("%"), line.strip()))
+                current_entries.append(stripped)
+
+        _flush()
         return rows
 
     # ------------------------------------------------------------------
