@@ -7,7 +7,10 @@ from datetime import date, datetime
 
 from PySide6.QtCore import QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
     QLayout,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -102,22 +105,48 @@ class TaskTreePanel(QWidget):
         self._all_checked = True
         self._tag_buttons: dict[str, QPushButton] = {}
         self._chip_order: list[str] = []
+        self._tag_filter_text: str = ""
         self._build_ui()
 
     def _build_ui(self) -> None:
         t = get_tokens()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        layout.setSpacing(0)
 
-        self._toggle_btn = QPushButton("取消全选")
-        self._toggle_btn.setMinimumWidth(64)
-        self._toggle_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }")
+        # ── Top row: search filter + select-all toggle ──
+        top_row = QWidget()
+        top_row.setFixedHeight(28)
+        top_layout = QHBoxLayout(top_row)
+        top_layout.setContentsMargins(2, 2, 2, 2)
+        top_layout.setSpacing(3)
+
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("筛选标签…")
+        self._search_input.setStyleSheet(
+            f"QLineEdit {{ font-size: 10px; padding: 1px 4px; "
+            f"border: 1px solid {t.border_primary}; border-radius: 3px; "
+            f"background: transparent; color: {t.text_primary}; }}"
+        )
+        self._search_input.textChanged.connect(self._apply_tag_filter)
+        top_layout.addWidget(self._search_input, 1)
+
+        self._toggle_btn = QPushButton("全")
+        self._toggle_btn.setFixedWidth(32)
+        self._toggle_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 0px; }")
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.clicked.connect(self.toggle_all_checked)
-        layout.addWidget(self._toggle_btn)
+        top_layout.addWidget(self._toggle_btn)
 
-        # Scrollable chip container
+        layout.addWidget(top_row)
+
+        # ── Separator ──
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"QFrame {{ color: {t.border_primary}; max-height: 1px; }}")
+        layout.addWidget(sep)
+
+        # ── Scrollable chip container ──
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -155,6 +184,9 @@ class TaskTreePanel(QWidget):
                 partition_id: str | None, tag_filter: str | None = None) -> None:
         from ...models.task_filter import TaskFilter
 
+        self._last_date_range = (date_from, date_to)
+        self._last_partition_id = partition_id
+
         f = TaskFilter(partition_id=partition_id)
         tasks = self._repository.search(f)
 
@@ -181,8 +213,11 @@ class TaskTreePanel(QWidget):
         self._chip_order.clear()
         self._active_tag = None
 
+        ftext = self._tag_filter_text.lower()
         for tag, (count, task_list) in sorted_tags:
             display = tag if tag != "__untagged__" else "未分类"
+            if ftext and ftext not in display.lower():
+                continue
             if len(display) > 8:
                 display = display[:8] + "…"
             label = f"# {display}  {count}"
@@ -200,7 +235,7 @@ class TaskTreePanel(QWidget):
             self._chip_layout.addWidget(btn)
 
         self._all_checked = True
-        self._toggle_btn.setText("取消全选")
+        self._toggle_btn.setText("全")
 
         if self._chip_order:
             first_tag = self._chip_order[0]
@@ -246,7 +281,7 @@ class TaskTreePanel(QWidget):
             btn.blockSignals(False)
             if new_checked:
                 self._checked_tags.add(tag)
-        self._toggle_btn.setText("取消全选" if self._all_checked else "全选")
+        self._toggle_btn.setText("全" if self._all_checked else "⊘")
         self.checked_tags_changed.emit()
 
     def get_active_tag(self) -> str | None:
@@ -289,12 +324,18 @@ class TaskTreePanel(QWidget):
         self._all_checked = all(
             self._tag_buttons[t].isChecked() for t in self._chip_order
         )
-        self._toggle_btn.setText("取消全选" if self._all_checked else "全选")
+        self._toggle_btn.setText("全" if self._all_checked else "⊘")
         self.checked_tags_changed.emit()
 
         if tag != self._active_tag:
             self._active_tag = tag
             self.tag_selected.emit(tag)
+
+    def _apply_tag_filter(self, text: str) -> None:
+        self._tag_filter_text = text
+        d_from, d_to = getattr(self, '_last_date_range', (None, None))
+        pid = getattr(self, '_last_partition_id', None)
+        self.refresh(d_from, d_to, pid)
 
     # ------------------------------------------------------------------
     # Helpers

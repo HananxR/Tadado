@@ -1336,7 +1336,12 @@ class MainWindow(QMainWindow):
             return
         tasks = self._analysis_task_tree.get_tasks_for_tag(tag)
         d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
-        self._analysis_content_view.set_current_tag(tag)
+        checked = self._analysis_task_tree.get_checked_tags()
+        if tag in checked:
+            pos = checked.index(tag) + 1
+        else:
+            pos = 0
+        self._analysis_content_view.set_current_tag(tag, pos, len(checked))
         self._analysis_content_view.show_tag_activity(tag, tasks, d_from, d_to)
 
     def _on_analysis_prev(self) -> None:

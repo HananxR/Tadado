@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -34,33 +35,47 @@ class ActivityContentView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # ── Nav bar (same height row as left panel's 全选 button) ──
+        # ── Nav bar (left-aligned, compact, same height as left panel top row) ──
         nav = QWidget()
-        nav.setFixedHeight(26)
+        nav.setFixedHeight(28)
         nav_layout = QHBoxLayout(nav)
         nav_layout.setContentsMargins(4, 2, 4, 2)
-        nav_layout.setSpacing(4)
+        nav_layout.setSpacing(3)
 
-        self._prev_btn = QPushButton("◀ 上一个")
+        self._prev_btn = QPushButton("◀")
+        self._prev_btn.setFixedWidth(28)
         self._prev_btn.setStyleSheet(_BTN_STYLE)
         self._prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._prev_btn.clicked.connect(self.prev_requested.emit)
         nav_layout.addWidget(self._prev_btn)
 
-        self._tag_label = QLabel()
-        self._tag_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._tag_label.setStyleSheet(
-            f"font-size: 11px; font-weight: bold; color: {t.accent};"
-        )
-        nav_layout.addWidget(self._tag_label, 1)
-
-        self._next_btn = QPushButton("下一个 ▶")
+        self._next_btn = QPushButton("▶")
+        self._next_btn.setFixedWidth(28)
         self._next_btn.setStyleSheet(_BTN_STYLE)
         self._next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._next_btn.clicked.connect(self.next_requested.emit)
         nav_layout.addWidget(self._next_btn)
 
+        sep = QLabel("│")
+        sep.setStyleSheet(f"color: {t.border_primary}; font-size: 10px;")
+        sep.setFixedWidth(12)
+        sep.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        nav_layout.addWidget(sep)
+
+        self._tag_label = QLabel()
+        self._tag_label.setStyleSheet(
+            f"font-size: 11px; font-weight: bold; color: {t.accent};"
+        )
+        nav_layout.addWidget(self._tag_label)
+
+        nav_layout.addStretch()
         layout.addWidget(nav)
+
+        # ── Separator ──
+        hline = QFrame()
+        hline.setFrameShape(QFrame.Shape.HLine)
+        hline.setStyleSheet(f"QFrame {{ color: {t.border_primary}; max-height: 1px; }}")
+        layout.addWidget(hline)
 
         # ── Content ──
         self._view = QTextBrowser()
@@ -82,9 +97,12 @@ class ActivityContentView(QWidget):
     # Public API
     # ------------------------------------------------------------------
 
-    def set_current_tag(self, tag: str) -> None:
+    def set_current_tag(self, tag: str, pos: int = 0, total: int = 0) -> None:
         display = tag if tag != "__untagged__" else "未分类"
-        self._tag_label.setText(f"# {display}")
+        if total > 0:
+            self._tag_label.setText(f"# {display} ({pos}/{total})")
+        else:
+            self._tag_label.setText(f"# {display}")
 
     def set_search_text(self, text: str) -> None:
         self._search_text = text
