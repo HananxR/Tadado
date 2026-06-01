@@ -183,6 +183,8 @@ class TaskTreePanel(QWidget):
 
         for tag, (count, task_list) in sorted_tags:
             display = tag if tag != "__untagged__" else "未分类"
+            if len(display) > 8:
+                display = display[:8] + "…"
             label = f"# {display}  {count}"
             btn = QPushButton(label)
             btn.setCheckable(True)
@@ -249,6 +251,30 @@ class TaskTreePanel(QWidget):
 
     def get_active_tag(self) -> str | None:
         return self._active_tag
+
+    def select_prev(self) -> None:
+        """Cycle to the previous checked tag (wrap around)."""
+        checked = self.get_checked_tags()
+        if not checked:
+            return
+        try:
+            idx = checked.index(self._active_tag) if self._active_tag in checked else -1
+        except ValueError:
+            idx = -1
+        prev_tag = checked[idx - 1] if idx > 0 else checked[-1]
+        self.select_tag(prev_tag)
+
+    def select_next(self) -> None:
+        """Cycle to the next checked tag (wrap around)."""
+        checked = self.get_checked_tags()
+        if not checked:
+            return
+        try:
+            idx = checked.index(self._active_tag) if self._active_tag in checked else -1
+        except ValueError:
+            idx = -1
+        next_tag = checked[idx + 1] if idx + 1 < len(checked) else checked[0]
+        self.select_tag(next_tag)
 
     # ------------------------------------------------------------------
     # Slots

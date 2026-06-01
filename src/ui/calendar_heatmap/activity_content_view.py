@@ -1,12 +1,15 @@
-"""Activity content view — ordered-list format with tag header + task detail."""
+"""Activity content view — nav bar + ordered-list content for a single tag."""
 
 from __future__ import annotations
 
 import json
 from datetime import date, datetime
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -15,11 +18,14 @@ from PySide6.QtWidgets import (
 from ...models.task import Task
 from ...utils.design_tokens import get_tokens
 
+_BTN_STYLE = "QPushButton { font-size: 10px; padding: 2px 6px; }"
+
 
 class ActivityContentView(QWidget):
-    """Renders activity entries as an ordered list grouped by tag."""
+    """Nav bar (prev/next tag) + activity content rendered as ordered list."""
 
-    scrolled_to_bottom = Signal()
+    prev_requested = Signal()
+    next_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -28,6 +34,35 @@ class ActivityContentView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # ── Nav bar (same height row as left panel's 全选 button) ──
+        nav = QWidget()
+        nav.setFixedHeight(26)
+        nav_layout = QHBoxLayout(nav)
+        nav_layout.setContentsMargins(4, 2, 4, 2)
+        nav_layout.setSpacing(4)
+
+        self._prev_btn = QPushButton("◀ 上一个")
+        self._prev_btn.setStyleSheet(_BTN_STYLE)
+        self._prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._prev_btn.clicked.connect(self.prev_requested.emit)
+        nav_layout.addWidget(self._prev_btn)
+
+        self._tag_label = QLabel()
+        self._tag_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._tag_label.setStyleSheet(
+            f"font-size: 11px; font-weight: bold; color: {t.accent};"
+        )
+        nav_layout.addWidget(self._tag_label, 1)
+
+        self._next_btn = QPushButton("下一个 ▶")
+        self._next_btn.setStyleSheet(_BTN_STYLE)
+        self._next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._next_btn.clicked.connect(self.next_requested.emit)
+        nav_layout.addWidget(self._next_btn)
+
+        layout.addWidget(nav)
+
+        # ── Content ──
         self._view = QTextBrowser()
         self._view.setOpenExternalLinks(False)
         self._view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -35,26 +70,21 @@ class ActivityContentView(QWidget):
             f"QTextBrowser {{ border: none; background: transparent; "
             f"color: {t.text_primary}; font-size: 11px; line-height: 1.6; }}"
         )
-        sb = self._view.verticalScrollBar()
-        sb.valueChanged.connect(self._on_scroll_changed)
-        sb.rangeChanged.connect(self._on_scroll_range_changed)
         layout.addWidget(self._view, 1)
 
         self._plain_text: str = ""
         self._search_text: str = ""
         self._cached_data: dict = {}
 
-        # Debounce timer for scroll-to-bottom detection (200ms)
-        self._scroll_debounce = QTimer(self)
-        self._scroll_debounce.setSingleShot(True)
-        self._scroll_debounce.setInterval(200)
-        self._scroll_debounce.timeout.connect(self._check_scroll_bottom)
-
         self.show_hint()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def set_current_tag(self, tag: str) -> None:
+        display = tag if tag != "__untagged__" else "未分类"
+        self._tag_label.setText(f"# {display}")
 
     def set_search_text(self, text: str) -> None:
         self._search_text = text
@@ -78,26 +108,21 @@ class ActivityContentView(QWidget):
 
     def show_tag_activity(self, tag: str, tasks: list[Task],
                           date_from: date | None, date_to: date | None) -> None:
-        """Show activity for all tasks in a tag as ordered list with detail."""
         t = get_tokens()
         tag_display = tag if tag != "__untagged__" else "未分类"
 
-        # Build ordered list data
-        items: list[dict] = []  # each: {title, status_from, status_to, prog_from, prog_to, entry_lines}
-
+        items: list[dict] = []
         for task in tasks:
             entries = self._filter_entries(task, date_from, date_to)
             if not entries:
                 continue
             entries.sort(key=lambda e: e.get("ts", e.get("time", "")))
 
-            # Status/progress change
             first_status = entries[0].get("status", "")
             last_status = entries[-1].get("status", "")
             first_prog = entries[0].get("progress", 0)
             last_prog = entries[-1].get("progress", 0)
 
-            # Format entries with line breaks
             entry_lines: list[str] = []
             for e in entries:
                 ts = e.get("ts", e.get("time", ""))
@@ -128,6 +153,7 @@ class ActivityContentView(QWidget):
             self._cached_data = {}
             self._plain_text = ""
             return
+
         q = self._search_text.lower()
         if q:
             items = [it for it in items
@@ -149,21 +175,18 @@ class ActivityContentView(QWidget):
             f'<div style="font-size: 12px; font-weight: bold; color: {t.accent}; '
             f'margin-bottom: 8px;">#{tag_display}</div>'
         ]
-
         plain_text = f"#{tag_display}\n"
 
         for idx, item in enumerate(items, 1):
             status_change = f"{_status_label(item['status_from'])}→{_status_label(item['status_to'])}"
             prog_change = f"{item['prog_from']}%→{item['prog_to']}%"
 
-            # Ordered item header: number + title bold, status/progress red bold
             html_parts.append(
                 f'<div style="margin: 0 0 2px 0; line-height: 1.7;">'
                 f'<b>{idx}. {item["title"]}</b> '
                 f'<b style="color: {t.danger};">[{status_change}, {prog_change}]</b>:'
                 f'</div>'
             )
-            # Entry details: each on its own indented line
             entry_html = "".join(
                 f'<div style="margin-left: 24px; line-height: 1.7;">{e}</div>'
                 for e in item["entry_lines"]
@@ -184,31 +207,7 @@ class ActivityContentView(QWidget):
         self._plain_text = plain_text
         self._cached_data = {"tag": tag, "tasks": tasks,
                              "date_from": date_from, "date_to": date_to}
-        # Reset scroll to top for new content
         self._view.verticalScrollBar().setValue(0)
-
-    # ------------------------------------------------------------------
-    # Scroll detection
-    # ------------------------------------------------------------------
-
-    def _on_scroll_changed(self, value: int) -> None:
-        sb = self._view.verticalScrollBar()
-        if sb.maximum() > 0 and value >= sb.maximum() - 5:
-            self._scroll_debounce.setInterval(200)
-            self._scroll_debounce.start()
-        else:
-            self._scroll_debounce.stop()
-
-    def _on_scroll_range_changed(self, _min: int, _max: int) -> None:
-        self._scroll_debounce.stop()
-        if _max == 0:
-            self._scroll_debounce.setInterval(1000)
-            self._scroll_debounce.start()
-
-    def _check_scroll_bottom(self) -> None:
-        sb = self._view.verticalScrollBar()
-        if sb.maximum() == 0 or (sb.maximum() > 0 and sb.value() >= sb.maximum() - 5):
-            self.scrolled_to_bottom.emit()
 
     # ------------------------------------------------------------------
     # Helpers

@@ -521,7 +521,8 @@ class MainWindow(QMainWindow):
         self._analysis_splitter.addWidget(self._analysis_task_tree)
 
         self._analysis_content_view = ActivityContentView()
-        self._analysis_content_view.scrolled_to_bottom.connect(self._on_content_scrolled_to_bottom)
+        self._analysis_content_view.prev_requested.connect(self._on_analysis_prev)
+        self._analysis_content_view.next_requested.connect(self._on_analysis_next)
         self._analysis_splitter.addWidget(self._analysis_content_view)
 
         self._analysis_splitter.setStretchFactor(0, 1)  # ~25%
@@ -1329,25 +1330,22 @@ class MainWindow(QMainWindow):
             self._analysis_task_tree.refresh(d_from, d_to, self._active_partition_id)
 
     def _on_analysis_tag_selected(self, tag: str) -> None:
-        """Tag selected → show flowing activity content for tasks in that tag."""
         if not tag or not hasattr(self, '_analysis_content_view'):
             if hasattr(self, '_analysis_content_view'):
                 self._analysis_content_view.show_hint()
             return
         tasks = self._analysis_task_tree.get_tasks_for_tag(tag)
         d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
+        self._analysis_content_view.set_current_tag(tag)
         self._analysis_content_view.show_tag_activity(tag, tasks, d_from, d_to)
 
-    def _on_content_scrolled_to_bottom(self) -> None:
-        """Auto-advance to next checked tag when user scrolls to bottom of content."""
-        if not hasattr(self, '_analysis_task_tree'):
-            return
-        current_tag = self._analysis_task_tree.get_active_tag()
-        if not current_tag:
-            return
-        next_tag = self._analysis_task_tree.get_next_checked_tag(current_tag)
-        if next_tag:
-            self._analysis_task_tree.select_tag(next_tag)
+    def _on_analysis_prev(self) -> None:
+        if hasattr(self, '_analysis_task_tree'):
+            self._analysis_task_tree.select_prev()
+
+    def _on_analysis_next(self) -> None:
+        if hasattr(self, '_analysis_task_tree'):
+            self._analysis_task_tree.select_next()
 
     def _on_heatmap_date_clicked(self, d: date) -> None:
         """Handle date click on heatmap grid."""
