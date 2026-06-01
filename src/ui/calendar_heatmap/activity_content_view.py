@@ -37,20 +37,20 @@ class ActivityContentView(QWidget):
 
         # ── Nav bar (left-aligned, compact, same height as left panel top row) ──
         nav = QWidget()
-        nav.setFixedHeight(28)
+        nav.setFixedHeight(26)
         nav_layout = QHBoxLayout(nav)
-        nav_layout.setContentsMargins(4, 2, 4, 2)
+        nav_layout.setContentsMargins(2, 2, 4, 2)
         nav_layout.setSpacing(3)
 
         self._prev_btn = QPushButton("◀")
-        self._prev_btn.setFixedWidth(28)
+        self._prev_btn.setFixedSize(28, 22)
         self._prev_btn.setStyleSheet(_BTN_STYLE)
         self._prev_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._prev_btn.clicked.connect(self.prev_requested.emit)
         nav_layout.addWidget(self._prev_btn)
 
         self._next_btn = QPushButton("▶")
-        self._next_btn.setFixedWidth(28)
+        self._next_btn.setFixedSize(28, 22)
         self._next_btn.setStyleSheet(_BTN_STYLE)
         self._next_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._next_btn.clicked.connect(self.next_requested.emit)

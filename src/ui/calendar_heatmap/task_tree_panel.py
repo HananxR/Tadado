@@ -116,13 +116,14 @@ class TaskTreePanel(QWidget):
 
         # ── Top row: search filter + select-all toggle ──
         top_row = QWidget()
-        top_row.setFixedHeight(28)
+        top_row.setFixedHeight(26)
         top_layout = QHBoxLayout(top_row)
         top_layout.setContentsMargins(2, 2, 2, 2)
         top_layout.setSpacing(3)
 
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("筛选标签…")
+        self._search_input.setFixedHeight(22)
         self._search_input.setStyleSheet(
             f"QLineEdit {{ font-size: 10px; padding: 1px 4px; "
             f"border: 1px solid {t.border_primary}; border-radius: 3px; "
@@ -132,8 +133,8 @@ class TaskTreePanel(QWidget):
         top_layout.addWidget(self._search_input, 1)
 
         self._toggle_btn = QPushButton("全")
-        self._toggle_btn.setFixedWidth(32)
-        self._toggle_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 0px; }")
+        self._toggle_btn.setFixedSize(28, 22)
+        self._toggle_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 0px; }")
         self._toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._toggle_btn.clicked.connect(self.toggle_all_checked)
         top_layout.addWidget(self._toggle_btn)
