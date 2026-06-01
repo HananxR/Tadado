@@ -1119,6 +1119,11 @@ class MainWindow(QMainWindow):
         self._quick_overview.set_partition_id(pid or None)
         self._on_data_changed()
         self._heatmap_widget.force_refresh()
+        # Refresh analysis page if currently visible
+        if self._current_view == "dashboard" and hasattr(self, '_analysis_task_tree'):
+            d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
+            self._refresh_analysis()
+            self._analysis_task_tree.refresh(d_from, d_to, self._active_partition_id)
         # Auto-open first task or show welcome page
         if self._task_model.rowCount() > 0:
             self._on_task_selected(self._task_model.tasks[0])
