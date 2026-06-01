@@ -1,4 +1,4 @@
-"""Activity content view — flowing-text summary of tag activity in a period."""
+"""Activity content view — ordered-list format with tag header + task detail."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from ...utils.design_tokens import get_tokens
 
 
 class ActivityContentView(QWidget):
-    """Renders activity entries for a tag as flowing prose text."""
+    """Renders activity entries as an ordered list grouped by tag."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -37,11 +37,7 @@ class ActivityContentView(QWidget):
 
         self._plain_text: str = ""
         self._search_text: str = ""
-        self._cached_html: str = ""
-        self._cached_tasks: list[Task] = []
-        self._cached_tag: str = ""
-        self._cached_dfrom: date | None = None
-        self._cached_dto: date | None = None
+        self._cached_data: dict = {}
 
         self.show_hint()
 
@@ -49,109 +45,12 @@ class ActivityContentView(QWidget):
     # Public API
     # ------------------------------------------------------------------
 
-    def show_tag_activity(self, tag: str, tasks: list[Task],
-                          date_from: date | None, date_to: date | None) -> None:
-        """Show all activity entries for tasks in a tag, as flowing text."""
-        self._cached_tasks = tasks
-        self._cached_tag = tag
-        self._cached_dfrom = date_from
-        self._cached_dto = date_to
-
-        t = get_tokens()
-        tag_display = tag if tag != "__untagged__" else "未分类"
-
-        # Collect all entries across tasks, with timestamps
-        all_entries: list[tuple[str, str, str]] = []  # (time, content, task_title)
-        for task in tasks:
-            entries = self._filter_entries(task, date_from, date_to)
-            for e in entries:
-                ts = e.get("ts", e.get("time", ""))
-                try:
-                    ts_display = datetime.fromisoformat(ts).strftime("%m-%d %H:%M") if ts else ""
-                except (ValueError, TypeError):
-                    ts_display = ts[:16] if ts else ""
-                content = e.get("content", "")
-                if content:
-                    all_entries.append((ts_display, content, task.title))
-
-        if not all_entries:
-            html = f"""<!DOCTYPE html><html><body style="
-                font-family: -apple-system, 'Microsoft YaHei', sans-serif;
-                padding: 16px; margin: 0; background: transparent;
-                color: {t.text_secondary}; font-size: 11px;
-            ">此时段内无活动记录</body></html>"""
-            self._view.setHtml(html)
-            self._cached_html = ""
-            self._plain_text = ""
-            return
-
-        # Sort by time
-        all_entries.sort(key=lambda x: x[0])
-
-        # Group entries by task
-        task_entries: dict[str, list[str]] = {}
-        task_order: list[str] = []
-        self._plain_text = ""
-        for ts, content, task_title in all_entries:
-            if task_title not in task_entries:
-                task_entries[task_title] = []
-                task_order.append(task_title)
-            task_entries[task_title].append(f"{ts} {content}")
-            self._plain_text += f"{task_title}：{ts} {content}\n"
-
-        # Apply search filter
-        q = self._search_text.lower()
-        if q:
-            filtered_task_entries = {}
-            filtered_order = []
-            for task_title in task_order:
-                entries = task_entries[task_title]
-                matched = [e for e in entries if q in e.lower() or q in task_title.lower()]
-                if matched:
-                    filtered_task_entries[task_title] = matched
-                    filtered_order.append(task_title)
-            task_entries = filtered_task_entries
-            task_order = filtered_order
-
-        # Build HTML
-        body_parts = [f'<div style="font-size: 11px; font-weight: bold; color: {t.accent}; '
-                      f'margin-bottom: 8px;">#{tag_display}</div>']
-
-        for task_title in task_order:
-            entries_text = "；".join(task_entries[task_title])
-            body_parts.append(
-                f'<p style="margin: 0 0 10px 0; line-height: 1.7; '
-                f'color: {t.text_primary}; font-size: 11px;">'
-                f'<span style="color: {t.text_secondary};">{task_title}：</span>'
-                f'{entries_text}'
-                f'</p>'
-            )
-
-        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-            body {{ font-family: -apple-system, 'Microsoft YaHei', sans-serif;
-                   padding: 16px; margin: 0; background: transparent;
-                   color: {t.text_primary}; font-size: 11px; line-height: 1.6; }}
-            p {{ margin: 0 0 10px 0; }}
-        </style></head><body>{"".join(body_parts)}</body></html>"""
-
-        self._cached_html = html
-        self._view.setHtml(html)
-
-    def _render_from_cache(self) -> None:
-        """Re-render from cached data with current search filter."""
-        if not self._cached_tasks:
-            return
-        self.show_tag_activity(self._cached_tag, self._cached_tasks,
-                               self._cached_dfrom, self._cached_dto)
-
     def set_search_text(self, text: str) -> None:
-        """Filter displayed content by search text, re-rendering from cache."""
         self._search_text = text
-        if self._cached_html:
+        if self._cached_data:
             self._render_from_cache()
 
     def get_plain_text(self) -> str:
-        """Return the current content as plain text for export."""
         return self._plain_text
 
     def show_hint(self) -> None:
@@ -163,10 +62,134 @@ class ActivityContentView(QWidget):
         "><div style="text-align: center; color: {t.text_secondary}; font-size: 11px;">
             选择时段和标签查看活动内容</div></body></html>"""
         self._view.setHtml(html)
+        self._plain_text = ""
+        self._cached_data = {}
+
+    def show_tag_activity(self, tag: str, tasks: list[Task],
+                          date_from: date | None, date_to: date | None) -> None:
+        """Show activity for all tasks in a tag as ordered list with detail."""
+        t = get_tokens()
+        tag_display = tag if tag != "__untagged__" else "未分类"
+
+        # Build ordered list data
+        items: list[dict] = []  # each: {title, status_from, status_to, prog_from, prog_to, entries}
+        plain_lines: list[str] = []
+
+        for task in tasks:
+            entries = self._filter_entries(task, date_from, date_to)
+            if not entries:
+                continue
+            entries.sort(key=lambda e: e.get("ts", e.get("time", "")))
+
+            # Status/progress change
+            first_status = entries[0].get("status", "")
+            last_status = entries[-1].get("status", "")
+            first_prog = entries[0].get("progress", 0)
+            last_prog = entries[-1].get("progress", 0)
+
+            # Format entries
+            entry_strs: list[str] = []
+            for e in entries:
+                ts = e.get("ts", e.get("time", ""))
+                try:
+                    ts_display = datetime.fromisoformat(ts).strftime("%m-%d %H:%M") if ts else ""
+                except (ValueError, TypeError):
+                    ts_display = ts[:16] if ts else ""
+                content = e.get("content", "")
+                entry_strs.append(f"{ts_display} {content}")
+
+            items.append({
+                "title": task.title,
+                "status_from": first_status,
+                "status_to": last_status,
+                "prog_from": first_prog,
+                "prog_to": last_prog,
+                "entries_text": "；".join(entry_strs),
+            })
+
+            # Plain text
+            status_label = _status_label(first_status) if first_status == last_status else f"{_status_label(first_status)}→{_status_label(last_status)}"
+            plain_lines.append(
+                f"{task.title} [{status_label}, {first_prog}%→{last_prog}%]:\n"
+                + "\n".join(f"    {e}" for e in entry_strs)
+            )
+
+        if not items:
+            html = f"""<!DOCTYPE html><html><body style="
+                font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+                padding: 16px; margin: 0; background: transparent;
+                color: {t.text_secondary}; font-size: 11px;
+            ">此时段内无活动记录</body></html>"""
+            self._view.setHtml(html)
+            self._cached_data = {}
+            self._plain_text = ""
+            return
+
+        # Apply search filter
+        q = self._search_text.lower()
+        if q:
+            items = [it for it in items if q in it["title"].lower() or q in it["entries_text"].lower()]
+
+        if not items:
+            html = f"""<!DOCTYPE html><html><body style="
+                font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+                padding: 16px; margin: 0; background: transparent;
+                color: {t.text_secondary}; font-size: 11px;
+            ">无匹配结果</body></html>"""
+            self._view.setHtml(html)
+            return
+
+        # Build HTML
+        html_parts = [
+            f'<div style="font-size: 12px; font-weight: bold; color: {t.accent}; '
+            f'margin-bottom: 8px;">#{tag_display}</div>'
+        ]
+
+        plain_text = f"#{tag_display}\n"
+
+        for idx, item in enumerate(items, 1):
+            status_change = f"{_status_label(item['status_from'])}→{_status_label(item['status_to'])}"
+            prog_change = f"{item['prog_from']}%→{item['prog_to']}%"
+
+            # Ordered item header: number + title bold, status/progress red bold
+            html_parts.append(
+                f'<p style="margin: 0 0 4px 0; line-height: 1.7;">'
+                f'<b>{idx}. {item["title"]}</b> '
+                f'<b style="color: {t.danger};">[{status_change}, {prog_change}]</b>:'
+                f'</p>'
+            )
+            # Entry details indented
+            html_parts.append(
+                f'<p style="margin: 0 0 10px 0; padding-left: 20px; '
+                f'line-height: 1.7; color: {t.text_primary}; font-size: 11px;">'
+                f'{item["entries_text"]}'
+                f'</p>'
+            )
+
+            plain_text += f"{idx}. {item['title']} [{status_change}, {prog_change}]:\n"
+            for e in item["entries_text"].split("；"):
+                plain_text += f"    {e.strip()}\n"
+            plain_text += "\n"
+
+        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+            body {{ font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+                   padding: 16px; margin: 0; background: transparent;
+                   color: {t.text_primary}; font-size: 11px; line-height: 1.7; }}
+        </style></head><body>{"".join(html_parts)}</body></html>"""
+
+        self._view.setHtml(html)
+        self._plain_text = plain_text
+        self._cached_data = {"tag": tag, "tasks": tasks,
+                             "date_from": date_from, "date_to": date_to}
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _render_from_cache(self) -> None:
+        d = self._cached_data
+        if d:
+            self.show_tag_activity(d["tag"], d["tasks"], d["date_from"], d["date_to"])
 
     def _filter_entries(self, task: Task, date_from: date | None, date_to: date | None) -> list[dict]:
         entries = self._parse_log(task)
@@ -191,3 +214,10 @@ class ActivityContentView(QWidget):
             return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").date()
         except (ValueError, TypeError):
             return date.today()
+
+
+_STATUS_LABEL_MAP = {"TODO": "待办", "DOING": "进行中", "DONE": "已完成", "OVERDUE": "逾期"}
+
+
+def _status_label(s: str) -> str:
+    return _STATUS_LABEL_MAP.get(s, s)

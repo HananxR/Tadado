@@ -1276,35 +1276,97 @@ class MainWindow(QMainWindow):
         if not text:
             return
 
+        # Build default filename
+        def_name = self._build_export_filename(fmt)
         filters = {"md": "Markdown (*.md)", "xlsx": "Excel (*.xlsx)", "txt": "文本文件 (*.txt)"}
-        filepath, _ = QFileDialog.getSaveFileName(self, "导出报告", "", filters.get(fmt, ""))
+        filepath, _ = QFileDialog.getSaveFileName(self, "导出报告", def_name, filters.get(fmt, ""))
         if not filepath:
             return
 
         if fmt == "xlsx":
             self._export_xlsx_file(filepath)
+        elif fmt == "md":
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(text)
         else:
             with open(filepath, "w", encoding="utf-8") as f:
-                if fmt == "md":
-                    f.write(f"# 活动报告\n\n{text}\n")
-                else:
-                    f.write(text)
+                f.write(text)
+
+    def _build_export_filename(self, fmt: str) -> str:
+        """Build default export filename: 分区名_标签_时间范围.ext"""
+        name_map = self._repository.get_partition_name_map()
+        pname = name_map.get(self._active_partition_id or "", "默认分区")
+        d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
+        date_str = ""
+        if d_from and d_to:
+            date_str = f"{d_from.isoformat()}" if d_from == d_to else f"{d_from.isoformat()}~{d_to.isoformat()}"
+        return f"{pname}_{date_str}.{fmt}"
 
     def _export_xlsx_file(self, filepath: str) -> None:
-        """Export as Excel using openpyxl."""
+        """Export as Excel with split columns: 序号, 任务, 状态变更, 进度变更, 活动信息."""
         try:
             import openpyxl
+            from openpyxl.styles import Font, Alignment
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "活动报告"
-            ws.append(["活动内容"])
+            # Headers
+            headers = ["序号", "任务", "状态变更", "进度变更", "活动信息"]
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=h)
+                cell.font = Font(bold=True)
+            # Parse plain text into rows
             text = self._analysis_content_view.get_plain_text() if hasattr(self, '_analysis_content_view') else ""
-            for line in text.split("\n"):
-                if line.strip():
-                    ws.append([line.strip()])
+            rows = self._parse_export_rows(text)
+            for r, row_data in enumerate(rows, 2):
+                for c, val in enumerate(row_data, 1):
+                    ws.cell(row=r, column=c, value=val)
+            ws.column_dimensions['A'].width = 6
+            ws.column_dimensions['B'].width = 30
+            ws.column_dimensions['C'].width = 14
+            ws.column_dimensions['D'].width = 12
+            ws.column_dimensions['E'].width = 60
             wb.save(filepath)
         except ImportError:
             QMessageBox.warning(self, "错误", "需要安装 openpyxl 库才能导出 Excel")
+
+    def _parse_export_rows(self, text: str) -> list[tuple]:
+        """Parse plain text format into Excel rows.
+        Format:
+            #tag
+            1. title [status_change, prog_change]:
+                entries...
+        """
+        rows = []
+        current_num = ""
+        current_title = ""
+        current_status = ""
+        current_prog = ""
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Match ordered list item: "1. title [status, prog]:"
+            if line[0].isdigit() and ". " in line:
+                parts = line.split(". ", 1)
+                if len(parts) == 2:
+                    current_num = parts[0]
+                    rest = parts[1]
+                    if " [" in rest and "]: " in rest:
+                        title_part = rest.split(" [", 1)[0]
+                        bracket = rest.split("[", 1)[1].split("]", 1)[0]
+                        current_title = title_part
+                        if ", " in bracket:
+                            current_status, current_prog = bracket.split(", ", 1)
+                        else:
+                            current_status, current_prog = bracket, ""
+                    else:
+                        current_title = rest.rstrip(":")
+            elif line.startswith("    ") and current_num:
+                # Entry line
+                rows.append((int(current_num), current_title, current_status,
+                             current_prog.rstrip("%"), line.strip()))
+        return rows
 
     # ------------------------------------------------------------------
     # Task operations
