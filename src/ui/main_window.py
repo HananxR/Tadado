@@ -476,7 +476,7 @@ class MainWindow(QMainWindow):
         # Period selector + search + export (same row)
         period_row = QWidget()
         period_row_layout = QHBoxLayout(period_row)
-        period_row_layout.setContentsMargins(0, 2, 0, 4)
+        period_row_layout.setContentsMargins(0, 4, 0, 4)
         period_row_layout.setSpacing(6)
 
         self._analysis_period_selector = PeriodSelectorBar()
@@ -1215,13 +1215,10 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(1)
             self._heatmap_widget.nav_bar.setVisible(True)
             self._top_bar.hide()
-            # Flush paint events so the page renders before heavy data loading
-            from PySide6.QtWidgets import QApplication
-            QApplication.processEvents()
             self._deferred_timer = QTimer(self)
             self._deferred_timer.setSingleShot(True)
             self._deferred_timer.timeout.connect(self._load_dashboard_data)
-            self._deferred_timer.start(10)
+            self._deferred_timer.start(0)
         elif view == "batch":
             self._stack.setCurrentIndex(2)
             self._heatmap_widget.nav_bar.setVisible(False)
@@ -1420,7 +1417,11 @@ class MainWindow(QMainWindow):
         self._apply_splitter_sizes()
 
     def _ensure_window_ready(self) -> None:
-        """Show, raise, and switch to edit view."""
+        """Show, raise, and switch to edit view. Updates _current_view so
+        subsequent view switches work correctly."""
+        self._current_view = "edit"
+        self._top_bar.show()
+        self._heatmap_widget.nav_bar.setVisible(False)
         if self._splitter_stack.currentIndex() == 1:
             if self._partition_passwords.get(self._active_partition_id, ""):
                 self._on_unlock_partition()
