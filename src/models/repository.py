@@ -452,10 +452,11 @@ class TaskRepository:
     def get_all_partitions(self) -> list[dict]:
         """Return all partitions ordered by sort_order."""
         rows = self.conn.execute(
-            "SELECT id, name, sort_order, password, archive_days, created_at FROM partitions ORDER BY sort_order"
+            "SELECT id, name, sort_order, password, archive_days, archive_enabled, created_at FROM partitions ORDER BY sort_order"
         ).fetchall()
         return [
-            {"id": r[0], "name": r[1], "sort_order": r[2], "password": r[3], "archive_days": r[4], "created_at": r[5]}
+            {"id": r[0], "name": r[1], "sort_order": r[2], "password": r[3],
+             "archive_days": r[4], "archive_enabled": r[5], "created_at": r[6]}
             for r in rows
         ]
 
@@ -483,6 +484,21 @@ class TaskRepository:
             (days, partition_id),
         )
         self.conn.commit()
+
+    def update_partition_archive_enabled(self, partition_id: str, enabled: int) -> None:
+        """Set whether auto-archive is enabled for a partition."""
+        self.conn.execute(
+            "UPDATE partitions SET archive_enabled = ? WHERE id = ?",
+            (enabled, partition_id),
+        )
+        self.conn.commit()
+
+    def count_tasks_in_partition(self, partition_id: str) -> int:
+        """Return the number of tasks in a partition."""
+        row = self.conn.execute(
+            "SELECT COUNT(*) FROM tasks WHERE partition_id = ?", (partition_id,)
+        ).fetchone()
+        return row[0] if row else 0
 
     def get_partition_name_map(self) -> dict[str, str]:
         """Return a mapping of partition_id → partition name."""

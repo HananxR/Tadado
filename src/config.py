@@ -13,8 +13,6 @@ from PySide6.QtCore import QObject, Signal
 
 DEFAULT_CONFIG: dict = {
     "general": {
-        "language": "zh_CN",
-        "auto_start": False,
         "minimize_to_tray": True,
         "default_partition": "",
         "hidden_partitions": [],
@@ -25,10 +23,7 @@ DEFAULT_CONFIG: dict = {
     },
     "display": {
         "theme": "system",
-        "font_size": 12,
         "heatmap_start_year": 2026,
-        "heatmap_colors": {"levels": 8},
-        "max_heatmap_tags": 3,
     },
     "reminders": {
         "enabled": True,
@@ -38,20 +33,6 @@ DEFAULT_CONFIG: dict = {
     },
     "archive": {
         "enabled": False,
-    },
-    "hotkeys": {
-        "toggle_window": "Ctrl+Alt+T",
-        "new_task": "Ctrl+N",
-    },
-    "statuses": {},
-    "progress_bar": {
-        "enabled_periods": ["yesterday", "today", "last_week", "week", "last_month", "month"],
-    },
-    "deadline_calculator": {
-        "default_type": "temporary",
-        "weekly_day": 5,
-        "weekly_next_week": False,
-        "monthly_end_of_month": True,
     },
     "motd": {
         "today": "今日无事，宜放松身心 🌿",
@@ -135,16 +116,8 @@ class AppConfig(QObject):
     # ------------------------------------------------------------------
 
     @property
-    def language(self) -> str:
-        return self._get("general", "language")
-
-    @property
     def theme(self) -> str:
         return self._get("display", "theme")
-
-    @property
-    def font_size(self) -> int:
-        return int(self._get("display", "font_size"))
 
     @property
     def minimize_to_tray(self) -> bool:
@@ -153,10 +126,6 @@ class AppConfig(QObject):
     @property
     def default_sort(self) -> str:
         return self._get("general", "default_sort")
-
-    @property
-    def heatmap_colors(self) -> dict:
-        return dict(self._get("display", "heatmap_colors"))
 
     @property
     def reminders_enabled(self) -> bool:
@@ -169,14 +138,6 @@ class AppConfig(QObject):
     @property
     def archive_enabled(self) -> bool:
         return bool(self._get("archive", "enabled"))
-
-    @property
-    def progress_enabled_periods(self) -> list[str]:
-        return list(self._get("progress_bar", "enabled_periods"))
-
-    @property
-    def deadline_calculator_config(self) -> dict:
-        return dict(self._data.get("deadline_calculator", {}))
 
     # ------------------------------------------------------------------
     # Getters / Setters

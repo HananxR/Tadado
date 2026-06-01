@@ -1,27 +1,25 @@
-"""Application settings dialog with tabbed interface."""
+"""Application settings dialog — single scrollable page."""
 
 from __future__ import annotations
+
+import re
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
-    QFormLayout,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
-    QListWidget,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
-    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
-    QTextBrowser,
-    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -29,12 +27,35 @@ from PySide6.QtWidgets import (
 from ...config import AppConfig
 from ...models.repository import TaskRepository
 from ...utils.signal_bus import get_signal_bus
-from ...utils.widget_utils import combo_width
 from ..widgets.dropdown import DropdownWidget
+
+_DROP_W = 120
+
+
+def _wrap_center(w: QWidget) -> QWidget:
+    """Wrap a widget in a centered container for table cell alignment."""
+    c = QWidget()
+    lay = QHBoxLayout(c)
+    lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    lay.addWidget(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    return c
+
+
+def _hrow(*widgets: QWidget, spacing: int = 6) -> QHBoxLayout:
+    lay = QHBoxLayout()
+    lay.setSpacing(spacing)
+    for w in widgets:
+        if isinstance(w, QHBoxLayout):
+            lay.addLayout(w)
+        else:
+            lay.addWidget(w)
+    lay.addStretch()
+    return lay
 
 
 class SettingsDialog(QDialog):
-    """Settings dialog with tabs for General, Display, Reminders, Archive, and Partitions."""
+    """Settings dialog — single scrollable page."""
 
     def __init__(
         self, config: AppConfig, repository: TaskRepository, parent: QWidget | None = None
@@ -46,100 +67,18 @@ class SettingsDialog(QDialog):
 
         self.setWindowTitle("设置")
         self.setObjectName("settingsDialog")
-        self.resize(580, 520)
+        self.resize(600, 550)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(12)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.setSpacing(8)
+        layout = outer  # all subsequent code uses `layout`
 
-        tabs = QTabWidget()
-        tabs.addTab(self._build_general_tab(), "通用")
-        tabs.addTab(self._build_display_tab(), "显示")
-        tabs.addTab(self._build_automation_tab(), "自动化")
-        tabs.addTab(self._build_partitions_tab(), "分区管理")
-        layout.addWidget(tabs)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(self._on_accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-    # ------------------------------------------------------------------
-    # General tab
-    # ------------------------------------------------------------------
-
-    def _build_general_tab(self) -> QWidget:
-        w = QWidget()
-        form = QFormLayout(w)
-        form.setSpacing(10)
-
-        self._minimize_cb = QCheckBox()
-        self._minimize_cb.setChecked(self._config.minimize_to_tray)
-        form.addRow("最小化到托盘", self._minimize_cb)
-
-        self._auto_lock_spin = QSpinBox()
-        self._auto_lock_spin.setRange(1, 120)
-        self._auto_lock_spin.setSuffix(" 分钟")
-        self._auto_lock_spin.setValue(
-            self._config.get("general", "auto_lock_minutes", default=10)
-        )
-        form.addRow("分区自动锁定", self._auto_lock_spin)
-
-        self._page_size_spin = QSpinBox()
-        self._page_size_spin.setRange(10, 100)
-        self._page_size_spin.setSingleStep(10)
-        self._page_size_spin.setSuffix(" 条/页")
-        self._page_size_spin.setValue(
-            self._config.get("general", "page_size", default=20)
-        )
-        form.addRow("默认每页条数", self._page_size_spin)
-
-        self._default_sort_combo = DropdownWidget()
-        self._default_sort_combo.setObjectName("settingsSortCombo")
-        self._default_sort_combo.setFixedWidth(combo_width(4))
-        SORT_LABELS = {"status": "状态", "deadline": "截止日", "created": "创建时间", "title": "标题"}
-        for key, label in SORT_LABELS.items():
-            self._default_sort_combo.addItem(label, key)
-        current_sort = self._config.get("general", "default_sort", default="status")
-        idx = self._default_sort_combo.findData(current_sort)
-        if idx >= 0:
-            self._default_sort_combo.setCurrentIndex(idx)
-        form.addRow("默认排序", self._default_sort_combo)
-
-        # MOTD fields (merged from 激励语 tab)
-        motd_sep = QLabel("<b>激励语</b>")
-        form.addRow(motd_sep)
-
-        motd = self._config.get("motd", default={})
-        labels = [
-            ("today", "今日无事时："),
-            ("week", "本周无事时："),
-            ("overdue", "无逾期时："),
-            ("all", "全部为空时："),
-        ]
-        self._motd_edits: dict[str, QLineEdit] = {}
-        for key, label_text in labels:
-            edit = QLineEdit()
-            edit.setText(motd.get(key, ""))
-            edit.setPlaceholderText("输入激励语…")
-            self._motd_edits[key] = edit
-            form.addRow(label_text, edit)
-
-        return w
-
-    # ------------------------------------------------------------------
-    # Display tab
-    # ------------------------------------------------------------------
-
-    def _build_display_tab(self) -> QWidget:
-        w = QWidget()
-        form = QFormLayout(w)
-        form.setSpacing(10)
-
+        # ── 外观 ──
+        layout.addWidget(QLabel("<b>外观</b>"))
         self._theme_combo = DropdownWidget()
         self._theme_combo.setObjectName("settingsThemeCombo")
-        self._theme_combo.setFixedWidth(combo_width(4))
+        self._theme_combo.setFixedWidth(_DROP_W)
         self._theme_combo.addItem("跟随系统", "system")
         self._theme_combo.addItem("浅色", "light")
         self._theme_combo.addItem("深色", "dark")
@@ -147,119 +86,124 @@ class SettingsDialog(QDialog):
             if self._theme_combo.itemData(i) == self._config.theme:
                 self._theme_combo.setCurrentIndex(i)
                 break
-        form.addRow("主题", self._theme_combo)
+        self._minimize_cb = QCheckBox("最小化到托盘")
+        self._minimize_cb.setChecked(self._config.minimize_to_tray)
+        self._lock_combo = DropdownWidget()
+        self._lock_combo.setFixedWidth(80)
+        for v in (1, 5, 10, 30, 60):
+            self._lock_combo.addItem(str(v), v)
+        cur_lock = self._config.get("general", "auto_lock_minutes", default=10)
+        idx = next((i for i in range(self._lock_combo.count())
+                     if self._lock_combo.itemData(i) == cur_lock), -1)
+        if idx >= 0:
+            self._lock_combo.setCurrentIndex(idx)
+        layout.addLayout(_hrow(QLabel("主题:"), self._theme_combo,
+                                self._minimize_cb,
+                                QLabel("自动锁定(分钟):"), self._lock_combo))
 
-        start_year = self._config.get("display", "heatmap_start_year", default=2026)
-        self._heatmap_start_year = QSpinBox()
-        self._heatmap_start_year.setRange(2000, 2100)
-        self._heatmap_start_year.setValue(start_year)
-        form.addRow("热度日历起始年份", self._heatmap_start_year)
+        # ── 任务列表 ──
+        layout.addWidget(QLabel("<b>任务列表</b>"))
+        self._page_size_combo = DropdownWidget()
+        self._page_size_combo.setFixedWidth(80)
+        for n in (20, 50, 100):
+            self._page_size_combo.addItem(str(n), n)
+        ps = self._config.get("general", "page_size", default=20)
+        for i in range(self._page_size_combo.count()):
+            if self._page_size_combo.itemData(i) == ps:
+                self._page_size_combo.setCurrentIndex(i)
+                break
+        self._default_sort_combo = DropdownWidget()
+        self._default_sort_combo.setObjectName("settingsSortCombo")
+        self._default_sort_combo.setFixedWidth(_DROP_W)
+        for key, label in [("status", "状态"), ("deadline", "截止日"),
+                            ("created", "创建时间"), ("title", "标题")]:
+            self._default_sort_combo.addItem(label, key)
+        cur_sort = self._config.get("general", "default_sort", default="status")
+        idx = self._default_sort_combo.findData(cur_sort)
+        if idx >= 0:
+            self._default_sort_combo.setCurrentIndex(idx)
+        self._heatmap_year = QSpinBox()
+        self._heatmap_year.setRange(1900, 2200)
+        self._heatmap_year.setValue(self._config.get("display", "heatmap_start_year", default=2025))
+        layout.addLayout(_hrow(QLabel("每页:"), self._page_size_combo,
+                                QLabel("排序:"), self._default_sort_combo,
+                                QLabel("年份:"), self._heatmap_year))
 
-        self._max_heatmap_tags_spin = QSpinBox()
-        self._max_heatmap_tags_spin.setRange(1, 20)
-        self._max_heatmap_tags_spin.setValue(
-            self._config.get("display", "max_heatmap_tags", default=3)
-        )
-        form.addRow("热度日历独立显示最多标签数", self._max_heatmap_tags_spin)
-
-        return w
-
-    # ------------------------------------------------------------------
-    # Reminders tab
-    # ------------------------------------------------------------------
-
-    def _build_automation_tab(self) -> QWidget:
-        """Merged tab: reminders + archive."""
-        from PySide6.QtCore import QTime
-
-        w = QWidget()
-        form = QFormLayout(w)
-        form.setSpacing(10)
-
-        # -- Reminders --
-        form.addRow(QLabel("<b>提醒</b>"))
-
-        self._reminders_cb = QCheckBox()
+        # ── 提醒 ──
+        layout.addWidget(QLabel("<b>提醒</b>"))
+        self._reminders_cb = QCheckBox("启用提醒")
         self._reminders_cb.setChecked(self._config.reminders_enabled)
-        form.addRow("启用提醒", self._reminders_cb)
+        hours = max(1, self._config.reminder_intervals[0] // 60) if self._config.reminder_intervals else 1
+        self._interval_edit = QLineEdit()
+        self._interval_edit.setFixedWidth(60)
+        self._interval_edit.setText(str(hours))
+        self._interval_edit.setPlaceholderText("小时")
+        qs = self._config.get("reminders", "quiet_hours_start", default="22:00")
+        qe = self._config.get("reminders", "quiet_hours_end", default="08:00")
+        self._quiet_start_edit = QLineEdit(qs)
+        self._quiet_start_edit.setFixedWidth(70)
+        self._quiet_start_edit.setPlaceholderText("HH:MM")
+        self._quiet_end_edit = QLineEdit(qe)
+        self._quiet_end_edit.setFixedWidth(70)
+        self._quiet_end_edit.setPlaceholderText("HH:MM")
+        layout.addLayout(_hrow(self._reminders_cb,
+                                QLabel("间隔:"), self._interval_edit, QLabel("H"),
+                                QLabel("安静:"), self._quiet_start_edit,
+                                QLabel("—"), self._quiet_end_edit))
 
-        self._quiet_start = QTimeEdit()
-        parts = self._config.get("reminders", "quiet_hours_start", default="22:00").split(":")
-        self._quiet_start.setTime(QTime(int(parts[0]), int(parts[1])))
-        form.addRow("安静时段开始", self._quiet_start)
+        # ── 归档 ──
+        header_row = QHBoxLayout()
+        header_row.addWidget(QLabel("<b>归档</b>"))
+        header_row.addStretch()
+        add_btn = QPushButton("新增分区")
+        add_btn.clicked.connect(self._on_add_partition)
+        header_row.addWidget(add_btn)
+        layout.addLayout(header_row)
 
-        self._quiet_end = QTimeEdit()
-        parts = self._config.get("reminders", "quiet_hours_end", default="08:00").split(":")
-        self._quiet_end.setTime(QTime(int(parts[0]), int(parts[1])))
-        form.addRow("安静时段结束", self._quiet_end)
-
-        # -- Archive --
-        form.addRow(QLabel(""))
-        form.addRow(QLabel("<b>归档</b>"))
-
-        self._archive_cb = QCheckBox()
-        self._archive_cb.setChecked(self._config.archive_enabled)
-        form.addRow("启用自动归档", self._archive_cb)
-
-        hint = QLabel("每个分区的归档天数在「分区管理」中独立设置，默认 9999 天（不归档）。")
-        hint.setWordWrap(True)
-        hint.setStyleSheet("font-size: 11px; color: #888;")
-        form.addRow(hint)
-
-        return w
-
-    # ------------------------------------------------------------------
-    # Partitions tab
-    # ------------------------------------------------------------------
-
-    def _build_partitions_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setSpacing(8)
-
-        hint = QLabel("勾选的分区将显示在筛选栏中，取消勾选可隐藏分区。")
-        hint.setStyleSheet("font-size: 11px;")
-        layout.addWidget(hint)
-
-        # Partition table: 可见 | 名称 | 归档天数 | 密码 | 删除
         self._partition_table = QTableWidget(0, 5)
-        self._partition_table.setHorizontalHeaderLabels(["可见", "名称", "归档天数", "密码", ""])
-        self._partition_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Fixed)
-        self._partition_table.horizontalHeader().resizeSection(0, 40)
-        self._partition_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self._partition_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Fixed)
-        self._partition_table.horizontalHeader().resizeSection(2, 80)
-        self._partition_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Fixed)
-        self._partition_table.horizontalHeader().resizeSection(3, 60)
-        self._partition_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Fixed)
-        self._partition_table.horizontalHeader().resizeSection(4, 60)
+        self._partition_table.setHorizontalHeaderLabels(
+            ["名称", "默认分区", "可见", "自动归档", "归档阈值(天)"]
+        )
+        hh = self._partition_table.horizontalHeader()
+        for c in (0, 1, 2, 3):
+            hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
+            hh.resizeSection(c, 110)
+        hh.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self._partition_table.verticalHeader().hide()
         self._partition_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        layout.addWidget(self._partition_table)
+        self._partition_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._partition_table.customContextMenuRequested.connect(self._on_table_context_menu)
+        layout.addWidget(self._partition_table, stretch=1)
 
-        btn_row = QHBoxLayout()
-        add_btn = QPushButton("添加")
-        add_btn.clicked.connect(self._on_add_partition)
-        rename_btn = QPushButton("重命名")
-        rename_btn.clicked.connect(self._on_rename_partition)
-        delete_btn = QPushButton("删除")
-        delete_btn.clicked.connect(self._on_delete_partition)
-        btn_row.addWidget(add_btn)
-        btn_row.addWidget(rename_btn)
-        btn_row.addWidget(delete_btn)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
+        # ── 激励语 ──
+        layout.addWidget(QLabel("<b>激励语</b>"))
+        from PySide6.QtWidgets import QFormLayout
+        motd_form = QFormLayout()
+        motd_form.setSpacing(4)
+        motd = self._config.get("motd", default={})
+        self._motd_edits: dict[str, QLineEdit] = {}
+        for key, label_text in [("today", "今日无事时"), ("week", "本周无事时"),
+                                 ("overdue", "无逾期时"), ("all", "全部为空时")]:
+            edit = QLineEdit()
+            edit.setText(motd.get(key, ""))
+            edit.setPlaceholderText("输入激励语…")
+            self._motd_edits[key] = edit
+            motd_form.addRow(label_text + ":", edit)
+        layout.addLayout(motd_form)
 
-        default_label = QLabel("默认分区：")
-        self._default_partition_combo = DropdownWidget()
-        self._default_partition_combo.setObjectName("settingsPartitionCombo")
-        max_chars = self._config.get("display", "max_partition_name_chars", default=5)
-        self._default_partition_combo.setMinimumWidth(combo_width(max_chars))
-        layout.addWidget(default_label)
-        layout.addWidget(self._default_partition_combo)
-
+        layout.addStretch()
         self._populate_partition_table()
-        return w
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self._on_accept)
+        buttons.rejected.connect(self.reject)
+        outer.addWidget(buttons)
+
+    # ------------------------------------------------------------------
+    # Partition table
+    # ------------------------------------------------------------------
 
     def _populate_partition_table(self) -> None:
         self._partitions_data = self._repository.get_all_partitions()
@@ -267,64 +211,86 @@ class SettingsDialog(QDialog):
         default_id = self._config.get("general", "default_partition", default="")
 
         self._partition_table.setRowCount(0)
-        self._default_partition_combo.blockSignals(True)
-        self._default_partition_combo.clear()
-        self._default_partition_combo.addItem("(无)", "")
 
-        for i, p in enumerate(self._partitions_data):
+        for p in self._partitions_data:
             row = self._partition_table.rowCount()
             self._partition_table.insertRow(row)
+            pid = p["id"]
 
-            # Visible checkbox
-            cb = QCheckBox()
-            cb.setChecked(p["id"] not in hidden)
-            self._partition_table.setCellWidget(row, 0, cb)
-
-            # Name
+            # 0: 名称
             name_item = QTableWidgetItem(p["name"])
-            self._partition_table.setItem(row, 1, name_item)
+            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self._partition_table.setItem(row, 0, name_item)
 
-            # Archive days
-            archive_spin = QSpinBox()
-            archive_spin.setRange(1, 9999)
-            archive_spin.setValue(p.get("archive_days", 9999))
-            archive_spin.setToolTip("完成后 N 天自动归档，9999 表示不归档")
-            self._partition_table.setCellWidget(row, 2, archive_spin)
+            # 1: 默认分区 — QCheckBox 居中
+            def_cb = QCheckBox()
+            def_cb.setChecked(pid == default_id)
+            def_cb.toggled.connect(lambda checked, r=row: self._on_default_toggled(r, checked))
+            self._partition_table.setCellWidget(row, 1, _wrap_center(def_cb))
 
-            # Password button
-            has_pwd = bool(p.get("password", ""))
-            pwd_btn = QPushButton("🔒" if has_pwd else "🔓")
-            pwd_btn.setStyleSheet(
-                "QPushButton { font-size: 12px; padding: 2px 6px; border: none; }"
-            )
-            pwd_btn.clicked.connect(lambda checked=False, pid=p["id"]: self._on_set_partition_password(pid))
-            self._partition_table.setCellWidget(row, 3, pwd_btn)
+            # 2: 可见 — QCheckBox 居中
+            vis_cb = QCheckBox()
+            vis_cb.setChecked(pid not in hidden)
+            self._partition_table.setCellWidget(row, 2, _wrap_center(vis_cb))
 
-            # Delete button per row
-            del_btn = QPushButton("删除")
-            del_btn.setObjectName("deleteBtn")
-            del_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }")
-            del_btn.clicked.connect(lambda checked=False, pid=p["id"]: self._on_delete_single_partition(pid))
-            self._partition_table.setCellWidget(row, 4, del_btn)
+            # 3: 自动归档 — QCheckBox 居中
+            auto_cb = QCheckBox()
+            auto_cb.setChecked(p.get("archive_enabled", 0) == 1)
+            self._partition_table.setCellWidget(row, 3, _wrap_center(auto_cb))
 
-            # Default combo
-            self._default_partition_combo.addItem(p["name"], p["id"])
-            if p["id"] == default_id:
-                self._default_partition_combo.setCurrentIndex(i + 1)
+            # 4: 归档阈值(天)
+            days_edit = QLineEdit(str(p.get("archive_days", 9999)))
+            days_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            days_edit.setMinimumWidth(60)
+            self._partition_table.setCellWidget(row, 4, days_edit)
 
-        self._default_partition_combo.blockSignals(False)
+        self._partition_table.verticalHeader().setDefaultSectionSize(40)
+        n = max(1, self._partition_table.rowCount())
+        h = self._partition_table.horizontalHeader().height() + n * 40 + 4
+        self._partition_table.setMinimumHeight(h)
 
-    def _on_add_partition(self) -> None:
-        name, ok = QInputDialog.getText(self, "添加分区", "分区名称：")
-        if ok and name.strip():
-            self._repository.upsert_partition(name.strip())
-            self._populate_partition_table()
-            get_signal_bus().partitions_changed.emit()
+    def _on_default_toggled(self, row: int, checked: bool) -> None:
+        """Mutually exclusive default partition: uncheck all others."""
+        if not checked:
+            return  # prevent unchecking the default
+        for r in range(self._partition_table.rowCount()):
+            cw = self._partition_table.cellWidget(r, 1)
+            if cw and r != row:
+                cb = cw.findChild(QCheckBox)
+                if cb:
+                    cb.blockSignals(True)
+                    cb.setChecked(False)
+                    cb.blockSignals(False)
+        pid = self._partitions_data[row]["id"]
+        self._config.set("general", "default_partition", value=pid)
 
-    def _on_rename_partition(self) -> None:
-        row = self._partition_table.currentRow()
+    def _on_table_context_menu(self, pos) -> None:
+        item = self._partition_table.itemAt(pos)
+        if item is None:
+            return
+        row = item.row()
         if row < 0 or row >= len(self._partitions_data):
             return
+        p = self._partitions_data[row]
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        act_default = menu.addAction("设为默认分区")
+        menu.addSeparator()
+        act_rename = menu.addAction("重命名")
+        act_delete = menu.addAction("删除")
+        action = menu.exec(self._partition_table.viewport().mapToGlobal(pos))
+        if action == act_default:
+            def_w = self._partition_table.cellWidget(row, 1)
+            if def_w:
+                def_cb = def_w.findChild(QCheckBox)
+                if def_cb:
+                    def_cb.setChecked(True)
+        elif action == act_rename:
+            self._on_rename_row(row)
+        elif action == act_delete:
+            self._on_delete_single_partition(p["id"])
+
+    def _on_rename_row(self, row: int) -> None:
         p = self._partitions_data[row]
         name, ok = QInputDialog.getText(self, "重命名分区", "新名称：", text=p["name"])
         if ok and name.strip():
@@ -332,16 +298,23 @@ class SettingsDialog(QDialog):
             self._populate_partition_table()
             get_signal_bus().partitions_changed.emit()
 
-    def _on_delete_partition(self) -> None:
-        row = self._partition_table.currentRow()
-        if row < 0 or row >= len(self._partitions_data):
-            return
-        p = self._partitions_data[row]
-        self._confirm_delete_partition(p)
+    def _on_add_partition(self) -> None:
+        name, ok = QInputDialog.getText(self, "新增分区", "分区名称：")
+        if ok and name.strip():
+            self._repository.upsert_partition(name.strip())
+            self._populate_partition_table()
+            get_signal_bus().partitions_changed.emit()
 
     def _on_delete_single_partition(self, pid: str) -> None:
         for p in self._partitions_data:
             if p["id"] == pid:
+                count = self._repository.count_tasks_in_partition(pid)
+                if count > 0:
+                    QMessageBox.warning(
+                        self, "无法删除",
+                        f'分区 "{p["name"]}" 中还有 {count} 个任务，请先清空后再删除。',
+                    )
+                    return
                 self._confirm_delete_partition(p)
                 return
 
@@ -355,10 +328,8 @@ class SettingsDialog(QDialog):
             if not ok:
                 return
             if not old:
-                # Empty = clear password
                 self._repository.set_partition_password(pid, "")
             elif old != cur:
-                # Wrong password — offer reset
                 result = QMessageBox.question(
                     self, "密码错误",
                     "旧密码不正确。是否直接设置新密码？（无需旧密码）",
@@ -373,7 +344,6 @@ class SettingsDialog(QDialog):
                 if ok2:
                     self._repository.set_partition_password(pid, new)
             else:
-                # Correct password — change it
                 new, ok2 = QInputDialog.getText(
                     self, "设置新密码", "输入新密码（留空则清除）：",
                     QLineEdit.EchoMode.Password,
@@ -402,258 +372,12 @@ class SettingsDialog(QDialog):
             get_signal_bus().partitions_changed.emit()
 
     # ------------------------------------------------------------------
-    # MOTD tab (encouragement messages)
+    # Validation
     # ------------------------------------------------------------------
 
-    # ------------------------------------------------------------------
-    # Save
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
-    # Help tab (kept as a method but removed from tabs — used by standalone help dialog)
-    # ------------------------------------------------------------------
-
-    def _build_help_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        from ...utils.design_tokens import get_tokens
-        t = get_tokens()
-        ac, on_ac, ts = t.accent, t.text_on_accent, t.text_secondary
-
-        browser = QTextBrowser()
-        browser.setOpenExternalLinks(True)
-        browser.setStyleSheet("QTextBrowser { font-size: 13px; line-height: 1.6; }")
-
-        help_html = """
-<h1 style="border-bottom:2px solid __AC__;padding-bottom:8px;">DeskTodoSeq 帮助文档</h1>
-
-<h2 style="color:__AC__;">一、核心设计理念</h2>
-
-<h3>1.1 Markdown 即数据</h3>
-<p>DeskTodoSeq 以 <b>Markdown 文本行为任务的最小单元</b>。每一条任务都是一行标准的 Markdown：</p>
-<pre style="padding:8px;border-radius:4px;">- [ ] TODO &lt;2026-05-20&gt; 重构认证模块 #backend</pre>
-<p>这条文本 <b>既是用户看到的，也是数据库存储的规范格式</b>。结构化字段（状态、日期、标签）从 Markdown 派生，始终可通过解析器重新生成——<b>raw_md 是唯一真相源（Single Source of Truth）</b>。</p>
-
-<h3>1.2 本地优先 · 隐私至上</h3>
-<p>所有数据存储在本地 SQLite 数据库中，无需网络连接、无需注册账号。支持分区密码保护，敏感任务可加密隔离。</p>
-
-<h3>1.3 键盘驱动 · 鼠标辅助</h3>
-<p>核心操作（新建、编辑、状态切换）都支持快捷键。Markdown 文本编辑是主要的交互方式，可视化控件（日期选择器、状态下拉）作为辅助。</p>
-
-<h3>1.4 时间可视化</h3>
-<p>通过 GitHub 风格日历热力图、活动时间线、统计栏等可视化手段，让时间管理和任务进度一目了然。</p>
-
-<hr>
-
-<h2 style="color:__AC__;">二、系统架构</h2>
-
-<h3>2.1 分层设计</h3>
-<pre style="padding:8px;border-radius:4px;">
-┌─────────────────────────────────────────────┐
-│  UI 层 (src/ui/)                            │
-│  main_window · system_tray · task_list/     │
-│  calendar_heatmap/ · dialogs/ · widgets/    │
-├─────────────────────────────────────────────┤
-│  服务层 (src/services/)                     │
-│  md_parser · md_formatter · scheduler       │
-│  notifier · archiver · recurrence           │
-├─────────────────────────────────────────────┤
-│  领域模型层 (src/models/)                   │
-│  Task · TaskStatus · Partition               │
-│  TaskFilter · TaskRepository (SQLite)       │
-├─────────────────────────────────────────────┤
-│  工具层 (src/utils/)                        │
-│  signal_bus · date_utils · win32_utils      │
-│  icon_loader                                 │
-└─────────────────────────────────────────────┘</pre>
-
-<h3>2.2 核心数据流</h3>
-<pre style="padding:8px;border-radius:4px;">
-用户输入 Markdown
-    │
-    ▼ MarkdownTaskParser.parse()
-ParsedTask(status, deadline, title, tags...)
-    │
-    ▼ MarkdownTaskFormatter.format()
-Task(raw_md, title, status, ...)  ← 规范化后的领域对象
-    │
-    ▼ TaskRepository.insert/update
-SQLite (raw_md + 结构化列 + FTS5 全文索引)
-</pre>
-
-<h3>2.3 信号总线（SignalBus）</h3>
-<p>各模块通过 Qt 信号解耦通信，不直接相互调用：</p>
-<table style="width:100%;border-collapse:collapse;font-size:12px;" border="1" cellpadding="4" cellspacing="0">
-<tr style="background:__AC__;color:__ON_AC__;"><th>信号</th><th>触发场景</th><th>响应组件</th></tr>
-<tr><td><code>task_created</code></td><td>新建任务保存</td><td>MainWindow 刷新列表、统计栏、轮播</td></tr>
-<tr><td><code>task_updated</code></td><td>任务字段修改</td><td>同上</td></tr>
-<tr><td><code>task_deleted</code></td><td>删除任务</td><td>同上 + 清理引用</td></tr>
-<tr><td><code>task_status_changed</code></td><td>状态变更</td><td>同上 + 活动时间线刷新</td></tr>
-<tr><td><code>partitions_changed</code></td><td>分区增删改</td><td>工具栏菜单、筛选栏刷新</td></tr>
-<tr><td><code>config_changed</code></td><td>设置保存</td><td>主题切换、字体更新</td></tr>
-</table>
-
-<hr>
-
-<h2 style="color:__AC__;">三、功能详解</h2>
-<p><i>以下功能说明结合「功能演示」分区中的样例任务进行演示。</i></p>
-
-<h3>3.1 任务创建与 Markdown 编辑</h3>
-<p>点击工具栏 <b>+ 新建</b> 按钮（或 <kbd>Ctrl+N</kbd>），编辑面板自动生成今日日期的 TODO 模板：</p>
-<pre style="padding:8px;border-radius:4px;">- [ ] TODO &lt;2026-05-15&gt; 新任务</pre>
-<p><b>Markdown 语法规则：</b></p>
-<ul>
-<li><b>状态关键字</b>：<code>TODO</code> / <code>DOING</code> / <code>DONE</code> / <code>OVERDUE</code>——位于 <code>- [ ]</code> 之后（OVERDUE 为系统自动判定）</li>
-<li><b>截止日期</b>：<code>&lt;YYYY-MM-DD&gt;</code> 或 <code>&lt;YYYY-MM-DD HH:MM&gt;</code></li>
-<li><b>标签</b>：<code>#标签名</code>——可多个，置于行末</li>
-</ul>
-
-<h3>3.2 任务状态与生命周期</h3>
-<p>任务状态按以下循环流转：</p>
-<pre style="padding:8px;border-radius:4px;">
-TODO ──→ DOING ──→ DONE ──→ DOING (重新激活)
-  │
-  └──(逾期自动判定)──→ OVERDUE (锁定)
-                       │
-             (修改截至时间为未来)
-                       ↓
-                    DOING + 活动日志
-</pre>
-<p><b>操作方式：</b></p>
-<ul>
-<li><b>右键菜单</b>：任务列表右键 → 更改状态 → 选择目标状态</li>
-<li><b>编辑面板</b>：底部状态下拉 + 「追加进展」按钮，一步完成状态切换 + 进展记录</li>
-<li><b>Markdown 编辑</b>：直接修改状态关键字后保存</li>
-</ul>
-<p><b>示例：</b>查看「功能演示」分区中 <i>"准备季度汇报 PPT"</i> 的活动时间线，可看到 待办→进行中→已完成 的完整流转过程。</p>
-
-<h3>3.3 活动时间线</h3>
-<p>每条任务下方展示 <b>活动时间线</b>，按时间倒序显示：</p>
-<ul>
-<li>每次「追加进展」生成一条带时间戳的记录</li>
-<li>状态变更自动记录</li>
-<li>每条记录标记当前状态标签（带颜色）</li>
-<li>「创建任务」作为时间线起点始终显示</li>
-</ul>
-<p><b>示例：</b>查看「功能演示」分区中 <i>"学习 Rust 所有权机制"</i> 的时间线，展示了多次追加进展的学习过程。</p>
-
-<h3>3.4 分区管理（OneNote 笔记本模式）</h3>
-<p>分区用于隔离不同场景的任务，类似 OneNote 的笔记本：</p>
-<ul>
-<li><b>创建分区</b>：设置 → 分区管理 → 添加（可设置密码保护）</li>
-<li><b>切换分区</b>：工具栏 📖 按钮 → 选择分区</li>
-<li><b>密码保护</b>：锁定后需输入密码才能查看分区内容</li>
-<li><b>自动锁定</b>：设置 → 通用 → 分区自动锁定（N 分钟无操作后锁定）</li>
-<li><b>隐藏分区</b>：分区管理中取消勾选，分区从工具栏菜单隐藏</li>
-</ul>
-
-<h3>3.5 筛选与排序</h3>
-<p>筛选栏提供多维过滤：</p>
-<ul>
-<li><b>搜索框</b>：全文搜索（基于 FTS5），支持中文分词</li>
-<li><b>状态筛选</b>：按 OVERDUE / TODO / DOING / DONE 过滤</li>
-<li><b>优先级筛选</b>：按 A / B / C 过滤</li>
-<li><b>排序</b>：支持按状态、截止日、优先级、创建时间、标题排序</li>
-</ul>
-<p>顶部快捷按钮：<b>全部 | 今日 | 本周 | 逾期</b>，一键切换视角。</p>
-
-<h3>3.6 日历热力图</h3>
-<p>工具栏热力图按钮 切换显示 GitHub 风格的贡献热力图：</p>
-<ul>
-<li>每个格子代表一天，颜色深浅反映当天任务量</li>
-<li>点击某天自动筛选该日期的任务</li>
-<li>支持年份切换</li>
-<li>颜色可在设置 → 显示中自定义</li>
-</ul>
-<p><b>示例：</b>切换到「功能演示」分区查看热力图，可看到 5 月中旬任务密集区。</p>
-
-<h3>3.7 提醒与归档</h3>
-<ul>
-<li><b>提醒</b>：设置 → 提醒 → 启用后按间隔检查到期任务，托盘弹窗通知</li>
-<li><b>安静时段</b>：可设置免打扰时间段</li>
-<li><b>自动归档</b>：设置 → 归档 → 启用后自动归档 N 天前已完成的任务</li>
-</ul>
-
-<h3>3.8 任务详情对话框</h3>
-<p>右键任务 → 详情，弹出详情对话框，可查看：</p>
-<ul>
-<li>完整活动时间线（只读）</li>
-<li>标签编辑：以 <code>#tag1 #tag2</code> 格式直接修改</li>
-<li>复制 MD：一键复制 Markdown 原文</li>
-</ul>
-
-<h3>3.9 统计栏</h3>
-<p>筛选栏下方状态统计栏显示各状态任务数量、逾期数，点击可快速筛选。</p>
-
-<h3>3.10 轮播横幅</h3>
-<p>顶部轮播区自动滚动显示近期优先任务，点击可跳转。</p>
-
-<h3>3.11 系统托盘</h3>
-<p>关闭窗口默认最小化到系统托盘（可在设置中修改），托盘图标右键菜单支持快速操作。</p>
-
-<h3>3.12 快捷键</h3>
-<table style="width:100%;border-collapse:collapse;font-size:12px;" border="1" cellpadding="4" cellspacing="0">
-<tr style="background:__AC__;color:__ON_AC__;"><th>快捷键</th><th>功能</th></tr>
-<tr><td><kbd>Ctrl+N</kbd></td><td>新建任务</td></tr>
-<tr><td><kbd>Ctrl+Alt+T</kbd></td><td>显示/隐藏主窗口</td></tr>
-</table>
-
-<hr>
-
-<h2 style="color:__AC__;">四、「功能演示」分区样例说明</h2>
-<p>切换到「功能演示」分区可查看以下演示场景：</p>
-
-<table style="width:100%;border-collapse:collapse;font-size:12px;" border="1" cellpadding="4" cellspacing="0">
-<tr style="background:__AC__;color:__ON_AC__;"><th>任务</th><th>演示要点</th></tr>
-<tr><td>📊 准备季度汇报 PPT</td><td>完整状态流转（TODO→DOING→DONE）+ 活动时间线</td></tr>
-<tr><td>🏃 每周三次有氧运动</td><td>循环任务 + 标签 #健康</td></tr>
-<tr><td>📖 阅读《系统设计面试》</td><td>DOING 状态 + 多次追加进展</td></tr>
-<tr><td>🦀 学习 Rust 所有权机制</td><td>DOING 进行中 + 详细学习笔记时间线</td></tr>
-<tr><td>💰 整理本月开支账单</td><td>逾期任务展示 + deadline 紧迫感</td></tr>
-<tr><td>✈️ 规划端午出行行程</td><td>远期截止日 + TODO 待办状态</td></tr>
-<tr><td>📝 写技术博客：Python 协程</td><td>低保真优先级 + 富文本活动记录</td></tr>
-<tr><td>📚 整理书单并写读书笔记</td><td>LATER 稍后状态 + 多标签</td></tr>
-</table>
-
-<p>建议逐一查看每条任务，体验 <b>状态切换、追加进展、活动时间线、右键详情</b> 等核心功能。</p>
-
-<hr>
-
-<h2 style="color:__AC__;">五、数据存储</h2>
-<ul>
-<li><b>数据库</b>：SQLite，位于 <code>resources/tasks.db</code></li>
-<li><b>配置文件</b>：JSON，位于 <code>resources/config.json</code></li>
-<li><b>FTS5 索引</b>：全文搜索虚拟表 <code>tasks_fts</code></li>
-<li><b>标签存储</b>：JSON 数组字符串 <code>["tag1","tag2"]</code></li>
-<li><b>活动日志</b>：JSON 数组字符串 <code>[{"ts":"...","content":"...","status":"..."}]</code></li>
-</ul>
-
-<hr>
-
-<h2 style="color:__AC__;">六、常见问题</h2>
-
-<p><b>Q: 任务是否可以跨分区移动？</b><br>
-A: 目前需在编辑面板中切换分区下拉来迁移任务。</p>
-
-<p><b>Q: 忘记分区密码怎么办？</b><br>
-A: 设置 → 分区管理 → 选中分区 → 设置密码 → 输入错误密码后可选择直接设置新密码（原数据不解密）。</p>
-
-<p><b>Q: 如何备份数据？</b><br>
-A: 直接复制 <code>resources/</code> 目录下的 <code>tasks.db</code> 和 <code>config.json</code> 即可。</p>
-
-<p><b>Q: Markdown 格式写错了会怎样？</b><br>
-A: 保存时解析器会尝试容错解析，如果完全无法解析会提示"解析失败"。</p>
-
-<p style="margin-top:30px;color:__TS__;font-size:11px;">
-DeskTodoSeq — 用 Markdown 管理时间，用数据可视化进度。
-</p>
-"""
-        help_html = help_html.replace("__AC__", ac).replace("__ON_AC__", on_ac).replace("__TS__", ts)
-        browser.setHtml(help_html)
-        layout.addWidget(browser)
-        return w
+    @staticmethod
+    def _validate_time(text: str) -> bool:
+        return bool(re.match(r"^\d{1,2}:\d{2}$", text))
 
     # ------------------------------------------------------------------
     # Save
@@ -661,50 +385,55 @@ DeskTodoSeq — 用 Markdown 管理时间，用数据可视化进度。
 
     def _on_accept(self) -> None:
         self._config.set("general", "minimize_to_tray", value=self._minimize_cb.isChecked())
-        self._config.set("general", "auto_lock_minutes", value=self._auto_lock_spin.value())
-        self._config.set("general", "page_size", value=self._page_size_spin.value())
+        self._config.set("general", "auto_lock_minutes", value=self._lock_combo.currentData())
+        self._config.set("general", "page_size", value=self._page_size_combo.currentData())
         self._config.set("general", "default_sort", value=self._default_sort_combo.currentData())
         self._config.set("display", "theme", value=self._theme_combo.currentData())
-        self._config.set("display", "heatmap_start_year", value=self._heatmap_start_year.value())
-        self._config.set("display", "max_heatmap_tags", value=self._max_heatmap_tags_spin.value())
+        self._config.set("display", "heatmap_start_year", value=self._heatmap_year.value())
         self._config.set("reminders", "enabled", value=self._reminders_cb.isChecked())
-        self._config.set(
-            "reminders", "quiet_hours_start",
-            value=self._quiet_start.time().toString("HH:mm"),
-        )
-        self._config.set(
-            "reminders", "quiet_hours_end",
-            value=self._quiet_end.time().toString("HH:mm"),
-        )
-        self._config.set("archive", "enabled", value=self._archive_cb.isChecked())
-        self._config.set(
-            "general", "default_partition",
-            value=self._default_partition_combo.currentData(),
-        )
-        # Save hidden partitions + per-partition archive days
+        try:
+            hours = int(self._interval_edit.text().strip())
+            if hours <= 0:
+                hours = 1
+        except ValueError:
+            hours = 1
+        self._config.set("reminders", "intervals_minutes", value=[hours * 60])
+        qs = self._quiet_start_edit.text().strip()
+        qe = self._quiet_end_edit.text().strip()
+        if self._validate_time(qs):
+            self._config.set("reminders", "quiet_hours_start", value=qs)
+        if self._validate_time(qe):
+            self._config.set("reminders", "quiet_hours_end", value=qe)
         hidden = []
         for r in range(self._partition_table.rowCount()):
-            cb = self._partition_table.cellWidget(r, 0)
-            if cb and not cb.isChecked():
-                pid = self._partitions_data[r]["id"]
-                hidden.append(pid)
-            # Save per-partition archive days
-            archive_spin = self._partition_table.cellWidget(r, 2)
-            if archive_spin and r < len(self._partitions_data):
-                pid = self._partitions_data[r]["id"]
-                new_days = archive_spin.value()
-                self._repository.update_partition_archive_days(pid, new_days)
+            pid = self._partitions_data[r]["id"]
+            vis_w = self._partition_table.cellWidget(r, 2)
+            if vis_w:
+                vis_cb = vis_w.findChild(QCheckBox)
+                if vis_cb and not vis_cb.isChecked():
+                    hidden.append(pid)
+            auto_w = self._partition_table.cellWidget(r, 3)
+            if auto_w:
+                auto_cb = auto_w.findChild(QCheckBox)
+                if auto_cb:
+                    self._repository.update_partition_archive_enabled(
+                        pid, 1 if auto_cb.isChecked() else 0
+                    )
+            days_w = self._partition_table.cellWidget(r, 4)
+            if days_w:
+                try:
+                    days = max(0, int(days_w.text().strip()))
+                except ValueError:
+                    days = 9999
+                self._repository.update_partition_archive_days(pid, days)
         self._config.set("general", "hidden_partitions", value=hidden)
-
         motd_cfg = {}
         for key, edit in self._motd_edits.items():
             if edit.text().strip():
                 motd_cfg[key] = edit.text().strip()
         self._config.set("motd", value=motd_cfg)
-
         self._config.save()
         self.accept()
 
     def theme_changed(self) -> bool:
-        """Return True if the theme was changed."""
         return self._theme_combo.currentData() != "system"

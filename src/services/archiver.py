@@ -24,8 +24,8 @@ class TaskArchiver:
         self._scheduler.add_job(
             self._run_archive,
             "cron",
-            hour=2,
-            minute=7,
+            hour=0,
+            minute=0,
             id="archive_check",
             replace_existing=True,
         )
@@ -36,15 +36,16 @@ class TaskArchiver:
             self._scheduler.shutdown(wait=False)
 
     def _run_archive(self) -> None:
-        if not self._config.archive_enabled:
-            return
-
         today = date.today()
         partitions = self._repository.get_all_partitions()
         total_archived = 0
 
         for p in partitions:
+            if not p.get("archive_enabled", 0):
+                continue
             archive_days = p.get("archive_days", 9999)
+            if archive_days >= 9999:
+                continue  # never archive
             cutoff = today - timedelta(days=archive_days)
             tasks = self._repository.get_tasks_for_archive(cutoff, p["id"])
             if tasks:
