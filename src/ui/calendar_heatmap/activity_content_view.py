@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from ...models.task import Task
 from ...utils.design_tokens import get_tokens
 
-_BTN_STYLE = "QPushButton { font-size: 10px; padding: 2px 6px; }"
+_BTN_STYLE = "QPushButton { font-size: 10px; padding: 0px; }"
 
 
 class ActivityContentView(QWidget):
@@ -37,9 +37,9 @@ class ActivityContentView(QWidget):
 
         # ── Nav bar (left-aligned, compact, same height as left panel top row) ──
         nav = QWidget()
-        nav.setFixedHeight(26)
+        nav.setFixedHeight(28)
         nav_layout = QHBoxLayout(nav)
-        nav_layout.setContentsMargins(2, 2, 4, 2)
+        nav_layout.setContentsMargins(2, 3, 4, 3)
         nav_layout.setSpacing(3)
 
         self._prev_btn = QPushButton("◀")

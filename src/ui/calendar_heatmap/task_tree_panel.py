@@ -116,9 +116,9 @@ class TaskTreePanel(QWidget):
 
         # ── Top row: search filter + select-all toggle ──
         top_row = QWidget()
-        top_row.setFixedHeight(26)
+        top_row.setFixedHeight(28)
         top_layout = QHBoxLayout(top_row)
-        top_layout.setContentsMargins(2, 2, 2, 2)
+        top_layout.setContentsMargins(2, 3, 2, 3)
         top_layout.setSpacing(3)
 
         self._search_input = QLineEdit()
