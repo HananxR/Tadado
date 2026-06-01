@@ -1,15 +1,16 @@
-"""Tag list panel — checkable tag selector with select-all for activity analysis."""
+"""Tag chip cloud — checkable capsule buttons in flow layout for activity analysis."""
 
 from __future__ import annotations
 
 import json
 from datetime import date, datetime
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRect, QSize, Qt, Signal
 from PySide6.QtWidgets import (
-    QListWidget,
-    QListWidgetItem,
+    QLayout,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -19,8 +20,75 @@ from ...models.task import Task
 from ...utils.design_tokens import get_tokens
 
 
+class _FlowLayout(QLayout):
+    """Horizontal flow layout that wraps items to the next row."""
+
+    def __init__(self, parent: QWidget | None = None, margin: int = 0, spacing: int = 4):
+        super().__init__(parent)
+        self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing)
+        self._items: list = []
+
+    def addItem(self, item) -> None:
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index: int):
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self) -> Qt.Orientation:
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect: QRect) -> None:
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        size += QSize(m.left() + m.right(), m.top() + m.bottom())
+        return size
+
+    def _do_layout(self, rect: QRect, test_only: bool) -> int:
+        m = self.contentsMargins()
+        x = rect.x() + m.left()
+        y = rect.y() + m.top()
+        line_height = 0
+        spacing = self.spacing()
+        usable = rect.width() - m.left() - m.right()
+
+        for item in self._items:
+            hint = item.sizeHint()
+            w, h = hint.width(), hint.height()
+            if x + w > rect.x() + m.left() + usable and line_height > 0:
+                x = rect.x() + m.left()
+                y += line_height + spacing
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(x, y, w, h))
+            x += w + spacing
+            line_height = max(line_height, h)
+        return y + line_height + m.bottom() - rect.y()
+
+
 class TaskTreePanel(QWidget):
-    """List of checkable tags with activity counts. Emits tag_selected(tag_name)."""
+    """Tag chip cloud with checkable capsule buttons. Emits tag_selected(tag_name)."""
 
     tag_selected = Signal(str)
     checked_tags_changed = Signal()
@@ -32,6 +100,8 @@ class TaskTreePanel(QWidget):
         self._checked_tags: set[str] = set()
         self._active_tag: str | None = None
         self._all_checked = True
+        self._tag_buttons: dict[str, QPushButton] = {}
+        self._chip_order: list[str] = []
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -40,7 +110,6 @@ class TaskTreePanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
 
-        # Select-all toggle — match BatchToolbar style
         self._toggle_btn = QPushButton("取消全选")
         self._toggle_btn.setMinimumWidth(64)
         self._toggle_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 6px; }")
@@ -48,25 +117,35 @@ class TaskTreePanel(QWidget):
         self._toggle_btn.clicked.connect(self.toggle_all_checked)
         layout.addWidget(self._toggle_btn)
 
-        self._list = QListWidget()
-        self._list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._list.currentItemChanged.connect(self._on_item_changed)
-        self._list.itemChanged.connect(self._on_check_changed)
-        self._list.setStyleSheet(f"""
-            QListWidget {{ border: none; background: transparent; font-size: 11px; }}
-            QListWidget::item {{ padding: 5px 10px; border-radius: 4px; color: {t.text_primary}; }}
-            QListWidget::item:selected {{ background: {t.accent}18; border-left: 3px solid {t.accent}; }}
-            QListWidget::item:hover {{ background: {t.accent}08; }}
-            QListWidget::indicator {{
-                width: 14px; height: 14px;
-                border: 1.5px solid {t.border_primary};
-                border-radius: 3px; background: transparent;
-            }}
-            QListWidget::indicator:checked {{
-                background: {t.accent}; border-color: {t.accent};
-            }}
-        """)
-        layout.addWidget(self._list, 1)
+        # Scrollable chip container
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+
+        self._chip_container = QWidget()
+        self._chip_container.setStyleSheet("background: transparent;")
+        self._chip_layout = _FlowLayout(self._chip_container, margin=2, spacing=4)
+        scroll.setWidget(self._chip_container)
+
+        layout.addWidget(scroll, 1)
+
+    def _chip_style(self, checked: bool) -> str:
+        t = get_tokens()
+        if checked:
+            return (
+                f"QPushButton {{ font-size: 11px; padding: 4px 10px; "
+                f"border: 1.5px solid {t.accent}; border-radius: 14px; "
+                f"background: {t.accent}; color: {t.text_on_accent}; "
+                f"font-weight: bold; }}"
+                f"QPushButton:hover {{ background: {t.accent}dd; }}"
+            )
+        return (
+            f"QPushButton {{ font-size: 11px; padding: 4px 10px; "
+            f"border: 1.5px solid {t.border_primary}; border-radius: 14px; "
+            f"background: transparent; color: {t.text_secondary}; }}"
+            f"QPushButton:hover {{ border-color: {t.accent}80; color: {t.text_primary}; }}"
+        )
 
     # ------------------------------------------------------------------
     # Public API
@@ -74,7 +153,6 @@ class TaskTreePanel(QWidget):
 
     def refresh(self, date_from: date | None, date_to: date | None,
                 partition_id: str | None, tag_filter: str | None = None) -> None:
-        """Reload tag list with activity counts for the period."""
         from ...models.task_filter import TaskFilter
 
         f = TaskFilter(partition_id=partition_id)
@@ -93,27 +171,39 @@ class TaskTreePanel(QWidget):
 
         sorted_tags = sorted(tag_data.items(), key=lambda x: x[1][0], reverse=True)
 
-        self._list.blockSignals(True)
-        self._list.clear()
+        # Clear old chips
+        for btn in self._tag_buttons.values():
+            self._chip_layout.removeWidget(btn)
+            btn.deleteLater()
+        self._tag_buttons.clear()
         self._tag_task_map.clear()
         self._checked_tags.clear()
+        self._chip_order.clear()
+        self._active_tag = None
 
         for tag, (count, task_list) in sorted_tags:
             display = tag if tag != "__untagged__" else "未分类"
-            item = QListWidgetItem(f"{display}  ({count})")
-            item.setData(Qt.ItemDataRole.UserRole, tag)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked)
-            self._checked_tags.add(tag)
-            self._list.addItem(item)
+            label = f"# {display}  {count}"
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setChecked(True)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(self._chip_style(checked=True))
+            btn.clicked.connect(lambda checked, t=tag, b=btn: self._on_chip_clicked(t, checked, b))
+            btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+            self._tag_buttons[tag] = btn
             self._tag_task_map[tag] = task_list
+            self._checked_tags.add(tag)
+            self._chip_order.append(tag)
+            self._chip_layout.addWidget(btn)
 
         self._all_checked = True
         self._toggle_btn.setText("取消全选")
-        self._list.blockSignals(False)
 
-        if self._list.count() > 0:
-            self._list.setCurrentRow(0)
+        if self._chip_order:
+            first_tag = self._chip_order[0]
+            self._active_tag = first_tag
+            self.tag_selected.emit(first_tag)
         else:
             self._active_tag = None
             self.tag_selected.emit("")
@@ -122,18 +212,9 @@ class TaskTreePanel(QWidget):
         return self._tag_task_map.get(tag, [])
 
     def get_checked_tags(self) -> list[str]:
-        """Return checked tag names in list order."""
-        ordered = []
-        for i in range(self._list.count()):
-            item = self._list.item(i)
-            if item and item.checkState() == Qt.CheckState.Checked:
-                tag = item.data(Qt.ItemDataRole.UserRole)
-                if tag:
-                    ordered.append(tag)
-        return ordered
+        return [t for t in self._chip_order if t in self._checked_tags]
 
     def get_next_checked_tag(self, current_tag: str) -> str | None:
-        """Return the next checked tag after current_tag, or None."""
         checked = self.get_checked_tags()
         try:
             idx = checked.index(current_tag)
@@ -144,34 +225,50 @@ class TaskTreePanel(QWidget):
         return None
 
     def select_tag(self, tag: str) -> None:
-        """Programmatically select and scroll to the given tag."""
-        for i in range(self._list.count()):
-            item = self._list.item(i)
-            if item and item.data(Qt.ItemDataRole.UserRole) == tag:
-                self._list.setCurrentItem(item)
-                self._list.scrollToItem(item, QListWidget.ScrollHint.EnsureVisible)
-                return
+        if tag not in self._tag_buttons:
+            return
+        if tag != self._active_tag:
+            self._active_tag = tag
+            self.tag_selected.emit(tag)
+        btn = self._tag_buttons[tag]
+        btn.setFocus()
 
     def toggle_all_checked(self) -> None:
-        """Toggle all tags between checked and unchecked."""
-        self._list.blockSignals(True)
-        new_state = Qt.CheckState.Unchecked if self._all_checked else Qt.CheckState.Checked
-        self._checked_tags.clear()
-        for i in range(self._list.count()):
-            item = self._list.item(i)
-            if item:
-                item.setCheckState(new_state)
-                if new_state == Qt.CheckState.Checked:
-                    tag = item.data(Qt.ItemDataRole.UserRole)
-                    if tag:
-                        self._checked_tags.add(tag)
         self._all_checked = not self._all_checked
+        new_checked = self._all_checked
+        self._checked_tags.clear()
+        for tag, btn in self._tag_buttons.items():
+            btn.blockSignals(True)
+            btn.setChecked(new_checked)
+            btn.setStyleSheet(self._chip_style(checked=new_checked))
+            btn.blockSignals(False)
+            if new_checked:
+                self._checked_tags.add(tag)
         self._toggle_btn.setText("取消全选" if self._all_checked else "全选")
-        self._list.blockSignals(False)
         self.checked_tags_changed.emit()
 
     def get_active_tag(self) -> str | None:
         return self._active_tag
+
+    # ------------------------------------------------------------------
+    # Slots
+    # ------------------------------------------------------------------
+
+    def _on_chip_clicked(self, tag: str, checked: bool, btn: QPushButton) -> None:
+        btn.setStyleSheet(self._chip_style(checked=checked))
+        if checked:
+            self._checked_tags.add(tag)
+        else:
+            self._checked_tags.discard(tag)
+        self._all_checked = all(
+            self._tag_buttons[t].isChecked() for t in self._chip_order
+        )
+        self._toggle_btn.setText("取消全选" if self._all_checked else "全选")
+        self.checked_tags_changed.emit()
+
+        if tag != self._active_tag:
+            self._active_tag = tag
+            self.tag_selected.emit(tag)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -200,26 +297,3 @@ class TaskTreePanel(QWidget):
             return datetime.strptime(ts, "%Y-%m-%d %H:%M:%S").date()
         except (ValueError, TypeError):
             return date.today()
-
-    def _on_item_changed(self, current: QListWidgetItem, previous: QListWidgetItem) -> None:
-        if current is None:
-            return
-        tag = current.data(Qt.ItemDataRole.UserRole)
-        if tag and tag != self._active_tag:
-            self._active_tag = tag
-            self.tag_selected.emit(tag)
-
-    def _on_check_changed(self, item: QListWidgetItem) -> None:
-        tag = item.data(Qt.ItemDataRole.UserRole)
-        if not tag:
-            return
-        if item.checkState() == Qt.CheckState.Checked:
-            self._checked_tags.add(tag)
-        else:
-            self._checked_tags.discard(tag)
-        self._all_checked = all(
-            self._list.item(i).checkState() == Qt.CheckState.Checked
-            for i in range(self._list.count())
-        )
-        self._toggle_btn.setText("取消全选" if self._all_checked else "全选")
-        self.checked_tags_changed.emit()

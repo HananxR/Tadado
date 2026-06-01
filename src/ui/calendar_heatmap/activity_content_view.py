@@ -124,11 +124,10 @@ class ActivityContentView(QWidget):
                 color: {t.text_secondary}; font-size: 11px;
             ">此时段内无活动记录</body></html>"""
             self._view.setHtml(html)
+            self._view.verticalScrollBar().setValue(0)
             self._cached_data = {}
             self._plain_text = ""
             return
-
-        # Apply search filter
         q = self._search_text.lower()
         if q:
             items = [it for it in items
@@ -142,6 +141,7 @@ class ActivityContentView(QWidget):
                 color: {t.text_secondary}; font-size: 11px;
             ">无匹配结果</body></html>"""
             self._view.setHtml(html)
+            self._view.verticalScrollBar().setValue(0)
             return
 
         # Build HTML
@@ -191,26 +191,23 @@ class ActivityContentView(QWidget):
     # Scroll detection
     # ------------------------------------------------------------------
 
-    def _at_bottom(self, sb) -> bool:
-        """True if scrollbar is at or within 5px of the bottom."""
-        return sb.maximum() > 0 and sb.value() >= sb.maximum() - 5
-
     def _on_scroll_changed(self, value: int) -> None:
         sb = self._view.verticalScrollBar()
-        if self._at_bottom(sb):
+        if sb.maximum() > 0 and value >= sb.maximum() - 5:
+            self._scroll_debounce.setInterval(200)
             self._scroll_debounce.start()
         else:
             self._scroll_debounce.stop()
 
     def _on_scroll_range_changed(self, _min: int, _max: int) -> None:
-        """Re-check scroll position after layout/resize changes scrollbar range."""
-        sb = self._view.verticalScrollBar()
-        if self._at_bottom(sb):
+        self._scroll_debounce.stop()
+        if _max == 0:
+            self._scroll_debounce.setInterval(1000)
             self._scroll_debounce.start()
 
     def _check_scroll_bottom(self) -> None:
         sb = self._view.verticalScrollBar()
-        if self._at_bottom(sb):
+        if sb.maximum() == 0 or (sb.maximum() > 0 and sb.value() >= sb.maximum() - 5):
             self.scrolled_to_bottom.emit()
 
     # ------------------------------------------------------------------
