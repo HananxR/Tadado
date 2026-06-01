@@ -476,7 +476,7 @@ class MainWindow(QMainWindow):
         # Period selector + search + export (same row)
         period_row = QWidget()
         period_row_layout = QHBoxLayout(period_row)
-        period_row_layout.setContentsMargins(0, 2, 0, 2)
+        period_row_layout.setContentsMargins(0, 2, 0, 4)
         period_row_layout.setSpacing(6)
 
         self._analysis_period_selector = PeriodSelectorBar()
@@ -497,7 +497,7 @@ class MainWindow(QMainWindow):
             f"padding: 2px 10px; font-size: 11px; }}"
             f"QPushButton:hover {{ background: {t_tok.accent}20; }}"
         )
-        export_btn = QPushButton("导出 ▾")
+        export_btn = QPushButton("导出")
         export_btn.setFixedHeight(28)
         export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         export_btn.setStyleSheet(btn_style)
@@ -1229,10 +1229,8 @@ class MainWindow(QMainWindow):
             self._refresh_batch_page()
 
     def _load_dashboard_data(self) -> None:
-        """Load dashboard data after view switch (deferred for responsiveness)."""
+        """Load dashboard stats after view switch (report loads on period click)."""
         self._refresh_analysis()
-        if hasattr(self, '_analysis_period_selector'):
-            self._analysis_period_selector.activate_preset("today")
 
     # ------------------------------------------------------------------
     # Activity analysis slots
