@@ -343,6 +343,10 @@ class TaskRepository:
         if filter_.progress_min > 0 or filter_.progress_max < 100:
             where_clauses.append("progress >= ? AND progress <= ?")
             params.extend([filter_.progress_min, filter_.progress_max])
+        if filter_.tags:
+            for tag in filter_.tags:
+                where_clauses.append("tags LIKE ?")
+                params.append(f'%"{tag}"%')
         if filter_.overdue_only:
             from datetime import date as _date
             today = _date.today().isoformat()
@@ -548,6 +552,61 @@ class TaskRepository:
                 for t in json.loads(tags_json):
                     tag_set.add(t)
         return sorted(tag_set)
+
+    def get_all_tags_with_counts(self, partition_id: str | None = None) -> list[tuple[str, int]]:
+        """Return unique tags with usage counts from non-archived tasks.
+
+        Sorted by count descending, then by tag name (case-insensitive) ascending.
+        Optionally filtered by partition.
+        """
+        query = "SELECT tags FROM tasks WHERE archived = 0 AND tags != '[]'"
+        params: list = []
+        if partition_id:
+            query += " AND partition_id = ?"
+            params.append(partition_id)
+        rows = self.conn.execute(query, params).fetchall()
+        counts: dict[str, int] = {}
+        for (tags_json,) in rows:
+            if tags_json:
+                for t in json.loads(tags_json):
+                    counts[t] = counts.get(t, 0) + 1
+        return sorted(counts.items(), key=lambda x: (-x[1], x[0].lower()))
+
+    def get_tasks_by_tag(self, tag: str, partition_id: str | None = None) -> list[Task]:
+        """Return all non-archived tasks containing the given tag."""
+        query = (
+            f"SELECT {', '.join(_TASK_COLUMNS)} FROM tasks "
+            "WHERE archived = 0 AND tags LIKE ?"
+        )
+        params = [f'%"{tag}"%']
+        if partition_id:
+            query += " AND partition_id = ?"
+            params.append(partition_id)
+        rows = self.conn.execute(query, params).fetchall()
+        return [_row_to_task(tuple(r)) for r in rows]
+
+    def get_tasks_by_tags(self, tags: set[str], partition_id: str | None = None) -> list[Task]:
+        """Return all non-archived tasks containing ANY of the given tags."""
+        if not tags:
+            return []
+        like_clauses = " OR ".join("tags LIKE ?" for _ in tags)
+        query = (
+            f"SELECT {', '.join(_TASK_COLUMNS)} FROM tasks "
+            f"WHERE archived = 0 AND ({like_clauses})"
+        )
+        params = [f'%"{t}"%' for t in tags]
+        if partition_id:
+            query += " AND partition_id = ?"
+            params.append(partition_id)
+        rows = self.conn.execute(query, params).fetchall()
+        seen: set[str] = set()
+        result: list[Task] = []
+        for r in rows:
+            task = _row_to_task(tuple(r))
+            if task.id not in seen:
+                seen.add(task.id)
+                result.append(task)
+        return result
 
     def get_status_counts(
         self, partition_id: str | None = None,

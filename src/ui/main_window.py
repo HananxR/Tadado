@@ -57,6 +57,7 @@ from .widgets.filter_bar import FilterBar
 from .widgets.progress_dynamics_bar import ProgressDynamicsBar
 from .widgets.quick_overview_bar import QuickOverviewBar
 from .widgets.status_badge_strip import StatusBadgeStrip
+from .widgets.tag_management_panel import TagManagementPanel
 
 
 class MainWindow(QMainWindow):
@@ -112,6 +113,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._apply_splitter_sizes()
+        self._apply_batch_splitter_sizes()
         self._sync_header_alignment()
 
     def _apply_splitter_sizes(self) -> None:
@@ -120,6 +122,14 @@ class MainWindow(QMainWindow):
         total = self._splitter.width()
         if total > 100:
             self._splitter.setSizes([int(total * 0.60), int(total * 0.40)])
+
+    def _apply_batch_splitter_sizes(self) -> None:
+        """Set batch page splitter to 70:30 (existing content : tag panel)."""
+        if not hasattr(self, '_batch_splitter') or self._batch_splitter is None:
+            return
+        total = self._batch_splitter.width()
+        if total > 100:
+            self._batch_splitter.setSizes([int(total * 0.70), int(total * 0.30)])
 
     def _sync_header_alignment(self) -> None:
         """Sync editor header height to match table header for vertical alignment."""
@@ -642,7 +652,7 @@ class MainWindow(QMainWindow):
 
         _add_label("标签")
         self._batch_tag_input = QLineEdit()
-        self._batch_tag_input.setPlaceholderText("空格分隔多个标签")
+        self._batch_tag_input.setPlaceholderText("#标签1 #标签2")
         self._batch_tag_input.setStyleSheet(SIDEBAR_INPUT)
         self._batch_tag_timer = QTimer(self)
         self._batch_tag_timer.setSingleShot(True)
@@ -689,8 +699,6 @@ class MainWindow(QMainWindow):
         )
         back_btn2.clicked.connect(lambda: self._switch_view("edit"))
         sidebar_layout.addWidget(back_btn2, alignment=Qt.AlignmentFlag.AlignHCenter)
-
-        batch_page_layout.addWidget(self._manage_sidebar)
 
         # -- Main content area --
         batch_main = QWidget()
@@ -760,7 +768,23 @@ class MainWindow(QMainWindow):
         confirm_layout.addWidget(confirm_cancel_btn)
         batch_layout.addWidget(self._confirm_bar)
 
-        batch_page_layout.addWidget(batch_main, 1)
+        # === Batch splitter: existing content (70%) + tag panel (30%) ===
+        self._batch_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._batch_splitter.setHandleWidth(2)
+        self._batch_splitter.setChildrenCollapsible(False)
+
+        batch_left = QWidget()
+        batch_left_layout = QHBoxLayout(batch_left)
+        batch_left_layout.setContentsMargins(0, 0, 0, 0)
+        batch_left_layout.setSpacing(0)
+        batch_left_layout.addWidget(self._manage_sidebar)
+        batch_left_layout.addWidget(batch_main, 1)
+        self._batch_splitter.addWidget(batch_left)
+
+        self._batch_tag_panel = TagManagementPanel(self._repository)
+        self._batch_splitter.addWidget(self._batch_tag_panel)
+
+        batch_page_layout.addWidget(self._batch_splitter)
         self._stack.addWidget(batch_page)
         self._batch_page = 0
         self._batch_page_size = 20
@@ -874,6 +898,13 @@ class MainWindow(QMainWindow):
         bus.partitions_changed.connect(self._on_partitions_changed)
         bus.config_changed.connect(self._on_config_changed)
         bus.archive_completed.connect(self._on_data_changed)
+
+        # Tag management
+        self._batch_tag_panel.tag_changed.connect(lambda: bus.tag_changed.emit())
+        bus.tag_changed.connect(self._on_data_changed)
+        bus.task_created.connect(lambda *_: self._batch_tag_panel.refresh())
+        bus.task_updated.connect(lambda *_: self._batch_tag_panel.refresh())
+        bus.task_deleted.connect(lambda *_: self._batch_tag_panel.refresh())
 
         bus.task_created.connect(self._on_heatmap_data_changed)
         bus.task_updated.connect(self._on_heatmap_data_changed)
@@ -994,10 +1025,10 @@ class MainWindow(QMainWindow):
         lo, hi = self._batch_progress_combo.currentData()
         f.progress_min = lo
         f.progress_max = hi
-        # Tags
+        # Tags (strip leading # for consistency with UI display format)
         tag_text = self._batch_tag_input.text().strip()
         if tag_text:
-            f.tags = set(t.strip() for t in tag_text.split() if t.strip())
+            f.tags = set(t.strip().lstrip("#").strip() for t in tag_text.split() if t.strip())
         # Archive status
         arc = self._batch_archive_combo.currentData()
         if arc == "all" or arc == "archived":
@@ -1538,6 +1569,7 @@ class MainWindow(QMainWindow):
         self._status_badge.set_partition_id(pid or None)
         self._progress_bar.set_partition_id(pid or None)
         self._quick_overview.set_partition_id(pid or None)
+        self._batch_tag_panel.set_partition_id(pid or "")
         self._on_data_changed()
         self._heatmap_widget.force_refresh()
         # Refresh analysis page if currently visible
@@ -1614,6 +1646,7 @@ class MainWindow(QMainWindow):
             if hasattr(self, '_batch_search'):
                 self._batch_search.clear()
             self._batch_page = 0
+            self._apply_batch_splitter_sizes()
             self._refresh_batch_page()
 
     def _load_dashboard_data(self) -> None:
