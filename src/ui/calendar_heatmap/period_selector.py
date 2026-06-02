@@ -126,16 +126,16 @@ class PeriodSelectorBar(QWidget):
 
         for key, label_text in _PERIODS:
             btn = QPushButton(label_text)
+            btn.setObjectName("periodPresetBtn")
             btn.setCheckable(True)
             btn.setFixedHeight(28)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda checked, k=key: self._on_preset_clicked(k))
-            btn.setStyleSheet(self._button_style(t, active=False))
             self._preset_buttons[key] = btn
             layout.addWidget(btn)
 
         sep = QLabel("│")
-        sep.setStyleSheet(f"color: {t.border_primary}; font-size: 11px;")
+        sep.setObjectName("activitySep")
         sep.setFixedWidth(16)
         sep.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(sep)

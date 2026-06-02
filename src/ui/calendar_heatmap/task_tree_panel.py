@@ -144,7 +144,7 @@ class TaskTreePanel(QWidget):
         # ── Separator ──
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet(f"QFrame {{ color: {t.border_primary}; max-height: 1px; }}")
+        sep.setObjectName("activityHline")
         layout.addWidget(sep)
 
         # ── Scrollable chip container ──
