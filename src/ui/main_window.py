@@ -465,16 +465,9 @@ class MainWindow(QMainWindow):
         analysis_layout.setSpacing(8)
 
         from .calendar_heatmap.heatmap_stats_panel import HeatmapStatsPanel
-        from ..utils.design_tokens import get_tokens as _gt3
-        t_tok = _gt3()
-        sec_style = (
-            f"font-size: 12px; font-weight: bold; color: {t_tok.text_primary}; "
-            f"padding: 2px 0 4px 0; border-bottom: 1px solid {t_tok.border_primary};"
-        )
-
         # ── Section: Heatmap ──
         heatmap_label = QLabel("活动热力图")
-        heatmap_label.setStyleSheet(sec_style)
+        heatmap_label.setObjectName("analysisSectionLabel")
         analysis_layout.addWidget(heatmap_label)
 
         # Nav bar + stats (same row)
@@ -494,7 +487,7 @@ class MainWindow(QMainWindow):
 
         # ── Section: Report ──
         report_label = QLabel("活动报告")
-        report_label.setStyleSheet(sec_style)
+        report_label.setObjectName("analysisSectionLabel")
         analysis_layout.addWidget(report_label)
 
         # Period selector + search + export (same row)
@@ -515,16 +508,10 @@ class MainWindow(QMainWindow):
         self._analysis_search.textChanged.connect(self._on_analysis_search_changed)
         period_row_layout.addWidget(self._analysis_search)
 
-        btn_style = (
-            f"QPushButton {{ background: transparent; color: {t_tok.text_primary}; "
-            f"border: 1px solid {t_tok.border_primary}; border-radius: 4px; "
-            f"padding: 2px 10px; font-size: 11px; }}"
-            f"QPushButton:hover {{ background: {t_tok.accent}20; }}"
-        )
         export_btn = QPushButton("导出")
+        export_btn.setObjectName("exportBtn")
         export_btn.setFixedHeight(28)
         export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        export_btn.setStyleSheet(btn_style)
         export_menu = QMenu(export_btn)
         export_menu.addAction("导出 Markdown", self._on_export_analysis_md)
         export_menu.addAction("导出 Excel", self._on_export_analysis_xlsx)

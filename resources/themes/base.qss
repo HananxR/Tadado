@@ -390,6 +390,15 @@ QPushButton#exportBtn:hover {
     background-color: {{border_primary}};
 }
 
+/* ── Analysis Page ────────────────────────────────────────────── */
+QLabel#analysisSectionLabel {
+    font-size: 12px; font-weight: bold;
+    color: {{text_primary}};
+    padding: 2px 0 4px 0;
+    border-bottom: 1px solid {{border_primary}};
+}
+QLabel#reportHeaderMeta { color: {{text_secondary}}; font-size: 9px; }
+
 QTreeWidget {
     background-color: {{bg_secondary}};
     border: none;

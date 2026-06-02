@@ -77,7 +77,7 @@ class ActivityReportPanel(QWidget):
         hb.addWidget(self._header_title)
 
         self._header_meta = QLabel("")
-        self._header_meta.setStyleSheet(f"color: {t.text_secondary}; font-size: 9px;")
+        self._header_meta.setObjectName("reportHeaderMeta")
         hb.addWidget(self._header_meta)
         hb.addStretch()
 
