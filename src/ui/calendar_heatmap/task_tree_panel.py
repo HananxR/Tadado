@@ -221,7 +221,7 @@ class TaskTreePanel(QWidget):
                 continue
             if len(display) > 8:
                 display = display[:8] + "…"
-            label = f"# {display}  {count}"
+            label = f"#{display}({count})"
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setChecked(True)

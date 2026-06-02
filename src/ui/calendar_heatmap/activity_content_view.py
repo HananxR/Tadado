@@ -100,9 +100,9 @@ class ActivityContentView(QWidget):
     def set_current_tag(self, tag: str, pos: int = 0, total: int = 0) -> None:
         display = tag if tag != "__untagged__" else "未分类"
         if total > 0:
-            self._tag_label.setText(f"# {display} ({pos}/{total})")
+            self._tag_label.setText(f"#{display}({pos}/{total})")
         else:
-            self._tag_label.setText(f"# {display}")
+            self._tag_label.setText(f"#{display}")
 
     def set_search_text(self, text: str) -> None:
         self._search_text = text

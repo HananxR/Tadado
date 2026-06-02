@@ -189,7 +189,7 @@ class TagManagementPanel(QWidget):
         t = get_tokens()
         for tag, count in filtered:
             item = QListWidgetItem()
-            item.setText(f"#{tag}  ({count})")
+            item.setText(f"#{tag}({count})")
             item.setData(Qt.ItemDataRole.UserRole, tag)
             item.setForeground(QColor(t.text_primary))
             self._tag_list.addItem(item)
