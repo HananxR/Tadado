@@ -704,6 +704,7 @@ class MainWindow(QMainWindow):
         self._batch_toolbar2.batch_delete.connect(self._on_batch_delete)
         self._batch_toolbar2.batch_suspend.connect(self._on_batch_suspend)
         self._batch_toolbar2.batch_restart.connect(self._on_batch_restart)
+        self._batch_toolbar2.batch_postpone.connect(self._on_batch_postpone)
         self._batch_toolbar2.select_all_requested.connect(self._on_batch_select_all)
         self._batch_toolbar2.deselect_all_requested.connect(self._on_batch_deselect_all)
         self._batch_toolbar2.export_requested.connect(self._on_batch_export)
@@ -888,6 +889,7 @@ class MainWindow(QMainWindow):
         self._batch_toolbar.batch_delete.connect(self._on_batch_delete)
         self._batch_toolbar.batch_suspend.connect(self._on_batch_suspend)
         self._batch_toolbar.batch_restart.connect(self._on_batch_restart)
+        self._batch_toolbar.batch_postpone.connect(self._on_batch_postpone)
 
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._on_new_task)
@@ -1190,6 +1192,20 @@ class MainWindow(QMainWindow):
         self._hide_confirm()
         self._refresh_batch_page()
         self._on_data_changed()
+
+    def _on_batch_postpone(self, ids: list[str], days: int) -> None:
+        reply = QMessageBox.question(
+            self, "确认操作",
+            f"确认将 {len(ids)} 个任务的截止时间延后 {days} 天？",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Ok:
+            self._repository.batch_postpone(ids, days)
+            if self._current_view == "edit":
+                self._batch_toolbar.reset_toggle()
+            else:
+                self._refresh_batch_page()
+            self._on_data_changed()
 
     def _hide_confirm(self) -> None:
         self._confirm_bar.setVisible(False)

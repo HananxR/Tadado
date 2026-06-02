@@ -32,6 +32,7 @@ class BatchToolbar(QWidget):
     batch_delete = Signal(list)
     batch_suspend = Signal(list)
     batch_restart = Signal(list)
+    batch_postpone = Signal(list, int)  # task_ids, postpone_days
     select_all_requested = Signal()
     deselect_all_requested = Signal()
     export_requested = Signal(str)  # "md" or "xlsx"
@@ -76,6 +77,15 @@ class BatchToolbar(QWidget):
         self._restart_btn.setMinimumWidth(52)
         self._restart_btn.clicked.connect(lambda: self._emit_restart())
         layout.addWidget(self._restart_btn)
+
+        self._postpone_btn = QPushButton("延后处理")
+        self._postpone_btn.setStyleSheet(BTN_STYLE)
+        self._postpone_menu = QMenu(self)
+        for days in [1, 2, 5, 7, 10]:
+            label = f"+{days}天"
+            self._postpone_menu.addAction(label, lambda d=days: self._emit_postpone(d))
+        self._postpone_btn.setMenu(self._postpone_menu)
+        layout.addWidget(self._postpone_btn)
 
         # Export dropdown
         self._export_btn = QPushButton("导出")
@@ -139,3 +149,8 @@ class BatchToolbar(QWidget):
         if _warn_if_empty(self._selected_ids, self._restart_btn):
             return
         self.batch_restart.emit(list(self._selected_ids))
+
+    def _emit_postpone(self, days: int) -> None:
+        if _warn_if_empty(self._selected_ids, self._postpone_btn):
+            return
+        self.batch_postpone.emit(list(self._selected_ids), days)

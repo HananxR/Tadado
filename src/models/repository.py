@@ -693,6 +693,60 @@ class TaskRepository:
         self.conn.commit()
         return count
 
+    def batch_postpone(self, task_ids: list[str], days: int) -> int:
+        """Postpone deadline for multiple tasks by N days, recording activity_log."""
+        from datetime import timedelta
+
+        from ..services.md_formatter import MarkdownTaskFormatter
+
+        formatter = MarkdownTaskFormatter()
+        now = datetime.now().isoformat()
+        count = 0
+
+        for task_id in task_ids:
+            task = self.get_by_id(task_id)
+            if task is None:
+                continue
+
+            old_deadline = task.deadline_date.isoformat() if task.deadline_date else "无"
+            if task.deadline_date:
+                new_date = task.deadline_date + timedelta(days=days)
+            else:
+                new_date = date.today() + timedelta(days=days)
+            new_deadline = new_date.isoformat()
+
+            entry = {
+                "ts": now,
+                "content": f"[批量操作] 延后处理: 截止时间 {old_deadline} -> {new_deadline}（+{days}天）",
+                "status": task.status.value,
+                "progress": task.progress,
+            }
+            log = list(task.activity_log) + [entry]
+
+            self.conn.execute(
+                "UPDATE tasks SET deadline_date=?, activity_log=?, updated_at=? WHERE id=?",
+                (new_deadline, json.dumps(log, ensure_ascii=False), now, task_id),
+            )
+            task.deadline_date = new_date
+            task.activity_log = log
+            task.updated_at = _parse_datetime(now)
+            task.raw_md = formatter.format(task)
+            self.conn.execute(
+                "UPDATE tasks SET raw_md=? WHERE id=?", (task.raw_md, task_id)
+            )
+            self._update_fts(task)
+            self._recalc_activity_counts(task)
+            self.conn.execute(
+                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
+                (task.activity_yesterday, task.activity_today, task.activity_last_week, task.activity_week, task.activity_last_month, task.activity_month, task_id),
+            )
+            count += 1
+
+        self.conn.commit()
+        # Refresh overdue status after postponing deadlines
+        self.refresh_overdue_status()
+        return count
+
     def count_by_status(self, task_ids: list[str]) -> dict[str, int]:
         """Return status distribution for a specific set of tasks."""
         if not task_ids:
