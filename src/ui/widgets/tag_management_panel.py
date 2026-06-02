@@ -50,106 +50,62 @@ class TagManagementPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _setup_ui(self) -> None:
-        t = get_tokens()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         # --- Container with bg and border ---
         container = QWidget()
-        container.setStyleSheet(
-            f"QWidget#tagPanelContainer {{"
-            f"  background: {t.bg_secondary};"
-            f"  border-left: 1px solid {t.border_primary};"
-            f"}}"
-        )
         container.setObjectName("tagPanelContainer")
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(8, 6, 8, 6)
         container_layout.setSpacing(6)
 
         # --- Header ---
-        header = QLabel("🏷 标签管理")
-        header.setStyleSheet(
-            f"QLabel {{ font-size: 12px; font-weight: bold;"
-            f" color: {t.text_primary}; border: none; background: transparent;"
-            f" padding-bottom: 4px; border-bottom: 1px solid {t.border_primary}; }}"
-        )
-        container_layout.addWidget(header)
+        container_layout.addWidget(QLabel("🏷 标签管理"))
 
         # --- Search ---
         from PySide6.QtWidgets import QLineEdit as _QLE
 
         self._search_input = _QLE()
+        self._search_input.setObjectName("tagSearchInput")
         self._search_input.setPlaceholderText("搜索标签...")
         self._search_input.setClearButtonEnabled(True)
-        self._search_input.setStyleSheet(
-            f"QLineEdit {{ font-size: 10px; padding: 3px 6px;"
-            f" border: 1px solid {t.border_primary}; border-radius: 4px;"
-            f" background: {t.bg_primary}; color: {t.text_primary}; }}"
-            f"QLineEdit:focus {{ border-color: {t.accent}; }}"
-        )
         self._search_input.textChanged.connect(self._on_search_text_changed)
         container_layout.addWidget(self._search_input)
 
         # --- Tag list ---
         self._tag_list = QListWidget()
+        self._tag_list.setObjectName("tagList")
         self._tag_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self._tag_list.setStyleSheet(
-            f"QListWidget {{"
-            f"  font-size: 10px; border: 1px solid {t.border_primary};"
-            f"  border-radius: 4px; background: {t.bg_primary};"
-            f"  color: {t.text_primary}; outline: none;"
-            f"}}"
-            f"QListWidget::item {{"
-            f"  padding: 3px 6px; border-bottom: 1px solid {t.border_primary};"
-            f"}}"
-            f"QListWidget::item:selected {{"
-            f"  background: {t.accent}; color: {t.text_on_accent};"
-            f"}}"
-            f"QListWidget::item:hover {{"
-            f"  background: {t.bg_tertiary};"
-            f"}}"
-        )
         self._tag_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tag_list.customContextMenuRequested.connect(self._on_context_menu)
         container_layout.addWidget(self._tag_list, 1)
 
         # --- Empty state ---
         self._empty_label = QLabel("暂无标签")
+        self._empty_label.setObjectName("tagEmptyLabel")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setStyleSheet(
-            f"QLabel {{ font-size: 11px; color: {t.text_disabled};"
-            f" border: none; background: transparent; padding: 16px; }}"
-        )
         container_layout.addWidget(self._empty_label)
 
         # --- Button row ---
         btn_row = QHBoxLayout()
         btn_row.setSpacing(4)
 
-        btn_style = (
-            f"QPushButton {{ font-size: 10px; padding: 4px 8px;"
-            f" border: 1px solid {t.border_primary}; border-radius: 4px;"
-            f" background: {t.bg_primary}; color: {t.text_primary}; }}"
-            f"QPushButton:hover {{ background: {t.bg_tertiary}; }}"
-            f"QPushButton:disabled {{ color: {t.text_disabled}; }}"
-        )
-
         self._rename_btn = QPushButton("✏ 重命名")
-        self._rename_btn.setStyleSheet(btn_style)
+        self._rename_btn.setObjectName("tagActionBtn")
         self._rename_btn.setEnabled(False)
         self._rename_btn.clicked.connect(self._on_rename)
         btn_row.addWidget(self._rename_btn)
 
         self._merge_btn = QPushButton("🔗 合并")
-        self._merge_btn.setStyleSheet(btn_style)
+        self._merge_btn.setObjectName("tagActionBtn")
         self._merge_btn.setEnabled(False)
         self._merge_btn.clicked.connect(self._on_merge)
         btn_row.addWidget(self._merge_btn)
 
         self._refresh_btn = QPushButton("🔄 刷新")
-        self._refresh_btn.setStyleSheet(btn_style)
+        self._refresh_btn.setObjectName("tagActionBtn")
         self._refresh_btn.clicked.connect(self.refresh)
         btn_row.addWidget(self._refresh_btn)
 
@@ -391,13 +347,6 @@ class TagManagementPanel(QWidget):
         selected = self._selected_tags()
 
         menu = QMenu(self)
-        t = get_tokens()
-        menu.setStyleSheet(
-            f"QMenu {{ background: {t.bg_primary}; color: {t.text_primary};"
-            f" border: 1px solid {t.border_primary}; font-size: 10px; padding: 4px; }}"
-            f"QMenu::item {{ padding: 4px 20px; }}"
-            f"QMenu::item:selected {{ background: {t.accent}; color: {t.text_on_accent}; }}"
-        )
 
         rename_action = menu.addAction("✏ 重命名")
         rename_action.triggered.connect(self._on_rename)

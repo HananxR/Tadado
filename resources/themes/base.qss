@@ -646,6 +646,37 @@ QWidget#sidebarSep { background-color: {{bg_tertiary}}; border: none; }
 QPushButton#sidebarClearBtn { color: {{text_secondary}}; font-size: 10px; padding: 0; border: none; }
 QPushButton#sidebarHomeBtn:hover { background: {{accent_alpha_13}}; }
 
+/* ── Tag Management Panel ─────────────────────────────────────── */
+QWidget#tagPanelContainer {
+    background: {{bg_secondary}};
+    border-left: 1px solid {{border_primary}};
+}
+QLineEdit#tagSearchInput {
+    font-size: 10px; padding: 3px 6px;
+    border: 1px solid {{border_primary}}; border-radius: 4px;
+    background: {{bg_primary}}; color: {{text_primary}};
+}
+QLineEdit#tagSearchInput:focus { border-color: {{accent}}; }
+QListWidget#tagList {
+    font-size: 10px; border: 1px solid {{border_primary}};
+    border-radius: 4px; background: {{bg_primary}};
+    color: {{text_primary}}; outline: none;
+}
+QListWidget#tagList::item { padding: 3px 6px; border-bottom: 1px solid {{border_primary}}; }
+QListWidget#tagList::item:selected { background: {{accent}}; color: {{text_on_accent}}; }
+QListWidget#tagList::item:hover { background: {{bg_tertiary}}; }
+QLabel#tagEmptyLabel {
+    font-size: 11px; color: {{text_disabled}};
+    border: none; background: transparent; padding: 16px;
+}
+QPushButton#tagActionBtn {
+    font-size: 10px; padding: 4px 8px;
+    border: 1px solid {{border_primary}}; border-radius: 4px;
+    background: {{bg_primary}}; color: {{text_primary}};
+}
+QPushButton#tagActionBtn:hover { background: {{bg_tertiary}}; }
+QPushButton#tagActionBtn:disabled { color: {{text_disabled}}; }
+
 /* ── Carousel Label ──────────────────────────────────────────── */
 QLabel#carouselLabel {
     padding: 2px 8px; border-radius: 4px; font-size: 10px;
