@@ -7,7 +7,7 @@ import datetime as dt
 from ctypes import wintypes
 from datetime import date
 
-from PySide6.QtCore import QDateTime, QSize, Qt, QTime, QTimer
+from PySide6.QtCore import QDateTime, QEvent, QSize, Qt, QTime, QTimer
 from PySide6.QtGui import (
     QGuiApplication,
     QShortcut, QKeySequence,
@@ -64,6 +64,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, config: AppConfig, repository: TaskRepository) -> None:
         super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
         self._config = config
         self._repository = repository
         self._signal_bus = get_signal_bus()
@@ -215,6 +216,7 @@ class MainWindow(QMainWindow):
         )
         right_items = [
             ("tray_hide", "缩小到托盘", self.hide),
+            ("window_minimize", "最小化", self.showMinimized),
             ("fullscreen_toggle", "切换全屏", self._toggle_fullscreen),
             ("window_close", "关闭", self.close),
         ]
@@ -265,8 +267,8 @@ class MainWindow(QMainWindow):
         g = self.geometry()
         title_h = 36
         if g.y() <= y < g.y() + title_h:
-            # Right-side window buttons area (3 * 36px icon buttons)
-            if x >= g.x() + g.width() - 108:
+            # Right-side window buttons area (4 * 36px icon buttons)
+            if x >= g.x() + g.width() - 144:
                 return False, 0
             # Nav buttons area (logo + icon buttons — must NOT be HTCAPTION)
             nav_right = getattr(self, '_title_nav_right', 700)
@@ -286,6 +288,18 @@ class MainWindow(QMainWindow):
         if right: return True, 11
         if bottom: return True, 15
         return False, 0
+
+    def changeEvent(self, event) -> None:
+        """Intercept minimize: hide to tray when *minimize_to_tray* is enabled."""
+        if (
+            event.type() == QEvent.Type.WindowStateChange
+            and self.windowState() & Qt.WindowState.WindowMinimized
+        ):
+            if self._config.minimize_to_tray:
+                self.hide()
+                event.ignore()
+                return
+        super().changeEvent(event)
 
     # ------------------------------------------------------------------
     # Tool bar

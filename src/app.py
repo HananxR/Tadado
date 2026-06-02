@@ -332,8 +332,10 @@ class DeskTodoSeqApp(QApplication):
         self._scheduler.start()
         self._archiver.start()
 
+        self._main_window.resize(1050, 680)
+        self._main_window.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
         self._main_window.show()
-        QTimer.singleShot(100, self._main_window.apply_screen_size)
+        QTimer.singleShot(100, self._main_window._sync_header_alignment)
         QTimer.singleShot(200, self._refresh_overdue_on_startup)
 
     def _refresh_overdue_on_startup(self) -> None:

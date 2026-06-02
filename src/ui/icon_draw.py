@@ -302,6 +302,15 @@ def draw_fullscreen_toggle(p: QPainter, r: QRectF, color: QColor) -> None:
     p.drawLine(QPointF(br.x() - ah, br.y() - arm * 0.18), br)
 
 
+def draw_window_minimize(p: QPainter, r: QRectF, color: QColor) -> None:
+    """Single horizontal line (minimize to taskbar)."""
+    m = r.width() * 0.24
+    lw = max(2, r.width() * 0.08)
+    p.setPen(_pen(DARK, lw))
+    line_y = r.center().y()
+    p.drawLine(QPointF(r.x() + m, line_y), QPointF(r.right() - m, line_y))
+
+
 def draw_window_close(p: QPainter, r: QRectF, color: QColor) -> None:
     """X mark (close)."""
     m = r.width() * 0.24
@@ -355,6 +364,7 @@ ICON_DRAW_FUNCS = {
     "settings": draw_settings,
     "help": draw_help,
     "tray_hide": draw_tray_hide,
+    "window_minimize": draw_window_minimize,
     "fullscreen_toggle": draw_fullscreen_toggle,
     "window_close": draw_window_close,
     "home": draw_home,
