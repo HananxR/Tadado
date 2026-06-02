@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeskTodoSeq 使用手册</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a2e;
+    --text-secondary: #555;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --border: #e2e8f0;
+    --code-bg: #f1f5f9;
+    --tip-bg: #eff6ff;
+    --tip-border: #3b82f6;
+    --warn-bg: #fffbeb;
+    --warn-border: #f59e0b;
+    --h2-border: #2563eb;
+    --table-stripe: #f8fafc;
+    --toc-bg: #f8fafc;
+    --kbd-bg: #f1f5f9;
+    --kbd-border: #cbd5e1;
+    --tag-bg: #e0e7ff;
+    --tag-text: #3730a3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a;
+      --text: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --accent: #60a5fa;
+      --accent-hover: #93bbfd;
+      --border: #334155;
+      --code-bg: #1e293b;
+      --tip-bg: #172554;
+      --tip-border: #3b82f6;
+      --warn-bg: #451a03;
+      --warn-border: #f59e0b;
+      --h2-border: #60a5fa;
+      --table-stripe: #1e293b;
+      --toc-bg: #1e293b;
+      --kbd-bg: #1e293b;
+      --kbd-border: #475569;
+      --tag-bg: #1e1b4b;
+      --tag-text: #a5b4fc;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    font-size: 14px;
+    line-height: 1.75;
+    color: var(--text);
+    background: var(--bg);
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 4px;
+    letter-spacing: -0.5px;
+  }
+  h1 + p {
+    text-align: center;
+    color: var(--text-secondary);
+    margin-bottom: 32px;
+  }
+
+  h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 40px;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--h2-border);
+  }
+
+  h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
+
+  p { margin-bottom: 10px; color: var(--text-secondary); }
+
+  ul, ol {
+    margin: 8px 0 12px 20px;
+    color: var(--text-secondary);
+  }
+  li { margin-bottom: 4px; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  code {
+    font-family: "Cascadia Code", "Fira Code", "JetBrains Mono", "Consolas", monospace;
+    font-size: 13px;
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    overflow-x: auto;
+    margin: 10px 0;
+  }
+  pre code { padding: 0; background: none; white-space: pre; }
+
+  kbd {
+    display: inline-block;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 1px 6px;
+    border: 1px solid var(--kbd-border);
+    border-radius: 4px;
+    background: var(--kbd-bg);
+    box-shadow: 0 1px 0 var(--kbd-border);
+    vertical-align: 1px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+  }
+  th {
+    background: var(--code-bg);
+    font-weight: 600;
+  }
+  tr:nth-child(even) td { background: var(--table-stripe); }
+
+  .tip, .warn {
+    border-left: 4px solid;
+    border-radius: 0 6px 6px 0;
+    padding: 10px 14px;
+    margin: 14px 0;
+  }
+  .tip {
+    background: var(--tip-bg);
+    border-color: var(--tip-border);
+  }
+  .warn {
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+  }
+  .tip strong, .warn strong { display: block; margin-bottom: 2px; }
+
+  .toc {
+    background: var(--toc-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 24px 0;
+  }
+  .toc h3 { margin-top: 0; font-size: 14px; }
+  .toc ol { margin-bottom: 0; font-size: 13px; }
+  .toc li { margin-bottom: 2px; }
+
+  .tag {
+    display: inline-block;
+    background: var(--tag-bg);
+    color: var(--tag-text);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0 6px;
+    border-radius: 3px;
+  }
+
+  .feature-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 16px;
+    margin: 10px 0;
+  }
+  @media (max-width: 640px) {
+    .feature-grid { grid-template-columns: 1fr; }
+  }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 40px 0 16px;
+  }
+  footer {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<h1>📋 DeskTodoSeq 使用手册</h1>
+<p>版本 v0.1.0 &mdash; 基于 Markdown 的 Windows 桌面任务管理工具</p>
+
+<!-- ===== TOC ===== -->
+<div class="toc">
+<h3>目录</h3>
+<ol>
+  <li><a href="#quickstart">快速入门</a></li>
+  <li><a href="#edit-view">任务编辑视图</a></li>
+  <li><a href="#dashboard">活动分析视图</a></li>
+  <li><a href="#batch-view">任务管理控制台</a></li>
+  <li><a href="#partitions">分区管理</a></li>
+  <li><a href="#tray">系统托盘与提醒</a></li>
+  <li><a href="#export">导出</a></li>
+  <li><a href="#settings">设置</a></li>
+  <li><a href="#faq">常见问题与故障排除</a></li>
+</ol>
+</div>
+
+<!-- ===== 1. Quick Start ===== -->
+<h2 id="quickstart">1. 快速入门</h2>
+
+<h3>1.1 安装与启动</h3>
+<p>DeskTodoSeq 为 Windows 桌面应用，提供安装包（Setup.exe）一键安装。安装完成后双击桌面快捷方式即可启动，程序会在系统托盘显示图标，主窗口同时打开。</p>
+<p>数据存储在本地 SQLite 数据库文件中，无需联网，无需注册账号。</p>
+
+<h3>1.2 创建第一个任务</h3>
+<p>在编辑视图（默认首页）顶部的输入框中，按以下 Markdown 语法输入任务：</p>
+<pre><code>- [ ] TODO 2026-06-15 完成使用手册编写 #文档 #技术</code></pre>
+
+<p>格式说明：</p>
+<table>
+  <tr><th>组成部分</th><th>说明</th><th>示例</th></tr>
+  <tr><td><code>- [ ]</code></td><td>任务标记（固定前缀）</td><td><code>- [ ]</code></td></tr>
+  <tr><td>状态</td><td>TODO / DOING / DONE / OVERDUE</td><td><code>TODO</code></td></tr>
+  <tr><td>截止日期</td><td>YYYY-MM-DD 格式，可选</td><td><code>2026-06-15</code></td></tr>
+  <tr><td>标题</td><td>任务名称，必填</td><td><code>完成使用手册编写</code></td></tr>
+  <tr><td>标签</td><td><code>#</code> 开头，空格分隔，可选</td><td><code>#文档</code></td></tr>
+</table>
+
+<p>按 <kbd>Enter</kbd> 键创建任务。输入框带有红色闪烁提示——当语法格式不正确时会闪烁提醒。</p>
+
+<div class="tip"><strong>💡 提示</strong>输入框右侧有"新建多任务"按钮，可快速创建多行模板任务；创建日期会自动填充为当天。</div>
+
+<h3>1.3 界面概览</h3>
+<p>DeskTodoSeq 有三个主要视图，通过标题栏按钮切换：</p>
+<table>
+  <tr><th>视图</th><th>用途</th></tr>
+  <tr><td>编辑视图</td><td>日常任务增删改查，快速编辑</td></tr>
+  <tr><td>活动分析</td><td>日历热力图、活动统计、标签浏览</td></tr>
+  <tr><td>任务管理</td><td>高级筛选、批量操作、标签管理</td></tr>
+</table>
+<p>标题栏最左侧为 App 图标按钮，点击可<strong>返回编辑视图首页</strong>，同时清空筛选条件并刷新数据，是各视图间快速归位的入口。</p>
+<p>窗口为无边框设计，拖动顶部标题栏空白区域可移动窗口，边缘 6px 区域可拖拽缩放。</p>
+
+<!-- ===== 2. Edit View ===== -->
+<h2 id="edit-view">2. 任务编辑视图</h2>
+
+<h3>2.1 新建任务</h3>
+<p><strong>新建单任务：</strong>在顶部输入框输入 Markdown 语法后按 <kbd>Enter</kbd>，或点击标题栏 <span class="tag">新建单任务</span> 按钮。草稿模式下输入框预填当天日期和标签模板，蓝色高亮提示"未保存的草稿"。</p>
+<p><strong>新建多任务：</strong>点击标题栏 <span class="tag">新建多任务</span> 按钮，编辑器区会生成 3 行不同模板的任务，统一加粗样式。所有多任务创建后统一标记为粗体。</p>
+
+<h3>2.2 任务列表</h3>
+<p>任务以表格形式展示，包含以下列：</p>
+<ul>
+  <li><strong>复选框</strong> — 点击可切换完成状态（TODO ↔ DONE）</li>
+  <li><strong>序号</strong> — 行号</li>
+  <li><strong>创建时间</strong> — 任务创建日期</li>
+  <li><strong>任务内容</strong> — 标题和标签摘要（自适应宽度）</li>
+  <li><strong>截止日期</strong> — 到期时间</li>
+  <li><strong>进度</strong> — 完成百分比（0-100%）</li>
+  <li><strong>状态</strong> — 彩色状态徽章（OVERDUE=红 / DOING=橙 / TODO=蓝 / DONE=绿）</li>
+  <li><strong>标签</strong> — 标签列表</li>
+</ul>
+<p>任务行支持交替行颜色，悬停高亮。挂起的任务以 45% 透明度显示。当前活动任务以红色粗体高亮。</p>
+<p>列表底部有分页控件，可切换每页 20/50/100 条，翻页浏览。</p>
+
+<h3>2.3 编辑面板</h3>
+<p>点击列表中的任务，右侧弹出编辑面板：</p>
+<ul>
+  <li><strong>Markdown 源码编辑</strong> — 直接编辑 <code>raw_md</code>，右侧实时 HTML 预览</li>
+  <li><strong>截止日期</strong> — 日历选择器 + 时间选择器，可快速计算相对日期</li>
+  <li><strong>活动时间线</strong> — 状态变更 + 进度记录的时间轴，可追加新进度</li>
+  <li><strong>分区选择</strong> — 下拉切换任务所属分区</li>
+</ul>
+<p>编辑后点击 <span class="tag">保存</span> 提交更改，<span class="tag">删除</span> 移除任务。</p>
+
+<h3>2.4 筛选与排序</h3>
+<p>列表上方筛选栏提供：</p>
+<ul>
+  <li><strong>全文搜索</strong> — 输入关键词实时搜索（基于 SQLite FTS5，300ms 防抖）</li>
+  <li><strong>状态过滤</strong> — 下拉选择 TODO / DOING / DONE / OVERDUE</li>
+  <li><strong>排序方式</strong> — 按紧急度 / 截止日期 / 创建时间 / 状态 / 标题排序</li>
+</ul>
+
+<h3>2.5 统计栏</h3>
+<ul>
+  <li><strong>状态徽章条</strong> — 显示各状态任务计数（OVERDUE | TODO | DOING | DONE），点击可快速筛选</li>
+  <li><strong>进度动态条</strong> — 6 个时间段按钮（昨天/今天/上周/本周/上月/本月），展示活动最频繁的任务轮播</li>
+  <li><strong>速览栏</strong> — 按紧急度排序的任务卡片自动轮播（5 秒切换），点击可跳转编辑</li>
+</ul>
+
+<!-- ===== 3. Dashboard ===== -->
+<h2 id="dashboard">3. 活动分析视图</h2>
+
+<h3>3.1 日历热力图</h3>
+<p>12 个月 × 7 天 × 5 周的紧凑型日历热力图，用颜色深浅表示每日活动量：</p>
+<ul>
+  <li>鼠标悬停单元格可查看：日期、活动记录数、涉及任务数、标签分布</li>
+  <li>顶部 <span class="tag">◀ 年份 ▶</span> 按钮切换年份</li>
+  <li>下拉菜单可筛选特定标签对应的活动</li>
+</ul>
+
+<h3>3.2 统计面板</h3>
+<p>热力图下方展示汇总统计：总记录数 / 活跃天数 / 最长连续天数 / 当前连续天数 / 日均 / 月均 / 周均。</p>
+
+<h3>3.3 任务树与内容浏览</h3>
+<p>左侧为标签云面板，勾选标签后右侧显示对应任务的活动内容：</p>
+<ul>
+  <li>搜索框实时过滤标签</li>
+  <li>导航栏可逐条浏览活动记录</li>
+  <li>支持将活动报告导出为 Markdown / Excel / TXT 格式</li>
+</ul>
+
+<!-- ===== 4. Batch View ===== -->
+<h2 id="batch-view">4. 任务管理控制台</h2>
+
+<h3>4.1 高级筛选</h3>
+<p>左侧筛选面板（180px）提供比编辑视图更精细的过滤条件：</p>
+<ul>
+  <li>关键词搜索</li>
+  <li>状态过滤</li>
+  <li><strong>创建日期范围</strong> — 起止日期可通过日历选择</li>
+  <li><strong>截止日期范围</strong> — 同上</li>
+  <li><strong>进度范围</strong> — 0% / 1-25% / 26-50% / 51-75% / 100%</li>
+  <li><strong>标签过滤</strong> — 空格分隔多个标签</li>
+  <li><strong>归档状态</strong> — 全部 / 未归档 / 已归档</li>
+</ul>
+
+<h3>4.2 批量操作</h3>
+<p>勾选任务后，工具栏提供：</p>
+<table>
+  <tr><th>操作</th><th>说明</th></tr>
+  <tr><td>批量状态变更</td><td>将选中任务设为 DOING 或 DONE</td></tr>
+  <tr><td>批量删除</td><td>删除选中任务（需确认）</td></tr>
+  <tr><td>批量挂起</td><td>挂起选中任务（半透明显示）</td></tr>
+  <tr><td>批量重启</td><td>恢复已挂起的任务</td></tr>
+  <tr><td>延后处理</td><td>批量推迟截止日期 +1/+2/+5/+7/+10 天</td></tr>
+  <tr><td>导出</td><td>导出选中任务为 Markdown 或 Excel</td></tr>
+  <tr><td>全选 / 取消全选</td><td>一键操作所有可见任务</td></tr>
+</table>
+<div class="warn"><strong>⚠ 注意</strong>批量删除和延后处理会直接影响截止日期和任务数据，操作前请确认选中范围。</div>
+
+<h3>4.3 标签管理面板</h3>
+<p>右侧面板显示当前分区所有标签及其使用次数：</p>
+<ul>
+  <li><strong>重命名标签</strong> — 选中一个标签 → 输入新名称 → 所有使用该标签的任务自动更新</li>
+  <li><strong>合并标签</strong> — 多选标签 → 选择合并目标 → 源标签替换为目标标签后删除（不可撤销）</li>
+  <li><strong>搜索标签</strong> — 实时过滤标签列表</li>
+</ul>
+
+<h3>4.4 归档管理</h3>
+<ul>
+  <li><strong>手动归档</strong> — 点击 <span class="tag">归档已完成</span> 立即归档当前分区所有 DONE 状态任务</li>
+  <li><strong>清除已归档</strong> — 点击 <span class="tag">清除已归档</span> 永久删除所有已归档任务（需二次确认）</li>
+</ul>
+<div class="warn"><strong>⚠ 注意</strong>手动归档会忽略设置的归档天数阈值，直接归档分区内所有已完成任务。清除已归档不可恢复。</div>
+
+<!-- ===== 5. Partitions ===== -->
+<h2 id="partitions">5. 分区管理</h2>
+
+<h3>5.1 什么是分区</h3>
+<p>分区是独立的任务空间，不同分区的任务、标签、设置互不影响。默认提供三个分区：<strong>工作</strong>、<strong>个人</strong>、<strong>学习</strong>。</p>
+
+<h3>5.2 切换分区</h3>
+<p>点击状态栏最左侧的分区名称按钮，从下拉菜单选择目标分区。当前分区以粗体高亮。</p>
+
+<h3>5.3 密码保护</h3>
+<p>可在设置中为每个分区单独设置密码（SHA-256 哈希存储）：</p>
+<ul>
+  <li>锁定分区后，切换到该分区时显示锁定遮罩，需输入密码解锁</li>
+  <li>解锁状态仅在内存中保持，关闭程序后重新锁定</li>
+  <li><strong>自动锁定</strong> — 在设置中配置空闲超时（1/5/10/30/60 分钟），超时后自动锁定当前分区</li>
+</ul>
+
+<h3>5.4 管理分区</h3>
+<p>在设置对话框的"归档"标签页中，可：新建分区 / 重命名分区 / 删除分区（分区内有任务时不可删除）/ 设为默认分区。</p>
+
+<!-- ===== 6. Tray ===== -->
+<h2 id="tray">6. 系统托盘与提醒</h2>
+
+<h3>6.1 系统托盘</h3>
+<p>程序启动后在 Windows 系统托盘显示图标：</p>
+<ul>
+  <li><strong>右键菜单</strong> — 显示/隐藏窗口、新建单任务、新建多任务、退出</li>
+  <li><strong>双击图标</strong> — 切换窗口显示/隐藏</li>
+  <li><strong>最小化行为</strong> — 根据设置，点最小化按钮可隐藏到托盘或保留在任务栏</li>
+</ul>
+<p>标题栏提供四个窗口控制按钮：隐藏到托盘 / 最小化 / 切换全屏 / 关闭。</p>
+
+<h3>6.2 任务提醒</h3>
+<p>后台定时检查任务状态（每分钟一次）：</p>
+<ul>
+  <li>检测到期和即将到期的任务</li>
+  <li>通过 Windows 系统通知气泡提醒</li>
+  <li>可在设置中开启/关闭提醒、配置检查间隔</li>
+</ul>
+
+<h3>6.3 免打扰时段</h3>
+<p>在设置中配置安静时间范围（如 22:00-08:00），该时段内不发送通知。</p>
+
+<h3>6.4 循环任务</h3>
+<p>当循环任务（在 raw_md 中设置循环规则，如 <code>+1d</code> / <code>+1w</code> / <code>+1m</code> / <code>+1y</code>）标记为 DONE 后，系统自动创建下一次实例（TODO 状态、截止日期按规则偏移）。</p>
+
+<!-- ===== 7. Export ===== -->
+<h2 id="export">7. 导出</h2>
+
+<h3>7.1 Markdown 导出</h3>
+<p>在编辑视图或任务管理控制台中，选中需要导出的任务，点击批量工具栏的导出下拉菜单，选择 <span class="tag">导出 Markdown</span>。每个任务输出一行 Markdown 格式文本，保存为 <code>.md</code> 文件。</p>
+
+<h3>7.2 Excel 导出</h3>
+<p>同样在导出下拉菜单中选择 <span class="tag">导出 Excel</span>，生成多列表格文件（序号 / 任务 / 状态 / 进度 / 信息等），可用 Excel 或 WPS 打开。</p>
+
+<h3>7.3 活动报告导出</h3>
+<p>在活动分析视图右侧内容浏览区，点击导出按钮可将当前标签对应的活动记录导出为 Markdown / Excel / TXT 三种格式之一。文件名自动生成，包含分区名、日期范围和标签数量。</p>
+
+<!-- ===== 8. Settings ===== -->
+<h2 id="settings">8. 设置</h2>
+
+<p>点击标题栏 <span class="tag">设置</span> 按钮打开设置对话框，包含以下配置项：</p>
+
+<h3>8.1 外观</h3>
+<ul>
+  <li><strong>主题</strong> — 亮色 / 暗色 / 跟随系统</li>
+  <li><strong>最小化到托盘</strong> — 开启后点击最小化按钮隐藏到托盘而非任务栏</li>
+  <li><strong>自动锁定超时</strong> — 1/5/10/30/60 分钟，超时后自动锁定当前分区</li>
+</ul>
+
+<h3>8.2 任务列表</h3>
+<ul>
+  <li><strong>每页条数</strong> — 20 / 50 / 100</li>
+  <li><strong>默认排序</strong> — 按紧急度 / 截止日期 / 创建时间 / 状态 / 标题</li>
+  <li><strong>热力图起始年份</strong> — 日历热力图的数据起始年份</li>
+</ul>
+
+<h3>8.3 提醒</h3>
+<ul>
+  <li><strong>启用提醒</strong> — 开启/关闭任务到期提醒</li>
+  <li><strong>检查间隔</strong> — 提醒检查频率（小时）</li>
+  <li><strong>免打扰开始 / 结束</strong> — HH:MM 格式，该时段内不弹通知</li>
+</ul>
+
+<h3>8.4 归档</h3>
+<ul>
+  <li><strong>分区列表</strong> — 显示所有分区的名称、默认标记、可见性、自动归档开关、归档天数</li>
+  <li><strong>右键菜单</strong> — 设为默认 / 重命名 / 删除分区</li>
+  <li><strong>归档天数</strong> — 任务完成后多少天自动归档（0=立即，9999=永不）</li>
+</ul>
+
+<h3>8.5 MOTD</h3>
+<p>4 条自定义励志语录，在状态栏循环显示。</p>
+
+<!-- ===== 9. FAQ ===== -->
+<h2 id="faq">9. 常见问题与故障排除</h2>
+
+<h3>Q: 窗口显示异常（空白、错位、无法拖动）</h3>
+<p>尝试以下步骤：</p>
+<ol>
+  <li>关闭并重新启动应用</li>
+  <li>如果窗口超出屏幕，可尝试按 <kbd>Win+←</kbd> 或 <kbd>Win+→</kbd> 将窗口吸附到屏幕一侧</li>
+  <li>切换全屏模式再退出（标题栏右三按钮）</li>
+  <li>如果问题持续，删除 <code>resources/config.json</code> 重置配置（注意备份）</li>
+</ol>
+
+<h3>Q: 搜索不到任务</h3>
+<ol>
+  <li>确认当前所在分区是否正确（状态栏最左侧分区名）</li>
+  <li>检查筛选条件是否过于严格（状态过滤、日期范围等）</li>
+  <li>确认任务未被归档（已归档任务在编辑视图不显示，需到任务管理控制台查看）</li>
+  <li>检查搜索关键词是否匹配任务标题或标签</li>
+</ol>
+
+<h3>Q: 提醒不生效</h3>
+<ol>
+  <li>确认设置中"启用提醒"已勾选</li>
+  <li>检查当前时间是否在免打扰时段内</li>
+  <li>Windows 系统设置 → 通知 → 确认 DeskTodoSeq 的通知权限已开启</li>
+  <li>确认任务确实设置了截止日期且已到期或即将到期</li>
+</ol>
+
+<h3>Q: Markdown 语法解析失败</h3>
+<p>输入框闪烁红色表示语法解析失败。请检查：</p>
+<ol>
+  <li>是否以 <code>- [ ]</code> 开头（注意空格）</li>
+  <li>状态词是否正确：TODO / DOING / DONE</li>
+  <li>日期格式是否为 YYYY-MM-DD（如 <code>2026-06-15</code>）</li>
+  <li>标签是否以 <code>#</code> 开头、空格分隔</li>
+</ol>
+
+<h3>Q: 数据库文件在哪里？如何备份？</h3>
+<p>数据库文件位于程序安装目录下的 <code>resources/desktodoseq.data</code>（SQLite 格式）。备份方式：</p>
+<ol>
+  <li>关闭 DeskTodoSeq</li>
+  <li>复制 <code>resources/desktodoseq.data</code> 到安全位置</li>
+  <li>如需恢复，将备份文件覆盖同名文件即可</li>
+</ol>
+<div class="tip"><strong>💡 建议</strong>定期备份数据库文件，特别是在批量操作或标签合并前。</div>
+
+<h3>Q: 数据丢失或数据库损坏</h3>
+<ol>
+  <li>检查 <code>resources/</code> 目录下是否有 <code>desktodoseq.data.bak</code> 备份文件</li>
+  <li>如有备份，将 <code>.bak</code> 重命名为 <code>desktodoseq.data</code> 替换损坏文件</li>
+  <li>如无备份，建议在后续使用中定期手动备份</li>
+</ol>
+
+<h3>Q: 程序无法启动</h3>
+<ol>
+  <li>确认系统为 Windows 10 或更高版本</li>
+  <li>尝试以管理员权限运行</li>
+  <li>检查杀毒软件是否拦截了程序</li>
+  <li>重新安装最新版本（覆盖安装不会丢失数据）</li>
+</ol>
+
+<hr>
+<footer>DeskTodoSeq v0.1.0 &middot; MIT License &middot; Hanxy</footer>
+
+</body>
+</html>

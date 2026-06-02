@@ -1966,9 +1966,18 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _on_help_docs(self) -> None:
+        import sys
+        from pathlib import Path
         from PySide6.QtGui import QDesktopServices
         from PySide6.QtCore import QUrl
-        QDesktopServices.openUrl(QUrl("https://github.com/user/desktodoseq/wiki"))
+
+        base = getattr(sys, "_MEIPASS", None)
+        if base:
+            path = Path(base) / "resources" / "help" / "manual.html"
+        else:
+            path = Path(__file__).resolve().parents[2] / "resources" / "help" / "manual.html"
+        if path.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _on_quit(self) -> None:
         self._signal_bus.application_quit.emit()
