@@ -41,7 +41,7 @@ class _StatBadge(QPushButton):
         t = get_tokens()
         if self._active:
             bg = self._color
-            fg = "#fff"
+            fg = t.text_on_accent
             bd = self._color
         else:
             bg = t.bg_tertiary
@@ -81,6 +81,11 @@ class StatusBadgeStrip(QWidget):
             layout.addWidget(badge)
 
         layout.addStretch()
+
+    def refresh_theme(self) -> None:
+        """Re-render all badges with current theme colours."""
+        for badge in self._badges.values():
+            badge._render()
 
     def set_partition_id(self, pid: str | None) -> None:
         self._partition_id = pid

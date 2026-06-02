@@ -1983,6 +1983,8 @@ class MainWindow(QMainWindow):
 
     def _on_config_changed(self) -> None:
         self._filter_bar.set_sort(self._config.default_sort)
+        if hasattr(self, '_status_badge'):
+            self._status_badge.refresh_theme()
         self._on_data_changed()
 
     # ------------------------------------------------------------------
