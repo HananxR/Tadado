@@ -125,6 +125,10 @@ class TagManagementPanel(QWidget):
         self._all_tags = self._repository.get_all_tags_with_counts(self._partition_id)
         self._apply_search()
 
+    def refresh_theme(self) -> None:
+        """Re-apply current theme colours to tag list items."""
+        self._apply_search()
+
     def set_partition_id(self, pid: str) -> None:
         """Set the active partition and refresh the tag list."""
         self._partition_id = pid or None
