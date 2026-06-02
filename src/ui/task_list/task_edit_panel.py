@@ -355,7 +355,7 @@ class TaskEditPanel(QWidget):
         )
         time_row.addWidget(self._created_label)
         dl_label = QLabel("截止:")
-        dl_label.setStyleSheet(f"font-size: 10px; color: {get_tokens().text_secondary};")
+        dl_label.setStyleSheet("font-size: 10px;")
         time_row.addWidget(dl_label)
         self._deadline_date_edit = QDateEdit()
         self._deadline_date_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)

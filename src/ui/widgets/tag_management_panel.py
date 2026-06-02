@@ -152,6 +152,7 @@ class TagManagementPanel(QWidget):
 
         # Show/hide empty state
         empty = len(self._all_tags) == 0
+        self._tag_list.setVisible(not empty)
         self._empty_label.setVisible(empty)
         self._tag_list.setVisible(not empty)
         self._update_button_states()

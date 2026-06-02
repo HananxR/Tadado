@@ -98,7 +98,8 @@ class BatchToolbar(QWidget):
         layout.addWidget(self._export_btn)
 
         self._count_label = QLabel("已选 0 项")
-        self._count_label.setStyleSheet(f"font-size: 10px; color: {get_tokens().text_secondary};")
+        self._count_label.setObjectName("batchCountLabel")
+        self._count_label.setStyleSheet("font-size: 10px;")
         layout.addWidget(self._count_label)
 
         layout.addStretch()

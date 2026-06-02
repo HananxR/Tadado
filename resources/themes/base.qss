@@ -676,6 +676,7 @@ QPushButton#tagActionBtn {
 }
 QPushButton#tagActionBtn:hover { background: {{bg_tertiary}}; }
 QPushButton#tagActionBtn:disabled { color: {{text_disabled}}; }
+QLabel#batchCountLabel { font-size: 10px; color: {{text_secondary}}; }
 
 /* ── Carousel Label ──────────────────────────────────────────── */
 QLabel#carouselLabel {

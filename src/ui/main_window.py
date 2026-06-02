@@ -1554,6 +1554,8 @@ class MainWindow(QMainWindow):
         self._progress_bar.set_partition_id(pid or None)
         self._quick_overview.set_partition_id(pid or None)
         self._batch_tag_panel.set_partition_id(pid or "")
+        if hasattr(self, '_batch_task_model'):
+            self._refresh_batch_page()
         self._on_data_changed()
         self._heatmap_widget.force_refresh()
         # Refresh analysis page if currently visible
