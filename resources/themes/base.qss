@@ -399,6 +399,15 @@ QLabel#analysisSectionLabel {
 }
 QLabel#reportHeaderMeta { color: {{text_secondary}}; font-size: 9px; }
 
+/* ── Activity Content View ────────────────────────────────────── */
+QLabel#activitySep { color: {{border_primary}}; font-size: 10px; }
+QLabel#activityTagLabel { font-size: 11px; font-weight: bold; color: {{accent}}; }
+QFrame#activityHline { color: {{border_primary}}; max-height: 1px; }
+QTextBrowser#activityView {
+    border: none; background: transparent;
+    color: {{text_primary}}; font-size: 11px;
+}
+
 QTreeWidget {
     background-color: {{bg_secondary}};
     border: none;

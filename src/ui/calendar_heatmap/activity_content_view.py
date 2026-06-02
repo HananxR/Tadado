@@ -57,15 +57,13 @@ class ActivityContentView(QWidget):
         nav_layout.addWidget(self._next_btn)
 
         sep = QLabel("│")
-        sep.setStyleSheet(f"color: {t.border_primary}; font-size: 10px;")
+        sep.setObjectName("activitySep")
         sep.setFixedWidth(12)
         sep.setAlignment(Qt.AlignmentFlag.AlignCenter)
         nav_layout.addWidget(sep)
 
         self._tag_label = QLabel()
-        self._tag_label.setStyleSheet(
-            f"font-size: 11px; font-weight: bold; color: {t.accent};"
-        )
+        self._tag_label.setObjectName("activityTagLabel")
         nav_layout.addWidget(self._tag_label)
 
         nav_layout.addStretch()
@@ -73,18 +71,15 @@ class ActivityContentView(QWidget):
 
         # ── Separator ──
         hline = QFrame()
+        hline.setObjectName("activityHline")
         hline.setFrameShape(QFrame.Shape.HLine)
-        hline.setStyleSheet(f"QFrame {{ color: {t.border_primary}; max-height: 1px; }}")
         layout.addWidget(hline)
 
         # ── Content ──
         self._view = QTextBrowser()
+        self._view.setObjectName("activityView")
         self._view.setOpenExternalLinks(False)
         self._view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._view.setStyleSheet(
-            f"QTextBrowser {{ border: none; background: transparent; "
-            f"color: {t.text_primary}; font-size: 11px; line-height: 1.6; }}"
-        )
         layout.addWidget(self._view, 1)
 
         self._plain_text: str = ""
