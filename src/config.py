@@ -22,7 +22,7 @@ DEFAULT_CONFIG: dict = {
         "default_sort": "status",
     },
     "display": {
-        "theme": "system",
+        "theme": "light",
         "heatmap_start_year": 2026,
     },
     "reminders": {

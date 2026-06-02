@@ -75,14 +75,11 @@ class QuickOverviewBar(QWidget):
         self._preset_buttons: dict[str, QPushButton] = {}
         for key, label in PRESETS:
             btn = QPushButton(label)
+            btn.setObjectName("overviewPresetBtn")
             btn.setMinimumWidth(48)
             btn.setCheckable(True)
             btn.setChecked(key == self._active_preset)
-            t = get_tokens()
-            btn.setStyleSheet(
-                f"QPushButton {{ font-size: 10px; padding: 2px 5px; color: {t.text_secondary}; background: transparent; border: 1px solid {t.border_primary}; }}"
-                f"QPushButton:checked {{ background: {t.accent}; color: {t.text_on_accent}; font-weight: bold; border: none; }}"
-            )
+            btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 5px; }")
             btn.clicked.connect(lambda checked=False, k=key: self.activate_preset(k))
             self._preset_buttons[key] = btn
             main_layout.addWidget(btn)

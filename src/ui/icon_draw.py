@@ -16,10 +16,14 @@ import math
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 
+from ..utils.design_tokens import get_tokens as _get_tk
+
 PRIMARY = QColor("#5b8def")
 PRIMARY_LIGHT = QColor("#7ba8f5")
 WHITE = QColor("#ffffff")
-DARK = QColor("#2c2c2c")
+
+def _dark_color() -> QColor:
+    return QColor(_get_tk().text_primary)
 
 _LW = 2.0
 
@@ -265,7 +269,7 @@ def draw_tray_hide(p: QPainter, r: QRectF, color: QColor) -> None:
     cx, cy = r.center().x(), r.center().y()
     m = r.width() * 0.18
     arm = r.width() * 0.22
-    p.setPen(_pen(DARK, max(2, r.width() * 0.08)))
+    p.setPen(_pen(_dark_color(), max(2, r.width() * 0.08)))
     # Down arrow
     arrow_top = r.y() + m
     arrow_bot = cy + r.height() * 0.10
@@ -284,7 +288,7 @@ def draw_fullscreen_toggle(p: QPainter, r: QRectF, color: QColor) -> None:
     m = r.width() * 0.14
     arm = r.width() * 0.30
     lw = max(2, r.width() * 0.08)
-    p.setPen(_pen(DARK, lw))
+    p.setPen(_pen(_dark_color(), lw))
 
     # Top-left ┌
     tl = QPointF(r.x() + m, r.y() + m)
@@ -306,7 +310,7 @@ def draw_window_minimize(p: QPainter, r: QRectF, color: QColor) -> None:
     """Single horizontal line (minimize to taskbar)."""
     m = r.width() * 0.24
     lw = max(2, r.width() * 0.08)
-    p.setPen(_pen(DARK, lw))
+    p.setPen(_pen(_dark_color(), lw))
     line_y = r.center().y()
     p.drawLine(QPointF(r.x() + m, line_y), QPointF(r.right() - m, line_y))
 
@@ -315,7 +319,7 @@ def draw_window_close(p: QPainter, r: QRectF, color: QColor) -> None:
     """X mark (close)."""
     m = r.width() * 0.24
     lw = max(2, r.width() * 0.08)
-    p.setPen(_pen(DARK, lw))
+    p.setPen(_pen(_dark_color(), lw))
     p.drawLine(QPointF(r.x() + m, r.y() + m), QPointF(r.right() - m, r.bottom() - m))
     p.drawLine(QPointF(r.right() - m, r.y() + m), QPointF(r.x() + m, r.bottom() - m))
 

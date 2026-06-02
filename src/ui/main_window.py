@@ -172,11 +172,9 @@ class MainWindow(QMainWindow):
         )
         tb.addWidget(icon_btn)
 
-        # Nav buttons (icon + text, flat style)
+        # Nav buttons (icon + text, flat style) — colors via base.qss
         btn_style = (
-            f"QPushButton {{ border: none; background: transparent; padding: 2px 8px; "
-            f"color: {t.text_primary}; font-size: 11px; }}"
-            f"QPushButton:hover {{ background: {t.accent}20; }}"
+            "QPushButton { border: none; background: transparent; padding: 2px 8px; font-size: 11px; }"
         )
         icon_sz = QSize(18, 18)
 
@@ -189,6 +187,7 @@ class MainWindow(QMainWindow):
         ]
         for icon_name, text, slot in nav_items:
             btn = QPushButton()
+            btn.setObjectName("titleBtn")
             btn.setIcon(load_icon(icon_name))
             btn.setIconSize(icon_sz)
             btn.setText(text)
@@ -219,10 +218,9 @@ class MainWindow(QMainWindow):
 
         tb.addStretch()
 
-        # Right-side window buttons (icon only, matching left-side style)
+        # Right-side window buttons (icon only) — colors via base.qss
         right_btn_style = (
-            f"QPushButton {{ border: none; background: transparent; padding: 0px; }}"
-            f"QPushButton:hover {{ background: {t.accent}20; }}"
+            "QPushButton { border: none; background: transparent; padding: 0px; }"
         )
         right_items = [
             ("tray_hide", "缩小到托盘", self.hide),
@@ -570,11 +568,8 @@ class MainWindow(QMainWindow):
 
         # -- Left sidebar (180px) --
         self._manage_sidebar = QWidget()
+        self._manage_sidebar.setObjectName("manageSidebar")
         self._manage_sidebar.setFixedWidth(180)
-        tokens = _gt4()
-        self._manage_sidebar.setStyleSheet(
-            f"QWidget {{ background-color: {tokens.bg_secondary}; border-right: 1px solid {tokens.border_primary}; }}"
-        )
         sidebar_layout = QVBoxLayout(self._manage_sidebar)
         sidebar_layout.setContentsMargins(8, 6, 8, 6)
         sidebar_layout.setSpacing(3)
@@ -582,10 +577,9 @@ class MainWindow(QMainWindow):
         SIDEBAR_LABEL = "font-size: 10px; font-weight: bold; border: none; padding-top: 4px;"
         SIDEBAR_INPUT = "font-size: 10px; padding: 2px 4px;"
         SIDEBAR_BTN = "QPushButton { font-size: 10px; padding: 4px 8px; }"
-        SIDEBAR_SEP = f"background-color: {tokens.separator}; border: none;"
 
         def _add_sep():
-            s = QWidget(); s.setFixedHeight(1); s.setStyleSheet(SIDEBAR_SEP)
+            s = QWidget(); s.setObjectName("sidebarSep"); s.setFixedHeight(1)
             sidebar_layout.addWidget(s)
 
         def _add_label(text: str):
@@ -605,7 +599,8 @@ class MainWindow(QMainWindow):
             row_layout.addWidget(le, 1)
             clear_btn = QPushButton("×")
             clear_btn.setFixedSize(16, 16)
-            clear_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 0; border: none; color: #999; }")
+            clear_btn.setObjectName("sidebarClearBtn")
+            clear_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 0; border: none; }")
             clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             clear_btn.clicked.connect(lambda _, le_=le: (le_.clear(), self._on_batch_filter_changed()))
             row_layout.addWidget(clear_btn)
@@ -693,9 +688,9 @@ class MainWindow(QMainWindow):
         back_btn2.setFlat(True)
         back_btn2.setToolTip("返回主界面")
         back_btn2.setCursor(Qt.CursorShape.PointingHandCursor)
+        back_btn2.setObjectName("sidebarHomeBtn")
         back_btn2.setStyleSheet(
-            f"QPushButton {{ border: none; background: transparent; padding: 0; }}"
-            f"QPushButton:hover {{ background: {tokens.accent}20; }}"
+            "QPushButton { border: none; background: transparent; padding: 0; }"
         )
         back_btn2.clicked.connect(lambda: self._switch_view("edit"))
         sidebar_layout.addWidget(back_btn2, alignment=Qt.AlignmentFlag.AlignHCenter)
@@ -1858,7 +1853,7 @@ class MainWindow(QMainWindow):
         if self._edit_panel.has_unsaved_draft():
             self._edit_panel.discard_draft()
         self._ensure_window_ready()
-        self._edit_panel.create_draft()
+        self._edit_panel.create_draft_single()
         self._apply_splitter_sizes()
 
     def _on_menu_new_multi(self) -> None:

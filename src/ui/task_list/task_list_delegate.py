@@ -66,10 +66,10 @@ class TaskListDelegate(QStyledItemDelegate):
                     QPointF(cx + size * 0.28, cy - size * 0.18)
                 )
             else:
-                # Empty circle outline
+                # Empty circle outline — use text_secondary for better visibility
                 t2 = get_tokens()
                 painter.setBrush(Qt.BrushStyle.NoBrush)
-                painter.setPen(QPen(QColor(t2.text_disabled), 2))
+                painter.setPen(QPen(QColor(t2.text_secondary), 2))
                 painter.drawEllipse(QPointF(cx, cy), size / 2, size / 2)
             painter.restore()
             return
@@ -158,8 +158,9 @@ class TaskListDelegate(QStyledItemDelegate):
         t = (clamped + 30.0) / 60.0  # normalize to [0, 1]
 
         r, g, b = TaskListDelegate._interpolate_color(TaskListDelegate._COLOR_STOPS, t)
-        # Bolder alpha: cool/far → hot/urgent
-        alpha = int(100 + t * 100)
+        # Bold alpha: cool/far → hot/urgent (higher in dark mode for visibility)
+        from ...utils.design_tokens import is_dark
+        alpha = int(150 + t * 105) if is_dark() else int(100 + t * 100)
         return QColor(r, g, b, alpha)
 
     @staticmethod

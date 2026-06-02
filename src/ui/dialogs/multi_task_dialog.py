@@ -57,13 +57,7 @@ class MultiTaskDialog(QDialog):
         # Multi-line markdown editor with pre-populated template
         layout.addWidget(QLabel("输入多个任务（每行一个 Markdown 任务）："))
         self._text_edit = QTextEdit()
-        from ...utils.design_tokens import get_tokens
-        t = get_tokens()
-        self._text_edit.setStyleSheet(
-            f"QTextEdit {{ font-family: Consolas, monospace; font-size: 12px; "
-            f"color: {t.text_primary}; background: {t.bg_secondary}; "
-            f"border: 1px solid {t.border_primary}; border-radius: 4px; padding: 6px; }}"
-        )
+        self._text_edit.setObjectName("multiTaskEditor")
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
         self._text_edit.setText(
             f"- [ ]  <{now_str}> 新任务1 #标签\n"

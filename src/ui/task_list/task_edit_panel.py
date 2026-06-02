@@ -731,13 +731,8 @@ class TaskEditPanel(QWidget):
         # Direct edit mode — same experience as 新建任务
         self._md_editor_wrapper.setVisible(True)
         self._edit_toggle_btn.setText("关闭编辑")
-        self._md_edit.setStyleSheet(
-            "QTextEdit#mdEditor { border: 2px solid #5b8def; background: #f0f4ff; }"
-        )
-        QTimer.singleShot(800, lambda: self._md_edit.setStyleSheet(
-            "QTextEdit#mdEditor { font-size: 12px; padding: 4px 8px; border-radius: 4px; "
-            "background: rgba(128,128,128,0.05); border: 1px solid palette(mid); }"
-        ))
+        self._md_edit.style().unpolish(self._md_edit)
+        self._md_edit.style().polish(self._md_edit)
         self._save_btn.setEnabled(True)
         self._delete_btn.setEnabled(False)
 
@@ -829,13 +824,11 @@ class TaskEditPanel(QWidget):
         self._edit_toggle_btn.setText("关闭编辑")
         self._md_edit.setFocus()
         self._md_edit.selectAll()
+        t = get_tokens()
         self._md_edit.setStyleSheet(
-            "QTextEdit#mdEditor { border: 2px solid #5b8def; background: #f0f4ff; }"
+            f"QTextEdit#mdEditor {{ background: {t.bg_secondary}; color: {t.text_primary}; "
+            f"border: 1px solid {t.border_primary}; font-size: 13px; padding: 7px 12px; }}"
         )
-        QTimer.singleShot(800, lambda: self._md_edit.setStyleSheet(
-            "QTextEdit#mdEditor { font-size: 12px; padding: 4px 8px; border-radius: 4px; "
-            "background: rgba(128,128,128,0.05); border: 1px solid palette(mid); }"
-        ))
         self._save_btn.setEnabled(True)
         self._delete_btn.setEnabled(False)
         self._status_combo.blockSignals(True)
@@ -859,6 +852,19 @@ class TaskEditPanel(QWidget):
         # removed _preview_deadline(f"截止: {target.isoformat()} 23:59")
         self._update_preview()
         self._clear_entries()
+
+    def create_draft_single(self) -> None:
+        """Create a single-task draft — identically to multi-task, but single line."""
+        now = datetime.now()
+        now_str = now.strftime("%Y-%m-%d %H:%M")
+        template = f"- [ ]  <{now_str}> 新任务 #待分类"
+        self.create_draft()
+        self._md_edit.blockSignals(True)
+        self._md_edit.setText(template)
+        self._md_edit.blockSignals(False)
+        self._update_preview()
+        self._md_editor_wrapper.setVisible(True)
+        self._edit_toggle_btn.setText("关闭编辑")
 
     def create_draft_multi(self) -> None:
         """Create a multi-task draft with pre-populated template lines."""
@@ -1453,16 +1459,13 @@ class TaskEditPanel(QWidget):
         self._edit_toggle_btn.setText("关闭编辑" if not showing else "编辑")
         if not showing:
             self._section_label.setText("编辑任务")
-            self._md_edit.setStyleSheet(
-                "QTextEdit#mdEditor { border: 2px solid #5b8def; background: #f0f4ff; }"
-            )
+            self._md_edit.style().unpolish(self._md_edit)
+            self._md_edit.style().polish(self._md_edit)
             self._md_edit.setFocus()
         else:
             self._section_label.setText("首页")
-            self._md_edit.setStyleSheet(
-                "QTextEdit#mdEditor { font-size: 12px; padding: 4px 8px; border-radius: 4px; "
-                "background: rgba(128,128,128,0.05); border: 1px solid palette(mid); }"
-            )
+            self._md_edit.style().unpolish(self._md_edit)
+            self._md_edit.style().polish(self._md_edit)
 
     def _on_quick_set_deadline(self) -> None:
         """Open deadline calculator popup."""
@@ -1579,8 +1582,9 @@ class TaskEditPanel(QWidget):
         self._log_edit.blockSignals(False)
         self._log_edit.setReadOnly(False)
         self._log_edit.setPlaceholderText("编辑进展内容…")
+        t = get_tokens()
         self._log_edit.setStyleSheet(
-            "QTextEdit { border: 2px solid #f39c12; background: #fffdf5; }"
+            f"QTextEdit {{ border: 2px solid {t.timeline_dot}; background: {t.bg_tertiary}; }}"
         )
 
         st_val = entry.get("status", "")

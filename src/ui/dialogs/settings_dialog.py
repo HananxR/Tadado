@@ -79,7 +79,6 @@ class SettingsDialog(QDialog):
         self._theme_combo = DropdownWidget()
         self._theme_combo.setObjectName("settingsThemeCombo")
         self._theme_combo.setFixedWidth(_DROP_W)
-        self._theme_combo.addItem("跟随系统", "system")
         self._theme_combo.addItem("浅色", "light")
         self._theme_combo.addItem("深色", "dark")
         for i in range(self._theme_combo.count()):

@@ -361,21 +361,18 @@ class DeskTodoSeqApp(QApplication):
     # ------------------------------------------------------------------
 
     def _load_theme(self) -> None:
-        from .utils.design_tokens import build_palette, refresh_tokens
+        from .utils.design_tokens import build_palette, expand_qss, refresh_tokens
 
-        theme_name = self._config.theme
-        if theme_name == "system":
-            theme_name = self._detect_system_theme()
         refresh_tokens()
 
         # Apply QPalette — handles text and standard widget colours globally
         QApplication.instance().setPalette(build_palette())
 
-        # Apply QSS with injected icons-path placeholder replacement
-        qss_path = self._resource_path("themes", f"{theme_name}.qss")
-        if qss_path and qss_path.exists():
-            with open(qss_path, "r", encoding="utf-8") as f:
-                self.setStyleSheet(f.read())
+        # Load unified base.qss and expand token placeholders for current theme
+        base_path = self._resource_path("themes", "base.qss")
+        if base_path and base_path.exists():
+            with open(base_path, "r", encoding="utf-8") as f:
+                self.setStyleSheet(expand_qss(f.read()))
         else:
             self.setStyleSheet("")
 

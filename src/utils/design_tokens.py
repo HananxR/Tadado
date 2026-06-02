@@ -156,6 +156,61 @@ def get_tokens() -> DesignTokens:
     return _tokens
 
 
+def expand_qss(template: str) -> str:
+    """Replace {{token}} placeholders in a QSS template with current theme values."""
+    t = get_tokens()
+    dark = t is DARK_TOKENS
+
+    expansions = {
+        # Core tokens
+        "bg_primary": t.bg_primary,
+        "bg_secondary": t.bg_secondary,
+        "bg_tertiary": t.bg_tertiary,
+        "text_primary": t.text_primary,
+        "text_secondary": t.text_secondary,
+        "text_disabled": t.text_disabled,
+        "text_on_accent": t.text_on_accent,
+        "border_primary": t.border_primary,
+        "accent": t.accent,
+        "accent_hover": t.accent_hover,
+        "danger": t.danger,
+        "danger_light": t.danger_hover,
+        "danger_hover": "#c05050" if dark else "#e07070",
+        "success": t.success,
+        "white": "#ffffff",
+        # Surface / structural
+        "surface_raised": "#24253a" if dark else "#ffffff",
+        "surface_alt": "#212236" if dark else "#fafaf8",
+        "surface_dark": "#2a2b3a" if dark else "#f0eee8",
+        "surface_hover": "#252638" if dark else "#f8f7f4",
+        "selection_bg": "#2f3648" if dark else "#edf2fb",
+        "selection_alt": "#2f4360" if dark else "#c5d8f8",
+        "report_header": "#252636" if dark else "#fafaf8",
+        "entry_hover": "#2a2b3c" if dark else "#f8f7f4",
+        "entry_selected": "#253045" if dark else "#edf2fb",
+        # Interactive states
+        "hover_strong": "#44455a" if dark else "#e8e6e0",
+        "hover_bg": "#383a50" if dark else "#e8e4dc",
+        "pressed_bg": "#363850" if dark else "#e0ddd6",
+        "text_muted": "#555770" if dark else "#aaa",
+        "nav_secondary": "#8b8da0" if dark else "#999",
+        "disabled_text": "#555" if dark else "#aaa",
+        # Danger / destructive
+        "danger_border": "#5c3038" if dark else "#e8c8c8",
+        "danger_bg_dark": "#362430" if dark else "#fdf0ef",
+        # Overlay / alpha
+        "overlay_8": "rgba(128,128,128,0.08)",
+        "overlay_35": "rgba(128,128,128,0.35)",
+        "accent_alpha_13": "rgba(122,162,247,0.13)" if dark else "rgba(91,139,239,0.13)",
+        "bg_primary_alpha_235": "rgba(26,27,38,235)" if dark else "rgba(245,244,240,235)",
+        "border_alpha_25": "rgba(61,63,82,0.25)" if dark else "rgba(221,217,208,0.25)",
+    }
+    result = template
+    for name, value in expansions.items():
+        result = result.replace(f"{{{{{name}}}}}", value)
+    return result
+
+
 def is_dark() -> bool:
     """Return True when the current theme is dark."""
     return get_tokens() is DARK_TOKENS
@@ -184,19 +239,6 @@ def _resolve() -> None:
         return
 
     theme_name: str = _config_ref.theme  # type: ignore[union-attr]
-    if theme_name == "system":
-        # mirror app._detect_system_theme logic
-        try:
-            import winreg
-            key = winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            )
-            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-            theme_name = "light" if value == 1 else "dark"
-        except Exception:
-            theme_name = "light"
-
     _tokens = DARK_TOKENS if theme_name == "dark" else LIGHT_TOKENS
 
 

@@ -111,16 +111,12 @@ class ProgressDynamicsBar(QWidget):
         self._period_buttons: dict[str, QPushButton] = {}
         for key, label in PERIODS:
             btn = QPushButton(label)
+            btn.setObjectName("periodBtn")
             btn.setMinimumWidth(48)
             btn.setCheckable(True)
             btn.setEnabled(key in self._enabled_periods)
             btn.setChecked(key == self._active_period)
-            t = get_tokens()
-            btn.setStyleSheet(
-                f"QPushButton {{ font-size: 10px; padding: 2px 5px; color: {t.text_primary}; background: transparent; border: 1px solid {t.border_primary}; }}"
-                f"QPushButton:checked {{ background: {t.accent}; color: {t.text_on_accent}; font-weight: bold; border: none; }}"
-                f"QPushButton:disabled {{ color: rgba(128,128,128,0.35); background: transparent; border: 1px solid transparent; }}"
-            )
+            btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 5px; }")
             btn.clicked.connect(lambda checked=False, k=key: self._on_period_clicked(k))
             if not btn.isEnabled():
                 btn.setToolTip("此周期已在设置中禁用")
@@ -129,11 +125,10 @@ class ProgressDynamicsBar(QWidget):
 
         layout.addSpacing(12)
         self._carousel_label = QLabel()
+        self._carousel_label.setObjectName("carouselLabel")
         self._carousel_label.setWordWrap(False)
         self._carousel_label.setStyleSheet(
-            "QLabel { padding: 2px 8px; border-radius: 4px; "
-            "font-size: 10px; background: rgba(128,128,128,0.08); "
-            f"color: {get_tokens().text_secondary}; " + "}"
+            "QLabel { padding: 2px 8px; border-radius: 4px; font-size: 10px; }"
         )
         layout.addWidget(self._carousel_label, 1)
         layout.addStretch()
