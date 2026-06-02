@@ -121,7 +121,7 @@ class MainWindow(QMainWindow):
             return
         total = self._splitter.width()
         if total > 100:
-            self._splitter.setSizes([int(total * 0.60), int(total * 0.40)])
+            self._splitter.setSizes([int(total * 0.50), int(total * 0.50)])
 
     def _apply_batch_splitter_sizes(self) -> None:
         """Set batch page splitter to 70:30 (existing content : tag panel)."""
@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
             return
         total = self._batch_splitter.width()
         if total > 100:
-            self._batch_splitter.setSizes([int(total * 0.70), int(total * 0.30)])
+            self._batch_splitter.setSizes([int(total * 0.80), int(total * 0.20)])
 
     def _sync_header_alignment(self) -> None:
         """Sync editor header height to match table header for vertical alignment."""
@@ -783,6 +783,8 @@ class MainWindow(QMainWindow):
 
         self._batch_tag_panel = TagManagementPanel(self._repository)
         self._batch_splitter.addWidget(self._batch_tag_panel)
+        self._batch_splitter.setStretchFactor(0, 1)
+        self._batch_splitter.setStretchFactor(1, 0)
 
         batch_page_layout.addWidget(self._batch_splitter)
         self._stack.addWidget(batch_page)
