@@ -381,9 +381,9 @@ QWidget#reportHeader {
 QPushButton#exportBtn {
     background-color: {{bg_tertiary}};
     border: 1px solid {{border_primary}};
-    border-radius: 4px;
-    padding: 3px 12px;
-    font-size: 11px;
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
     color: {{text_primary}};
 }
 QPushButton#exportBtn:hover {
