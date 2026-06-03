@@ -19,7 +19,7 @@ DEFAULT_CONFIG: dict = {
         "last_partition_id": "",
         "auto_lock_minutes": 10,
         "page_size": 20,
-        "default_sort": "status",
+        "default_sort": "urgency",
     },
     "display": {
         "theme": "light",

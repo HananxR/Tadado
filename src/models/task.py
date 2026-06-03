@@ -30,6 +30,7 @@ class Task:
     notes: Optional[str] = None
     activity_log: list[dict] = field(default_factory=list)
     progress: int = 0
+    urgency: int = 3  # 0=紧急, 1=重要, 2=关注, 3=普通
     activity_yesterday: int = 0
     activity_today: int = 0
     activity_last_week: int = 0

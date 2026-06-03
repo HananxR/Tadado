@@ -29,6 +29,7 @@ class BatchToolbar(QWidget):
     """Toolbar for batch operations on checked tasks. Always visible."""
 
     batch_status_change = Signal(list, TaskStatus)
+    batch_urgency_change = Signal(list, int)  # task_ids, urgency_level
     batch_delete = Signal(list)
     batch_suspend = Signal(list)
     batch_restart = Signal(list)
@@ -59,6 +60,15 @@ class BatchToolbar(QWidget):
             self._status_menu.addAction(label, lambda s=s: self._emit_status(s))
         self._status_btn.setMenu(self._status_menu)
         layout.addWidget(self._status_btn)
+
+        # Change priority dropdown
+        self._urgency_btn = QPushButton("更改优先级")
+        self._urgency_btn.setStyleSheet(BTN_STYLE)
+        self._urgency_menu = QMenu(self)
+        for value, label in [(0, "● 紧急"), (1, "● 重要"), (2, "● 关注"), (3, "● 普通")]:
+            self._urgency_menu.addAction(label, lambda v=value: self._emit_urgency(v))
+        self._urgency_btn.setMenu(self._urgency_menu)
+        layout.addWidget(self._urgency_btn)
 
         self._delete_btn = QPushButton("删除")
         self._delete_btn.setStyleSheet(BTN_STYLE)
@@ -135,6 +145,11 @@ class BatchToolbar(QWidget):
         if _warn_if_empty(self._selected_ids, self._status_btn):
             return
         self.batch_status_change.emit(list(self._selected_ids), status)
+
+    def _emit_urgency(self, urgency: int) -> None:
+        if _warn_if_empty(self._selected_ids, self._urgency_btn):
+            return
+        self.batch_urgency_change.emit(list(self._selected_ids), urgency)
 
     def _emit_delete(self) -> None:
         if _warn_if_empty(self._selected_ids, self._delete_btn):

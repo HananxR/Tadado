@@ -21,7 +21,7 @@ class FilterBar(QWidget):
     filter_changed = Signal(TaskFilter)
 
     _SORT_MAP: dict[str, str] = {
-        "紧急程度": "urgency",
+        "优先级": "urgency",
         "截止日": "deadline",
         "创建时间": "created",
         "状态": "status",
@@ -57,7 +57,7 @@ class FilterBar(QWidget):
         self._status.currentIndexChanged.connect(self._on_filter_changed)
         layout.addWidget(self._status)
 
-        # Sort combo — compact fixed width (longest item "紧急程度" ≈ 4 chars)
+        # Sort combo — compact fixed width (longest item "创建时间" ≈ 4 chars)
         sort_label = QLabel("排序：")
         sort_label.setStyleSheet("font-size: 11px;")
         layout.addWidget(sort_label)
@@ -65,6 +65,7 @@ class FilterBar(QWidget):
         self._sort.setObjectName("sortCombo")
         for label in self._SORT_MAP:
             self._sort.addItem(label)
+        self._sort.setCurrentIndex(0)  # default: 优先级
         self._sort.setFixedWidth(combo_width(4))
         self._sort.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._sort.currentIndexChanged.connect(self._on_filter_changed)

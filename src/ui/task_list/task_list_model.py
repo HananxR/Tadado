@@ -163,6 +163,10 @@ class TaskListModel(QAbstractTableModel):
             bot = self.index(len(self._tasks) - 1, self.columnCount() - 1)
             self.dataChanged.emit(top, bot)
 
+    def highlighted_task_id(self) -> str | None:
+        """Return the currently highlighted task ID (red+bold)."""
+        return self._highlighted_task_id
+
     def set_highlighted_task(self, task_id: str | None) -> None:
         """Set the task to highlight in red+bold (first in list)."""
         self._highlighted_task_id = task_id
@@ -226,6 +230,20 @@ class TaskListModel(QAbstractTableModel):
         if col == COL_STATUS:
             return QColor(task.status.display_color)
         return None
+
+    @staticmethod
+    def _urgency_color(urgency: int) -> QColor:
+        """Return the dot color for a given urgency level (0-3)."""
+        from ...utils.design_tokens import get_tokens
+        t = get_tokens()
+        if urgency == 0:
+            return QColor(t.urgency_urgent)
+        elif urgency == 1:
+            return QColor(t.urgency_high)
+        elif urgency == 2:
+            return QColor(t.urgency_medium)
+        else:
+            return QColor(t.text_secondary)  # hollow gray dot for 普通
 
     @staticmethod
     def _calc_progress(task: Task) -> str:

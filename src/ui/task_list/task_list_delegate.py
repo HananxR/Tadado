@@ -1,4 +1,4 @@
-"""Custom delegate for rendering status badges and urgency row backgrounds."""
+"""Custom delegate for rendering urgency row strip, status badges, and red-bold text."""
 
 from __future__ import annotations
 
@@ -12,21 +12,11 @@ from ...utils.design_tokens import get_tokens
 
 
 class TaskListDelegate(QStyledItemDelegate):
-    """Paints status as a colored rounded badge and urgency-tinted row backgrounds."""
+    """Paints urgency left-edge strip, status badges, and red-bold highlight text."""
 
     _BADGE_PADDING_H = 8
     _BADGE_PADDING_V = 3
     _BADGE_RADIUS = 4
-
-    # Color stops for urgency tint: cool (t=0, far future) → warm (t=1, severely overdue)
-    _COLOR_STOPS: list[tuple[float, tuple[int, int, int]]] = [
-        (0.0, (200, 210, 220)),   # cool gray-blue
-        (0.2, (52, 152, 219)),    # blue
-        (0.4, (241, 196, 15)),    # amber
-        (0.6, (230, 126, 34)),    # orange
-        (0.85, (231, 76, 60)),    # red
-        (1.0, (192, 30, 30)),     # deep red (severely overdue)
-    ]
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         col = index.column()
@@ -56,7 +46,6 @@ class TaskListDelegate(QStyledItemDelegate):
                 painter.setPen(Qt.PenStyle.NoPen)
                 painter.drawEllipse(QPointF(cx, cy), size / 2, size / 2)
                 painter.setPen(QPen(QColor(255, 255, 255), 2))
-                # Draw checkmark ✓
                 painter.drawLine(
                     QPointF(cx - size * 0.22, cy),
                     QPointF(cx - size * 0.05, cy + size * 0.22)
@@ -66,7 +55,6 @@ class TaskListDelegate(QStyledItemDelegate):
                     QPointF(cx + size * 0.28, cy - size * 0.18)
                 )
             else:
-                # Empty circle outline — use text_secondary for better visibility
                 t2 = get_tokens()
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.setPen(QPen(QColor(t2.text_secondary), 2))
@@ -86,40 +74,33 @@ class TaskListDelegate(QStyledItemDelegate):
             painter.restore()
             return
 
+        # Draw urgency row background for all non-checkbox columns (skip if red-bold highlighted)
+        model = index.model()
+        hl_id = model.highlighted_task_id() if model else None
+        is_highlighted = hl_id is not None and task.id == hl_id
+        if not is_highlighted:
+            self._draw_urgency_bg(painter, option, task)
+
         if col == 6:  # COL_STATUS — custom badge painting
-            bg = self._urgency_bg_color(task)
-            if bg is not None:
-                painter.save()
-                painter.fillRect(option.rect, bg)
-                painter.restore()
             self._paint_status_badge(painter, option, task)
         elif col == 8:  # COL_ARCHIVED — colored text
-            bg = self._urgency_bg_color(task)
-            if bg is not None:
-                painter.save()
-                painter.fillRect(option.rect, bg)
-                painter.restore()
             self._paint_archived(painter, option, task)
-        else:
-            # Always draw urgency background
-            bg = self._urgency_bg_color(task)
-            if bg is not None:
+        elif col == 3:  # COL_CONTENT — red bold text for highlighted task
+            fg = index.data(Qt.ItemDataRole.ForegroundRole)
+            font = index.data(Qt.ItemDataRole.FontRole)
+            if fg is not None and font is not None:
                 painter.save()
-                painter.fillRect(option.rect, bg)
+                painter.setPen(QPen(fg))
+                painter.setFont(font)
+                text = index.data(Qt.ItemDataRole.DisplayRole)
+                painter.drawText(option.rect.adjusted(4, 1, -4, -1),
+                                 Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
                 painter.restore()
-            # Red bold text for highlighted task content column
-            if col == 3:
-                fg = index.data(Qt.ItemDataRole.ForegroundRole)
-                font = index.data(Qt.ItemDataRole.FontRole)
-                if fg is not None and font is not None:
-                    painter.save()
-                    painter.setPen(QPen(fg))
-                    painter.setFont(font)
-                    text = index.data(Qt.ItemDataRole.DisplayRole)
-                    painter.drawText(option.rect.adjusted(4, 1, -4, -1),
-                                     Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
-                    painter.restore()
-                    return
+                return
+            opt = QStyleOptionViewItem(option)
+            opt.state &= ~QStyle.StateFlag.State_Selected
+            super().paint(painter, opt, index)
+        else:
             opt = QStyleOptionViewItem(option)
             opt.state &= ~QStyle.StateFlag.State_Selected
             super().paint(painter, opt, index)
@@ -136,53 +117,31 @@ class TaskListDelegate(QStyledItemDelegate):
         return QSize(super().sizeHint(option, index).width(), 30)
 
     # ------------------------------------------------------------------
-    # Urgency background
+    # Urgency row background
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _urgency_bg_color(task: Task) -> QColor | None:
-        """Map task urgency_score to a warm→cool background tint overlay."""
-        score = task.urgency_score
-
-        if score <= -9998:  # no deadline
-            return None
-        if score <= -9990:  # DONE
-            t3 = get_tokens()
-            c = QColor(t3.success)
-            c.setAlpha(12)
-            return c
-
-        clamped = max(-30.0, min(30.0, score))
-        t = (clamped + 30.0) / 60.0  # normalize to [0, 1]
-
-        r, g, b = TaskListDelegate._interpolate_color(TaskListDelegate._COLOR_STOPS, t)
-        # Bold alpha: cool/far → hot/urgent (higher in dark mode for visibility)
+    def _draw_urgency_bg(
+        self, painter: QPainter, option: QStyleOptionViewItem, task: Task
+    ) -> None:
+        """Draw a full-row urgency background tint, unless the task is highlighted (red bold)."""
+        # Skip if this is the highlighted (red bold) task
         from ...utils.design_tokens import is_dark
-        alpha = int(150 + t * 105) if is_dark() else int(100 + t * 100)
-        return QColor(r, g, b, alpha)
+        urgency = getattr(task, 'urgency', 3)
 
-    @staticmethod
-    def _interpolate_color(
-        stops: list[tuple[float, tuple[int, int, int]]], t: float
-    ) -> tuple[int, int, int]:
-        """Linear interpolation between color stops."""
-        if t <= stops[0][0]:
-            return stops[0][1]
-        if t >= stops[-1][0]:
-            return stops[-1][1]
+        t = get_tokens()
+        color_map = {
+            0: QColor(t.urgency_urgent),
+            1: QColor(t.urgency_high),
+            2: QColor(t.urgency_medium),
+            3: QColor(t.urgency_normal),
+        }
+        color = color_map.get(urgency, QColor(t.urgency_normal))
+        alpha = 50 if is_dark() else 35
+        color.setAlpha(alpha)
 
-        for i in range(len(stops) - 1):
-            t0, c0 = stops[i]
-            t1, c1 = stops[i + 1]
-            if t0 <= t <= t1:
-                ratio = (t - t0) / (t1 - t0)
-                return (
-                    int(c0[0] + (c1[0] - c0[0]) * ratio),
-                    int(c0[1] + (c1[1] - c0[1]) * ratio),
-                    int(c0[2] + (c1[2] - c0[2]) * ratio),
-                )
-
-        return stops[-1][1]
+        painter.save()
+        painter.fillRect(option.rect, color)
+        painter.restore()
 
     # ------------------------------------------------------------------
     # Status badge

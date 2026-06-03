@@ -10,14 +10,14 @@ from typing import Optional
 from ..models.task_status import TaskStatus
 
 # Pattern breakdown:
-#   ^- \[([ xX])\]                          checkbox
-#   \s+(TODO|DOING|DONE|OVERDUE)       status keyword
+#   ^- \[([^\]]{1,3})\]                       priority bracket (1-3 chars: *, space, x)
+#   \s+(TODO|DOING|DONE|OVERDUE)              status keyword
 #   (?:\s+<(\d{4}-\d{2}-\d{2})>)?            optional scheduled date
 #   (?:\s+<(\d{4}-\d{2}-\d{2})>)?            optional deadline date
 #   \s+(.+)$                                  title + tags
 
 _TASK_LINE_PATTERN = re.compile(
-    r"^-\s*\[([ xX])\]\s+"
+    r"^-\s*\[([^\]]{1,3})\]\s+"
     r"(TODO|DOING|DONE|OVERDUE)"
     r"(?:\s+<(\d{4}-\d{2}-\d{2})>)?"
     r"(?:\s+<(\d{4}-\d{2}-\d{2})"
@@ -41,6 +41,7 @@ class ParsedTask:
     deadline_time: Optional[str] = None
     title: str = ""
     tags: list[str] = field(default_factory=list)
+    urgency: int = 3  # 0=紧急, 1=重要, 2=关注, 3=普通
 
     @property
     def clean_title(self) -> str:
@@ -66,7 +67,7 @@ class MarkdownTaskParser:
             # Fallback: try parsing with defaults for missing elements
             return self._fallback_parse(line)
 
-        checkbox_char = match.group(1)
+        bracket_content = match.group(1).ljust(3)  # old " " / "x" → pad to 3 chars
         status = TaskStatus.from_string(match.group(2))
         scheduled_date = self._parse_date_safe(match.group(3))
         deadline_date = self._parse_date_safe(match.group(4))
@@ -76,14 +77,20 @@ class MarkdownTaskParser:
         tags = self._extract_tags(title_text)
         clean_title = _TAG_PATTERN.sub("", title_text).strip()
 
+        # Priority from bracket: count '*' → urgency (0=***, 1=**, 2=*, 3=default)
+        star_count = bracket_content.count('*')
+        urgency = 3 - star_count if star_count > 0 else 3
+        checkbox_checked = 'x' in bracket_content.lower()
+
         return ParsedTask(
-            checkbox_checked=checkbox_char.lower() == "x",
+            checkbox_checked=checkbox_checked,
             status=status,
             scheduled_date=scheduled_date,
             deadline_date=deadline_date,
             deadline_time=deadline_time,
             title=clean_title,
             tags=tags,
+            urgency=urgency,
         )
 
     def parse_batch(self, md_text: str) -> list[tuple[Optional[ParsedTask], str, Optional[str]]]:
@@ -122,11 +129,15 @@ class MarkdownTaskParser:
         deadline_date = None
         remaining = line
 
-        # Strip leading list marker
+        # Strip leading list marker with priority bracket [*], [**], [***], [   ], [x]
+        urgency = 3
         if remaining.startswith("- ["):
-            checkbox_match = re.match(r"-\s*\[([ xX])\]\s*", remaining)
+            checkbox_match = re.match(r"-\s*\[([^\]]{1,3})\]\s*", remaining)
             if checkbox_match:
-                checkbox = checkbox_match.group(1).lower() == "x"
+                bracket = checkbox_match.group(1)
+                checkbox = 'x' in bracket.lower()
+                star_count = bracket.count('*')
+                urgency = 3 - star_count if star_count > 0 else 3
                 remaining = remaining[checkbox_match.end():]
 
         # Extract status keyword
@@ -166,6 +177,7 @@ class MarkdownTaskParser:
             deadline_time=deadline_time,
             title=clean_title,
             tags=tags,
+            urgency=urgency,
         )
 
     # ------------------------------------------------------------------

@@ -102,8 +102,15 @@ class TimelineDetailDialog(QDialog):
 
         rows: list[str] = []
         sc = task.status.display_color
+        # Urgency label
+        urgency = getattr(task, 'urgency', 3)
+        _URGENCY_NAMES = {0: "紧急", 1: "重要", 2: "关注", 3: "普通"}
+        _URGENCY_COLORS = {0: t.urgency_urgent, 1: t.urgency_high, 2: t.urgency_medium, 3: t.text_secondary}
+        urgency_label = _URGENCY_NAMES.get(urgency, "普通")
+        urgency_color = _URGENCY_COLORS.get(urgency, t.text_secondary)
         rows.append(_row("▶", sc, _fmt_ts(datetime.now().isoformat(), True),
-                          f"当前: {task.status.display_name}"))
+                          f"当前: {task.status.display_name}  |  优先级: "
+                          f'<span style="color:{urgency_color};font-weight:bold;">{urgency_label}</span>'))
         if task.completed_at:
             rows.append(_row("●", t.timeline_done, _fmt_ts(task.completed_at.isoformat(), True),
                               "任务完成 ✓"))

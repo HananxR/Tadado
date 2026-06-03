@@ -693,6 +693,7 @@ class MainWindow(QMainWindow):
         # Operation toolbar
         self._batch_toolbar2 = BatchToolbar()
         self._batch_toolbar2.batch_status_change.connect(self._on_batch_status_change)
+        self._batch_toolbar2.batch_urgency_change.connect(self._on_batch_urgency_change)
         self._batch_toolbar2.batch_delete.connect(self._on_batch_delete)
         self._batch_toolbar2.batch_suspend.connect(self._on_batch_suspend)
         self._batch_toolbar2.batch_restart.connect(self._on_batch_restart)
@@ -908,6 +909,7 @@ class MainWindow(QMainWindow):
         self._batch_toolbar.batch_suspend.connect(self._on_batch_suspend)
         self._batch_toolbar.batch_restart.connect(self._on_batch_restart)
         self._batch_toolbar.batch_postpone.connect(self._on_batch_postpone)
+        self._batch_toolbar.batch_urgency_change.connect(self._on_batch_urgency_change)
 
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._on_new_task)
@@ -927,10 +929,13 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_progress_bar'):
             self._progress_bar.reset_to_unclicked()
         _sizes = self._splitter.sizes() if hasattr(self, '_splitter') and self._splitter else None
-        f = self._carousel_filter or TaskFilter()
+        f = self._build_filter_with_sort()
         self._refresh_all_views(f, reset_page=False)
         if _sizes:
             self._splitter.setSizes(_sizes)
+        # Re-select task if triggered by a task update signal (keep current task open)
+        if args and hasattr(args[0], 'id'):
+            self._select_and_load_task(args[0].id)
 
     def _on_tasks_bulk_created(self, count: int, task_ids: list) -> None:
         """Handle multi-task creation: refresh + bold all + move to top + open first."""
@@ -944,10 +949,21 @@ class MainWindow(QMainWindow):
                     break
         self._on_task_selected(self._task_model.tasks[0])
 
+    def _build_filter_with_sort(self) -> TaskFilter:
+        """Build filter with FilterBar's sort as base, overlay scope from carousel/partition."""
+        f = self._filter_bar.build_filter()  # preserves sort + search + status
+        if self._carousel_filter is not None:
+            f.date_from = self._carousel_filter.date_from
+            f.date_to = self._carousel_filter.date_to
+            f.partition_id = self._carousel_filter.partition_id or self._active_partition_id
+        else:
+            f.partition_id = self._active_partition_id
+        return f
+
     def _refresh_all_views(self, filter_: TaskFilter, reset_page: bool = True) -> None:
         if reset_page:
             self._reset_pagination()
-        filter_.partition_id = self._active_partition_id
+        filter_.partition_id = filter_.partition_id or self._active_partition_id
         tasks = self._repository.search(filter_)
         self._total_count = self._repository.count(filter_)
         self._task_model.load_tasks(tasks)
@@ -996,6 +1012,7 @@ class MainWindow(QMainWindow):
         if not hasattr(self, '_batch_task_model'):
             return
         f = TaskFilter()
+        f.sort_by = self._filter_bar.build_filter().sort_by  # inherit main sort
         f.partition_id = self._active_partition_id
         f.search_text = self._batch_search.text().strip()
         # Status
@@ -1140,6 +1157,23 @@ class MainWindow(QMainWindow):
         self._refresh_batch_page()
         self._on_data_changed()
 
+    def _on_batch_urgency_change(self, ids: list[str], urgency: int) -> None:
+        """Handle batch urgency change from toolbar."""
+        self._repository.batch_update_urgency(ids, urgency)
+        if self._current_view == "batch":
+            self._batch_task_model.deselect_all()
+            self._batch_toolbar2.reset_toggle()
+            self._refresh_batch_page()
+        else:
+            self._task_model.deselect_all()
+            self._batch_toolbar.reset_toggle()
+            current = self._edit_panel.current_task()
+            if current and current.id in ids:
+                updated = self._repository.get_by_id(current.id)
+                if updated:
+                    self._edit_panel.load_task(updated)
+        self._on_data_changed()
+
     def _on_batch_delete(self, ids: list[str]) -> None:
         if self._current_view == "edit":
             reply = QMessageBox.question(
@@ -1243,6 +1277,7 @@ class MainWindow(QMainWindow):
         if not pid:
             return
         f = TaskFilter()
+        f.sort_by = self._filter_bar.build_filter().sort_by
         f.partition_id = pid
         f.statuses = {TaskStatus.DONE}
         done_tasks = self._repository.search(f)
@@ -1297,6 +1332,7 @@ class MainWindow(QMainWindow):
         """Export all tasks in current partition to MD or Excel."""
         pid = self._active_partition_id
         f = TaskFilter()
+        f.sort_by = self._filter_bar.build_filter().sort_by
         f.partition_id = pid
         tasks = self._repository.search(f)
         if not tasks:
@@ -1344,7 +1380,7 @@ class MainWindow(QMainWindow):
         self._refresh_all_views(filter_)
 
     def _on_quick_preset(self, preset: str) -> None:
-        f = TaskFilter()
+        f = self._filter_bar.build_filter()  # preserve sort
         if preset == "all":
             pass
         elif preset == "today":
@@ -1390,7 +1426,8 @@ class MainWindow(QMainWindow):
             self._heatmap_widget.highlight_range(f.date_from, f.date_to, preset)
 
     def _on_status_clicked(self, status: TaskStatus) -> None:
-        f = TaskFilter(statuses=[status])
+        f = self._filter_bar.build_filter()
+        f.statuses = [status] if status else None
         if self._carousel_filter:
             f.tags = list(self._carousel_filter.tags)
         self._carousel_filter = f
@@ -1437,7 +1474,7 @@ class MainWindow(QMainWindow):
         self._carousel_filter = None
         self._filter_bar.reset()
         self._page = 0
-        self._refresh_all_views(TaskFilter(), reset_page=True)
+        self._refresh_all_views(self._build_filter_with_sort(), reset_page=True)
         if hasattr(self, '_task_model') and self._task_model.rowCount() > 0:
             self._on_task_selected(self._task_model.tasks[0])
         self._last_activity = dt.datetime.now()
@@ -1462,23 +1499,20 @@ class MainWindow(QMainWindow):
     def _on_page_prev(self) -> None:
         if self._page > 0:
             self._page -= 1
-            f = self._carousel_filter or TaskFilter()
-            self._refresh_all_views(f, reset_page=False)
+            self._refresh_all_views(self._build_filter_with_sort(), reset_page=False)
 
     def _on_page_next(self) -> None:
         total_pages = max(1, (self._total_count + self._page_size - 1) // self._page_size)
         if self._page < total_pages - 1:
             self._page += 1
-            f = self._carousel_filter or TaskFilter()
-            self._refresh_all_views(f, reset_page=False)
+            self._refresh_all_views(self._build_filter_with_sort(), reset_page=False)
 
     def _on_page_size_changed(self, index: int) -> None:
         widget = self.sender()
         if widget:
             self._page_size = widget.itemData(index)
             self._page = 0
-            f = self._carousel_filter or TaskFilter()
-            self._refresh_all_views(f, reset_page=False)
+            self._refresh_all_views(self._build_filter_with_sort(), reset_page=False)
 
     def _reset_pagination(self) -> None:
         self._page = 0
@@ -1560,7 +1594,7 @@ class MainWindow(QMainWindow):
         else:
             self._splitter_stack.setCurrentIndex(0)
         today = date.today()
-        self._carousel_filter = TaskFilter()
+        self._carousel_filter = self._filter_bar.build_filter()
         self._carousel_filter.date_from = today
         self._carousel_filter.date_to = today
         self._page = 0
@@ -1650,6 +1684,9 @@ class MainWindow(QMainWindow):
             self._batch_page = 0
             self._apply_batch_splitter_sizes()
             self._refresh_batch_page()
+
+        # Reset filter bar sort to config default on view switch
+        self._filter_bar.set_sort(self._config.default_sort)
 
     def _load_dashboard_data(self) -> None:
         """Load dashboard stats after view switch (report loads on period click)."""

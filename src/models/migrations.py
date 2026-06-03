@@ -129,6 +129,7 @@ _ALTER_COLUMNS = [
     "ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE partitions ADD COLUMN archive_days INTEGER NOT NULL DEFAULT 9999",
     "ALTER TABLE tasks ADD COLUMN suspended INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tasks ADD COLUMN urgency INTEGER NOT NULL DEFAULT 3",
 ]
 
 # ------------------------------------------------------------------
@@ -251,6 +252,16 @@ def _migrate_5_to_6(conn: sqlite3.Connection) -> None:
         pass
 
 
+def _migrate_6_to_7(conn: sqlite3.Connection) -> None:
+    """Add urgency column to tasks."""
+    try:
+        conn.execute(
+            "ALTER TABLE tasks ADD COLUMN urgency INTEGER NOT NULL DEFAULT 3"
+        )
+    except sqlite3.OperationalError:
+        pass
+
+
 MIGRATIONS: list[tuple[int, int, MigrationStep]] = [
     (0, 1, _migrate_0_to_1),
     (1, 2, _migrate_1_to_2),
@@ -258,4 +269,5 @@ MIGRATIONS: list[tuple[int, int, MigrationStep]] = [
     (3, 4, _migrate_3_to_4),
     (4, 5, _migrate_4_to_5),
     (5, 6, _migrate_5_to_6),
+    (6, 7, _migrate_6_to_7),
 ]

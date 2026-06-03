@@ -21,6 +21,7 @@ class MarkdownTaskFormatter:
             deadline_time=task.deadline_time,
             title=task.title,
             tags=task.tags,
+            urgency=task.urgency,
         )
 
     @staticmethod
@@ -31,6 +32,7 @@ class MarkdownTaskFormatter:
         deadline_time: str | None = None,
         title: str = "",
         tags: list[str] | None = None,
+        urgency: int = 3,
     ) -> str:
         """Low-level formatting from individual fields.
 
@@ -41,12 +43,13 @@ class MarkdownTaskFormatter:
             deadline_time: Deadline time as HH:MM string (or None).
             title: Clean task description (without tags).
             tags: Tag strings without the '#' prefix.
+            urgency: Priority level (0=紧急, 1=重要, 2=关注, 3=普通).
         """
         parts: list[str] = []
 
-        # Checkbox
-        checkbox = "x" if status == TaskStatus.DONE else " "
-        parts.append(f"- [{checkbox}]")
+        # Priority bracket: [***]=urgent, [** ]=high, [*  ]=medium, [   ]=normal
+        stars = '*' * (3 - urgency) if urgency < 3 else '   '
+        parts.append(f"- [{stars:<3}]")
 
         # Status keyword
         parts.append(status.value)

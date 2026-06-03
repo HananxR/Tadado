@@ -46,6 +46,12 @@ class DesignTokens:
     # ── Heatmap ────────────────────────────────────────────────────
     heatmap_empty: str         # cell with no tasks
 
+    # ── Urgency / Priority ─────────────────────────────────────────
+    urgency_urgent: str       # urgency bg: 紧急 (red)
+    urgency_high: str         # urgency bg: 重要 (orange)
+    urgency_medium: str       # urgency bg: 关注 (green)
+    urgency_normal: str       # urgency bg: 普通 (light blue)
+
     # ── Misc ──────────────────────────────────────────────────────
     separator: str            # horizontal rule / divider
     timeline_dot: str         # default timeline dot colour
@@ -109,6 +115,10 @@ LIGHT_TOKENS = DesignTokens(
     separator="#e0ddd6",
     timeline_dot="#f39c12",
     timeline_done="#27ae60",
+    urgency_urgent="#c0392b",
+    urgency_high="#e67e22",
+    urgency_medium="#27ae60",
+    urgency_normal="#aed6f1",
 )
 
 # ── Dark palette ───────────────────────────────────────────────────────────
@@ -136,6 +146,10 @@ DARK_TOKENS = DesignTokens(
     separator="#2f3040",
     timeline_dot="#f39c12",
     timeline_done="#27ae60",
+    urgency_urgent="#e07070",
+    urgency_high="#f0a060",
+    urgency_medium="#2ecc71",
+    urgency_normal="#5b8cbd",
 )
 
 # ── Singleton access ───────────────────────────────────────────────────────

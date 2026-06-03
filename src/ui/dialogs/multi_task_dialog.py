@@ -172,7 +172,7 @@ class MultiTaskDialog(QDialog):
                 deadline_time=dl_time,
                 title=parsed.clean_title,
                 tags=parsed.tags,
-                checkbox_checked=parsed.checkbox_checked,
+                urgency=parsed.urgency,
             )
 
             task = Task(
@@ -181,6 +181,7 @@ class MultiTaskDialog(QDialog):
                 title=parsed.clean_title,
                 status=parsed.status,
                 tags=parsed.tags,
+                urgency=parsed.urgency,
                 scheduled_date=parsed.scheduled_date,
                 deadline_date=dl_date,
                 deadline_time=dl_time,

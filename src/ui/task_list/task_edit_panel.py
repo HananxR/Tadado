@@ -467,6 +467,26 @@ class TaskEditPanel(QWidget):
             )
         self._status_combo.setEnabled(False)
         progress_btn_row.addWidget(self._status_combo)
+        # Urgency dropdown — same style as status combo
+        self._urgency_combo = DropdownWidget()
+        self._urgency_combo.setObjectName("timelineUrgencyCombo")
+        self._urgency_combo.setFixedWidth(90)
+        tk_urg = get_tokens()
+        urgency_items = [
+            ("● 紧急", 0, tk_urg.urgency_urgent),
+            ("● 重要", 1, tk_urg.urgency_high),
+            ("● 关注", 2, tk_urg.urgency_medium),
+            ("● 普通", 3, tk_urg.urgency_normal),
+        ]
+        for label, value, color in urgency_items:
+            self._urgency_combo.addItem(label, value)
+            self._urgency_combo.setItemData(
+                self._urgency_combo.count() - 1,
+                QColor(color),
+                Qt.ItemDataRole.ForegroundRole,
+            )
+        self._urgency_combo.setEnabled(False)
+        progress_btn_row.addWidget(self._urgency_combo)
         self._progress_edit = QLineEdit()
         self._progress_edit.setValidator(QIntValidator(0, 100))
         self._progress_edit.setText("0")
@@ -531,20 +551,9 @@ class TaskEditPanel(QWidget):
     def load_task(self, task: Task) -> None:
         self._current_task = task
         self._original_md = task.raw_md
-        # Build display from structured fields (status shown via badge, always [ ])
-        parts = ["- [ ]"]
-        dl = task.deadline_date or task.scheduled_date
-        if dl:
-            if task.deadline_time:
-                parts.append(f"<{dl.isoformat()} {task.deadline_time}>")
-            else:
-                parts.append(f"<{dl.isoformat()}>")
-        parts.append(task.title)
-        if task.tags:
-            parts.append(" ".join(f"#{t}" for t in task.tags))
-        display_md = " ".join(parts)
+        # Use canonical raw_md directly (includes priority bracket + status + dates)
         self._md_edit.blockSignals(True)
-        self._md_edit.setText(display_md)
+        self._md_edit.setText(task.raw_md)
         self._md_edit.blockSignals(False)
 
         self._banner_active = False
@@ -614,6 +623,8 @@ class TaskEditPanel(QWidget):
         # Update preview labels
         self._progress_edit.setText(str(task.progress))
         self._progress_edit.setEnabled(True)
+        self._urgency_combo.setCurrentIndex(getattr(task, 'urgency', 3))
+        self._urgency_combo.setEnabled(True)
         self._update_preview()
         self._refresh_timeline()
         self._reset_log_editor()
@@ -747,6 +758,8 @@ class TaskEditPanel(QWidget):
         self._log_save_btn.setEnabled(True)
         self._progress_edit.setText("0")
         self._progress_edit.setEnabled(True)
+        self._urgency_combo.setCurrentIndex(3)  # default to 普通
+        self._urgency_combo.setEnabled(True)
         self._created_label.setText(f"创建: {now_str}")
         self._timeline_card.setVisible(False)
 
@@ -871,9 +884,10 @@ class TaskEditPanel(QWidget):
         now = datetime.now()
         now_str = now.strftime("%Y-%m-%d %H:%M")
         template = (
-            f"- [ ]  <{now_str}> 需求分析 #工作\n"
-            f"- [ ]  <{now_str}> 代码开发 #开发\n"
-            f"- [ ]  <{now_str}> 测试验证 #测试"
+            f"- [***]  <{now_str}> 紧急修复 #工作\n"
+            f"- [** ]  <{now_str}> 代码开发 #开发\n"
+            f"- [*  ]  <{now_str}> 文档更新 #测试\n"
+            f"- [   ]  <{now_str}> 随便看看 #杂项"
         )
         self.create_draft()
         self._md_edit.blockSignals(True)
@@ -1213,6 +1227,10 @@ class TaskEditPanel(QWidget):
         # New drafts always start as TODO; combo only affects existing tasks
         task.status = parsed.status if is_draft else (combo_status if combo_status else parsed.status)
         task.tags = parsed.tags
+        # Sync urgency: if Markdown parsed a different value, update combo first
+        if parsed.urgency != self._urgency_combo.currentData():
+            self._urgency_combo.setCurrentIndex(parsed.urgency)
+        task.urgency = self._urgency_combo.currentData()
         task.scheduled_date = parsed.scheduled_date
         task.deadline_date = parsed.deadline_date
         task.deadline_time = parsed.deadline_time
@@ -1348,6 +1366,7 @@ class TaskEditPanel(QWidget):
                 title=parsed.clean_title,
                 status=parsed.status,
                 tags=parsed.tags,
+                urgency=parsed.urgency,
                 scheduled_date=parsed.scheduled_date,
                 deadline_date=parsed.deadline_date or dl_date,
                 deadline_time=parsed.deadline_time or dl_time,
@@ -1535,7 +1554,12 @@ class TaskEditPanel(QWidget):
         self._timeline_log.setVisible(True)
         t = get_tokens()
 
-        def _row(icon: str, color: str, ts: str, content: str, entry_idx: int | None = None) -> str:
+        _URGENCY_DOT_COLORS = {
+            0: t.urgency_urgent, 1: t.urgency_high, 2: t.urgency_medium, 3: t.urgency_normal,
+        }
+
+        def _row(icon: str, color: str, ts: str, content: str,
+                 entry_idx: int | None = None) -> str:
             txt = t.text_primary
             if entry_idx is not None:
                 return (
@@ -1555,14 +1579,17 @@ class TaskEditPanel(QWidget):
                 f'</p>'
             )
 
+        _URGENCY_NAMES = {0: "紧急", 1: "重要", 2: "关注", 3: "普通"}
         rows: list[str] = []
         for i, e in enumerate(reversed(task.activity_log)):
             orig_idx = len(task.activity_log) - 1 - i
             ts = _fmt_ts(e.get("ts", ""), True)
             content = e.get("content", "")
             st_val = e.get("status", "")
+            entry_urgency = e.get("urgency", getattr(task, 'urgency', 3))
+            urgency_name = _URGENCY_NAMES.get(entry_urgency, "普通")
+            urgency_color = _URGENCY_DOT_COLORS.get(entry_urgency, t.text_secondary)
             if not st_val:
-                # Legacy entry: derive status from content or use current
                 if "状态切换:" in content or "状态变更:" in content:
                     m = re.search(r"→\s*(\S+)", content)
                     st_val = m.group(1) if m else task.status.value
@@ -1579,7 +1606,9 @@ class TaskEditPanel(QWidget):
             color = t.timeline_done if is_done else t.timeline_dot
             progress_val = e.get("progress", task.progress)
             rows.append(_row("●", color, ts,
-                              f'<span style="color:{sc};">[{sn}|{progress_val}%]</span> {content}',
+                              f'<span style="color:{sc};">[{sn}|{progress_val}%</span>'
+                              f'<span style="color:{urgency_color};">|{urgency_name}</span>'
+                              f'<span style="color:{sc};">]</span> {content}',
                               entry_idx=None if orig_idx == 0 else orig_idx))
         self._timeline_log.setHtml(f'<div>{"".join(rows)}</div>')
         self._reset_log_editor()
@@ -1653,6 +1682,7 @@ class TaskEditPanel(QWidget):
         raw_status = self._status_combo.currentData()
         task = self._current_task
         old_status = task.status
+        old_urgency = getattr(task, 'urgency', 3)
 
         # OVERDUE lock: cannot change status via progress
         if old_status == TaskStatus.OVERDUE:
@@ -1667,7 +1697,10 @@ class TaskEditPanel(QWidget):
                 return
             entry["content"] = content
             entry["progress"] = int(self._progress_edit.text() or 0)
+            entry["urgency"] = self._urgency_combo.currentData()
             task.progress = int(self._progress_edit.text() or 0)
+            task.urgency = self._urgency_combo.currentData()
+            task.raw_md = self._formatter.format(task)
             task.updated_at = datetime.now()
             self._repository.update(task)
             self._original_md = task.raw_md
@@ -1675,11 +1708,13 @@ class TaskEditPanel(QWidget):
                 self._task_model.update_task(task)
             self._signal_bus.task_updated.emit(task)
             self._log_edit.clear()
+            self._md_edit.setText(task.raw_md)  # sync Markdown editor
+            self._update_preview()
             self._refresh_timeline()
             return
 
         # ---- Appending a new entry ----
-        if not content and new_status == old_status:
+        if not content and new_status == old_status and old_urgency == self._urgency_combo.currentData():
             QMessageBox.warning(
                 self, "内容为空",
                 "请输入进展备注内容后再提交。\n\n"
@@ -1700,13 +1735,29 @@ class TaskEditPanel(QWidget):
             self._progress_edit.setText(str(cur_p))
             task.raw_md = self._formatter.format(task)
         # Record one entry with current status
-        entry_content = content if content else f"状态变更为 {task.status.display_name}"
         task.progress = int(self._progress_edit.text() or 0)
+        task.urgency = self._urgency_combo.currentData()
+        # Detect urgency change — merge into main entry content (single entry)
+        _URGENCY_NAMES = {0: "紧急", 1: "重要", 2: "关注", 3: "普通"}
+        new_urgency = self._urgency_combo.currentData()
+        if old_urgency != new_urgency:
+            task.urgency = new_urgency
+            task.raw_md = self._formatter.format(task)
+            if content:
+                entry_content = content + f"，优先级调整为 {_URGENCY_NAMES.get(new_urgency, '普通')}"
+            elif new_status != old_status:
+                entry_content = f"状态变更为 {task.status.display_name}，优先级调整为 {_URGENCY_NAMES.get(new_urgency, '普通')}"
+            else:
+                entry_content = f"优先级调整为 {_URGENCY_NAMES.get(new_urgency, '普通')}"
+        else:
+            entry_content = content if content else f"状态变更为 {task.status.display_name}"
+
         task.activity_log.append({
             "ts": datetime.now().isoformat(),
             "content": entry_content,
             "status": task.status.value,
             "progress": task.progress,
+            "urgency": task.urgency,
         })
         task.updated_at = datetime.now()
         self._repository.update(task)
@@ -1718,6 +1769,8 @@ class TaskEditPanel(QWidget):
         else:
             self._signal_bus.task_updated.emit(task)
         self._log_edit.clear()
+        self._md_edit.setText(task.raw_md)  # sync Markdown editor
+        self._update_preview()
         self._refresh_timeline()
 
     # ------------------------------------------------------------------

@@ -30,7 +30,7 @@ class TestFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [ ] TODO <2026-05-10> <2026-05-20> 重构认证模块 #backend"
+        assert result == "- [   ] TODO <2026-05-10> <2026-05-20> 重构认证模块 #backend"
 
     def test_minimal_task(self, formatter: MarkdownTaskFormatter) -> None:
         task = Task(
@@ -42,7 +42,7 @@ class TestFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [ ] TODO 买菜"
+        assert result == "- [   ] TODO 买菜"
 
     def test_done_task(self, formatter: MarkdownTaskFormatter) -> None:
         task = Task(
@@ -55,7 +55,7 @@ class TestFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [x] DONE 修bug #urgent"
+        assert result == "- [   ] DONE 修bug #urgent"
 
     def test_no_tags(self, formatter: MarkdownTaskFormatter) -> None:
         task = Task(
@@ -67,7 +67,7 @@ class TestFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [ ] DOING 写周报"
+        assert result == "- [   ] DOING 写周报"
 
 
 class TestRoundTrip:
@@ -111,7 +111,7 @@ class TestOverdueFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [ ] OVERDUE <2026-05-01> 已逾期报告"
+        assert result == "- [   ] OVERDUE <2026-05-01> 已逾期报告"
 
     def test_overdue_round_trip(self, formatter: MarkdownTaskFormatter) -> None:
         from src.services.md_parser import MarkdownTaskParser

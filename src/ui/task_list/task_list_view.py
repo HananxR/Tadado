@@ -140,6 +140,23 @@ class TaskListView(QTableView):
             locked_action = status_menu.addAction("  逾期 (不可更改)")
             locked_action.setEnabled(False)
 
+        # Priority change submenu
+        urgency_menu = menu.addMenu("更改优先级")
+        _URGENCY_LABELS = [
+            (0, "● 紧急"),
+            (1, "● 重要"),
+            (2, "● 关注"),
+            (3, "● 普通"),
+        ]
+        for val, label in _URGENCY_LABELS:
+            ua = urgency_menu.addAction(f"  {label}")
+            ua.setData(val)
+            ua.setCheckable(True)
+            ua.setChecked(val == getattr(task, 'urgency', 3))
+            ua.triggered.connect(
+                lambda checked=False, v=val, t=task: self._on_change_urgency(t, v)
+            )
+
         menu.addSeparator()
         copy_action = menu.addAction("复制 MD(&C)")
 
@@ -224,3 +241,13 @@ class TaskListView(QTableView):
             })
         self._repository.update(task)
         self._signal_bus.task_status_changed.emit(task, old_status)
+
+    def _on_change_urgency(self, task: Task, urgency: int) -> None:
+        """Change task urgency via context menu."""
+        if getattr(task, 'urgency', 3) == urgency:
+            return
+        task.urgency = urgency
+        task.raw_md = self._formatter.format(task)
+        task.updated_at = datetime.now()
+        self._repository.update(task)
+        self._signal_bus.task_updated.emit(task)

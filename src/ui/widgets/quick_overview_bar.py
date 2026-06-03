@@ -227,7 +227,12 @@ class QuickOverviewBar(QWidget):
                         lc = t.success
                 else:
                     lc = t.text_secondary
-                label.setText(f"{item['urgency']}  {item['text']}")
+                # Add explicit priority prefix if set
+                urgency_text = item['urgency']
+                task_urgency = getattr(item['task'], 'urgency', 3)
+                _PRIORITY_PREFIX = {0: "🔴", 1: "🟠", 2: "🔵"}
+                prefix = _PRIORITY_PREFIX.get(task_urgency, "")
+                label.setText(f"{prefix}{urgency_text}  {item['text']}".strip())
                 label.setToolTip(item["text"])
                 label.setStyleSheet(
                     f"QLabel {{ padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; "

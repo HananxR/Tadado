@@ -23,6 +23,7 @@ _TASK_COLUMNS = [
     "progress",
     "activity_yesterday", "activity_today", "activity_last_week", "activity_week", "activity_last_month", "activity_month",
     "suspended",
+    "urgency",
 ]
 
 
@@ -36,6 +37,7 @@ def _row_to_task(row: tuple) -> Task:
         activity_log_json, progress_int,
         ay, at, alw, aw, alm, am,
         suspended_int,
+        urgency_int,
     ) = row
 
     return Task(
@@ -58,6 +60,7 @@ def _row_to_task(row: tuple) -> Task:
         notes=notes,
         activity_log=json.loads(activity_log_json) if activity_log_json else [],
         progress=progress_int if progress_int else 0,
+        urgency=urgency_int if urgency_int is not None else 3,
         activity_yesterday=ay if ay else 0,
         activity_today=at if at else 0,
         activity_last_week=alw if alw else 0,
@@ -98,6 +101,7 @@ def _task_to_row(task: Task) -> tuple:
         task.activity_last_month,
         task.activity_month,
         int(task.suspended),
+        task.urgency,
     )
 
 
@@ -679,6 +683,28 @@ class TaskRepository:
         self.conn.commit()
         return count
 
+    def batch_update_urgency(self, task_ids: list[str], urgency: int) -> int:
+        """Bulk update urgency for multiple tasks, regenerating raw_md."""
+        from ..services.md_formatter import MarkdownTaskFormatter
+        formatter = MarkdownTaskFormatter()
+        now = datetime.now().isoformat()
+        count = 0
+        for task_id in task_ids:
+            task = self.get_by_id(task_id)
+            if task is None:
+                continue
+            task.urgency = urgency
+            task.raw_md = formatter.format(task)
+            task.updated_at = _parse_datetime(now)
+            self.conn.execute(
+                "UPDATE tasks SET urgency=?, raw_md=?, updated_at=? WHERE id=?",
+                (urgency, task.raw_md, now, task_id),
+            )
+            self._update_fts(task)
+            count += 1
+        self.conn.commit()
+        return count
+
     def batch_delete(self, task_ids: list[str]) -> int:
         """Permanently delete multiple tasks and their FTS entries."""
         placeholders = ", ".join("?" for _ in task_ids)
@@ -1002,19 +1028,16 @@ class TaskRepository:
                     + ("ASC" if sc.ascending else "DESC")
                 )
             elif sc.field == "urgency":
-                # "ascending" = most urgent first (score DESC, progress DESC, created ASC)
-                urgency_expr = (
-                    "CASE WHEN status = 'DONE' THEN -9999 "
-                    "WHEN deadline_date IS NULL THEN -9998 "
-                    "ELSE julianday('now') - julianday(deadline_date) END"
-                )
+                # ascending = most urgent first: urgency ASC → deadline_date ASC → created_at ASC
                 if sc.ascending:
-                    clauses.append(f"{urgency_expr} DESC")
-                    clauses.append("progress DESC")
+                    clauses.append("urgency ASC")
+                    clauses.append("CASE WHEN deadline_date IS NULL THEN 1 ELSE 0 END")
+                    clauses.append("deadline_date ASC")
                     clauses.append("created_at ASC")
                 else:
-                    clauses.append(f"{urgency_expr} ASC")
-                    clauses.append("progress ASC")
+                    clauses.append("urgency DESC")
+                    clauses.append("CASE WHEN deadline_date IS NULL THEN 1 ELSE 0 END")
+                    clauses.append("deadline_date DESC")
                     clauses.append("created_at DESC")
             else:
                 direction = "ASC" if sc.ascending else "DESC"
