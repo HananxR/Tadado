@@ -111,23 +111,27 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.save()
                     painter.fillRect(option.rect, bg)
                     painter.restore()
-            # Force red for highlighted task content column
-            # Draw normal cell first (background + grid via super), then overlay red bold
-            opt_nosel = QStyleOptionViewItem(option)
-            opt_nosel.state &= ~QStyle.StateFlag.State_Selected
-            super().paint(painter, opt_nosel, index)
+            # Force red for highlighted task content column — fill bg then draw red bold
             if col == 3:
                 fg = index.data(Qt.ItemDataRole.ForegroundRole)
                 font = index.data(Qt.ItemDataRole.FontRole)
                 if fg is not None and font is not None:
                     painter.save()
+                    # Fill cell background (alternating row color, no selection bg)
+                    row = index.row()
+                    bg = option.palette.alternateBase() if row % 2 == 1 else option.palette.base()
+                    painter.fillRect(option.rect, bg)
                     painter.setPen(QPen(fg))
                     painter.setFont(font)
                     text = index.data(Qt.ItemDataRole.DisplayRole)
-                    painter.drawText(option.rect.adjusted(4, 0, -4, -1),
+                    painter.drawText(option.rect.adjusted(4, 0, -4, 0),
                                      Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
                     painter.restore()
-            return
+                    return
+            # Non-highlighted / non-content columns: normal paint without selection bg
+            opt = QStyleOptionViewItem(option)
+            opt.state &= ~QStyle.StateFlag.State_Selected
+            super().paint(painter, opt, index)
             # Suppress system selection background — red+bold is the sole indicator
             opt = QStyleOptionViewItem(option)
             opt.state &= ~QStyle.StateFlag.State_Selected

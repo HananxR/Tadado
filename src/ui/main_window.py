@@ -1382,6 +1382,8 @@ class MainWindow(QMainWindow):
         self._carousel_filter = f
         self._refresh_all_views(f)
         self._progress_bar.set_synced_period(preset)
+        if hasattr(self, '_task_model') and self._task_model.rowCount() > 0:
+            self._on_task_selected(self._task_model.tasks[0])
         if self._current_view != "edit":
             self._heatmap_widget.highlight_range(f.date_from, f.date_to, preset)
 
