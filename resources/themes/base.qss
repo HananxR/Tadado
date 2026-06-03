@@ -665,10 +665,6 @@ QListWidget#tagList {
 QListWidget#tagList::item { padding: 3px 6px; border-bottom: 1px solid {{border_primary}}; }
 QListWidget#tagList::item:selected { background: {{accent}}; color: {{text_on_accent}}; }
 QListWidget#tagList::item:hover { background: {{bg_tertiary}}; }
-QLabel#tagEmptyLabel {
-    font-size: 11px; color: {{text_disabled}};
-    border: none; background: transparent; padding: 16px;
-}
 QPushButton#tagActionBtn {
     font-size: 10px; padding: 4px 8px;
     border: 1px solid {{border_primary}}; border-radius: 4px;

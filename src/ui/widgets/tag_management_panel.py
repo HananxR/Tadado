@@ -38,6 +38,9 @@ class TagManagementPanel(QWidget):
         self._partition_id: str | None = None
         self._formatter = MarkdownTaskFormatter()
         self._all_tags: list[tuple[str, int]] = []  # full list before search filter
+        self._tag_page = 0
+        self._tag_page_size = 20
+        self._tag_total = 0
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
@@ -82,11 +85,30 @@ class TagManagementPanel(QWidget):
         self._tag_list.customContextMenuRequested.connect(self._on_context_menu)
         container_layout.addWidget(self._tag_list, 1)
 
-        # --- Empty state ---
-        self._empty_label = QLabel("暂无标签")
-        self._empty_label.setObjectName("tagEmptyLabel")
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        container_layout.addWidget(self._empty_label)
+        # --- Pagination bar ---
+        pg_bar = QHBoxLayout()
+        pg_bar.setSpacing(4)
+        pg_bar.setContentsMargins(0, 2, 0, 0)
+
+        self._tag_prev_btn = QPushButton("◀")
+        self._tag_prev_btn.setObjectName("tagActionBtn")
+        self._tag_prev_btn.setFixedWidth(32)
+        self._tag_prev_btn.clicked.connect(self._on_tag_prev)
+        pg_bar.addWidget(self._tag_prev_btn)
+
+        self._tag_next_btn = QPushButton("▶")
+        self._tag_next_btn.setObjectName("tagActionBtn")
+        self._tag_next_btn.setFixedWidth(32)
+        self._tag_next_btn.clicked.connect(self._on_tag_next)
+        pg_bar.addWidget(self._tag_next_btn)
+
+        self._tag_page_label = QLabel("0 / 0")
+        self._tag_page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._tag_page_label.setStyleSheet("font-size: 10px;")
+        pg_bar.addWidget(self._tag_page_label)
+
+        pg_bar.addStretch()
+        container_layout.addLayout(pg_bar)
 
         # --- Button row ---
         btn_row = QHBoxLayout()
@@ -122,6 +144,7 @@ class TagManagementPanel(QWidget):
 
     def refresh(self) -> None:
         """Reload tag list from repository (respects current partition)."""
+        self._tag_page = 0
         self._all_tags = self._repository.get_all_tags_with_counts(self._partition_id)
         self._apply_search()
 
@@ -139,26 +162,32 @@ class TagManagementPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _apply_search(self) -> None:
-        """Filter the tag list by the current search text and rebuild display."""
+        """Filter the tag list by the current search text, paginate, and rebuild display."""
         search = self._search_input.text().strip().lower()
         filtered = self._all_tags
         if search:
             filtered = [(tag, cnt) for tag, cnt in self._all_tags if search in tag.lower()]
 
+        self._tag_total = len(filtered)
+        total_pages = max(1, (self._tag_total + self._tag_page_size - 1) // self._tag_page_size)
+        if self._tag_page >= total_pages:
+            self._tag_page = 0
+
+        start = self._tag_page * self._tag_page_size
+        page_tags = filtered[start:start + self._tag_page_size]
+
         self._tag_list.clear()
         t = get_tokens()
-        for tag, count in filtered:
+        for tag, count in page_tags:
             item = QListWidgetItem()
             item.setText(f"#{tag}({count})")
             item.setData(Qt.ItemDataRole.UserRole, tag)
             item.setForeground(QColor(t.text_primary))
             self._tag_list.addItem(item)
 
-        # Show/hide empty state
-        empty = len(self._all_tags) == 0
-        self._tag_list.setVisible(not empty)
-        self._empty_label.setVisible(empty)
-        self._tag_list.setVisible(not empty)
+        self._tag_page_label.setText(f"第 {self._tag_page + 1}/{total_pages} 页")
+        self._tag_prev_btn.setEnabled(self._tag_page > 0)
+        self._tag_next_btn.setEnabled(self._tag_page < total_pages - 1)
         self._update_button_states()
 
     def _selected_tags(self) -> list[str]:
@@ -180,7 +209,19 @@ class TagManagementPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _on_search_text_changed(self, _text: str) -> None:
+        self._tag_page = 0
         self._search_timer.start()
+
+    def _on_tag_prev(self) -> None:
+        if self._tag_page > 0:
+            self._tag_page -= 1
+            self._apply_search()
+
+    def _on_tag_next(self) -> None:
+        total_pages = max(1, (self._tag_total + self._tag_page_size - 1) // self._tag_page_size)
+        if self._tag_page < total_pages - 1:
+            self._tag_page += 1
+            self._apply_search()
 
     # ------------------------------------------------------------------
     # Rename
