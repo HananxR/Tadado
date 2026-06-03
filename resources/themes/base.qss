@@ -295,7 +295,7 @@ QTableView {
     border: 1px solid {{bg_tertiary}};
     border-radius: 6px;
     gridline-color: transparent;
-    selection-background-color: {{selection_bg}};
+    selection-background-color: transparent;
     selection-color: {{text_primary}};
     font-size: 12px;
     outline: none;
@@ -305,8 +305,7 @@ QTableView::item {
     border-bottom: 1px solid #2a2b38;
 }
 QTableView::item:selected {
-    background-color: {{selection_bg}};
-    
+    background-color: transparent;
 }
 QTableView::item:hover {
     background-color: {{surface_hover}};

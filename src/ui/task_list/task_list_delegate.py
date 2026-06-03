@@ -78,8 +78,6 @@ class TaskListDelegate(QStyledItemDelegate):
             super().paint(painter, option, index)
             return
 
-        is_selected = bool(option.state & QStyle.StateFlag.State_Selected)
-
         # Dim suspended tasks
         if task.suspended:
             painter.save()
@@ -89,33 +87,27 @@ class TaskListDelegate(QStyledItemDelegate):
             return
 
         if col == 6:  # COL_STATUS — custom badge painting
-            if not is_selected:
-                bg = self._urgency_bg_color(task)
-                if bg is not None:
-                    painter.save()
-                    painter.fillRect(option.rect, bg)
-                    painter.restore()
+            bg = self._urgency_bg_color(task)
+            if bg is not None:
+                painter.save()
+                painter.fillRect(option.rect, bg)
+                painter.restore()
             self._paint_status_badge(painter, option, task)
         elif col == 8:  # COL_ARCHIVED — colored text
-            if not is_selected:
-                bg = self._urgency_bg_color(task)
-                if bg is not None:
-                    painter.save()
-                    painter.fillRect(option.rect, bg)
-                    painter.restore()
+            bg = self._urgency_bg_color(task)
+            if bg is not None:
+                painter.save()
+                painter.fillRect(option.rect, bg)
+                painter.restore()
             self._paint_archived(painter, option, task)
         else:
-            if not is_selected:
-                bg = self._urgency_bg_color(task)
-                if bg is not None:
-                    painter.save()
-                    painter.fillRect(option.rect, bg)
-                    painter.restore()
-            # Suppress system selection background
-            opt = QStyleOptionViewItem(option)
-            opt.state &= ~QStyle.StateFlag.State_Selected
-            # Highlighted task: red bold text only, no background change
-            # Urgency bg already drawn above; grid lines drawn by QTableView after delegate
+            # Always draw urgency background
+            bg = self._urgency_bg_color(task)
+            if bg is not None:
+                painter.save()
+                painter.fillRect(option.rect, bg)
+                painter.restore()
+            # Highlighted task content: red bold text only
             if col == 3:
                 fg = index.data(Qt.ItemDataRole.ForegroundRole)
                 font = index.data(Qt.ItemDataRole.FontRole)
@@ -124,12 +116,11 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.setPen(QPen(fg))
                     painter.setFont(font)
                     text = index.data(Qt.ItemDataRole.DisplayRole)
-                    painter.drawText(option.rect.adjusted(4, 1, -4, -1),
+                    painter.drawText(option.rect.adjusted(4, 2, -4, -2),
                                      Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
                     painter.restore()
                     return
-            super().paint(painter, opt, index)
-            # Suppress system selection background — red+bold is the sole indicator
+            # Suppress selection visual, draw normal cell
             opt = QStyleOptionViewItem(option)
             opt.state &= ~QStyle.StateFlag.State_Selected
             super().paint(painter, opt, index)
