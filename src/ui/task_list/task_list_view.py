@@ -43,7 +43,7 @@ class TaskListView(QTableView):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.setAlternatingRowColors(True)
         self.verticalHeader().hide()
-        self.setShowGrid(False)
+        self.setShowGrid(True)
 
         delegate = TaskListDelegate(self)
         self.setItemDelegate(delegate)
