@@ -1427,7 +1427,8 @@ class MainWindow(QMainWindow):
             self._switch_view("edit")
         self._carousel_filter = None
         self._filter_bar.reset()
-        self._on_data_changed()
+        self._page = 0
+        self._refresh_all_views(TaskFilter(), reset_page=True)
         self._last_activity = dt.datetime.now()
 
     def _on_escape(self) -> None:

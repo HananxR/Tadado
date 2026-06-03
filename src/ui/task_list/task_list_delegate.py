@@ -120,7 +120,7 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.setPen(QPen(fg))
                     painter.setFont(font)
                     text = index.data(Qt.ItemDataRole.DisplayRole)
-                    painter.drawText(option.rect.adjusted(4, 0, -4, 0),
+                    painter.drawText(option.rect.adjusted(4, 0, -4, -1),
                                      Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
                     painter.restore()
                     return
