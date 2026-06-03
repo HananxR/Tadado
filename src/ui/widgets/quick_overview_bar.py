@@ -143,6 +143,10 @@ class QuickOverviewBar(QWidget):
         self._scroll_index = 0
         self._render()
 
+    @property
+    def active_preset(self) -> str:
+        return self._active_preset
+
     def activate_preset(self, preset: str) -> None:
         self._active_preset = preset
         for key, btn in self._preset_buttons.items():

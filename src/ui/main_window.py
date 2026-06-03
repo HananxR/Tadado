@@ -1423,12 +1423,19 @@ class MainWindow(QMainWindow):
             self._heatmap_widget.force_refresh()
 
     def _on_go_home(self) -> None:
+        # Always switch to edit view first
         if self._current_view != "edit":
             self._switch_view("edit")
+        # Ensure quick overview is on "today" preset
+        if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
+            self._quick_overview.activate_preset("today")
+        # Reset filters and select first task
         self._carousel_filter = None
         self._filter_bar.reset()
         self._page = 0
         self._refresh_all_views(TaskFilter(), reset_page=True)
+        if hasattr(self, '_task_model') and self._task_model.rowCount() > 0:
+            self._on_task_selected(self._task_model.tasks[0])
         self._last_activity = dt.datetime.now()
 
     def _on_escape(self) -> None:

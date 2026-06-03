@@ -112,6 +112,10 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.fillRect(option.rect, bg)
                     painter.restore()
             # Force red for highlighted task content column
+            # Draw normal cell first (background + grid via super), then overlay red bold
+            opt_nosel = QStyleOptionViewItem(option)
+            opt_nosel.state &= ~QStyle.StateFlag.State_Selected
+            super().paint(painter, opt_nosel, index)
             if col == 3:
                 fg = index.data(Qt.ItemDataRole.ForegroundRole)
                 font = index.data(Qt.ItemDataRole.FontRole)
@@ -123,7 +127,7 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.drawText(option.rect.adjusted(4, 0, -4, -1),
                                      Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
                     painter.restore()
-                    return
+            return
             # Suppress system selection background — red+bold is the sole indicator
             opt = QStyleOptionViewItem(option)
             opt.state &= ~QStyle.StateFlag.State_Selected
