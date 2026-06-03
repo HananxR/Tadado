@@ -107,7 +107,12 @@ class TaskListDelegate(QStyledItemDelegate):
                 painter.save()
                 painter.fillRect(option.rect, bg)
                 painter.restore()
-            # Highlighted task content: red bold text only
+            # Suppress selection visual
+            opt = QStyleOptionViewItem(option)
+            opt.state &= ~QStyle.StateFlag.State_Selected
+            # Draw normal cell first (background + grid lines via Qt)
+            super().paint(painter, opt, index)
+            # Overlay red bold text for highlighted task — text only
             if col == 3:
                 fg = index.data(Qt.ItemDataRole.ForegroundRole)
                 font = index.data(Qt.ItemDataRole.FontRole)
@@ -119,11 +124,6 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.drawText(option.rect.adjusted(4, 2, -4, -2),
                                      Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
                     painter.restore()
-                    return
-            # Suppress selection visual, draw normal cell
-            opt = QStyleOptionViewItem(option)
-            opt.state &= ~QStyle.StateFlag.State_Selected
-            super().paint(painter, opt, index)
 
     def editorEvent(self, event, model, option, index) -> bool:
         """Handle checkbox toggle on mouse click."""
