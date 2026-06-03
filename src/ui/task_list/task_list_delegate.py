@@ -111,22 +111,20 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.save()
                     painter.fillRect(option.rect, bg)
                     painter.restore()
-            # Suppress system selection background — urgency bg already drawn above
+            # Suppress system selection background
             opt = QStyleOptionViewItem(option)
             opt.state &= ~QStyle.StateFlag.State_Selected
-            # Force red bold text for highlighted task — text only, no background change
+            # Highlighted task: red bold text only, no background change
+            # Urgency bg already drawn above; grid lines drawn by QTableView after delegate
             if col == 3:
                 fg = index.data(Qt.ItemDataRole.ForegroundRole)
                 font = index.data(Qt.ItemDataRole.FontRole)
                 if fg is not None and font is not None:
-                    # Delegate normal paint to draw cell bg + content at default style
-                    super().paint(painter, opt, index)
-                    # Overlay red bold text on top — urgency bg preserved underneath
                     painter.save()
                     painter.setPen(QPen(fg))
                     painter.setFont(font)
                     text = index.data(Qt.ItemDataRole.DisplayRole)
-                    painter.drawText(option.rect.adjusted(4, 0, -4, 0),
+                    painter.drawText(option.rect.adjusted(4, 1, -4, -1),
                                      Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
                     painter.restore()
                     return
