@@ -119,6 +119,13 @@ class ActivityContentView(QWidget):
         self._plain_text = ""
         self._cached_data = {}
 
+    def refresh_theme(self) -> None:
+        """Re-render with current theme tokens after theme change."""
+        if self._cached_data:
+            self._render_from_cache()
+        else:
+            self.show_hint()
+
     def show_tag_activity(self, tag: str, tasks: list[Task],
                           date_from: date | None, date_to: date | None) -> None:
         t = get_tokens()

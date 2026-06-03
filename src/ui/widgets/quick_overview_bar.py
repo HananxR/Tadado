@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -79,7 +79,7 @@ class QuickOverviewBar(QWidget):
             btn.setMinimumWidth(48)
             btn.setCheckable(True)
             btn.setChecked(key == self._active_preset)
-            btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 5px; }")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.clicked.connect(lambda checked=False, k=key: self.activate_preset(k))
             self._preset_buttons[key] = btn
             main_layout.addWidget(btn)
@@ -88,12 +88,9 @@ class QuickOverviewBar(QWidget):
         self._carousel_labels: list[QLabel] = []
         for i in range(self._group_size):
             label = QLabel()
+            label.setObjectName("carouselItem")
             label.setCursor(Qt.CursorShape.PointingHandCursor)
             label.setWordWrap(False)
-            label.setStyleSheet(
-                "QLabel { padding: 2px 8px; border-radius: 4px; "
-                "font-size: 10px; background: rgba(128,128,128,0.08); }"
-            )
             label.mousePressEvent = self._make_click_handler(i)
             self._carousel_labels.append(label)
             main_layout.addWidget(label, 1)
@@ -117,27 +114,12 @@ class QuickOverviewBar(QWidget):
         self._items = []
         for task, score in scored[: self._max_items]:
             urgency_text = self._urgency_label(task, score)
-            # Color: overdue=red, today=amber, future=green, none=grey
-            t2 = get_tokens()
-            if task.status == TaskStatus.DONE:
-                lc = t2.success
-            elif task.deadline_date or task.scheduled_date:
-                dl = task.deadline_date or task.scheduled_date
-                days = (date.today() - dl).days if dl else 0
-                if days > 0:
-                    lc = t2.danger
-                elif days == 0:
-                    lc = "#f39c12"  # amber — functional color, same in both themes
-                else:
-                    lc = t2.success
-            else:
-                lc = t2.text_secondary
             self._items.append({
                 "task_id": task.id,
                 "text": f"{task.title}",
                 "color": task.status.display_color,
                 "urgency": urgency_text,
-                "label_color": lc,
+                "task": task,  # keep task ref for dynamic color in _render()
             })
 
         self._scroll_index = 0
@@ -225,20 +207,41 @@ class QuickOverviewBar(QWidget):
     # ------------------------------------------------------------------
 
     def _render(self) -> None:
+        t = get_tokens()
         for i, label in enumerate(self._carousel_labels):
             idx = self._scroll_index + i
             if idx < len(self._items):
                 item = self._items[idx]
+                task = item["task"]
+                # Compute urgency color dynamically (always current theme)
+                if task.status == TaskStatus.DONE:
+                    lc = t.success
+                elif task.deadline_date or task.scheduled_date:
+                    dl = task.deadline_date or task.scheduled_date
+                    days = (date.today() - dl).days if dl else 0
+                    if days > 0:
+                        lc = t.danger
+                    elif days == 0:
+                        lc = t.timeline_dot  # theme-aware amber
+                    else:
+                        lc = t.success
+                else:
+                    lc = t.text_secondary
                 label.setText(f"{item['urgency']}  {item['text']}")
                 label.setToolTip(item["text"])
                 label.setStyleSheet(
                     f"QLabel {{ padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; "
-                    f"color: {item.get('label_color', get_tokens().text_primary)}; "
-                    f"background: rgba(128,128,128,0.12); }}"
+                    f"color: {lc}; background: {t.bg_tertiary}; }}"
                 )
                 label.setVisible(True)
             else:
                 label.setVisible(False)
+
+    def changeEvent(self, event: QEvent) -> None:
+        """Re-render on style/palette change to pick up new theme tokens."""
+        if event.type() == QEvent.Type.StyleChange:
+            self._render()
+        super().changeEvent(event)
 
     def _scroll(self) -> None:
         if not self._items:

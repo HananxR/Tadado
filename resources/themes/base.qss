@@ -676,6 +676,22 @@ QLabel#carouselLabel {
     background: {{overlay_8}}; color: {{text_secondary}};
 }
 
+/* ── Period Button (ProgressDynamicsBar) ─────────────────────── */
+QPushButton#periodBtn {
+    font-size: 10px; padding: 2px 5px;
+    color: {{text_secondary}}; background: transparent;
+    border: 1px solid {{border_primary}};
+}
+QPushButton#periodBtn:checked {
+    background: {{accent}}; color: {{text_on_accent}}; font-weight: bold; border: none;
+}
+QPushButton#periodBtn:disabled {
+    color: {{text_disabled}}; border-color: transparent;
+}
+QPushButton#periodBtn:hover:!checked {
+    background: {{hover_bg}}; border-color: {{text_muted}};
+}
+
 /* ── Overview Preset Buttons ─────────────────────────────────── */
 QPushButton#overviewPresetBtn {
     font-size: 10px; padding: 2px 5px;

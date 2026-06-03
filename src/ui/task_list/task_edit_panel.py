@@ -908,6 +908,25 @@ class TaskEditPanel(QWidget):
         # Refresh timeline display if a task is loaded
         if self._current_task is not None and self._current_task.id != "":
             self._refresh_timeline()
+        # Re-apply progress input QSS with current theme tokens
+        self._progress_edit.setStyleSheet(
+            f"QLineEdit {{ color: {t.text_primary}; background: {t.bg_secondary}; "
+            f"border: 1px solid {t.border_primary}; border-radius: 3px; }}"
+            f"QLineEdit:disabled {{ color: {t.text_secondary}; background: transparent; }}"
+        )
+        # Re-apply log editor QSS (respect entry-editing vs default state)
+        if self._selected_entry is not None:
+            self._log_edit.setStyleSheet(
+                f"QTextEdit {{ border: 2px solid {t.timeline_dot}; "
+                f"background: {t.bg_tertiary}; }}"
+            )
+        elif self._log_edit.styleSheet():
+            # Only refresh if a widget-level QSS is active (not reset to empty)
+            self._log_edit.setStyleSheet(
+                f"QTextEdit {{ font-size: 12px; color: {t.text_primary}; "
+                f"background: {t.bg_secondary}; border: 1px solid {t.border_primary}; "
+                f"border-radius: 4px; padding: 4px; }}"
+            )
 
     # ------------------------------------------------------------------
     # Markdown editing

@@ -117,6 +117,19 @@ class TimelineDetailPanel(QWidget):
         </body></html>"""
         self._detail_view.setHtml(html)
 
+    def refresh_theme(self) -> None:
+        """Re-render with current theme tokens after theme change."""
+        if self._current_task is not None:
+            entries = self._current_entries
+            start_p = entries[0].get("progress", self._current_task.progress) if entries else self._current_task.progress
+            end_p = entries[-1].get("progress", self._current_task.progress) if entries else self._current_task.progress
+            delta = end_p - start_p if entries else 0
+            self._detail_view.setHtml(
+                self._render_html(self._current_task, start_p, end_p, delta, entries)
+            )
+        else:
+            self.show_hint()
+
     # ------------------------------------------------------------------
     # HTML rendering
     # ------------------------------------------------------------------

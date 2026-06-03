@@ -141,6 +141,8 @@ class MainWindow(QMainWindow):
 
     def refresh_theme(self) -> None:
         self._edit_panel.refresh_theme()
+        if hasattr(self, '_analysis_content_view'):
+            self._analysis_content_view.refresh_theme()
 
     # ------------------------------------------------------------------
     # Custom title bar — VS Code style: icon + menu + window buttons
