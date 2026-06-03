@@ -292,8 +292,7 @@ QTextEdit#mdEditor {
 QTableView {
     background-color: {{bg_secondary}};
     alternate-background-color: {{surface_alt}};
-    border: 1px solid {{bg_tertiary}};
-    border-radius: 6px;
+    border: none;
     gridline-color: transparent;
     selection-background-color: transparent;
     selection-color: {{text_primary}};
@@ -308,7 +307,6 @@ QTableView::item:selected {
     background-color: transparent;
 }
 QTableView::item:hover {
-    background-color: {{surface_hover}};
 }
 QHeaderView::section {
     font-size: 11px;
