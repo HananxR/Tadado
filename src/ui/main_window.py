@@ -939,6 +939,8 @@ class MainWindow(QMainWindow):
 
     def _on_tasks_bulk_created(self, count: int, task_ids: list) -> None:
         """Handle multi-task creation: refresh + bold all + move to top + open first."""
+        if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
+            self._quick_overview.activate_preset("today")
         self._on_data_changed()
         self._task_model.set_bold_tasks(set(task_ids))
         # Move all batch tasks to top (reverse preserves order)
@@ -974,6 +976,9 @@ class MainWindow(QMainWindow):
         self._progress_bar.set_items(tasks)
 
     def _on_task_created(self, task) -> None:
+        # Switch quick overview to "today" so new task is immediately visible
+        if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
+            self._quick_overview.activate_preset("today")
         self._filter_bar.reset()
         self._on_data_changed()
         # Move new task to top
