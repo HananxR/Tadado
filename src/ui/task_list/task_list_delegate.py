@@ -111,16 +111,18 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.save()
                     painter.fillRect(option.rect, bg)
                     painter.restore()
-            # Force red for highlighted task content column — fill bg then draw red bold
+            # Suppress system selection background — urgency bg already drawn above
+            opt = QStyleOptionViewItem(option)
+            opt.state &= ~QStyle.StateFlag.State_Selected
+            # Force red bold text for highlighted task — text only, no background change
             if col == 3:
                 fg = index.data(Qt.ItemDataRole.ForegroundRole)
                 font = index.data(Qt.ItemDataRole.FontRole)
                 if fg is not None and font is not None:
+                    # Delegate normal paint to draw cell bg + content at default style
+                    super().paint(painter, opt, index)
+                    # Overlay red bold text on top — urgency bg preserved underneath
                     painter.save()
-                    # Fill cell background (alternating row color, no selection bg)
-                    row = index.row()
-                    bg = option.palette.alternateBase() if row % 2 == 1 else option.palette.base()
-                    painter.fillRect(option.rect, bg)
                     painter.setPen(QPen(fg))
                     painter.setFont(font)
                     text = index.data(Qt.ItemDataRole.DisplayRole)
@@ -128,9 +130,6 @@ class TaskListDelegate(QStyledItemDelegate):
                                      Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
                     painter.restore()
                     return
-            # Non-highlighted / non-content columns: normal paint without selection bg
-            opt = QStyleOptionViewItem(option)
-            opt.state &= ~QStyle.StateFlag.State_Selected
             super().paint(painter, opt, index)
             # Suppress system selection background — red+bold is the sole indicator
             opt = QStyleOptionViewItem(option)
