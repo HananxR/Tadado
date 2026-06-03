@@ -707,6 +707,7 @@ class MainWindow(QMainWindow):
         self._batch_task_view.setSelectionBehavior(
             self._batch_task_view.SelectionBehavior.SelectRows
         )
+        self._batch_task_view.task_selected.connect(self._on_batch_task_selected)
         self._batch_task_model.dataChanged.connect(self._on_batch_model_data_changed)
         batch_layout.addWidget(self._batch_task_view, 1)
 
@@ -1103,6 +1104,10 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_batch_task_model'):
             self._batch_task_model.set_checked_ids(set())
 
+    def _on_batch_task_selected(self, task: Task) -> None:
+        """Highlight the selected task in the batch view."""
+        self._batch_task_model.set_highlighted_task(task.id)
+
     def _on_batch_model_data_changed(self) -> None:
         if hasattr(self, '_batch_toolbar2'):
             ids = self._batch_task_model.checked_task_ids()
@@ -1395,7 +1400,6 @@ class MainWindow(QMainWindow):
 
     def _on_task_selected(self, task: Task) -> None:
         self._task_model.set_highlighted_task(task.id)
-        self._task_model.set_bold_tasks(set())  # clear batch bold
         self._edit_panel.load_task(task)
         self._last_activity = dt.datetime.now()
 

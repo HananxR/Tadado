@@ -111,7 +111,7 @@ class TaskListDelegate(QStyledItemDelegate):
                     painter.save()
                     painter.fillRect(option.rect, bg)
                     painter.restore()
-            # Force red for highlighted task content
+            # Force red for highlighted task content column
             if col == 3:
                 fg = index.data(Qt.ItemDataRole.ForegroundRole)
                 font = index.data(Qt.ItemDataRole.FontRole)
@@ -124,7 +124,10 @@ class TaskListDelegate(QStyledItemDelegate):
                                      Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
                     painter.restore()
                     return
-            super().paint(painter, option, index)
+            # Suppress system selection background — red+bold is the sole indicator
+            opt = QStyleOptionViewItem(option)
+            opt.state &= ~QStyle.StateFlag.State_Selected
+            super().paint(painter, opt, index)
 
     def editorEvent(self, event, model, option, index) -> bool:
         """Handle checkbox toggle on mouse click."""
