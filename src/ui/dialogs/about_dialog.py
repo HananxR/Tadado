@@ -61,11 +61,13 @@ class AboutDialog(QDialog):
         name.setStyleSheet("font-size: 20px; font-weight: bold;")
         layout.addWidget(name)
 
-        version = QLabel("v0.1.0")
+        version = QLabel("v1.0.0")
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
 
-        desc = QLabel("基于 Markdown 的 Windows 桌面任务管理工具")
+        desc = QLabel(
+            "基于 Markdown 的 Windows 桌面任务管理工具\n开源、离线、高效的个人任务管理"
+        )
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc.setWordWrap(True)
         layout.addWidget(desc)
@@ -96,12 +98,21 @@ class AboutDialog(QDialog):
         layout.addWidget(sep2)
 
         # --- Footer ---
+        repo = QLabel(
+            '<a href="https://github.com/HananxR/DeskTodoSeq"'
+            ' style="color: palette(link);">'
+            "github.com/HananxR/DeskTodoSeq</a>"
+        )
+        repo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        repo.setOpenExternalLinks(True)
+        repo.setStyleSheet("padding-top: 2px;")
+        layout.addWidget(repo)
+
         license_label = QLabel("MIT License")
         license_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        license_label.setStyleSheet("padding-top: 2px;")
         layout.addWidget(license_label)
 
-        author = QLabel("作者：Hanxy")
+        author = QLabel("Hanxy <hanxy8413@gmail.com>")
         author.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(author)
 
