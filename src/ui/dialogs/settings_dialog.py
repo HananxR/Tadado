@@ -26,7 +26,8 @@ from PySide6.QtWidgets import (
 
 from ...config import AppConfig
 from ...models.repository import TaskRepository
-from ...utils.design_tokens import get_tokens
+from ...utils.design_tokens import get_surface_color, get_tokens, is_dark
+from ...utils.win32_theme import set_window_dark_mode, is_dark_mode_supported
 from ...utils.signal_bus import get_signal_bus
 from ..widgets.dropdown import DropdownWidget
 
@@ -393,6 +394,12 @@ class SettingsDialog(QDialog):
             self._repository.delete_partition(p["id"])
             self._populate_partition_table()
             get_signal_bus().partitions_changed.emit()
+
+    def showEvent(self, event) -> None:
+        """Apply dark title bar on Windows when the current theme is dark."""
+        super().showEvent(event)
+        if is_dark_mode_supported() and is_dark():
+            set_window_dark_mode(self, True, caption_color=get_surface_color())
 
     # ------------------------------------------------------------------
     # Validation

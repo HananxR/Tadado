@@ -230,6 +230,15 @@ def is_dark() -> bool:
     return get_tokens() is DARK_TOKENS
 
 
+def get_surface_color() -> str:
+    """Return the raised-surface background color for the current theme.
+
+    This is the background used by the custom title bar / menu bar area,
+    useful for matching native window decorations.
+    """
+    return "#24253a" if is_dark() else "#ffffff"
+
+
 def init_tokens(config: object) -> None:
     """Bind token resolution to an AppConfig instance.
 

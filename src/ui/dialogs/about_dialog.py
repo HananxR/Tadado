@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -12,6 +13,9 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from ...utils.design_tokens import get_surface_color, is_dark
+from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 
 
 _FEATURES = [
@@ -111,3 +115,9 @@ class AboutDialog(QDialog):
         buttons.rejected.connect(self.reject)
         buttons.accepted.connect(self.accept)
         outer.addWidget(buttons)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        """Apply dark title bar on Windows when the current theme is dark."""
+        super().showEvent(event)
+        if is_dark_mode_supported() and is_dark():
+            set_window_dark_mode(self, True, caption_color=get_surface_color())
