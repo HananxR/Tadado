@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QMenuBar,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -93,6 +94,7 @@ class MainWindow(QMainWindow):
         self._setup_shortcuts()
         self._setup_midnight_timer()
         self._load_partitions()
+        self._apply_splitter_sizes()
 
     # ------------------------------------------------------------------
     # Adaptive sizing
@@ -373,9 +375,12 @@ class MainWindow(QMainWindow):
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setHandleWidth(2)
         self._splitter.setChildrenCollapsible(False)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 1)
 
         # === Left panel: BatchToolbar + TaskListView + Pagination ===
         left_panel = QWidget()
+        left_panel.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 2, 0)
         left_layout.setSpacing(2)
@@ -430,6 +435,7 @@ class MainWindow(QMainWindow):
 
         # === Right panel: ProgressDynamicsBar + TaskEditPanel ===
         right_panel = QWidget()
+        right_panel.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(2, 0, 0, 0)
         right_layout.setSpacing(2)
@@ -1762,6 +1768,7 @@ class MainWindow(QMainWindow):
             self._stack.setCurrentIndex(0)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.show()
+            self._apply_splitter_sizes()
         elif view == "dashboard":
             self._stack.setCurrentIndex(1)
             self._heatmap_widget.nav_bar.setVisible(True)
