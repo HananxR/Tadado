@@ -401,6 +401,7 @@ class MainWindow(QMainWindow):
         self._task_view.batch_suspend.connect(self._on_batch_suspend)
         self._task_view.batch_restart.connect(self._on_batch_restart)
         self._task_view.batch_postpone.connect(self._on_batch_postpone)
+        self._task_view.batch_move_partition.connect(self._on_batch_move_partition)
         left_layout.addWidget(self._task_view, 1)
 
         # Pagination
@@ -737,6 +738,7 @@ class MainWindow(QMainWindow):
         self._batch_task_view.batch_suspend.connect(self._on_batch_suspend)
         self._batch_task_view.batch_restart.connect(self._on_batch_restart)
         self._batch_task_view.batch_postpone.connect(self._on_batch_postpone)
+        self._batch_task_view.batch_move_partition.connect(self._on_batch_move_partition)
         self._batch_task_model.dataChanged.connect(self._on_batch_model_data_changed)
         batch_layout.addWidget(self._batch_task_view, 1)
 
@@ -896,9 +898,13 @@ class MainWindow(QMainWindow):
             self._last_activity = dt.datetime.now()
             return
         elapsed = (dt.datetime.now() - self._last_activity).total_seconds() / 60.0
-        if elapsed >= mins / 2.0 and self._partition_passwords.get(self._active_partition_id or "", ""):
-            self._idle_timer.stop()
-            self._lock_partition(self._active_partition_id)
+        if elapsed >= mins / 2.0:
+            pid = self._active_partition_id or ""
+            has_pw, stored = self._repository.check_partition_password(pid)
+            if has_pw:
+                self._partition_passwords[pid] = stored  # 从 DB 恢复密码
+                self._idle_timer.stop()
+                self._lock_partition(pid)
 
     # ------------------------------------------------------------------
     # Signals
@@ -1326,6 +1332,100 @@ class MainWindow(QMainWindow):
             self._on_data_changed()
             self._flash_status(f"已延后 {len(ids)} 个任务")
 
+    def _on_batch_move_partition(self, ids: list[str]) -> None:
+        """Move selected tasks to a different partition with password checks."""
+        from PySide6.QtWidgets import QDialog, QListWidget, QListWidgetItem, QVBoxLayout, QDialogButtonBox
+
+        from_partition_id = self._active_partition_id or ""
+        name_map = self._repository.get_partition_name_map()
+        from_name = name_map.get(from_partition_id, "未分配") if from_partition_id else "未分配"
+
+        # ── Step 1: Verify FROM partition password ──
+        from_pw = self._partition_passwords.get(from_partition_id, "")
+        if from_pw:
+            pw, ok = QInputDialog.getText(
+                self, "验证来源分区密码",
+                f"来源分区「{from_name}」设有密码，请输入密码：",
+                QLineEdit.EchoMode.Password,
+            )
+            if not ok:
+                return
+            if pw.strip() != from_pw:
+                QMessageBox.warning(self, "错误", "密码不正确")
+                return
+
+        # ── Step 2: Select target partition ──
+        partitions = self._repository.get_all_partitions()
+        # Exclude current partition
+        other = [p for p in partitions if p["id"] != from_partition_id]
+        if not other:
+            QMessageBox.information(self, "提示", "没有其他分区可供迁移。")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("选择目标分区")
+        dlg.resize(320, 240)
+        layout = QVBoxLayout(dlg)
+
+        list_widget = QListWidget(dlg)
+        for p in other:
+            pid, pname = p["id"], p["name"]
+            has_pw = bool(self._partition_passwords.get(pid, ""))
+            label = f"{'🔒 ' if has_pw else ''}{pname}"
+            item = QListWidgetItem(label)
+            item.setData(Qt.ItemDataRole.UserRole, pid)
+            list_widget.addItem(item)
+        list_widget.setCurrentRow(0)
+        layout.addWidget(list_widget)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dlg
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        selected = list_widget.currentItem()
+        if selected is None:
+            return
+        to_partition_id = selected.data(Qt.ItemDataRole.UserRole)
+        to_name = name_map.get(to_partition_id, to_partition_id)
+
+        # ── Step 3: Verify TO partition password ──
+        to_pw = self._partition_passwords.get(to_partition_id, "")
+        if to_pw:
+            pw, ok = QInputDialog.getText(
+                self, "验证目标分区密码",
+                f"目标分区「{to_name}」设有密码，请输入密码：",
+                QLineEdit.EchoMode.Password,
+            )
+            if not ok:
+                return
+            if pw.strip() != to_pw:
+                QMessageBox.warning(self, "错误", "密码不正确")
+                return
+
+        # ── Step 4: Confirmation ──
+        reply = QMessageBox.question(
+            self, "确认操作",
+            f"确认将 {len(ids)} 个任务从「{from_name}」移动到「{to_name}」？",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+        )
+        if reply != QMessageBox.StandardButton.Ok:
+            return
+
+        # ── Step 5: Execute ──
+        moved = self._repository.batch_move_partition(ids, to_partition_id)
+        if self._current_view == "edit":
+            self._task_model.set_checked_ids(set())
+            self._batch_toolbar.reset_toggle()
+        else:
+            self._refresh_batch_page()
+        self._on_data_changed()
+        self._flash_status(f"已将 {moved} 个任务移动至「{to_name}」")
+
     def _hide_confirm(self) -> None:
         self._confirm_bar.setVisible(False)
         self._batch_pending_action = {}
@@ -1658,7 +1758,11 @@ class MainWindow(QMainWindow):
         current_pid = self._active_partition_id or ""
         for p in partitions:
             pid, pname = p["id"], p["name"]
-            locked = "🔒 " if self._partition_passwords.get(pid, "") else ""
+            db_pw = p.get("password", "")
+            if db_pw:
+                locked = "🔓 " if self._partition_passwords.get(pid, "") == "" else "🔒 "
+            else:
+                locked = ""
             check = "✓ " if pid == current_pid else "  "
             action = self._status_partition_menu.addAction(
                 f"{check}{locked}{pname}",
@@ -1679,11 +1783,22 @@ class MainWindow(QMainWindow):
         pid = self._active_partition_id or ""
         name_map = self._repository.get_partition_name_map()
         pname = name_map.get(pid, "")
-        locked = "🔒" if self._partition_passwords.get(pid, "") else ""
+        has_pw, _ = self._repository.check_partition_password(pid) if pid else (False, "")
+        if has_pw:
+            locked = "🔓" if self._partition_passwords.get(pid, "") == "" else "🔒"
+        else:
+            locked = ""
         txt = f"📁 {locked}{pname}" if pname else "📁 切换分区"
         self._status_partition_btn.setText(txt)
 
     def _activate_partition(self, pid: str) -> None:
+        # 切换分区时立即恢复上一分区的密码（使其回归锁定状态）
+        prev = self._active_partition_id
+        if prev and prev != pid:
+            has_pw, stored = self._repository.check_partition_password(prev)
+            if has_pw:
+                self._partition_passwords[prev] = stored
+
         self._active_partition_id = pid or ""
         self._config.set("general", "last_partition_id", value=self._active_partition_id)
         self._config.save()
@@ -1738,9 +1853,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "错误", "密码不正确")
 
     def _lock_partition(self, target_id: str) -> None:
-        pw = self._partition_passwords.get(target_id, "")
-        if pw:
+        has_pw, stored = self._repository.check_partition_password(target_id)
+        if has_pw:
+            self._partition_passwords[target_id] = stored
             self._splitter_stack.setCurrentIndex(1)
+            self._update_partition_status_btn()
 
     def _find_first_unlocked_partition(self) -> str | None:
         parts = self._repository.get_all_partitions()
@@ -2099,6 +2216,7 @@ class MainWindow(QMainWindow):
     def _on_settings(self) -> None:
         dlg = SettingsDialog(self._config, self._repository, self)
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
+            self._load_partitions()  # 同步分区密码、auto_lock 等 DB → 内存
             self._signal_bus.config_changed.emit()
 
     def _on_about(self) -> None:

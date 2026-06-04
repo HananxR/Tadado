@@ -850,6 +850,36 @@ class TaskRepository:
         self.refresh_overdue_status()
         return count
 
+    def batch_move_partition(self, task_ids: list[str], to_partition_id: str) -> int:
+        """Move multiple tasks to a different partition, recording activity_log."""
+        now = datetime.now().isoformat()
+        name_map = self.get_partition_name_map()
+        to_name = name_map.get(to_partition_id, to_partition_id)
+        count = 0
+
+        for task_id in task_ids:
+            task = self.get_by_id(task_id)
+            if task is None:
+                continue
+
+            old_pid = task.partition_id or ""
+            old_name = name_map.get(old_pid, "未分配") if old_pid else "未分配"
+            entry = {
+                "ts": now,
+                "content": f"[批量操作] 调整分区: {old_name} -> {to_name}",
+                "status": task.status.value,
+                "progress": task.progress,
+            }
+            log = list(task.activity_log) + [entry]
+            self.conn.execute(
+                "UPDATE tasks SET partition_id=?, activity_log=?, updated_at=? WHERE id=?",
+                (to_partition_id, json.dumps(log, ensure_ascii=False), now, task_id),
+            )
+            count += 1
+
+        self.conn.commit()
+        return count
+
     def count_by_status(self, task_ids: list[str]) -> dict[str, int]:
         """Return status distribution for a specific set of tasks."""
         if not task_ids:

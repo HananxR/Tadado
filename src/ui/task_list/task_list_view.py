@@ -33,6 +33,7 @@ class TaskListView(QTableView):
     batch_suspend = Signal(list)                # list[task_id]
     batch_restart = Signal(list)                # list[task_id]
     batch_postpone = Signal(list, int)          # list[task_id], days
+    batch_move_partition = Signal(list)         # list[task_id]
 
     def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -169,6 +170,8 @@ class TaskListView(QTableView):
                 f"+{days}天", lambda d=days, t=task: self._emit_batch_postpone(t, d)
             )
 
+        menu.addAction("调整分区", lambda t=task: self._emit_batch_move_partition(t))
+
         menu.addSeparator()
 
         # ── 终端操作（危险度递增）──
@@ -205,6 +208,10 @@ class TaskListView(QTableView):
     def _emit_batch_postpone(self, task: Task, days: int) -> None:
         ids = self._collect_target_ids(task)
         self.batch_postpone.emit(ids, days)
+
+    def _emit_batch_move_partition(self, task: Task) -> None:
+        ids = self._collect_target_ids(task)
+        self.batch_move_partition.emit(ids)
 
     # ------------------------------------------------------------------
     # Slots
