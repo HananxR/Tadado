@@ -389,6 +389,13 @@ class MainWindow(QMainWindow):
         self._task_view.setColumnHidden(COL_ARCHIVED, True)  # 归档列仅管理视图可见
         self._task_view.task_selected.connect(self._on_view_task_selected)
         self._task_view.detail_requested.connect(self._on_detail_requested)
+        # Batch operations from right-click menu
+        self._task_view.batch_status_change.connect(self._on_batch_status_change)
+        self._task_view.batch_urgency_change.connect(self._on_batch_urgency_change)
+        self._task_view.batch_delete.connect(self._on_batch_delete)
+        self._task_view.batch_suspend.connect(self._on_batch_suspend)
+        self._task_view.batch_restart.connect(self._on_batch_restart)
+        self._task_view.batch_postpone.connect(self._on_batch_postpone)
         left_layout.addWidget(self._task_view, 1)
 
         # Pagination
@@ -705,12 +712,6 @@ class MainWindow(QMainWindow):
 
         # Operation toolbar
         self._batch_toolbar2 = BatchToolbar()
-        self._batch_toolbar2.batch_status_change.connect(self._on_batch_status_change)
-        self._batch_toolbar2.batch_urgency_change.connect(self._on_batch_urgency_change)
-        self._batch_toolbar2.batch_delete.connect(self._on_batch_delete)
-        self._batch_toolbar2.batch_suspend.connect(self._on_batch_suspend)
-        self._batch_toolbar2.batch_restart.connect(self._on_batch_restart)
-        self._batch_toolbar2.batch_postpone.connect(self._on_batch_postpone)
         self._batch_toolbar2.select_all_requested.connect(self._on_batch_select_all)
         self._batch_toolbar2.deselect_all_requested.connect(self._on_batch_deselect_all)
         self._batch_toolbar2.export_requested.connect(self._on_batch_export)
@@ -724,6 +725,12 @@ class MainWindow(QMainWindow):
             self._batch_task_view.SelectionBehavior.SelectRows
         )
         self._batch_task_view.task_selected.connect(self._on_batch_task_selected)
+        self._batch_task_view.batch_status_change.connect(self._on_batch_status_change)
+        self._batch_task_view.batch_urgency_change.connect(self._on_batch_urgency_change)
+        self._batch_task_view.batch_delete.connect(self._on_batch_delete)
+        self._batch_task_view.batch_suspend.connect(self._on_batch_suspend)
+        self._batch_task_view.batch_restart.connect(self._on_batch_restart)
+        self._batch_task_view.batch_postpone.connect(self._on_batch_postpone)
         self._batch_task_model.dataChanged.connect(self._on_batch_model_data_changed)
         batch_layout.addWidget(self._batch_task_view, 1)
 
@@ -922,12 +929,7 @@ class MainWindow(QMainWindow):
 
         self._batch_toolbar.select_all_requested.connect(self._on_edit_select_all)
         self._batch_toolbar.deselect_all_requested.connect(self._on_edit_deselect_all)
-        self._batch_toolbar.batch_status_change.connect(self._on_batch_status_change)
-        self._batch_toolbar.batch_delete.connect(self._on_batch_delete)
-        self._batch_toolbar.batch_suspend.connect(self._on_batch_suspend)
-        self._batch_toolbar.batch_restart.connect(self._on_batch_restart)
-        self._batch_toolbar.batch_postpone.connect(self._on_batch_postpone)
-        self._batch_toolbar.batch_urgency_change.connect(self._on_batch_urgency_change)
+        self._batch_toolbar.export_requested.connect(self._on_batch_export)
 
     def _setup_shortcuts(self) -> None:
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self._on_new_task)
@@ -1181,8 +1183,10 @@ class MainWindow(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Ok:
                 self._repository.batch_update_status(ids, status)
+                self._task_model.set_checked_ids(set())
                 self._on_data_changed()
                 self._batch_toolbar.reset_toggle()
+                self._flash_status(f"已更改 {len(ids)} 个任务状态")
         else:
             self._confirm_label.setText(f"确认更改 {len(ids)} 个任务的状态？")
             self._confirm_bar.setVisible(True)
@@ -1196,6 +1200,7 @@ class MainWindow(QMainWindow):
         self._hide_confirm()
         self._refresh_batch_page()
         self._on_data_changed()
+        self._flash_status(f"已更改 {len(action['ids'])} 个任务状态")
 
     def _on_batch_urgency_change(self, ids: list[str], urgency: int) -> None:
         """Handle batch urgency change from toolbar."""
@@ -1205,7 +1210,7 @@ class MainWindow(QMainWindow):
             self._batch_toolbar2.reset_toggle()
             self._refresh_batch_page()
         else:
-            self._task_model.deselect_all()
+            self._task_model.set_checked_ids(set())
             self._batch_toolbar.reset_toggle()
             current = self._edit_panel.current_task()
             if current and current.id in ids:
@@ -1213,6 +1218,7 @@ class MainWindow(QMainWindow):
                 if updated:
                     self._edit_panel.load_task(updated)
         self._on_data_changed()
+        self._flash_status(f"已更改 {len(ids)} 个任务优先级")
 
     def _on_batch_delete(self, ids: list[str]) -> None:
         if self._current_view == "edit":
@@ -1223,8 +1229,10 @@ class MainWindow(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Ok:
                 self._repository.batch_delete(ids)
+                self._task_model.set_checked_ids(set())
                 self._on_data_changed()
                 self._batch_toolbar.reset_toggle()
+                self._flash_status(f"已删除 {len(ids)} 个任务")
         else:
             self._confirm_label.setText(f"⚠ 确认删除 {len(ids)} 个任务？此操作不可撤销。")
             self._confirm_bar.setVisible(True)
@@ -1238,6 +1246,7 @@ class MainWindow(QMainWindow):
         self._hide_confirm()
         self._refresh_batch_page()
         self._on_data_changed()
+        self._flash_status(f"已删除 {len(action['ids'])} 个任务")
 
     def _on_batch_suspend(self, ids: list[str]) -> None:
         if self._current_view == "edit":
@@ -1248,8 +1257,10 @@ class MainWindow(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Ok:
                 self._repository.batch_suspend(ids)
+                self._task_model.set_checked_ids(set())
                 self._on_data_changed()
                 self._batch_toolbar.reset_toggle()
+                self._flash_status(f"已中止 {len(ids)} 个任务")
         else:
             self._confirm_label.setText(f"确认中止 {len(ids)} 个任务？")
             self._confirm_bar.setVisible(True)
@@ -1263,6 +1274,7 @@ class MainWindow(QMainWindow):
         self._hide_confirm()
         self._refresh_batch_page()
         self._on_data_changed()
+        self._flash_status(f"已中止 {len(action['ids'])} 个任务")
 
     def _on_batch_restart(self, ids: list[str]) -> None:
         if self._current_view == "edit":
@@ -1273,8 +1285,10 @@ class MainWindow(QMainWindow):
             )
             if reply == QMessageBox.StandardButton.Ok:
                 self._repository.batch_restart(ids)
+                self._task_model.set_checked_ids(set())
                 self._on_data_changed()
                 self._batch_toolbar.reset_toggle()
+                self._flash_status(f"已重启 {len(ids)} 个任务")
         else:
             self._confirm_label.setText(f"确认重启 {len(ids)} 个任务？")
             self._confirm_bar.setVisible(True)
@@ -1288,6 +1302,7 @@ class MainWindow(QMainWindow):
         self._hide_confirm()
         self._refresh_batch_page()
         self._on_data_changed()
+        self._flash_status(f"已重启 {len(action['ids'])} 个任务")
 
     def _on_batch_postpone(self, ids: list[str], days: int) -> None:
         reply = QMessageBox.question(
@@ -1298,10 +1313,12 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Ok:
             self._repository.batch_postpone(ids, days)
             if self._current_view == "edit":
+                self._task_model.set_checked_ids(set())
                 self._batch_toolbar.reset_toggle()
             else:
                 self._refresh_batch_page()
             self._on_data_changed()
+            self._flash_status(f"已延后 {len(ids)} 个任务")
 
     def _hide_confirm(self) -> None:
         self._confirm_bar.setVisible(False)

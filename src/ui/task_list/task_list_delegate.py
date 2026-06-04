@@ -63,8 +63,9 @@ class TaskListDelegate(QStyledItemDelegate):
             super().paint(painter, option, index)
             return
 
-        # Dim suspended tasks
+        # Dim suspended tasks — keep urgency background visible
         if task.suspended:
+            self._draw_urgency_bg(painter, option, task)
             painter.save()
             painter.setOpacity(0.45)
             super().paint(painter, option, index)
@@ -78,12 +79,13 @@ class TaskListDelegate(QStyledItemDelegate):
             self._paint_status_badge(painter, option, task)
         elif col == 8:  # COL_ARCHIVED — colored text
             self._paint_archived(painter, option, task)
-        elif col == 3:  # COL_CONTENT — red bold text for highlighted task
+        elif col == 3:  # COL_CONTENT — red/bold for highlighted or batch-bold tasks
             fg = index.data(Qt.ItemDataRole.ForegroundRole)
             font = index.data(Qt.ItemDataRole.FontRole)
-            if fg is not None and font is not None:
+            if font is not None:
                 painter.save()
-                painter.setPen(QPen(fg))
+                if fg is not None:
+                    painter.setPen(QPen(fg))
                 painter.setFont(font)
                 text = index.data(Qt.ItemDataRole.DisplayRole)
                 painter.drawText(option.rect.adjusted(4, 1, -4, -1),

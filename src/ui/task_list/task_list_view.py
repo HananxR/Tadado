@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from PySide6.QtCore import QPoint, Qt, Signal
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QApplication,
     QHeaderView,
     QMenu,
-    QMessageBox,
     QTableView,
 )
 
@@ -30,6 +25,14 @@ class TaskListView(QTableView):
 
     task_selected = Signal(Task)
     detail_requested = Signal(Task)
+
+    # Batch operation signals (emitted from right-click menu)
+    batch_status_change = Signal(list, object)  # list[task_id], TaskStatus
+    batch_urgency_change = Signal(list, int)    # list[task_id], urgency
+    batch_delete = Signal(list)                 # list[task_id]
+    batch_suspend = Signal(list)                # list[task_id]
+    batch_restart = Signal(list)                # list[task_id]
+    batch_postpone = Signal(list, int)          # list[task_id], days
 
     def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -112,6 +115,19 @@ class TaskListView(QTableView):
     # Context menu
     # ------------------------------------------------------------------
 
+    def _collect_target_ids(self, task: Task) -> list[str]:
+        """Return target IDs: checked > row selection > clicked single."""
+        model = self.model()
+        if model is not None and hasattr(model, 'checked_task_ids'):
+            checked = set(model.checked_task_ids())
+            if task.id in checked and len(checked) > 1:
+                return list(checked)
+        # Fall back to row selection (Ctrl/Shift+Click multi-select)
+        row_ids = self.selected_task_ids()
+        if len(row_ids) > 1:
+            return row_ids
+        return [task.id]
+
     def _show_context_menu(self, pos: QPoint) -> None:
         index = self.indexAt(pos)
         if not index.isValid():
@@ -122,54 +138,73 @@ class TaskListView(QTableView):
 
         menu = QMenu(self)
 
-        edit_action = menu.addAction("编辑(&E)")
-        detail_action = menu.addAction("详情(&V)")
-        delete_action = menu.addAction("删除(&D)")
-        menu.addSeparator()
-
+        # ── 修改类操作 ──
         status_menu = menu.addMenu("更改状态")
         for s in (TaskStatus.TODO, TaskStatus.DOING, TaskStatus.DONE):
             action = status_menu.addAction(f"  {s.display_name}")
-            action.setData(s)
             action.setCheckable(True)
             action.setChecked(s == task.status)
             action.triggered.connect(
-                lambda checked=False, st=s, t=task: self._on_change_status(t, st)
+                lambda checked=False, st=s, t=task: self._emit_batch_status(t, st)
             )
         if task.status == TaskStatus.OVERDUE:
             locked_action = status_menu.addAction("  逾期 (不可更改)")
             locked_action.setEnabled(False)
 
-        # Priority change submenu
         urgency_menu = menu.addMenu("更改优先级")
         _URGENCY_LABELS = [
-            (0, "● 紧急"),
-            (1, "● 重要"),
-            (2, "● 关注"),
-            (3, "● 普通"),
+            (0, "● 紧急"), (1, "● 重要"), (2, "● 关注"), (3, "● 普通"),
         ]
         for val, label in _URGENCY_LABELS:
             ua = urgency_menu.addAction(f"  {label}")
-            ua.setData(val)
             ua.setCheckable(True)
             ua.setChecked(val == getattr(task, 'urgency', 3))
             ua.triggered.connect(
-                lambda checked=False, v=val, t=task: self._on_change_urgency(t, v)
+                lambda checked=False, v=val, t=task: self._emit_batch_urgency(t, v)
+            )
+
+        postpone_menu = menu.addMenu("延后处理")
+        for days in [1, 2, 5, 7, 10]:
+            postpone_menu.addAction(
+                f"+{days}天", lambda d=days, t=task: self._emit_batch_postpone(t, d)
             )
 
         menu.addSeparator()
-        copy_action = menu.addAction("复制 MD(&C)")
 
-        action = menu.exec(self.viewport().mapToGlobal(pos))
+        # ── 终端操作（危险度递增）──
+        menu.addAction("中止", lambda t=task: self._emit_batch_suspend(t))
+        menu.addAction("重启", lambda t=task: self._emit_batch_restart(t))
+        menu.addAction("删除", lambda t=task: self._emit_batch_delete(t))
 
-        if action == edit_action:
-            self._on_edit_task(task)
-        elif action == detail_action:
-            self._on_detail_task(task)
-        elif action == delete_action:
-            self._on_delete_task(task)
-        elif action == copy_action:
-            QApplication.clipboard().setText(task.raw_md)
+        menu.exec(self.viewport().mapToGlobal(pos))
+
+    # ------------------------------------------------------------------
+    # Batch action emitters (collect IDs → emit signal)
+    # ------------------------------------------------------------------
+
+    def _emit_batch_status(self, task: Task, status: TaskStatus) -> None:
+        ids = self._collect_target_ids(task)
+        self.batch_status_change.emit(ids, status)
+
+    def _emit_batch_urgency(self, task: Task, urgency: int) -> None:
+        ids = self._collect_target_ids(task)
+        self.batch_urgency_change.emit(ids, urgency)
+
+    def _emit_batch_delete(self, task: Task) -> None:
+        ids = self._collect_target_ids(task)
+        self.batch_delete.emit(ids)
+
+    def _emit_batch_suspend(self, task: Task) -> None:
+        ids = self._collect_target_ids(task)
+        self.batch_suspend.emit(ids)
+
+    def _emit_batch_restart(self, task: Task) -> None:
+        ids = self._collect_target_ids(task)
+        self.batch_restart.emit(ids)
+
+    def _emit_batch_postpone(self, task: Task, days: int) -> None:
+        ids = self._collect_target_ids(task)
+        self.batch_postpone.emit(ids, days)
 
     # ------------------------------------------------------------------
     # Slots
@@ -197,57 +232,3 @@ class TaskListView(QTableView):
         dialog = TaskDialog(self._repository, task=task, parent=self)
         if dialog.exec() == TaskDialog.DialogCode.Accepted:
             pass
-
-    def _on_detail_task(self, task: Task) -> None:
-        from ..dialogs.timeline_detail_dialog import TimelineDetailDialog
-        dlg = TimelineDetailDialog(task, self._repository, parent=self)
-        dlg.exec()
-
-    def _on_delete_task(self, task: Task) -> None:
-        result = QMessageBox.question(
-            self,
-            "确认删除",
-            f'确定要删除任务 "{task.title}" 吗？',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if result == QMessageBox.StandardButton.Yes:
-            self._repository.delete(task.id)
-            self._signal_bus.task_deleted.emit(task.id)
-
-    def _on_change_status(self, task: Task, new_status: TaskStatus) -> None:
-        # OVERDUE is locked — cannot be manually changed
-        if task.status == TaskStatus.OVERDUE:
-            return
-        old_status = task.status
-        if old_status == new_status:
-            return
-        task.status = new_status
-        if new_status == TaskStatus.DONE:
-            task.completed_at = task.deadline_date or datetime.now()
-        task.raw_md = self._formatter.format(task)
-        task.updated_at = datetime.now()
-        # Record in activity log
-        if new_status == TaskStatus.DONE:
-            task.activity_log.append({
-                "ts": task.completed_at.isoformat() if task.completed_at else datetime.now().isoformat(),
-                "content": f"任务完成 ✓ 截止: {task.deadline_date.isoformat()}" if task.deadline_date else "任务完成 ✓",
-                "status": new_status.value,
-            })
-        else:
-            task.activity_log.append({
-                "ts": datetime.now().isoformat(),
-                "content": f"状态变更: {old_status.display_name} → {new_status.display_name}",
-                "status": new_status.value,
-            })
-        self._repository.update(task)
-        self._signal_bus.task_status_changed.emit(task, old_status)
-
-    def _on_change_urgency(self, task: Task, urgency: int) -> None:
-        """Change task urgency via context menu."""
-        if getattr(task, 'urgency', 3) == urgency:
-            return
-        task.urgency = urgency
-        task.raw_md = self._formatter.format(task)
-        task.updated_at = datetime.now()
-        self._repository.update(task)
-        self._signal_bus.task_updated.emit(task)
