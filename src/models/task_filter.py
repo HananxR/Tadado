@@ -33,6 +33,7 @@ class TaskFilter:
     show_archived: bool = False
     show_suspended: bool = True  # always show, use visual dimming instead
     suspended_only: bool = False
+    urgencies: Optional[set[int]] = None  # None = all, {0,1,2,3} for specific levels
     sort_by: list[SortCriterion] = field(
         default_factory=lambda: [SortCriterion("deadline", ascending=True)]
     )

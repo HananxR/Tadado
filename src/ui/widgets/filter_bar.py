@@ -48,6 +48,16 @@ class FilterBar(QWidget):
         self._search.textChanged.connect(lambda: self._debounce.start())
         layout.addWidget(self._search, 2)
 
+        # Priority combo — compact fixed width (longest item "全部优先级" ≈ 4 chars)
+        self._priority = DropdownWidget()
+        self._priority.setObjectName("priorityFilter")
+        self._priority.addItem("优先级", None)
+        _URGENCY_LABELS = [(0, "● 紧急"), (1, "● 重要"), (2, "● 关注"), (3, "● 普通")]
+        for val, label in _URGENCY_LABELS:
+            self._priority.addItem(label, val)
+        self._priority.currentIndexChanged.connect(self._on_filter_changed)
+        layout.addWidget(self._priority)
+
         # Status combo — compact fixed width (longest item "进行中" ≈ 3 chars)
         self._status = DropdownWidget()
         self._status.setObjectName("statusFilter")
@@ -83,6 +93,10 @@ class FilterBar(QWidget):
         if status_data is not None:
             f.statuses = {status_data}
 
+        priority_data = self._priority.currentData()
+        if priority_data is not None:
+            f.urgencies = {priority_data}
+
         sort_label = self._sort.currentText()
         field = self._SORT_MAP.get(sort_label, "deadline")
         ascending = field != "created"  # creation time: newest first
@@ -92,6 +106,7 @@ class FilterBar(QWidget):
 
     def reset(self) -> None:
         self._search.clear()
+        self._priority.setCurrentIndex(0)
         self._status.setCurrentIndex(0)
 
     def set_sort(self, field: str) -> None:
@@ -107,13 +122,13 @@ class FilterBar(QWidget):
         self.reset()
         if preset == "today":
             self._status.setCurrentIndex(0)
-            pass  # priority removed
+            self._priority.setCurrentIndex(0)
         elif preset == "week":
             self._status.setCurrentIndex(0)
-            pass  # priority removed
+            self._priority.setCurrentIndex(0)
         elif preset == "overdue":
             self._status.setCurrentIndex(0)
-            pass  # priority removed
+            self._priority.setCurrentIndex(0)
 
     # ------------------------------------------------------------------
     # Internal

@@ -239,6 +239,12 @@ class TaskRepository:
             where_clauses.append(f"status IN ({placeholders})")
             params.extend(status_values)
 
+        # Urgency filter
+        if filter_.urgencies is not None:
+            placeholders = ", ".join("?" for _ in filter_.urgencies)
+            where_clauses.append(f"urgency IN ({placeholders})")
+            params.extend(filter_.urgencies)
+
         # Tag filter (each tag must be present)
         if filter_.tags:
             for tag in filter_.tags:
@@ -323,6 +329,10 @@ class TaskRepository:
             placeholders = ", ".join("?" for _ in status_values)
             where_clauses.append(f"status IN ({placeholders})")
             params.extend(status_values)
+        if filter_.urgencies is not None:
+            placeholders = ", ".join("?" for _ in filter_.urgencies)
+            where_clauses.append(f"urgency IN ({placeholders})")
+            params.extend(filter_.urgencies)
         if filter_.partition_id is not None:
             where_clauses.append("partition_id = ?")
             params.append(filter_.partition_id)

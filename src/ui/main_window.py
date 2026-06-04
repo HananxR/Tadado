@@ -620,6 +620,15 @@ class MainWindow(QMainWindow):
         self._batch_status_combo.currentIndexChanged.connect(self._on_batch_filter_changed)
         sidebar_layout.addWidget(self._batch_status_combo)
 
+        _add_label("优先级")
+        self._batch_priority_combo = DropdownWidget()
+        self._batch_priority_combo.addItem("全部", None)
+        _BATCH_URGENCY_LABELS = [(0, "● 紧急"), (1, "● 重要"), (2, "● 关注"), (3, "● 普通")]
+        for val, label in _BATCH_URGENCY_LABELS:
+            self._batch_priority_combo.addItem(label, val)
+        self._batch_priority_combo.currentIndexChanged.connect(self._on_batch_filter_changed)
+        sidebar_layout.addWidget(self._batch_priority_combo)
+
         _add_label("创建时间")
         self._batch_created_from = _add_date_row("起始日期")
         self._batch_created_to = _add_date_row("结束日期")
@@ -950,9 +959,12 @@ class MainWindow(QMainWindow):
         self._new_task_sort_active = True
         self._setting_sort_internally = True
         self._filter_bar.set_sort("created")
+        self._filter_bar.reset()  # 在 guard 内，在 activate_preset 之前清空过滤
         self._setting_sort_internally = False
         if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
+            self._new_task_sort_active = False  # 临时清除，避免 _on_quick_preset 恢复默认排序
             self._quick_overview.activate_preset("today")
+            self._new_task_sort_active = True
         self._on_data_changed()
         self._on_task_selected(self._task_model.tasks[0])
 
@@ -988,10 +1000,12 @@ class MainWindow(QMainWindow):
         self._new_task_sort_active = True
         self._setting_sort_internally = True
         self._filter_bar.set_sort("created")
+        self._filter_bar.reset()  # 在 guard 内，在 activate_preset 之前清空过滤
         self._setting_sort_internally = False
         if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
+            self._new_task_sort_active = False  # 临时清除，避免 _on_quick_preset 恢复默认排序
             self._quick_overview.activate_preset("today")
-        self._filter_bar.reset()
+            self._new_task_sort_active = True
         self._on_data_changed()
         self._on_task_selected(task)
 
@@ -1024,6 +1038,10 @@ class MainWindow(QMainWindow):
         sd = self._batch_status_combo.currentData()
         if sd is not None:
             f.statuses = {sd}
+        # Priority / Urgency
+        pd = self._batch_priority_combo.currentData()
+        if pd is not None:
+            f.urgencies = {pd}
         # Created time
         f.created_from = self._read_date_edit('_batch_created_from')
         f.created_to = self._read_date_edit('_batch_created_to')
