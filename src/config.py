@@ -17,7 +17,6 @@ DEFAULT_CONFIG: dict = {
         "default_partition": "",
         "hidden_partitions": [],
         "last_partition_id": "",
-        "auto_lock_minutes": 10,
         "page_size": 20,
         "default_sort": "urgency",
     },

@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from ...config import AppConfig
 from ...models.repository import TaskRepository
+from ...utils.design_tokens import get_tokens
 from ...utils.signal_bus import get_signal_bus
 from ..widgets.dropdown import DropdownWidget
 
@@ -87,18 +88,8 @@ class SettingsDialog(QDialog):
                 break
         self._minimize_cb = QCheckBox("最小化到托盘")
         self._minimize_cb.setChecked(self._config.minimize_to_tray)
-        self._lock_combo = DropdownWidget()
-        self._lock_combo.setFixedWidth(80)
-        for v in (1, 5, 10, 30, 60):
-            self._lock_combo.addItem(str(v), v)
-        cur_lock = self._config.get("general", "auto_lock_minutes", default=10)
-        idx = next((i for i in range(self._lock_combo.count())
-                     if self._lock_combo.itemData(i) == cur_lock), -1)
-        if idx >= 0:
-            self._lock_combo.setCurrentIndex(idx)
         layout.addLayout(_hrow(QLabel("主题:"), self._theme_combo,
-                                self._minimize_cb,
-                                QLabel("自动锁定(分钟):"), self._lock_combo))
+                                self._minimize_cb))
 
         # ── 任务列表 ──
         layout.addWidget(QLabel("<b>任务列表</b>"))
@@ -159,17 +150,25 @@ class SettingsDialog(QDialog):
         header_row.addWidget(add_btn)
         layout.addLayout(header_row)
 
-        self._partition_table = QTableWidget(0, 5)
+        self._partition_table = QTableWidget(0, 7)
         self._partition_table.setHorizontalHeaderLabels(
-            ["名称", "默认分区", "可见", "自动归档", "归档阈值(天)"]
+            ["名称", "默认分区", "可见", "自动归档", "归档阈值(天)", "自动锁定(分)", "密码"]
         )
         hh = self._partition_table.horizontalHeader()
-        for c in (0, 1, 2, 3):
+        # 名称: stretch; rest: fixed
+        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        hh.resizeSection(1, 80)
+        hh.resizeSection(2, 60)
+        hh.resizeSection(3, 80)
+        hh.resizeSection(4, 100)
+        hh.resizeSection(5, 100)
+        hh.resizeSection(6, 60)
+        for c in (1, 2, 3, 4, 5, 6):
             hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
-            hh.resizeSection(c, 110)
-        hh.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self._partition_table.verticalHeader().hide()
         self._partition_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._partition_table.setAlternatingRowColors(True)
+        self._partition_table.setShowGrid(True)
         self._partition_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._partition_table.customContextMenuRequested.connect(self._on_table_context_menu)
         layout.addWidget(self._partition_table, stretch=1)
@@ -243,6 +242,27 @@ class SettingsDialog(QDialog):
             days_edit.setMinimumWidth(60)
             self._partition_table.setCellWidget(row, 4, days_edit)
 
+            # 5: 自动锁定(分)
+            lock_edit = QLineEdit(str(p.get("auto_lock_minutes", 3)))
+            lock_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lock_edit.setMinimumWidth(60)
+            self._partition_table.setCellWidget(row, 5, lock_edit)
+
+            # 6: 密码 — 🔒/🔓 按钮，主题色适配
+            tokens = get_tokens()
+            has_pwd = bool(p.get("password", ""))
+            pwd_btn = QPushButton("🔒" if has_pwd else "🔓")
+            pwd_btn.setFlat(True)
+            pwd_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            color = tokens.accent if has_pwd else tokens.text_secondary
+            pwd_btn.setStyleSheet(
+                f"QPushButton {{ font-size: 14px; color: {color}; border: none; background: transparent; }}"
+            )
+            pwd_btn.clicked.connect(
+                lambda checked=False, pid=pid: self._on_set_partition_password(pid)
+            )
+            self._partition_table.setCellWidget(row, 6, _wrap_center(pwd_btn))
+
         self._partition_table.verticalHeader().setDefaultSectionSize(40)
         n = max(1, self._partition_table.rowCount())
         h = self._partition_table.horizontalHeader().height() + n * 40 + 4
@@ -276,6 +296,8 @@ class SettingsDialog(QDialog):
         act_default = menu.addAction("设为默认分区")
         menu.addSeparator()
         act_rename = menu.addAction("重命名")
+        act_password = menu.addAction("设置密码")
+        menu.addSeparator()
         act_delete = menu.addAction("删除")
         action = menu.exec(self._partition_table.viewport().mapToGlobal(pos))
         if action == act_default:
@@ -286,6 +308,8 @@ class SettingsDialog(QDialog):
                     def_cb.setChecked(True)
         elif action == act_rename:
             self._on_rename_row(row)
+        elif action == act_password:
+            self._on_set_partition_password(p["id"])
         elif action == act_delete:
             self._on_delete_single_partition(p["id"])
 
@@ -384,7 +408,6 @@ class SettingsDialog(QDialog):
 
     def _on_accept(self) -> None:
         self._config.set("general", "minimize_to_tray", value=self._minimize_cb.isChecked())
-        self._config.set("general", "auto_lock_minutes", value=self._lock_combo.currentData())
         self._config.set("general", "page_size", value=self._page_size_combo.currentData())
         self._config.set("general", "default_sort", value=self._default_sort_combo.currentData())
         self._config.set("display", "theme", value=self._theme_combo.currentData())
@@ -425,6 +448,13 @@ class SettingsDialog(QDialog):
                 except ValueError:
                     days = 9999
                 self._repository.update_partition_archive_days(pid, days)
+            lock_w = self._partition_table.cellWidget(r, 5)
+            if lock_w:
+                try:
+                    lock_mins = max(0, int(lock_w.text().strip()))
+                except ValueError:
+                    lock_mins = 3
+                self._repository.update_partition_auto_lock(pid, lock_mins)
         self._config.set("general", "hidden_partitions", value=hidden)
         motd_cfg = {}
         for key, edit in self._motd_edits.items():

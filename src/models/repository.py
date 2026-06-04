@@ -470,11 +470,11 @@ class TaskRepository:
     def get_all_partitions(self) -> list[dict]:
         """Return all partitions ordered by sort_order."""
         rows = self.conn.execute(
-            "SELECT id, name, sort_order, password, archive_days, archive_enabled, created_at FROM partitions ORDER BY sort_order"
+            "SELECT id, name, sort_order, password, archive_days, archive_enabled, auto_lock_minutes, created_at FROM partitions ORDER BY sort_order"
         ).fetchall()
         return [
             {"id": r[0], "name": r[1], "sort_order": r[2], "password": r[3],
-             "archive_days": r[4], "archive_enabled": r[5], "created_at": r[6]}
+             "archive_days": r[4], "archive_enabled": r[5], "auto_lock_minutes": r[6], "created_at": r[7]}
             for r in rows
         ]
 
@@ -508,6 +508,14 @@ class TaskRepository:
         self.conn.execute(
             "UPDATE partitions SET archive_enabled = ? WHERE id = ?",
             (enabled, partition_id),
+        )
+        self.conn.commit()
+
+    def update_partition_auto_lock(self, partition_id: str, minutes: int) -> None:
+        """Set the auto-lock timeout (minutes) for a partition."""
+        self.conn.execute(
+            "UPDATE partitions SET auto_lock_minutes = ? WHERE id = ?",
+            (minutes, partition_id),
         )
         self.conn.commit()
 

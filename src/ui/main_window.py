@@ -72,6 +72,7 @@ class MainWindow(QMainWindow):
         self._carousel_filter: TaskFilter | None = None
         self._active_partition_id: str | None = None
         self._partition_passwords: dict[str, str] = {}
+        self._partition_auto_lock: dict[str, int] = {}
         self._page: int = 0
         self._page_size: int = config.get("general", "page_size", default=20)
         self._total_count: int = 0
@@ -873,7 +874,7 @@ class MainWindow(QMainWindow):
         self._last_activity: dt.datetime | None = None
 
     def _check_idle_lock(self) -> None:
-        mins = self._config.get("general", "auto_lock_minutes", default=10)
+        mins = self._partition_auto_lock.get(self._active_partition_id or "", 3)
         if not mins or mins <= 0:
             return
         if self._splitter_stack.currentIndex() == 1:
@@ -882,7 +883,7 @@ class MainWindow(QMainWindow):
             self._last_activity = dt.datetime.now()
             return
         elapsed = (dt.datetime.now() - self._last_activity).total_seconds() / 60.0
-        if elapsed >= mins / 2.0 and self._partition_passwords.get(self._active_partition_id, ""):
+        if elapsed >= mins / 2.0 and self._partition_passwords.get(self._active_partition_id or "", ""):
             self._idle_timer.stop()
             self._lock_partition(self._active_partition_id)
 
@@ -1615,16 +1616,29 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _load_partitions(self) -> None:
+        self._in_load_partitions = True
         partitions = self._repository.get_all_partitions()
+        # 同步密码 + auto_lock 到内存
+        for p in partitions:
+            pid = p["id"]
+            db_pw = p.get("password", "")
+            if db_pw:
+                if pid not in self._partition_passwords:
+                    self._partition_passwords[pid] = db_pw
+                elif self._partition_passwords[pid]:
+                    self._partition_passwords[pid] = db_pw
+            else:
+                self._partition_passwords.pop(pid, None)
+            self._partition_auto_lock[pid] = p.get("auto_lock_minutes", 3)
         self._status_partition_menu.clear()
         name_map = self._repository.get_partition_name_map()
         current_pid = self._active_partition_id or ""
         for p in partitions:
             pid, pname = p["id"], p["name"]
-            locked = "🔒" if self._partition_passwords.get(pid, "") else ""
+            locked = "🔒 " if self._partition_passwords.get(pid, "") else ""
             check = "✓ " if pid == current_pid else "  "
             action = self._status_partition_menu.addAction(
-                f"{check}{locked} {pname}",
+                f"{check}{locked}{pname}",
                 lambda checked=False, i=pid: self._activate_partition(i),
             )
         self._update_partition_status_btn()
@@ -1636,6 +1650,7 @@ class MainWindow(QMainWindow):
                 first = self._find_first_unlocked_partition()
                 if first:
                     self._activate_partition(first)
+        self._in_load_partitions = False
 
     def _update_partition_status_btn(self) -> None:
         pid = self._active_partition_id or ""
@@ -1646,9 +1661,6 @@ class MainWindow(QMainWindow):
         self._status_partition_btn.setText(txt)
 
     def _activate_partition(self, pid: str) -> None:
-        if self._partition_passwords.get(self._active_partition_id or "", ""):
-            self._splitter_stack.setCurrentIndex(1)
-            return
         self._active_partition_id = pid or ""
         self._config.set("general", "last_partition_id", value=self._active_partition_id)
         self._config.save()
@@ -1670,6 +1682,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_batch_task_model'):
             self._refresh_batch_page()
         self._on_data_changed()
+        # 刷新分区菜单 ✓ 标记（_load_partitions 递归调用时跳过）
+        if not getattr(self, '_in_load_partitions', False):
+            self._load_partitions()
         self._heatmap_widget.force_refresh()
         # Refresh analysis page if currently visible
         if self._current_view == "dashboard" and hasattr(self, '_analysis_task_tree'):
