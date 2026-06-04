@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...config import AppConfig
 from ...models.repository import TaskRepository
 from ...services.md_formatter import MarkdownTaskFormatter
 from ...utils.design_tokens import get_tokens
@@ -32,14 +33,15 @@ class TagManagementPanel(QWidget):
 
     tag_changed = Signal()
 
-    def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
+    def __init__(self, repository: TaskRepository, config: AppConfig | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._repository = repository
+        self._config = config
         self._partition_id: str | None = None
         self._formatter = MarkdownTaskFormatter()
         self._all_tags: list[tuple[str, int]] = []  # full list before search filter
         self._tag_page = 0
-        self._tag_page_size = 20
+        self._tag_page_size = config.get("general", "page_size", default=20) if config else 20
         self._tag_total = 0
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -151,6 +153,13 @@ class TagManagementPanel(QWidget):
     def refresh_theme(self) -> None:
         """Re-apply current theme colours to tag list items."""
         self._apply_search()
+
+    def set_page_size(self, page_size: int) -> None:
+        """Update page size and refresh. Called externally when config changes."""
+        if page_size != self._tag_page_size:
+            self._tag_page_size = page_size
+            self._tag_page = 0
+            self._apply_search()
 
     def set_partition_id(self, pid: str) -> None:
         """Set the active partition and refresh the tag list."""

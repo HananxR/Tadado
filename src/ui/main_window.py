@@ -406,13 +406,13 @@ class MainWindow(QMainWindow):
         self._next_page_btn.setFixedWidth(28)
         self._next_page_btn.clicked.connect(self._on_page_next)
         page_row.addWidget(self._next_page_btn)
-        page_size_combo = DropdownWidget()
-        page_size_combo.setFixedWidth(combo_width(4))
+        self._page_size_combo = DropdownWidget()
+        self._page_size_combo.setFixedWidth(combo_width(4))
         for n in ["20", "50", "100"]:
-            page_size_combo.addItem(n, int(n))
-        page_size_combo.setCurrentText(str(self._page_size))
-        page_size_combo.currentIndexChanged.connect(self._on_page_size_changed)
-        page_row.addWidget(page_size_combo)
+            self._page_size_combo.addItem(n, int(n))
+        self._page_size_combo.setCurrentText(str(self._page_size))
+        self._page_size_combo.currentIndexChanged.connect(self._on_page_size_changed)
+        page_row.addWidget(self._page_size_combo)
         left_layout.addWidget(page_widget)
 
         self._splitter.addWidget(left_panel)
@@ -714,27 +714,33 @@ class MainWindow(QMainWindow):
         self._batch_task_model.dataChanged.connect(self._on_batch_model_data_changed)
         batch_layout.addWidget(self._batch_task_view, 1)
 
-        # Pagination row
+        # Pagination row (matching main pagination style)
+        self._batch_page_size = self._config.get("general", "page_size", default=20)
         batch_pager = QWidget()
         batch_pager_layout = QHBoxLayout(batch_pager)
-        batch_pager_layout.setContentsMargins(0, 0, 0, 0)
+        batch_pager_layout.setContentsMargins(4, 2, 4, 2)
+        batch_pager_layout.setSpacing(4)
         batch_pager_layout.addStretch()
-        self._batch_total_label = QLabel("共 0 项")
-        self._batch_total_label.setStyleSheet("font-size: 10px;")
-        batch_pager_layout.addWidget(self._batch_total_label)
-        batch_pager_layout.addSpacing(8)
-        self._batch_prev_btn = QPushButton("‹ 上一页")
-        self._batch_prev_btn.setFixedHeight(24)
+        self._batch_prev_btn = QPushButton("‹")
+        self._batch_prev_btn.setObjectName("navBtn")
+        self._batch_prev_btn.setFixedWidth(28)
         self._batch_prev_btn.clicked.connect(self._on_batch_page_prev)
         batch_pager_layout.addWidget(self._batch_prev_btn)
-        self._batch_page_label = QLabel("1 / 1 页")
-        self._batch_page_label.setStyleSheet("font-size: 10px;")
+        self._batch_page_label = QLabel("1 / 1")
+        self._batch_page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         batch_pager_layout.addWidget(self._batch_page_label)
-        self._batch_next_btn = QPushButton("下一页 ›")
-        self._batch_next_btn.setFixedHeight(24)
+        self._batch_next_btn = QPushButton("›")
+        self._batch_next_btn.setObjectName("navBtn")
+        self._batch_next_btn.setFixedWidth(28)
         self._batch_next_btn.clicked.connect(self._on_batch_page_next)
         batch_pager_layout.addWidget(self._batch_next_btn)
-        batch_pager_layout.addStretch()
+        self._batch_page_size_combo = DropdownWidget()
+        self._batch_page_size_combo.setFixedWidth(combo_width(4))
+        for n in ["20", "50", "100"]:
+            self._batch_page_size_combo.addItem(n, int(n))
+        self._batch_page_size_combo.setCurrentText(str(self._batch_page_size))
+        self._batch_page_size_combo.currentIndexChanged.connect(self._on_batch_page_size_changed)
+        batch_pager_layout.addWidget(self._batch_page_size_combo)
         batch_layout.addWidget(batch_pager)
 
         # Confirm bar (hidden by default)
@@ -767,7 +773,7 @@ class MainWindow(QMainWindow):
         batch_left_layout.addWidget(batch_main, 1)
         self._batch_splitter.addWidget(batch_left)
 
-        self._batch_tag_panel = TagManagementPanel(self._repository)
+        self._batch_tag_panel = TagManagementPanel(self._repository, config=self._config)
         self._batch_splitter.addWidget(self._batch_tag_panel)
         self._batch_splitter.setStretchFactor(0, 1)
         self._batch_splitter.setStretchFactor(1, 0)
@@ -775,7 +781,6 @@ class MainWindow(QMainWindow):
         batch_page_layout.addWidget(self._batch_splitter)
         self._stack.addWidget(batch_page)
         self._batch_page = 0
-        self._batch_page_size = 20
         self._batch_total_count = 0
         self._batch_pending_action: dict = {}
 
@@ -966,14 +971,18 @@ class MainWindow(QMainWindow):
         if reset_page:
             self._reset_pagination()
         filter_.partition_id = filter_.partition_id or self._active_partition_id
-        tasks = self._repository.search(filter_)
+        all_tasks = self._repository.search(filter_)
         self._total_count = self._repository.count(filter_)
-        self._task_model.load_tasks(tasks)
-        self._quick_overview.set_items(tasks)
+        # Paginate table display — full list still passed to overview / progress bar
+        start = self._page * self._page_size
+        page_tasks = all_tasks[start:start + self._page_size]
+        self._task_model.set_offset(start)
+        self._task_model.load_tasks(page_tasks)
+        self._quick_overview.set_items(all_tasks)
         self._update_page_label()
         self._update_status_bar(filter_)
         self._status_badge.refresh(filter_.date_from, filter_.date_to)
-        self._progress_bar.set_items(tasks)
+        self._progress_bar.set_items(all_tasks)
 
     def _on_task_created(self, task) -> None:
         # Switch quick overview to "today" so new task is immediately visible
@@ -1056,6 +1065,7 @@ class MainWindow(QMainWindow):
             f.offset = self._batch_page * self._batch_page_size
             tasks = self._repository.search(f)
             self._batch_total_count = self._repository.count(f)
+        self._batch_task_model.set_offset(self._batch_page * self._batch_page_size)
         self._batch_task_model.load_tasks(tasks)
         self._update_batch_pagination()
 
@@ -1085,9 +1095,11 @@ class MainWindow(QMainWindow):
         popup.exec()
 
     def _update_batch_pagination(self) -> None:
+        if self._batch_page_size <= 0:
+            self._batch_page_label.setText("全部")
+            return
         total_pages = max(1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size)
-        self._batch_total_label.setText(f"共 {self._batch_total_count} 项")
-        self._batch_page_label.setText(f"{self._batch_page + 1} / {total_pages} 页")
+        self._batch_page_label.setText(f"{self._batch_page + 1} / {total_pages}")
         self._batch_prev_btn.setEnabled(self._batch_page > 0)
         self._batch_next_btn.setEnabled(self._batch_page < total_pages - 1)
 
@@ -1108,6 +1120,13 @@ class MainWindow(QMainWindow):
         total_pages = max(1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size)
         if self._batch_page < total_pages - 1:
             self._batch_page += 1
+            self._refresh_batch_page()
+
+    def _on_batch_page_size_changed(self, index: int) -> None:
+        widget = self.sender()
+        if widget:
+            self._batch_page_size = widget.itemData(index)
+            self._batch_page = 0
             self._refresh_batch_page()
 
     def _on_edit_select_all(self) -> None:
@@ -2032,8 +2051,23 @@ class MainWindow(QMainWindow):
         self._filter_bar.set_sort(self._config.default_sort)
         if hasattr(self, '_status_badge'):
             self._status_badge.refresh_theme()
+
+        # Re-read page_size from config and sync all pagination controls
+        new_page_size = self._config.get("general", "page_size", default=20)
+        if self._page_size != new_page_size:
+            self._page_size = new_page_size
+            self._page = 0
+            if hasattr(self, '_page_size_combo'):
+                self._page_size_combo.setCurrentText(str(new_page_size))
+        if self._batch_page_size != new_page_size:
+            self._batch_page_size = new_page_size
+            self._batch_page = 0
+            if hasattr(self, '_batch_page_size_combo'):
+                self._batch_page_size_combo.setCurrentText(str(new_page_size))
         if hasattr(self, '_batch_tag_panel'):
+            self._batch_tag_panel.set_page_size(new_page_size)
             self._batch_tag_panel.refresh_theme()
+
         self._on_data_changed()
 
     # ------------------------------------------------------------------
