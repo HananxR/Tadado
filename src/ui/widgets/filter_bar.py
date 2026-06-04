@@ -22,7 +22,7 @@ class FilterBar(QWidget):
 
     _SORT_MAP: dict[str, str] = {
         "优先级": "urgency",
-        "截止日": "deadline",
+        "截止时间": "deadline",
         "创建时间": "created",
         "状态": "status",
         "标题": "title",
@@ -85,7 +85,8 @@ class FilterBar(QWidget):
 
         sort_label = self._sort.currentText()
         field = self._SORT_MAP.get(sort_label, "deadline")
-        f.sort_by = [SortCriterion(field=field, ascending=True)]
+        ascending = field != "created"  # creation time: newest first
+        f.sort_by = [SortCriterion(field=field, ascending=ascending)]
 
         return f
 

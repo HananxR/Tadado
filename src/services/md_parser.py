@@ -10,22 +10,23 @@ from typing import Optional
 from ..models.task_status import TaskStatus
 
 # Pattern breakdown:
-#   ^- \[([^\]]{1,3})\]                       priority bracket (1-3 chars: *, space, x)
-#   \s+(TODO|DOING|DONE|OVERDUE)              status keyword
-#   (?:\s+<(\d{4}-\d{2}-\d{2})>)?            optional scheduled date
-#   (?:\s+<(\d{4}-\d{2}-\d{2})>)?            optional deadline date
-#   \s+(.+)$                                  title + tags
+#   ^- \[([^\]]{0,3})\]                       priority bracket (0-3 chars)
+#   \s+                                       mandatory whitespace
+#   (?:(TODO|DOING|DONE|OVERDUE)\s+)?         optional status keyword (not in Markdown)
+#   (?:\s*<(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?>)?  optional date 1 + time
+#   (?:\s*<(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?>)?  optional date 2 + time
+#   \s*(.+)$                                  title + tags
 
 _TASK_LINE_PATTERN = re.compile(
-    r"^-\s*\[([^\]]{1,3})\]\s+"
-    r"(TODO|DOING|DONE|OVERDUE)"
-    r"(?:\s+<(\d{4}-\d{2}-\d{2})>)?"
-    r"(?:\s+<(\d{4}-\d{2}-\d{2})"
-    r"(?:[T ](\d{2}:\d{2}))?>)?"
-    r"\s+(.+)$"
+    r"^-\s*\[([^\]]*)\]\s+"
+    r"(?:(TODO|DOING|DONE|OVERDUE)\s+)?"
+    r"(?:\s*<(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?>)?"
+    r"(?:\s*<(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}))?>)?"
+    r"\s*(.+)$"
 )
 
-_TAG_PATTERN = re.compile(r"#([\w一-鿿][\w/\-一-鿿]*)")
+# Tag pattern: # must be preceded by whitespace or start-of-string (not mid-word)
+_TAG_PATTERN = re.compile(r"(?<!\S)#([\w一-鿿][\w/\-一-鿿]*)")
 
 _STATUS_KEYWORDS = frozenset(s.value for s in TaskStatus)
 
@@ -45,8 +46,11 @@ class ParsedTask:
 
     @property
     def clean_title(self) -> str:
-        """Title with trailing tags stripped (for display)."""
-        return _TAG_PATTERN.sub("", self.title).strip()
+        """Title with tags stripped (for display). Uses same logic as parse()."""
+        result = self.title
+        for tag in self.tags:
+            result = re.sub(rf"\s*#{re.escape(tag)}\b", "", result, count=1)
+        return result.strip()
 
 
 class MarkdownTaskParser:
@@ -67,18 +71,32 @@ class MarkdownTaskParser:
             # Fallback: try parsing with defaults for missing elements
             return self._fallback_parse(line)
 
-        bracket_content = match.group(1).ljust(3)  # old " " / "x" → pad to 3 chars
-        status = TaskStatus.from_string(match.group(2))
+        bracket_content = match.group(1).ljust(3)
+        status_str = match.group(2)
+        status = TaskStatus.from_string(status_str) if status_str else TaskStatus.TODO
         scheduled_date = self._parse_date_safe(match.group(3))
-        deadline_date = self._parse_date_safe(match.group(4))
-        deadline_time = match.group(5)
-        title_text = match.group(6).strip()
+        first_time = match.group(4)
+        deadline_date = self._parse_date_safe(match.group(5))
+        deadline_time = match.group(6)
+        # Single date logic:
+        # - with time → always deadline
+        # - without status keyword (new format) → deadline
+        if deadline_date is None and scheduled_date is not None:
+            if first_time or not status_str:
+                deadline_date = scheduled_date
+                deadline_time = first_time or deadline_time
+                scheduled_date = None
+        title_text = match.group(7).strip()
 
         tags = self._extract_tags(title_text)
-        clean_title = _TAG_PATTERN.sub("", title_text).strip()
+        # Remove extracted tags from title (keep content #refs intact)
+        clean_title = title_text
+        for tag in tags:
+            clean_title = re.sub(rf"\s*#{re.escape(tag)}\b", "", clean_title, count=1)
+        clean_title = clean_title.strip()
 
-        # Priority from bracket: count '*' → urgency (0=***, 1=**, 2=*, 3=default)
-        star_count = bracket_content.count('*')
+        # Priority from bracket: count '*' (clamp 0-3)
+        star_count = min(bracket_content.count('*'), 3)
         urgency = 3 - star_count if star_count > 0 else 3
         checkbox_checked = 'x' in bracket_content.lower()
 
@@ -132,11 +150,11 @@ class MarkdownTaskParser:
         # Strip leading list marker with priority bracket [*], [**], [***], [   ], [x]
         urgency = 3
         if remaining.startswith("- ["):
-            checkbox_match = re.match(r"-\s*\[([^\]]{1,3})\]\s*", remaining)
+            checkbox_match = re.match(r"-\s*\[([^\]]*)\]\s*", remaining)
             if checkbox_match:
                 bracket = checkbox_match.group(1)
                 checkbox = 'x' in bracket.lower()
-                star_count = bracket.count('*')
+                star_count = min(bracket.count('*'), 3)
                 urgency = 3 - star_count if star_count > 0 else 3
                 remaining = remaining[checkbox_match.end():]
 
@@ -165,7 +183,11 @@ class MarkdownTaskParser:
             ).strip()
 
         tags = self._extract_tags(remaining)
-        clean_title = _TAG_PATTERN.sub("", remaining).strip()
+        # Remove extracted tags from title (keep content #refs intact)
+        clean_title = remaining
+        for tag in tags:
+            clean_title = re.sub(rf"\s*#{re.escape(tag)}\b", "", clean_title, count=1)
+        clean_title = clean_title.strip()
         if not clean_title:
             clean_title = remaining or "Untitled task"
 

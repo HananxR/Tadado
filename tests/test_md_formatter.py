@@ -30,7 +30,7 @@ class TestFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [   ] TODO <2026-05-10> <2026-05-20> 重构认证模块 #backend"
+        assert result == "- [   ] <2026-05-10> <2026-05-20> 重构认证模块 #backend"
 
     def test_minimal_task(self, formatter: MarkdownTaskFormatter) -> None:
         task = Task(
@@ -42,7 +42,7 @@ class TestFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [   ] TODO 买菜"
+        assert result == "- [   ] 买菜"
 
     def test_done_task(self, formatter: MarkdownTaskFormatter) -> None:
         task = Task(
@@ -55,7 +55,7 @@ class TestFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [   ] DONE 修bug #urgent"
+        assert result == "- [   ] 修bug #urgent"
 
     def test_no_tags(self, formatter: MarkdownTaskFormatter) -> None:
         task = Task(
@@ -67,7 +67,7 @@ class TestFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [   ] DOING 写周报"
+        assert result == "- [   ] 写周报"
 
 
 class TestRoundTrip:
@@ -90,7 +90,7 @@ class TestRoundTrip:
         )
         md_line = formatter.format(task)
         parsed = parser.parse(md_line)
-        assert parsed.status == task.status
+        # Status is not in Markdown — parsed back defaults to TODO
         assert parsed.scheduled_date == task.scheduled_date
         assert parsed.deadline_date == task.deadline_date
         assert parsed.title == task.title
@@ -111,7 +111,7 @@ class TestOverdueFormat:
             updated_at=datetime.now(),
         )
         result = formatter.format(task)
-        assert result == "- [   ] OVERDUE <2026-05-01> 已逾期报告"
+        assert result == "- [   ] <2026-05-01> 已逾期报告"
 
     def test_overdue_round_trip(self, formatter: MarkdownTaskFormatter) -> None:
         from src.services.md_parser import MarkdownTaskParser
@@ -130,6 +130,6 @@ class TestOverdueFormat:
         )
         md_line = formatter.format(task)
         parsed = parser.parse(md_line)
-        assert parsed.status == TaskStatus.OVERDUE
+        # Status is not in Markdown — parsed back defaults to TODO
         assert parsed.scheduled_date == date(2026, 4, 1)
         assert parsed.deadline_date == date(2026, 4, 15)

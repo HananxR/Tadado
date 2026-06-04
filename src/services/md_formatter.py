@@ -51,9 +51,6 @@ class MarkdownTaskFormatter:
         stars = '*' * (3 - urgency) if urgency < 3 else '   '
         parts.append(f"- [{stars:<3}]")
 
-        # Status keyword
-        parts.append(status.value)
-
         # Scheduled date
         if scheduled_date:
             parts.append(f"<{scheduled_date}>")

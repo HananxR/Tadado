@@ -1,4 +1,4 @@
-"""Custom delegate for rendering urgency row strip, status badges, and red-bold text."""
+"""Custom delegate for rendering urgency row background, status badges, and凸显 red-bold text."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from ...utils.design_tokens import get_tokens
 
 
 class TaskListDelegate(QStyledItemDelegate):
-    """Paints urgency left-edge strip, status badges, and red-bold highlight text."""
+    """Paints urgency row background, status badges, and凸显 red-bold text."""
 
     _BADGE_PADDING_H = 8
     _BADGE_PADDING_V = 3
@@ -25,14 +25,11 @@ class TaskListDelegate(QStyledItemDelegate):
         # Checkbox column — custom large checkmark
         if col == 0:
             painter.save()
-            # Background
-            if option.state & QStyle.StateFlag.State_Selected:
-                painter.fillRect(option.rect, option.palette.highlight())
-            else:
-                t0 = get_tokens()
-                bg = QColor(t0.bg_secondary)
-                bg.setAlpha(20)
-                painter.fillRect(option.rect, bg)
+            # Background — unified bg_secondary, no Qt selection highlight
+            t0 = get_tokens()
+            bg = QColor(t0.bg_secondary)
+            bg.setAlpha(20)
+            painter.fillRect(option.rect, bg)
             # Draw checkmark
             checked = index.data(Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Checked
             rect = option.rect
@@ -74,12 +71,8 @@ class TaskListDelegate(QStyledItemDelegate):
             painter.restore()
             return
 
-        # Draw urgency row background for all non-checkbox columns (skip if red-bold highlighted)
-        model = index.model()
-        hl_id = model.highlighted_task_id() if model else None
-        is_highlighted = hl_id is not None and task.id == hl_id
-        if not is_highlighted:
-            self._draw_urgency_bg(painter, option, task)
+        # Draw urgency row background for all non-checkbox columns
+        self._draw_urgency_bg(painter, option, task)
 
         if col == 6:  # COL_STATUS — custom badge painting
             self._paint_status_badge(painter, option, task)
@@ -123,8 +116,7 @@ class TaskListDelegate(QStyledItemDelegate):
     def _draw_urgency_bg(
         self, painter: QPainter, option: QStyleOptionViewItem, task: Task
     ) -> None:
-        """Draw a full-row urgency background tint, unless the task is highlighted (red bold)."""
-        # Skip if this is the highlighted (red bold) task
+        """Draw a full-row urgency background tint based on task urgency level."""
         from ...utils.design_tokens import is_dark
         urgency = getattr(task, 'urgency', 3)
 
@@ -154,9 +146,6 @@ class TaskListDelegate(QStyledItemDelegate):
         color = QColor(task.status.display_color)
 
         painter.save()
-
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.fillRect(option.rect, option.palette.highlight())
 
         fm = painter.fontMetrics()
         text_w = fm.horizontalAdvance(text)

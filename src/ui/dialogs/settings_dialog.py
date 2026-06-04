@@ -114,7 +114,7 @@ class SettingsDialog(QDialog):
         self._default_sort_combo = DropdownWidget()
         self._default_sort_combo.setObjectName("settingsSortCombo")
         self._default_sort_combo.setFixedWidth(_DROP_W)
-        for key, label in [("urgency", "优先级"), ("status", "状态"), ("deadline", "截止日"),
+        for key, label in [("urgency", "优先级"), ("status", "状态"), ("deadline", "截止时间"),
                             ("created", "创建时间"), ("title", "标题")]:
             self._default_sort_combo.addItem(label, key)
         cur_sort = self._config.get("general", "default_sort", default="urgency")

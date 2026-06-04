@@ -1356,10 +1356,9 @@ class TaskEditPanel(QWidget):
                 errors.append(f"第{i}行解析失败")
                 continue
             if not parsed.tags:
-                errors.append(f"第{i}行缺少标签")
-                continue
+                errors.append(f"第{i}行缺少标签（将以无标签创建）")
 
-            task_now = now + timedelta(seconds=i)
+            task_now = now  # same timestamp for all batch tasks; rowid ASC preserves input order
             task = TaskCls(
                 id=str(uuid.uuid4()),
                 raw_md=line,

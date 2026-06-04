@@ -226,7 +226,8 @@ class TaskListModel(QAbstractTableModel):
 
     def _foreground_color(self, task: Task, col: int) -> QColor | None:
         if col == COL_CONTENT and task.id == self._highlighted_task_id:
-            return QColor("red")
+            from ...utils.design_tokens import get_tokens
+            return QColor(get_tokens().danger)
         if col == COL_STATUS:
             return QColor(task.status.display_color)
         return None

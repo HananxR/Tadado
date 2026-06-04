@@ -1042,4 +1042,6 @@ class TaskRepository:
             else:
                 direction = "ASC" if sc.ascending else "DESC"
                 clauses.append(f"{col} {direction}")
+        # Stable tiebreaker: insertion order for same-timestamp tasks
+        clauses.append("rowid ASC")
         return clauses

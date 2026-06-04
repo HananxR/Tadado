@@ -77,6 +77,9 @@ class MainWindow(QMainWindow):
         self._total_count: int = 0
         self._current_view: str = "edit"
         self._analysis_date_range: tuple = (None, None)
+        self._selection_guard: bool = False  # prevents signal recursion from selectRow()
+        self._new_task_sort_active: bool = False  # True after task creation, reset on user nav
+        self._setting_sort_internally: bool = False  # guard against self-triggered filter change
 
         self.setWindowTitle("DeskTodoSeq")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
@@ -383,7 +386,7 @@ class MainWindow(QMainWindow):
         self._task_view = TaskListView(self._repository)
         self._task_view.set_model(self._task_model)
         self._task_view.setColumnHidden(COL_ARCHIVED, True)  # 归档列仅管理视图可见
-        self._task_view.task_selected.connect(self._on_task_selected)
+        self._task_view.task_selected.connect(self._on_view_task_selected)
         self._task_view.detail_requested.connect(self._on_detail_requested)
         left_layout.addWidget(self._task_view, 1)
 
@@ -943,17 +946,14 @@ class MainWindow(QMainWindow):
             self._select_and_load_task(args[0].id)
 
     def _on_tasks_bulk_created(self, count: int, task_ids: list) -> None:
-        """Handle multi-task creation: refresh + bold all + move to top + open first."""
+        """Handle multi-task creation: switch to creation-time sort, refresh, highlight first."""
+        self._new_task_sort_active = True
+        self._setting_sort_internally = True
+        self._filter_bar.set_sort("created")
+        self._setting_sort_internally = False
         if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
             self._quick_overview.activate_preset("today")
         self._on_data_changed()
-        self._task_model.set_bold_tasks(set(task_ids))
-        # Move all batch tasks to top (reverse preserves order)
-        for tid in reversed(task_ids):
-            for row in range(self._task_model.rowCount()):
-                if self._task_model.tasks[row].id == tid and row > 0:
-                    self._task_model.move_to_top(row)
-                    break
         self._on_task_selected(self._task_model.tasks[0])
 
     def _build_filter_with_sort(self) -> TaskFilter:
@@ -985,30 +985,21 @@ class MainWindow(QMainWindow):
         self._progress_bar.set_items(all_tasks)
 
     def _on_task_created(self, task) -> None:
-        # Switch quick overview to "today" so new task is immediately visible
+        self._new_task_sort_active = True
+        self._setting_sort_internally = True
+        self._filter_bar.set_sort("created")
+        self._setting_sort_internally = False
         if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
             self._quick_overview.activate_preset("today")
         self._filter_bar.reset()
         self._on_data_changed()
-        # Move new task to top
-        for row in range(self._task_model.rowCount()):
-            if self._task_model.tasks[row].id == task.id and row > 0:
-                self._task_model.move_to_top(row)
-                break
         self._on_task_selected(task)
 
     def _select_and_load_task(self, task_id: str) -> None:
-        """Select a task in the list and load it in the edit panel."""
-        model = self._task_view.model()
-        if model is None:
-            return
-        for row in range(model.rowCount()):
-            idx = model.index(row, 0)
-            t = idx.data(Qt.ItemDataRole.UserRole)
-            if t and t.id == task_id:
-                self._task_view.selectRow(row)
-                self._task_view.scrollTo(idx)
-                self._on_task_selected(t)
+        """Find task by ID and delegate to _on_task_selected (unified凸显 entry)."""
+        for row in range(self._task_model.rowCount()):
+            if self._task_model.tasks[row].id == task_id:
+                self._on_task_selected(self._task_model.tasks[row])
                 return
 
     def _on_task_deleted(self, task_id: str) -> None:
@@ -1115,12 +1106,18 @@ class MainWindow(QMainWindow):
         if self._batch_page > 0:
             self._batch_page -= 1
             self._refresh_batch_page()
+            if hasattr(self, '_batch_task_model') and self._batch_task_model.rowCount() > 0:
+                self._batch_task_model.set_highlighted_task(
+                    self._batch_task_model.tasks[0].id)
 
     def _on_batch_page_next(self) -> None:
         total_pages = max(1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size)
         if self._batch_page < total_pages - 1:
             self._batch_page += 1
             self._refresh_batch_page()
+            if hasattr(self, '_batch_task_model') and self._batch_task_model.rowCount() > 0:
+                self._batch_task_model.set_highlighted_task(
+                    self._batch_task_model.tasks[0].id)
 
     def _on_batch_page_size_changed(self, index: int) -> None:
         widget = self.sender()
@@ -1400,10 +1397,23 @@ class MainWindow(QMainWindow):
                 self._flash_status(f"已导出 {len(tasks)} 个任务到 {path}")
 
     def _on_filter_changed(self, filter_: TaskFilter) -> None:
+        if self._setting_sort_internally:
+            pass  # internal set_sort() call — keep new_task_sort_active
+        elif self._new_task_sort_active:
+            self._new_task_sort_active = False
+            self._setting_sort_internally = True
+            self._filter_bar.set_sort(self._config.default_sort)
+            self._setting_sort_internally = False
+            return  # set_sort triggers another _on_filter_changed with default
         self._carousel_filter = filter_
         self._refresh_all_views(filter_)
 
     def _on_quick_preset(self, preset: str) -> None:
+        if self._new_task_sort_active:
+            self._new_task_sort_active = False
+            self._setting_sort_internally = True
+            self._filter_bar.set_sort(self._config.default_sort)
+            self._setting_sort_internally = False
         f = self._filter_bar.build_filter()  # preserve sort
         if preset == "all":
             pass
@@ -1463,10 +1473,25 @@ class MainWindow(QMainWindow):
         if self._task_model.tasks:
             self._on_task_selected(self._task_model.tasks[0])
 
+    def _on_view_task_selected(self, task: Task) -> None:
+        """Guard against signal recursion from selectRow() inside _on_task_selected."""
+        if self._selection_guard:
+            return
+        self._on_task_selected(task)
+
     def _on_task_selected(self, task: Task) -> None:
+        """统一任务凸显入口：模型凸显 + 编辑器加载 + 视图定位滚动。"""
         self._task_model.set_highlighted_task(task.id)
         self._edit_panel.load_task(task)
         self._last_activity = dt.datetime.now()
+        # 在列表中定位并滚动到该任务
+        for row in range(self._task_model.rowCount()):
+            if self._task_model.tasks[row].id == task.id:
+                self._selection_guard = True
+                self._task_view.selectRow(row)
+                self._task_view.scrollTo(self._task_model.index(row, 0))
+                self._selection_guard = False
+                break
 
     def _on_detail_requested(self, task: Task) -> None:
         self._edit_panel.load_task(task)
@@ -1524,12 +1549,16 @@ class MainWindow(QMainWindow):
         if self._page > 0:
             self._page -= 1
             self._refresh_all_views(self._build_filter_with_sort(), reset_page=False)
+            if self._task_model.rowCount() > 0:
+                self._on_task_selected(self._task_model.tasks[0])
 
     def _on_page_next(self) -> None:
         total_pages = max(1, (self._total_count + self._page_size - 1) // self._page_size)
         if self._page < total_pages - 1:
             self._page += 1
             self._refresh_all_views(self._build_filter_with_sort(), reset_page=False)
+            if self._task_model.rowCount() > 0:
+                self._on_task_selected(self._task_model.tasks[0])
 
     def _on_page_size_changed(self, index: int) -> None:
         widget = self.sender()
@@ -1540,14 +1569,6 @@ class MainWindow(QMainWindow):
 
     def _reset_pagination(self) -> None:
         self._page = 0
-
-    def _auto_select_first(self) -> None:
-        model = self._task_model
-        if model.rowCount() > 0:
-            first_task = model.tasks[0]
-            model.set_highlighted_task(first_task.id)
-            self._task_view.setCurrentIndex(model.index(0, 0))
-            self._on_task_selected(first_task)
 
     # ------------------------------------------------------------------
     # Status bar helpers
@@ -1710,6 +1731,7 @@ class MainWindow(QMainWindow):
             self._refresh_batch_page()
 
         # Reset filter bar sort to config default on view switch
+        self._new_task_sort_active = False
         self._filter_bar.set_sort(self._config.default_sort)
 
     def _load_dashboard_data(self) -> None:
