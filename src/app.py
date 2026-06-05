@@ -305,9 +305,11 @@ class DeskTodoSeqApp(QApplication):
         self._repository = TaskRepository(self._config.db_path())
         self._repository.open()
 
-        # Ensure demo partition exists on first launch
-        _ensure_demo_partition(self._repository)
-        # Ensure test partition exists in dev mode
+        # Ensure demo partition exists on first launch (skipped in frozen mode
+        # — the package DB already contains pre-seeded data in 演示空间)
+        if not getattr(sys, "frozen", False) and "__compiled__" not in dir(sys):
+            _ensure_demo_partition(self._repository)
+        # Ensure test partition exists in dev mode (already internally guarded)
         _ensure_test_partition(self._repository)
 
         # Load theme and icons early

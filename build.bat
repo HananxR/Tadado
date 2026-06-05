@@ -20,6 +20,22 @@ if exist resources\tasks.db (
     set /a BACKUP_COUNT+=1
 )
 
+:: Generate package database with pre-seeded demo data
+echo Generating package database...
+uv run python scripts/create_package_db.py
+if %ERRORLEVEL% neq 0 (
+    echo ERROR: Package database generation failed.
+    :: Restore dev DB before exiting
+    if exist "%DB_BACKUP%\desktodoseq.data" (
+        copy "%DB_BACKUP%\desktodoseq.data" resources\desktodoseq.data >nul
+    )
+    if exist "%DB_BACKUP%\tasks.db" (
+        copy "%DB_BACKUP%\tasks.db" resources\tasks.db >nul
+    )
+    rmdir /s /q "%DB_BACKUP%"
+    exit /b 1
+)
+
 :: Compile with Nuitka
 uv run python -m nuitka --standalone ^
     --windows-console-mode=disable ^
@@ -30,6 +46,9 @@ uv run python -m nuitka --standalone ^
     --windows-icon-from-ico=resources/icons/app.ico ^
     --assume-yes-for-downloads ^
     main.py
+
+:: Remove package database before restoring dev DB
+if exist resources\desktodoseq.data del resources\desktodoseq.data
 
 :: Restore dev database files
 if exist "%DB_BACKUP%\desktodoseq.data" (
