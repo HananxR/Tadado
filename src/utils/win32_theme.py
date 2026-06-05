@@ -17,6 +17,16 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from PySide6.QtWidgets import QWidget
 
+# DWMWA_CLOAK (13): 隐藏窗口使其对 DWM 合成器不可见（Windows 8+）
+# 用于启动期间完全隐藏窗口，准备就绪后再解除，消除启动残影
+_DWMWA_CLOAK = 13
+
+# DWMWA_NCRENDERING_POLICY (2): 控制非客户区渲染策略
+# DWMNCRP_DISABLED (1): 完全禁用 NC 渲染，包括标题栏按钮
+# 从根源消除原生 NC 标题栏按钮的残影闪现
+_DWMWA_NCRENDERING_POLICY = 2
+_DWMNCRP_DISABLED = 1
+
 
 def is_dark_mode_supported() -> bool:
     """Return True when the OS supports per-window dark title bars.
@@ -42,6 +52,81 @@ def is_caption_color_supported() -> bool:
     try:
         _major, _minor, build = _get_windows_version()
         return build >= 22000
+    except Exception:
+        return False
+
+
+def is_cloak_supported() -> bool:
+    """Return True when the OS supports DWMWA_CLOAK.
+
+    Requires Windows 8 build 9200 or later.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        _major, _minor, build = _get_windows_version()
+        return build >= 9200
+    except Exception:
+        return False
+
+
+def set_window_cloaked(widget: QWidget, cloaked: bool) -> bool:
+    """Hide (*cloaked*) or reveal the window from the DWM compositor.
+
+    When *cloaked* is True the window is still composed by DWM but not
+    rendered, making the window completely invisible during startup setup.
+    Use this together with ``WA_DontShowOnScreen`` for defence-in-depth
+    against startup flicker on frameless windows.
+
+    Requires Windows 8+ (build 9200).  Returns True on success.
+    """
+    if sys.platform != "win32":
+        return False
+    if not is_cloak_supported():
+        return False
+    try:
+        import ctypes
+
+        hwnd = int(widget.winId())
+        dwmapi = ctypes.WinDLL("dwmapi.dll")
+        value = ctypes.c_int(1 if cloaked else 0)
+        hr = dwmapi.DwmSetWindowAttribute(
+            ctypes.c_void_p(hwnd),
+            ctypes.c_ulong(_DWMWA_CLOAK),
+            ctypes.byref(value),
+            ctypes.sizeof(value),
+        )
+        return hr == 0  # S_OK
+    except Exception:
+        return False
+
+
+def set_window_nc_rendering_disabled(widget: QWidget) -> bool:
+    """Disable DWM non-client rendering for *widget*.
+
+    Prevents DWM from drawing native title-bar buttons (minimize /
+    maximize / close) on frameless windows, eliminating the startup
+    "ghost buttons" flash on Windows 11.
+
+    Requires Windows 8+ (build 9200).  Returns True on success.
+    """
+    if sys.platform != "win32":
+        return False
+    if not is_cloak_supported():
+        return False
+    try:
+        import ctypes
+
+        hwnd = int(widget.winId())
+        dwmapi = ctypes.WinDLL("dwmapi.dll")
+        value = ctypes.c_int(_DWMNCRP_DISABLED)
+        hr = dwmapi.DwmSetWindowAttribute(
+            ctypes.c_void_p(hwnd),
+            ctypes.c_ulong(_DWMWA_NCRENDERING_POLICY),
+            ctypes.byref(value),
+            ctypes.sizeof(value),
+        )
+        return hr == 0  # S_OK
     except Exception:
         return False
 

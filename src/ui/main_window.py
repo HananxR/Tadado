@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
     """Desktop task manager with Markdown-first workflow."""
 
     def __init__(self, config: AppConfig, repository: TaskRepository) -> None:
-        super().__init__()
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
         self._config = config
         self._repository = repository
@@ -84,7 +84,6 @@ class MainWindow(QMainWindow):
         self._setting_sort_internally: bool = False  # guard against self-triggered filter change
 
         self.setWindowTitle("DeskTodoSeq")
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
 
         self._setup_custom_title_bar()
         self._setup_status_bar()
