@@ -299,9 +299,25 @@ class TadadoApp(QApplication):
         self.setOrganizationName("Tadado")
         self.setQuitOnLastWindowClosed(False)
 
-        # Core services
+        # ── Config + theme must load before the shield so QSS is stable ──
         self._config = AppConfig()
         init_tokens(self._config)
+        self._load_theme()  # set global QSS & QPalette BEFORE any widget is shown
+
+        # Show startup shield — sized to exactly cover the main window area
+        from .ui.splash_screen import StartupShield
+        from .utils.win32_theme import set_window_nc_rendering_disabled
+
+        self._shield: StartupShield | None = StartupShield(
+            is_dark=(self._config.theme == "dark")
+        )
+        self._shield.match_main_window_geometry()  # match main window size & pos
+        set_window_nc_rendering_disabled(self._shield)  # no ghost buttons on shield itself
+        self._shield.show()
+        self.processEvents()  # force immediate paint so user sees it now
+        # ────────────────────────────────────────────────────────────────────
+
+        # Core services
         self._repository = TaskRepository(self._config.db_path())
         self._repository.open()
 
@@ -312,8 +328,7 @@ class TadadoApp(QApplication):
         # Ensure test partition exists in dev mode (already internally guarded)
         _ensure_test_partition(self._repository)
 
-        # Load theme and icons early
-        self._load_theme()
+        # Load icons (icons depend on tokens, already initialized)
         self._load_icons()
 
         # Signal bus
@@ -336,15 +351,36 @@ class TadadoApp(QApplication):
 
         self._main_window.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
         self._main_window.apply_screen_size()
-        self._main_window.show()
-        self._tray.show()
-        QTimer.singleShot(200, self._refresh_overdue_on_startup)
+        self._main_window.show()  # Qt renders; DWM stays hidden (CLOAKED)
+        QTimer.singleShot(0, self._finish_startup)
 
     def _refresh_overdue_on_startup(self) -> None:
         """Scan all tasks and auto-set/revert OVERDUE status after startup."""
         changed = self._repository.refresh_overdue_status()
         for task, old_status in changed:
             self._signal_bus.task_status_changed.emit(task, old_status)
+
+    def _finish_startup(self) -> None:
+        """Uncloak main window so DWM composites it for the first time.
+
+        By now Qt has already painted the complete custom title bar.
+        DWM's first composition sees a fully-rendered frameless window
+        — no native button ghost frames possible.
+        """
+        from .utils.win32_theme import set_window_cloaked
+
+        set_window_cloaked(self._main_window, False)  # reveal to DWM
+        # Wait 50ms (~3 VSync cycles at 60 Hz) so DWM's composition is
+        # stable before we remove the shield that covers it.
+        QTimer.singleShot(50, self._dismiss_shield)
+
+    def _dismiss_shield(self) -> None:
+        """Close the startup shield and complete remaining startup tasks."""
+        if self._shield is not None:
+            self._shield.dismiss()
+            self._shield = None
+        self._tray.show()
+        QTimer.singleShot(200, self._refresh_overdue_on_startup)
 
     def _on_wake_request(self) -> None:
         """Another instance tried to start — bring existing window to front."""

@@ -66,6 +66,19 @@ class MainWindow(QMainWindow):
 
     def __init__(self, config: AppConfig, repository: TaskRepository) -> None:
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
+
+        # ── DWM pre-config: must run BEFORE show(), right after HWND creation ──
+        # Force native HWND creation so DWM attributes can be set immediately,
+        # before DWM ever composites a single frame for this window.
+        self.winId()
+        from ..utils.win32_theme import (
+            set_window_nc_rendering_disabled,
+            set_window_cloaked,
+        )
+        set_window_nc_rendering_disabled(self)   # never draw native NC buttons
+        set_window_cloaked(self, True)           # hide from DWM until fully ready
+        # ──────────────────────────────────────────────────────────────────────
+
         self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
         self._config = config
         self._repository = repository
