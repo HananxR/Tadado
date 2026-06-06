@@ -19,7 +19,7 @@ from ...utils.design_tokens import get_surface_color, is_dark
 from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 
 _FEATURES = [
-    ("📝 Markdown 任务管理", "语法创建，优先级、截止时间、循环、全文搜索"),
+    ("📝 Markdown 任务管理", "语法创建，优先级、截止时间、全文搜索"),
     ("📊 活动分析", "日历热力图、活动时间线、工作报告导出"),
     ("🔧 批量操作", "全选、右键批量变更状态、延后、中止、删除"),
     ("🏷 标签管理", "重命名、合并，全局自动同步"),
