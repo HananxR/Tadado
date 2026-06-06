@@ -53,9 +53,9 @@ def _is_frozen() -> bool:
 
 
 def _migrate_old_database(data_dir: Path) -> None:
-    """Rename tasks.db → desktodoseq.data if the old file exists and new doesn't."""
+    """Rename tasks.db → tadado.data if the old file exists and new doesn't."""
     old_db = data_dir / "tasks.db"
-    new_db = data_dir / "desktodoseq.data"
+    new_db = data_dir / "tadado.data"
     if old_db.exists() and not new_db.exists():
         old_db.rename(new_db)
 
@@ -105,7 +105,7 @@ class AppConfig(QObject):
         return self._data_dir
 
     def db_path(self) -> str:
-        return str(self._data_dir / "desktodoseq.data")
+        return str(self._data_dir / "tadado.data")
 
     def _config_path(self) -> Path:
         return self._data_dir / "config.json"

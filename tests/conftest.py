@@ -14,7 +14,7 @@ from src.models.repository import TaskRepository
 @pytest.fixture
 def temp_db() -> str:
     """Create a temporary SQLite database for tests."""
-    fd, path = tempfile.mkstemp(suffix=".db", prefix="test_desktodoseq_")
+    fd, path = tempfile.mkstemp(suffix=".db", prefix="test_tadado_")
     os.close(fd)
     yield path
     try:

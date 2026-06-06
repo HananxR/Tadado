@@ -24,7 +24,7 @@ from src.models.task import Task
 from src.models.task_status import TaskStatus
 from src.services.md_parser import MarkdownTaskParser
 
-DB_PATH = _PROJECT_ROOT / "resources" / "desktodoseq.data"
+DB_PATH = _PROJECT_ROOT / "resources" / "tadado.data"
 
 
 def main() -> None:

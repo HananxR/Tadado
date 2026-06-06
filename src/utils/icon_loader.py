@@ -70,22 +70,18 @@ class IconLoader:
     def icon(self, name: str) -> QIcon:
         if name in self._cache:
             return self._cache[name]
-        if name not in ICON_DRAW_FUNCS:
-            # Fallback: try loading from file
-            icon = QIcon()
-            sizes = [16, 24, 32, 48, 256]
-            for sz in sizes:
-                path = _resource_path("icons", f"{name}_{sz}.png")
-                if path.exists():
-                    icon.addPixmap(QPixmap(str(path)))
-            if icon.isNull():
-                path = _resource_path("icons", f"{name}.png")
-                if path.exists():
-                    icon.addPixmap(QPixmap(str(path)))
-            self._cache[name] = icon
-            return icon
-        engine = _ThemedIconEngine(name)
-        icon = QIcon(engine)
+        # File-based icon takes priority (PNG/SVG in resources/icons/)
+        icon = QIcon()
+        for ext in (".svg", ".png"):
+            path = _resource_path("icons", f"{name}{ext}")
+            if path.exists():
+                icon = QIcon(str(path))
+                self._cache[name] = icon
+                return icon
+        # Fallback to runtime-drawn icon (theme-aware)
+        if name in ICON_DRAW_FUNCS:
+            engine = _ThemedIconEngine(name)
+            icon = QIcon(engine)
         self._cache[name] = icon
         return icon
 
