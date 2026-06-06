@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-本文件为 Claude Code 在 DeskTodoSeq 仓库中工作时提供指导。详细设计文档见 [详设说明.md](详设说明.md)，开发进度见 [项目进度.md](项目进度.md)。
+本文件为 Claude Code 在 Tadado 仓库中工作时提供指导。详细设计文档见 [详设说明.md](详设说明.md)，开发进度见 [项目进度.md](项目进度.md)。
 
 ## 项目概览
 
-DeskTodoSeq — Windows 桌面任务管理工具，Python 3.10 + PySide6，Markdown 语法定义任务，SQLite + FTS5 存储，配备日历热力图。
+Tadado — Windows 桌面任务管理工具，Python 3.10 + PySide6，Markdown 语法定义任务，SQLite + FTS5 存储，配备日历热力图。
 
 ## 常用命令
 

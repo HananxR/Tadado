@@ -83,7 +83,7 @@ class MainWindow(QMainWindow):
         self._new_task_sort_active: bool = False  # True after task creation, reset on user nav
         self._setting_sort_internally: bool = False  # guard against self-triggered filter change
 
-        self.setWindowTitle("DeskTodoSeq")
+        self.setWindowTitle("Tadado")
 
         self._setup_custom_title_bar()
         self._setup_status_bar()

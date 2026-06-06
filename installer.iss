@@ -1,12 +1,12 @@
-; DeskTodoSeq Windows 安装脚本
+; Tadado Windows 安装脚本
 ; 使用方法:
-;   1. 先执行: build.bat (Nuitka --standalone)
+;   1. 先执行: build.bat (PyInstaller)
 ;   2. 打开 Inno Setup Compiler，加载此 .iss 文件，点击 Compile
 
-#define MyAppName "DeskTodoSeq"
+#define MyAppName "Tadado"
 #define MyAppVersion "0.1.0"
 #define MyAppPublisher "Han.X.Yun"
-#define MyAppExeName "DeskTodoSeq.exe"
+#define MyAppExeName "Tadado.exe"
 
 [Setup]
 AppId={{B8F3A2D1-5E7C-4A9F-B2D3-6E8F1A4C5D7B}}
@@ -17,7 +17,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 OutputDir=dist
-OutputBaseFilename=DeskTodoSeq_Setup_v{#MyAppVersion}
+OutputBaseFilename=Tadado_Setup_v{#MyAppVersion}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -34,7 +34,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式:"
 
 [Files]
-Source: "dist\main.dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\Tadado\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QShowEvent
+from PySide6.QtGui import QPixmap, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -34,7 +34,7 @@ class AboutDialog(QDialog):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("关于 DeskTodoSeq")
+        self.setWindowTitle("关于 Tadado")
         self.setObjectName("aboutDialog")
         self.resize(460, 500)
         self.setMinimumSize(420, 440)
@@ -56,7 +56,26 @@ class AboutDialog(QDialog):
         layout.setContentsMargins(28, 20, 28, 20)
 
         # --- Header ---
-        name = QLabel("DeskTodoSeq")
+        # Logo
+        logo_label = QLabel()
+        logo_pixmap = QPixmap()
+        import sys
+        from pathlib import Path
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[4]))
+        logo_path = base / "resources" / "icons" / "app_icon.png"
+        if logo_path.exists():
+            logo_pixmap = QPixmap(str(logo_path)).scaled(
+                64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
+            )
+        if logo_pixmap.isNull():
+            logo_label.setText("✨")
+            logo_label.setStyleSheet("font-size: 48px;")
+        else:
+            logo_label.setPixmap(logo_pixmap)
+        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(logo_label)
+
+        name = QLabel("Tadado")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name.setStyleSheet("font-size: 20px; font-weight: bold;")
         layout.addWidget(name)
@@ -65,8 +84,13 @@ class AboutDialog(QDialog):
         version.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(version)
 
+        tagline = QLabel("Less noise. More done.")
+        tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tagline.setStyleSheet("font-size: 12px; color: palette(mid);")
+        layout.addWidget(tagline)
+
         desc = QLabel(
-            "基于 Markdown 的 Windows 桌面任务管理工具\n开源、离线、高效的个人任务管理"
+            "Markdown 驱动的 Windows 桌面任务管理工具\n轻量、离线、专注于完成"
         )
         desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         desc.setWordWrap(True)
@@ -99,9 +123,9 @@ class AboutDialog(QDialog):
 
         # --- Footer ---
         repo = QLabel(
-            '<a href="https://github.com/HananxR/DeskTodoSeq"'
+            '<a href="https://github.com/HananxR/Tadado"'
             ' style="color: palette(link);">'
-            "github.com/HananxR/DeskTodoSeq</a>"
+            "github.com/HananxR/Tadado</a>"
         )
         repo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         repo.setOpenExternalLinks(True)

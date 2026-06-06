@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/python-3.10-blue" alt="python">
 </p>
 
-# DeskTodoSeq
+# Tadado
 
 基于 Markdown 的 Windows 桌面任务管理工具 — 开源、离线、高效的个人任务管理。
 
@@ -47,6 +47,6 @@ Python 3.10 · PySide6 (Qt) · SQLite + FTS5 · APScheduler
 
 ## 📄 许可
 
-DeskTodoSeq 对个人用户**免费**使用。如需商用，请联系作者获取授权。
+Tadado 对个人用户**免费**使用。如需商用，请联系作者获取授权。
 
-MIT License · [Hanxy](mailto:hanxy8413@gmail.com) · [github.com/HananxR/DeskTodoSeq](https://github.com/HananxR/DeskTodoSeq)
+MIT License · [Hanxy](mailto:hanxy8413@gmail.com) · [github.com/HananxR/Tadado](https://github.com/HananxR/Tadado)

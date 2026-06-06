@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "desktodoseq"
+name = "tadado"
 version = "0.1.0"
-description = "Standalone desktop task management tool with Markdown-native task definition"
+description = "Tadado — Markdown-native desktop task manager. Less noise. More done."
 authors = [{name = "Hanxy", email = "hxy84@example.com"}]
 license = {text = "MIT"}
 readme = "README.md"
@@ -24,14 +24,13 @@ dev = [
     "pytest>=7.4.0",
     "pytest-qt>=4.2.0",
     "pytest-mock>=3.11.0",
-    "nuitka>=2.0",
-    "ordered-set>=4.0",
+    "pyinstaller>=6.0.0",
     "black>=23.0.0",
     "ruff>=0.1.0",
 ]
 
 [project.scripts]
-desktodoseq = "main:main"
+tadado = "main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -58,6 +57,5 @@ addopts = "-v --tb=short"
 
 [dependency-groups]
 dev = [
-    "nuitka>=2.0",
-    "ordered-set>=4.0",
+    "pyinstaller>=6.0.0",
 ]

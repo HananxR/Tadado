@@ -36,9 +36,9 @@ tasks_md = [
     "- [ ] LATER [#C] <2026-05-25> 报名AWS SAA认证考试 #study #cert",
 
     # Side project
-    "- [ ] TODO [#B] <2026-05-17> DeskTodoSeq: 添加Markdown语法高亮功能 #dev #feature",
-    "- [ ] TODO [#C] <2026-05-19> DeskTodoSeq: 设计应用图标和品牌配色 #dev #design",
-    "- [x] DOING [#A] <2026-05-11> DeskTodoSeq: 优化UX体验，升级UI设计 #dev #current",
+    "- [ ] TODO [#B] <2026-05-17> Tadado: 添加Markdown语法高亮功能 #dev #feature",
+    "- [ ] TODO [#C] <2026-05-19> Tadado: 设计应用图标和品牌配色 #dev #design",
+    "- [x] DOING [#A] <2026-05-11> Tadado: 优化UX体验，升级UI设计 #dev #current",
     "- [ ] TODO [#C] <2026-05-22> 写技术博客：如何用Python构建桌面应用 #writing #blog",
 
     # Financial

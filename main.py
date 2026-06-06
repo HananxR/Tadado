@@ -1,12 +1,12 @@
-# DeskTodoSeq — 入口
+# Tadado — 入口
 
 import sys
 
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
-from src.app import DeskTodoSeqApp
+from src.app import TadadoApp
 
-_SERVER_NAME = "DeskTodoSeq_Instance"
+_SERVER_NAME = "Tadado_Instance"
 
 
 def main() -> None:
@@ -33,7 +33,7 @@ def main() -> None:
             sock2.close()
         sys.exit(0)
 
-    app = DeskTodoSeqApp(sys.argv, local_server)
+    app = TadadoApp(sys.argv, local_server)
     sys.exit(app.exec())
 
 

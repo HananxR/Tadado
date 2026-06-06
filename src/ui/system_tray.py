@@ -19,7 +19,7 @@ class SystemTrayManager:
 
         icon = load_icon("tray_normal")
         self._tray = QSystemTrayIcon(icon)
-        self._tray.setToolTip("DeskTodoSeq")
+        self._tray.setToolTip("Tadado")
 
         self._build_menu()
         self._tray.activated.connect(self._on_activated)

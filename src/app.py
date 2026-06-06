@@ -285,7 +285,7 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
         repo.insert(task)
 
 
-class DeskTodoSeqApp(QApplication):
+class TadadoApp(QApplication):
     """Main application — owns config, repository, services, and top-level UI."""
 
     def __init__(self, argv: list[str], local_server: QLocalServer) -> None:
@@ -294,9 +294,9 @@ class DeskTodoSeqApp(QApplication):
         self._local_server.setParent(self)
         self._local_server.newConnection.connect(self._on_wake_request)
 
-        self.setApplicationName("DeskTodoSeq")
+        self.setApplicationName("Tadado")
         self.setApplicationVersion("0.1.0")
-        self.setOrganizationName("DeskTodoSeq")
+        self.setOrganizationName("Tadado")
         self.setQuitOnLastWindowClosed(False)
 
         # Core services

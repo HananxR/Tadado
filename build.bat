@@ -1,12 +1,13 @@
 @echo off
-echo === DeskTodoSeq Nuitka Build ===
+echo === Tadado PyInstaller Build ===
 
 :: Clean old build artifacts
-if exist dist\main.dist rmdir /s /q dist\main.dist
-if exist dist\main.build rmdir /s /q dist\main.build
+if exist build rmdir /s /q build
+if exist dist rmdir /s /q dist
+if exist *.spec del *.spec
 
 :: Backup dev database files so the release ships clean
-set DB_BACKUP=%TEMP%\desktodoseq_db_backup
+set DB_BACKUP=%TEMP%\tadado_db_backup
 if not exist "%DB_BACKUP%" mkdir "%DB_BACKUP%"
 set BACKUP_COUNT=0
 if exist resources\desktodoseq.data (
@@ -25,7 +26,6 @@ echo Generating package database...
 uv run python scripts/create_package_db.py
 if %ERRORLEVEL% neq 0 (
     echo ERROR: Package database generation failed.
-    :: Restore dev DB before exiting
     if exist "%DB_BACKUP%\desktodoseq.data" (
         copy "%DB_BACKUP%\desktodoseq.data" resources\desktodoseq.data >nul
     )
@@ -36,15 +36,13 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 
-:: Compile with Nuitka
-uv run python -m nuitka --standalone ^
-    --windows-console-mode=disable ^
-    --enable-plugin=pyside6 ^
-    --include-data-dir=resources=resources ^
-    --output-dir=dist ^
-    --output-filename=DeskTodoSeq.exe ^
-    --windows-icon-from-ico=resources/icons/app.ico ^
-    --assume-yes-for-downloads ^
+:: Build with PyInstaller
+uv run pyinstaller ^
+    --noconsole ^
+    --name=Tadado ^
+    --add-data="resources;resources" ^
+    --icon=resources/icons/app.ico ^
+    --clean ^
     main.py
 
 :: Remove package database before restoring dev DB
@@ -59,5 +57,5 @@ if exist "%DB_BACKUP%\tasks.db" (
 )
 rmdir /s /q "%DB_BACKUP%"
 
-echo === Build complete: dist/main.dist/ ===
+echo === Build complete: dist/Tadado/ ===
 pause
