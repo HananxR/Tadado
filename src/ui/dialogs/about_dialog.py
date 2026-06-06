@@ -19,12 +19,13 @@ from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 
 
 _FEATURES = [
-    "Markdown 原生语法 — 写一条就是创建一个任务",
-    "日历热力图 — 像 GitHub 贡献图一样追踪每一天",
-    "多分区 + 密码保护 — 工作与生活互不干扰",
-    "标签归类 — 合并、重命名、全局同步",
-    "批量操作 — 一键处理多项任务，支持导出",
-    "托盘常驻 — 后台提醒，不占屏幕空间",
+    ("📝 任务管理", "Markdown 语法创建，状态流转（待办/进行中/已完成/已逾期），全文搜索"),
+    ("📊 活动分析", "日历热力图，活动统计，标签云浏览"),
+    ("🔧 批量操作", "状态变更、挂起、延后处理，Markdown / Excel 导出"),
+    ("🏷 标签管理", "重命名、合并、搜索，全局自动同步"),
+    ("🔒 分区管理", "多分区隔离，密码保护，自动锁定"),
+    ("⏰ 智能提醒", "到期通知，免打扰，循环任务"),
+    ("🎨 双主题", "亮色 / 暗色，一键跟随系统"),
 ]
 
 
@@ -107,8 +108,8 @@ class AboutDialog(QDialog):
         feat_title.setStyleSheet("font-size: 13px; font-weight: bold; padding-top: 4px;")
         layout.addWidget(feat_title)
 
-        for text in _FEATURES:
-            row = QLabel(text)
+        for title, detail in _FEATURES:
+            row = QLabel(f"<b>{title}</b>&nbsp;&nbsp;{detail}")
             row.setWordWrap(True)
             row.setStyleSheet("font-size: 11px; padding: 2px 0;")
             layout.addWidget(row)
