@@ -23,7 +23,8 @@ class SystemTrayManager:
 
         self._build_menu()
         self._tray.activated.connect(self._on_activated)
-        self._tray.show()
+        # show() 延迟到主窗口显示后调用，避免 QSystemTrayIcon 内部 HWND
+        # 在主窗口之前闪现为"小窗口残影"（Windows 已知行为）
 
     # ------------------------------------------------------------------
     # Menu
@@ -49,6 +50,10 @@ class SystemTrayManager:
         quit_action.triggered.connect(self._main_window._on_quit)
 
         self._tray.setContextMenu(menu)
+
+    def show(self) -> None:
+        """Show the tray icon (called after main window appears to avoid flash)."""
+        self._tray.show()
 
     # ------------------------------------------------------------------
     # Slots
