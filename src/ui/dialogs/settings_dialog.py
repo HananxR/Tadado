@@ -89,8 +89,10 @@ class SettingsDialog(QDialog):
                 break
         self._minimize_cb = QCheckBox("最小化到托盘")
         self._minimize_cb.setChecked(self._config.minimize_to_tray)
+        self._auto_start_cb = QCheckBox("开机自动启动")
+        self._auto_start_cb.setChecked(self._config.auto_start)
         layout.addLayout(_hrow(QLabel("主题:"), self._theme_combo,
-                                self._minimize_cb))
+                                self._minimize_cb, self._auto_start_cb))
 
         # ── 任务列表 ──
         layout.addWidget(QLabel("<b>任务列表</b>"))
@@ -415,6 +417,9 @@ class SettingsDialog(QDialog):
 
     def _on_accept(self) -> None:
         self._config.set("general", "minimize_to_tray", value=self._minimize_cb.isChecked())
+        self._config.set("general", "auto_start", value=self._auto_start_cb.isChecked())
+        from ...utils.win32_autostart import set_autostart
+        set_autostart(self._auto_start_cb.isChecked())
         self._config.set("general", "page_size", value=self._page_size_combo.currentData())
         self._config.set("general", "default_sort", value=self._default_sort_combo.currentData())
         self._config.set("display", "theme", value=self._theme_combo.currentData())

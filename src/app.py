@@ -349,6 +349,11 @@ class TadadoApp(QApplication):
         self._scheduler.start()
         self._archiver.start()
 
+        # Sync auto-start registry with config on launch
+        from .utils.win32_autostart import set_autostart
+
+        set_autostart(self._config.auto_start)
+
         self._main_window.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, False)
         self._main_window.apply_screen_size()
         self._main_window.show()  # Qt renders; DWM stays hidden (CLOAKED)

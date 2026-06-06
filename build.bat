@@ -42,6 +42,7 @@ uv run pyinstaller ^
     --name=Tadado ^
     --add-data="resources;resources" ^
     --icon=resources/icons/app.ico ^
+    --hidden-import=PySide6.QtSvg ^
     --clean ^
     main.py
 

@@ -244,7 +244,7 @@ class MainWindow(QMainWindow):
         )
         right_items = [
             ("tray_hide", "缩小到托盘", self.hide),
-            ("window_minimize", "最小化", self.showMinimized),
+            ("window_minimize", "最小化", self._on_minimize),
             ("fullscreen_toggle", "切换全屏", self._toggle_fullscreen),
             ("window_close", "关闭", self.close),
         ]
@@ -316,6 +316,17 @@ class MainWindow(QMainWindow):
         if right: return True, 11
         if bottom: return True, 15
         return False, 0
+
+    def _on_minimize(self) -> None:
+        """Minimize button — respects *minimize_to_tray* config.
+
+        When enabled, hide directly to tray (no taskbar flash).
+        Otherwise do a normal minimize to the taskbar.
+        """
+        if self._config.minimize_to_tray:
+            self.hide()
+        else:
+            self.showMinimized()
 
     def changeEvent(self, event) -> None:
         """Intercept minimize: hide to tray when *minimize_to_tray* is enabled."""

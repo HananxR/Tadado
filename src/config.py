@@ -14,6 +14,7 @@ from PySide6.QtCore import QObject, Signal
 DEFAULT_CONFIG: dict = {
     "general": {
         "minimize_to_tray": True,
+        "auto_start": False,
         "default_partition": "",
         "hidden_partitions": [],
         "last_partition_id": "",
@@ -121,6 +122,10 @@ class AppConfig(QObject):
     @property
     def minimize_to_tray(self) -> bool:
         return bool(self._get("general", "minimize_to_tray"))
+
+    @property
+    def auto_start(self) -> bool:
+        return bool(self._get("general", "auto_start"))
 
     @property
     def default_sort(self) -> str:
