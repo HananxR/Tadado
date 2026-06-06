@@ -1,0 +1,34 @@
+<!-- Tadado App Icon — branded, solid background -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="100%" stop-color="#1E1B4B"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#818CF8"/>
+      <stop offset="50%"  stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Solid background -->
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="url(#bg)"/>
+
+  <!-- Track ring -->
+  <circle cx="128" cy="120" r="90" fill="none" stroke="white" stroke-opacity="0.15" stroke-width="10"/>
+
+  <!-- Progress arc -->
+  <circle cx="128" cy="120" r="90" fill="none" stroke="url(#arc)" stroke-width="10"
+          stroke-linecap="round"
+          stroke-dasharray="425 566" stroke-dashoffset="0"
+          transform="rotate(-90 128 120)"/>
+
+  <!-- Checkmark -->
+  <polyline points="90,125 118,152 165,98"
+            fill="none" stroke="white" stroke-width="12"
+            stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Accent dot at tip -->
+  <circle cx="165" cy="98" r="6" fill="#22D3EE"/>
+</svg>
