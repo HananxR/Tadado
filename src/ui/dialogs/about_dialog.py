@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QLabel,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -17,15 +18,13 @@ from PySide6.QtWidgets import (
 from ...utils.design_tokens import get_surface_color, is_dark
 from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 
-
 _FEATURES = [
-    ("📝 任务管理", "Markdown 语法创建，状态流转（待办/进行中/已完成/已逾期），全文搜索"),
-    ("📊 活动分析", "日历热力图，活动统计，标签云浏览"),
-    ("🔧 批量操作", "状态变更、挂起、延后处理，Markdown / Excel 导出"),
-    ("🏷 标签管理", "重命名、合并、搜索，全局自动同步"),
+    ("📝 Markdown 任务管理", "语法创建，优先级、截止时间、循环、全文搜索"),
+    ("📊 活动分析", "日历热力图、活动时间线、工作报告导出"),
+    ("🔧 批量操作", "全选、右键批量变更状态、延后、中止、删除"),
+    ("🏷 标签管理", "重命名、合并，全局自动同步"),
     ("🔒 分区管理", "多分区隔离，密码保护，自动锁定"),
-    ("⏰ 智能提醒", "到期通知，免打扰，循环任务"),
-    ("🎨 双主题", "亮色 / 暗色，一键跟随系统"),
+    ("⏰ 智能提醒", "到期通知、免打扰安静时段、托盘弹窗"),
 ]
 
 
@@ -36,15 +35,13 @@ class AboutDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("关于 Tadado")
         self.setObjectName("aboutDialog")
-        self.resize(460, 500)
-        self.setMinimumSize(420, 440)
+        self.resize(420, 480)
+        self.setMinimumSize(380, 400)
 
-        # --- Outer layout ---
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # --- Scroll area for content ---
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -52,107 +49,99 @@ class AboutDialog(QDialog):
 
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setSpacing(6)
-        layout.setContentsMargins(28, 20, 28, 20)
+        layout.setContentsMargins(32, 28, 32, 20)
+        layout.setSpacing(0)
 
-        # --- Header ---
-        # Logo
-        logo_label = QLabel()
-        logo_pixmap = QPixmap()
-        import sys
-        from pathlib import Path
-        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
-        logo_path = base / "resources" / "icons" / "app_icon.svg"
-        if logo_path.exists():
-            logo_pixmap = QPixmap(str(logo_path)).scaled(
-                64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
-            )
-        if logo_pixmap.isNull():
-            logo_label.setText("✨")
-            logo_label.setStyleSheet("font-size: 48px;")
+        # ── Logo ──
+        logo = QLabel()
+        logo_path = self._find_icon("app_icon.svg")
+        pix = QPixmap(logo_path) if logo_path else QPixmap()
+        if not pix.isNull():
+            pix = pix.scaled(72, 72, Qt.AspectRatioMode.KeepAspectRatio,
+                             Qt.TransformationMode.SmoothTransformation)
+            logo.setPixmap(pix)
         else:
-            logo_label.setPixmap(logo_pixmap)
-        logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(logo_label)
+            logo.setText("✦")
+            logo.setStyleSheet("font-size: 52px; color: #6366F1;")
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(logo)
+        layout.addSpacing(14)
 
+        # ── Name + version ──
         name = QLabel("Tadado")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        name.setStyleSheet("font-size: 20px; font-weight: bold;")
+        name.setStyleSheet("font-size: 22px; font-weight: 700;")
         layout.addWidget(name)
+        layout.addSpacing(2)
 
-        version = QLabel("v1.0.0")
-        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(version)
+        ver = QLabel("v1.0.0  ·  Less noise. More done.")
+        ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ver.setStyleSheet("font-size: 12px; color: palette(mid);")
+        layout.addWidget(ver)
+        layout.addSpacing(18)
 
-        tagline = QLabel("Less noise. More done.")
-        tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tagline.setStyleSheet("font-size: 12px; color: palette(mid);")
-        layout.addWidget(tagline)
+        # ── Separator ──
+        layout.addWidget(_h_line())
+        layout.addSpacing(14)
 
-        desc = QLabel(
-            "Markdown 驱动的 Windows 桌面任务管理工具\n轻量、离线、专注于完成"
-        )
-        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
-
-        # --- Separator ---
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("QFrame { color: palette(mid); }")
-        sep.setFixedHeight(1)
-        layout.addWidget(sep)
-
-        # --- Feature list ---
-        feat_title = QLabel("功能特性")
-        feat_title.setStyleSheet("font-size: 13px; font-weight: bold; padding-top: 4px;")
-        layout.addWidget(feat_title)
-
-        for title, detail in _FEATURES:
-            row = QLabel(f"<b>{title}</b>&nbsp;&nbsp;{detail}")
+        # ── Feature list ──
+        for title, desc in _FEATURES:
+            row = QLabel(f'<b style="font-size:12px;">{title}</b>'
+                         f'<span style="font-size:11px; color:palette(mid);"> &nbsp;—&nbsp; {desc}</span>')
             row.setWordWrap(True)
-            row.setStyleSheet("font-size: 11px; padding: 2px 0;")
             layout.addWidget(row)
+            layout.addSpacing(6)
 
-        # --- Separator ---
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.Shape.HLine)
-        sep2.setStyleSheet("QFrame { color: palette(mid); }")
-        sep2.setFixedHeight(1)
-        layout.addWidget(sep2)
+        layout.addSpacing(6)
 
-        # --- Footer ---
+        # ── Separator ──
+        layout.addWidget(_h_line())
+        layout.addSpacing(14)
+
+        # ── Footer ──
         repo = QLabel(
-            '<a href="https://github.com/HananxR/Tadado"'
-            ' style="color: palette(link);">'
+            '<a href="https://github.com/HananxR/Tadado" style="color: palette(link);">'
             "github.com/HananxR/Tadado</a>"
         )
         repo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         repo.setOpenExternalLinks(True)
-        repo.setStyleSheet("padding-top: 2px;")
+        repo.setStyleSheet("font-size: 11px;")
         layout.addWidget(repo)
 
-        license_label = QLabel("MIT License")
-        license_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(license_label)
-
-        author = QLabel("Hanxy <hanxy8413@gmail.com>")
-        author.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(author)
+        foot = QLabel("MIT License  ·  Hanxy <hanxy8413@gmail.com>")
+        foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        foot.setStyleSheet("font-size: 11px; color: palette(mid);")
+        layout.addWidget(foot)
 
         layout.addStretch()
 
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
 
-        # --- Buttons ---
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.reject)
-        buttons.accepted.connect(self.accept)
+        buttons.setCenterButtons(True)
         outer.addWidget(buttons)
 
+    # ── helpers ──
+
+    @staticmethod
+    def _find_icon(name: str) -> str | None:
+        import sys
+        from pathlib import Path
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
+        p = base / "resources" / "icons" / name
+        return str(p) if p.exists() else None
+
     def showEvent(self, event: QShowEvent) -> None:
-        """Apply dark title bar on Windows when the current theme is dark."""
         super().showEvent(event)
         if is_dark_mode_supported() and is_dark():
             set_window_dark_mode(self, True, caption_color=get_surface_color())
+
+
+def _h_line() -> QFrame:
+    line = QFrame()
+    line.setFrameShape(QFrame.Shape.HLine)
+    line.setStyleSheet("QFrame { color: palette(mid); }")
+    line.setFixedHeight(1)
+    return line
