@@ -86,6 +86,10 @@ class IconLoader:
         return icon
 
     def app_icon(self) -> QIcon:
+        for ext in (".svg", ".png", ".ico"):
+            path = _resource_path("icons", f"app_icon{ext}")
+            if path.exists():
+                return QIcon(str(path))
         path = _resource_path("icons", "app.ico")
         if path.exists():
             return QIcon(str(path))

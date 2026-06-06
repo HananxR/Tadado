@@ -61,8 +61,8 @@ class AboutDialog(QDialog):
         logo_pixmap = QPixmap()
         import sys
         from pathlib import Path
-        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[4]))
-        logo_path = base / "resources" / "icons" / "app_icon.png"
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
+        logo_path = base / "resources" / "icons" / "app_icon.svg"
         if logo_path.exists():
             logo_pixmap = QPixmap(str(logo_path)).scaled(
                 64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation,
