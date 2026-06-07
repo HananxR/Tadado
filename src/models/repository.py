@@ -932,12 +932,16 @@ class TaskRepository:
     # Reminder helpers (Phase 2)
     # ------------------------------------------------------------------
 
-    def get_due_today(self) -> list[Task]:
+    def get_due_today(self, partition_id: str | None = None) -> list[Task]:
         today = date.today().isoformat()
         cols = ", ".join(_TASK_COLUMNS)
+        where = "deadline_date=? AND archived=0 AND status!='DONE'"
+        params: list = [today]
+        if partition_id:
+            where += " AND partition_id=?"
+            params.append(partition_id)
         rows = self.conn.execute(
-            f"SELECT {cols} FROM tasks WHERE deadline_date=? AND archived=0 AND status!='DONE'",
-            (today,),
+            f"SELECT {cols} FROM tasks WHERE {where}", params,
         ).fetchall()
         return [_row_to_task(tuple(r)) for r in rows]
 
@@ -952,12 +956,16 @@ class TaskRepository:
         ).fetchall()
         return [_row_to_task(tuple(r)) for r in rows]
 
-    def get_overdue(self) -> list[Task]:
+    def get_overdue(self, partition_id: str | None = None) -> list[Task]:
         today = date.today().isoformat()
         cols = ", ".join(_TASK_COLUMNS)
+        where = "deadline_date < ? AND archived=0 AND status!='DONE'"
+        params: list = [today]
+        if partition_id:
+            where += " AND partition_id=?"
+            params.append(partition_id)
         rows = self.conn.execute(
-            f"SELECT {cols} FROM tasks WHERE deadline_date < ? AND archived=0 AND status!='DONE'",
-            (today,),
+            f"SELECT {cols} FROM tasks WHERE {where}", params,
         ).fetchall()
         return [_row_to_task(tuple(r)) for r in rows]
 

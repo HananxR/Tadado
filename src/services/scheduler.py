@@ -45,8 +45,9 @@ class TaskScheduler:
         if not self._config.reminders_enabled:
             return
 
-        due = self._repository.get_due_today()
-        overdue = self._repository.get_overdue()
+        pid = self._config.get("general", "last_partition_id", default="") or None
+        due = self._repository.get_due_today(partition_id=pid)
+        overdue = self._repository.get_overdue(partition_id=pid)
         intervals = self._config.reminder_intervals
 
         for task in due + overdue:

@@ -26,7 +26,7 @@ DEFAULT_CONFIG: dict = {
         "heatmap_start_year": 2026,
     },
     "reminders": {
-        "enabled": True,
+        "enabled": False,
         "intervals_minutes": [30, 60, 1440],
         "quiet_hours_start": "22:00",
         "quiet_hours_end": "08:00",
