@@ -1588,30 +1588,39 @@ class MainWindow(QMainWindow):
             self._filter_bar.set_sort(self._config.default_sort)
             self._setting_sort_internally = False
         f = self._filter_bar.build_filter()  # preserve sort
+        # 速览栏按创建时间过滤，排除已完成: created_at ≤ 时间上限 + status ≠ DONE
+        _NON_DONE = {TaskStatus.TODO, TaskStatus.DOING, TaskStatus.OVERDUE}
         if preset == "all":
             pass
         elif preset == "today":
-            f.date_to = date.today()
+            f.created_to = date.today()
+            f.statuses = _NON_DONE
         elif preset == "yesterday":
-            f.date_to = date.today() - dt.timedelta(days=1)
+            f.created_to = date.today() - dt.timedelta(days=1)
+            f.statuses = _NON_DONE
         elif preset == "last_week":
             today = date.today()
-            f.date_to = today - dt.timedelta(days=today.isoweekday())
+            f.created_to = today - dt.timedelta(days=today.isoweekday())
+            f.statuses = _NON_DONE
         elif preset == "week":
             today = date.today()
-            f.date_to = today + dt.timedelta(days=7 - today.isoweekday())
+            f.created_to = today + dt.timedelta(days=7 - today.isoweekday())
+            f.statuses = _NON_DONE
         elif preset == "last_month":
             today = date.today()
-            f.date_to = today.replace(day=1) - dt.timedelta(days=1)
+            f.created_to = today.replace(day=1) - dt.timedelta(days=1)
+            f.statuses = _NON_DONE
         elif preset == "month":
             import calendar as _cal
             today = date.today()
             _, last = _cal.monthrange(today.year, today.month)
-            f.date_to = today.replace(day=last)
+            f.created_to = today.replace(day=last)
+            f.statuses = _NON_DONE
         elif "days" in preset:
             try:
                 days = int(preset.split("_")[0])
-                f.date_to = date.today()
+                f.created_to = date.today()
+                f.statuses = _NON_DONE
             except ValueError:
                 pass
         self._carousel_filter = f
