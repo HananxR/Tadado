@@ -271,18 +271,60 @@ class SettingsDialog(QDialog):
         h = self._partition_table.horizontalHeader().height() + n * 40 + 4
         self._partition_table.setMinimumHeight(h)
 
+        # 校验：确保有且仅有一个默认分区（处理 default_id 失效/为空的情况）
+        if self._partition_table.rowCount() > 0:
+            any_checked = False
+            for r in range(self._partition_table.rowCount()):
+                cw = self._partition_table.cellWidget(r, 1)
+                if cw:
+                    cb = cw.findChild(QCheckBox)
+                    if cb and cb.isChecked():
+                        any_checked = True
+                        break
+            if not any_checked:
+                # 自动勾选第一个分区为默认
+                first_cw = self._partition_table.cellWidget(0, 1)
+                if first_cw:
+                    first_cb = first_cw.findChild(QCheckBox)
+                    if first_cb:
+                        first_cb.setChecked(True)
+                        first_pid = self._partitions_data[0]["id"]
+                        self._config.set("general", "default_partition", value=first_pid)
+
     def _on_default_toggled(self, row: int, checked: bool) -> None:
-        """Mutually exclusive default partition: uncheck all others."""
+        """Mutually exclusive default partition: at least one must remain checked."""
         if not checked:
-            return  # prevent unchecking the default
-        for r in range(self._partition_table.rowCount()):
-            cw = self._partition_table.cellWidget(r, 1)
-            if cw and r != row:
-                cb = cw.findChild(QCheckBox)
-                if cb:
-                    cb.blockSignals(True)
-                    cb.setChecked(False)
-                    cb.blockSignals(False)
+            # 防止取消最后一个默认分区 — 检查是否有其他已勾选的
+            other_checked = False
+            for r in range(self._partition_table.rowCount()):
+                if r == row:
+                    continue
+                cw = self._partition_table.cellWidget(r, 1)
+                if cw:
+                    cb = cw.findChild(QCheckBox)
+                    if cb and cb.isChecked():
+                        other_checked = True
+                        break
+            if not other_checked:
+                # 最后一个默认分区不可取消
+                cw = self._partition_table.cellWidget(row, 1)
+                if cw:
+                    cb = cw.findChild(QCheckBox)
+                    if cb:
+                        cb.blockSignals(True)
+                        cb.setChecked(True)
+                        cb.blockSignals(False)
+                return
+        else:
+            # 勾选时取消其他所有分区
+            for r in range(self._partition_table.rowCount()):
+                cw = self._partition_table.cellWidget(r, 1)
+                if cw and r != row:
+                    cb = cw.findChild(QCheckBox)
+                    if cb:
+                        cb.blockSignals(True)
+                        cb.setChecked(False)
+                        cb.blockSignals(False)
         pid = self._partitions_data[row]["id"]
         self._config.set("general", "default_partition", value=pid)
 
@@ -393,6 +435,14 @@ class SettingsDialog(QDialog):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if result == QMessageBox.StandardButton.Yes:
+            # 若删除的是默认分区，先转移默认到其他分区
+            default_id = self._config.get("general", "default_partition", default="")
+            if p["id"] == default_id:
+                other = [d for d in self._partitions_data if d["id"] != p["id"]]
+                if other:
+                    self._config.set("general", "default_partition", value=other[0]["id"])
+                else:
+                    self._config.set("general", "default_partition", value="")
             self._repository.delete_partition(p["id"])
             self._populate_partition_table()
             get_signal_bus().partitions_changed.emit()
@@ -416,6 +466,21 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _on_accept(self) -> None:
+        # 校验：有且仅有一个默认分区
+        if self._partition_table.rowCount() > 0:
+            default_count = 0
+            for r in range(self._partition_table.rowCount()):
+                cw = self._partition_table.cellWidget(r, 1)
+                if cw:
+                    cb = cw.findChild(QCheckBox)
+                    if cb and cb.isChecked():
+                        default_count += 1
+            if default_count != 1:
+                QMessageBox.warning(
+                    self, "校验失败",
+                    f"必须设定且仅设定一个默认分区，当前已设定 {default_count} 个。",
+                )
+                return
         self._config.set("general", "minimize_to_tray", value=self._minimize_cb.isChecked())
         self._config.set("general", "auto_start", value=self._auto_start_cb.isChecked())
         from ...utils.win32_autostart import set_autostart

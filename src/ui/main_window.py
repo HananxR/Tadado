@@ -995,16 +995,18 @@ class MainWindow(QMainWindow):
     def _on_tasks_bulk_created(self, count: int, task_ids: list) -> None:
         """Handle multi-task creation: switch to creation-time sort, refresh, highlight first."""
         self._new_task_sort_active = True
-        self._setting_sort_internally = True
+        self._filter_bar.blockSignals(True)
         self._filter_bar.set_sort("created")
-        self._filter_bar.reset()  # 在 guard 内，在 activate_preset 之前清空过滤
-        self._setting_sort_internally = False
+        self._filter_bar.reset()
+        self._filter_bar._debounce.stop()  # 杀死 reset() 残留的 300ms debounce，避免竞态
+        self._filter_bar.blockSignals(False)
         if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
             self._new_task_sort_active = False  # 临时清除，避免 _on_quick_preset 恢复默认排序
             self._quick_overview.activate_preset("today")
             self._new_task_sort_active = True
         self._on_data_changed()
-        self._on_task_selected(self._task_model.tasks[0])
+        if self._task_model.tasks:
+            self._on_task_selected(self._task_model.tasks[0])
 
     def _build_filter_with_sort(self) -> TaskFilter:
         """Build filter with FilterBar's sort as base, overlay scope from carousel/partition."""
@@ -1012,15 +1014,15 @@ class MainWindow(QMainWindow):
         if self._carousel_filter is not None:
             f.date_from = self._carousel_filter.date_from
             f.date_to = self._carousel_filter.date_to
-            f.partition_id = self._carousel_filter.partition_id or self._active_partition_id
+            f.partition_id = self._carousel_filter.partition_id or self._active_partition_id or None  # "" → None
         else:
-            f.partition_id = self._active_partition_id
+            f.partition_id = self._active_partition_id or None  # "" → None
         return f
 
     def _refresh_all_views(self, filter_: TaskFilter, reset_page: bool = True) -> None:
         if reset_page:
             self._reset_pagination()
-        filter_.partition_id = filter_.partition_id or self._active_partition_id
+        filter_.partition_id = filter_.partition_id or self._active_partition_id or None  # "" → None
         all_tasks = self._repository.search(filter_)
         self._total_count = self._repository.count(filter_)
         # Paginate table display — full list still passed to overview / progress bar
@@ -1036,10 +1038,11 @@ class MainWindow(QMainWindow):
 
     def _on_task_created(self, task) -> None:
         self._new_task_sort_active = True
-        self._setting_sort_internally = True
+        self._filter_bar.blockSignals(True)
         self._filter_bar.set_sort("created")
-        self._filter_bar.reset()  # 在 guard 内，在 activate_preset 之前清空过滤
-        self._setting_sort_internally = False
+        self._filter_bar.reset()
+        self._filter_bar._debounce.stop()  # 杀死 reset() 残留的 300ms debounce，避免竞态
+        self._filter_bar.blockSignals(False)
         if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
             self._new_task_sort_active = False  # 临时清除，避免 _on_quick_preset 恢复默认排序
             self._quick_overview.activate_preset("today")
@@ -1763,6 +1766,12 @@ class MainWindow(QMainWindow):
 
     def _load_partitions(self) -> None:
         self._in_load_partitions = True
+        default_pid = self._repository.ensure_default_partition()  # 无分区时自动创建"默认"分区
+        # 首次创建默认分区后持久化到 config
+        current_default = self._config.get("general", "default_partition", default="")
+        if not current_default:
+            self._config.set("general", "default_partition", value=default_pid)
+            self._config.save()
         partitions = self._repository.get_all_partitions()
         # 同步密码 + auto_lock 到内存
         for p in partitions:

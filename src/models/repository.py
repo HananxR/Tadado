@@ -478,6 +478,13 @@ class TaskRepository:
             for r in rows
         ]
 
+    def ensure_default_partition(self) -> str:
+        """Ensure at least one partition exists; create '默认' if none. Returns partition id."""
+        existing = self.get_all_partitions()
+        if existing:
+            return existing[0]["id"]
+        return self.upsert_partition("默认")["id"]
+
     def check_partition_password(self, partition_id: str) -> tuple[bool, str]:
         """Return (has_password, password_hash_or_empty)."""
         row = self.conn.execute(
