@@ -1014,13 +1014,16 @@ class MainWindow(QMainWindow):
             self._on_task_selected(self._task_model.tasks[0])
 
     def _build_filter_with_sort(self) -> TaskFilter:
-        """Build filter with FilterBar's sort as base, overlay scope from carousel/partition."""
-        f = self._filter_bar.build_filter()  # preserves sort + search + status
+        """Build filter with FilterBar's sort as base, overlay scope from quick-overview + partition."""
+        f = self._filter_bar.build_filter()  # preserves sort + search + urgencies
+        # 从速览栏当前预设直接获取时间窗口和状态过滤（不受 _carousel_filter 覆写影响）
+        if hasattr(self, '_quick_overview'):
+            overview_f = self._quick_overview.build_filter()
+            f.created_to = overview_f.created_to
+            f.statuses = overview_f.statuses
         if self._carousel_filter is not None:
             f.date_from = self._carousel_filter.date_from
             f.date_to = self._carousel_filter.date_to
-            f.created_to = self._carousel_filter.created_to
-            f.statuses = self._carousel_filter.statuses
             f.partition_id = self._carousel_filter.partition_id or self._active_partition_id or None  # "" → None
         else:
             f.partition_id = self._active_partition_id or None  # "" → None
