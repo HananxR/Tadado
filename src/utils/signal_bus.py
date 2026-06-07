@@ -24,7 +24,7 @@ class SignalBus(QObject):
     task_status_changed = Signal(Task, TaskStatus)  # task, old_status
 
     # Reminders (Phase 2)
-    reminder_fired = Signal(Task, int)  # task, interval_minutes
+    reminders_fired = Signal(list)  # list[tuple[Task, int]] — batched reminders
 
     # Archive (Phase 2)
     archive_completed = Signal(int)  # count

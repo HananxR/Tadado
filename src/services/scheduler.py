@@ -50,8 +50,11 @@ class TaskScheduler:
         overdue = self._repository.get_overdue(partition_id=pid)
         intervals = self._config.reminder_intervals
 
+        reminders: list = []
         for task in due + overdue:
             for interval in intervals:
                 if not self._repository.notification_sent(task.id, interval):
-                    self._signal_bus.reminder_fired.emit(task, interval)
+                    reminders.append((task, interval))
                     self._repository.mark_notification_sent(task.id, interval)
+        if reminders:
+            self._signal_bus.reminders_fired.emit(reminders)

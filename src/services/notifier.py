@@ -1,40 +1,35 @@
-"""Tray notification handler — listens to reminder_fired and shows tray messages."""
+"""Tray notification handler — listens to reminders_fired and shows a merged tray message."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
 from ..config import AppConfig
-from ..models.task import Task
 from ..utils.signal_bus import get_signal_bus
 
 
 class TaskNotifier:
-    """Listens to reminder_fired signals and shows system tray notifications,
+    """Listens to reminders_fired signals and shows a single merged tray notification,
     respecting quiet hours defined in config."""
 
     def __init__(self, tray_manager, config: AppConfig) -> None:
         self._tray = tray_manager
         self._config = config
         self._signal_bus = get_signal_bus()
-        self._signal_bus.reminder_fired.connect(self._on_reminder_fired)
+        self._signal_bus.reminders_fired.connect(self._on_reminders_fired)
 
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
 
-    def _on_reminder_fired(self, task: Task, interval_minutes: int) -> None:
-        if self._in_quiet_hours():
+    def _on_reminders_fired(self, reminders: list) -> None:
+        if self._in_quiet_hours() or not reminders:
             return
-
-        title = "任务提醒"
-        if interval_minutes >= 1440:
-            msg = f"{task.title} — 截止日已超过 {interval_minutes // 1440} 天"
-        elif interval_minutes >= 60:
-            msg = f"{task.title} — 截止日还剩 {interval_minutes // 60} 小时"
-        else:
-            msg = f"{task.title} — 截止日还剩 {interval_minutes} 分钟"
-        self._tray.show_message(title, msg)
+        # 合并所有任务标题为一条消息（最多显示 5 个）
+        names = [t.title for t, _ in reminders[:5]]
+        suffix = f" 等 {len(reminders)} 项" if len(reminders) > 5 else ""
+        msg = "、".join(names) + suffix
+        self._tray.show_message("任务提醒", msg)
 
     # ------------------------------------------------------------------
     # Quiet hours
