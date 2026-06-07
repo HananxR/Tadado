@@ -256,14 +256,24 @@ class TaskRepository:
             where_clauses.append("partition_id = ?")
             params.append(filter_.partition_id)
 
-        # Date range filter
-        if filter_.date_from:
+        # Date range filter — each field independently BETWEEN to avoid cross-field matches
+        if filter_.date_from and filter_.date_to:
+            where_clauses.append(
+                "(deadline_date BETWEEN ? AND ?"
+                " OR scheduled_date BETWEEN ? AND ?"
+                " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
+            )
+            params.extend([
+                filter_.date_from.isoformat(), filter_.date_to.isoformat(),
+                filter_.date_from.isoformat(), filter_.date_to.isoformat(),
+            ])
+        elif filter_.date_from:
             where_clauses.append(
                 "(deadline_date >= ? OR scheduled_date >= ?"
                 " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
             )
             params.extend([filter_.date_from.isoformat(), filter_.date_from.isoformat()])
-        if filter_.date_to:
+        elif filter_.date_to:
             where_clauses.append(
                 "(deadline_date <= ? OR scheduled_date <= ?"
                 " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
@@ -336,13 +346,24 @@ class TaskRepository:
         if filter_.partition_id is not None:
             where_clauses.append("partition_id = ?")
             params.append(filter_.partition_id)
-        if filter_.date_from:
+        # Date range filter — each field independently BETWEEN to avoid cross-field matches
+        if filter_.date_from and filter_.date_to:
+            where_clauses.append(
+                "(deadline_date BETWEEN ? AND ?"
+                " OR scheduled_date BETWEEN ? AND ?"
+                " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
+            )
+            params.extend([
+                filter_.date_from.isoformat(), filter_.date_to.isoformat(),
+                filter_.date_from.isoformat(), filter_.date_to.isoformat(),
+            ])
+        elif filter_.date_from:
             where_clauses.append(
                 "(deadline_date >= ? OR scheduled_date >= ?"
                 " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
             )
             params.extend([filter_.date_from.isoformat(), filter_.date_from.isoformat()])
-        if filter_.date_to:
+        elif filter_.date_to:
             where_clauses.append(
                 "(deadline_date <= ? OR scheduled_date <= ?"
                 " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
