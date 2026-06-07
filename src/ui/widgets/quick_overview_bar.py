@@ -272,33 +272,18 @@ class QuickOverviewBar(QWidget):
         filter_ = TaskFilter(partition_id=self._partition_id, sort_by=sort)
 
         if self._active_preset == "yesterday":
-            d = today - timedelta(days=1)
-            filter_.date_from = d
-            filter_.date_to = d
+            filter_.date_to = today - timedelta(days=1)
         elif self._active_preset == "today":
-            filter_.date_from = today
             filter_.date_to = today
         elif self._active_preset == "last_week":
-            last_monday = today - timedelta(days=today.isoweekday() + 6)
-            last_sunday = last_monday + timedelta(days=6)
-            filter_.date_from = last_monday
-            filter_.date_to = last_sunday
+            filter_.date_to = today - timedelta(days=today.isoweekday())
         elif self._active_preset == "week":
-            days_until_sunday = 7 - today.isoweekday()
-            sunday = today + timedelta(days=days_until_sunday)
-            monday = sunday - timedelta(days=6)
-            filter_.date_from = monday
-            filter_.date_to = sunday
+            filter_.date_to = today + timedelta(days=7 - today.isoweekday())
         elif self._active_preset == "last_month":
-            first_of_this_month = today.replace(day=1)
-            last_day_of_last_month = first_of_this_month - timedelta(days=1)
-            first_of_last_month = last_day_of_last_month.replace(day=1)
-            filter_.date_from = first_of_last_month
-            filter_.date_to = last_day_of_last_month
+            filter_.date_to = today.replace(day=1) - timedelta(days=1)
         elif self._active_preset == "month":
             import calendar as _cal
             _, last = _cal.monthrange(today.year, today.month)
-            filter_.date_from = today.replace(day=1)
             filter_.date_to = today.replace(day=last)
 
         return filter_
