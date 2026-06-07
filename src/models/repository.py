@@ -283,10 +283,10 @@ class TaskRepository:
         # Created time range filter
         if filter_.created_from:
             where_clauses.append("created_at >= ?")
-            params.append(filter_.created_from.isoformat())
+            params.append(filter_.created_from.isoformat() + "T00:00:00")
         if filter_.created_to:
             where_clauses.append("created_at <= ?")
-            params.append(filter_.created_to.isoformat())
+            params.append(filter_.created_to.isoformat() + "T23:59:59")
 
         # Progress range filter
         if filter_.progress_min > 0 or filter_.progress_max < 100:
@@ -371,10 +371,10 @@ class TaskRepository:
             params.extend([filter_.date_to.isoformat(), filter_.date_to.isoformat()])
         if filter_.created_from:
             where_clauses.append("created_at >= ?")
-            params.append(filter_.created_from.isoformat())
+            params.append(filter_.created_from.isoformat() + "T00:00:00")
         if filter_.created_to:
             where_clauses.append("created_at <= ?")
-            params.append(filter_.created_to.isoformat())
+            params.append(filter_.created_to.isoformat() + "T23:59:59")
         if filter_.progress_min > 0 or filter_.progress_max < 100:
             where_clauses.append("progress >= ? AND progress <= ?")
             params.extend([filter_.progress_min, filter_.progress_max])
