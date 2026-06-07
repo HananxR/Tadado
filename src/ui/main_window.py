@@ -1019,6 +1019,8 @@ class MainWindow(QMainWindow):
         if self._carousel_filter is not None:
             f.date_from = self._carousel_filter.date_from
             f.date_to = self._carousel_filter.date_to
+            f.created_to = self._carousel_filter.created_to
+            f.statuses = self._carousel_filter.statuses
             f.partition_id = self._carousel_filter.partition_id or self._active_partition_id or None  # "" → None
         else:
             f.partition_id = self._active_partition_id or None  # "" → None
