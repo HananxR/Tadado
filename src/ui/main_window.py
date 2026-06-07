@@ -1766,7 +1766,7 @@ class MainWindow(QMainWindow):
 
     def _load_partitions(self) -> None:
         self._in_load_partitions = True
-        default_pid = self._repository.ensure_default_partition()  # 无分区时自动创建"默认"分区
+        default_pid = self._repository.ensure_default_partition()  # 无分区时自动创建"功能演示"分区
         # 首次创建默认分区后持久化到 config
         current_default = self._config.get("general", "default_partition", default="")
         if not current_default:
@@ -1801,11 +1801,21 @@ class MainWindow(QMainWindow):
                 lambda checked=False, i=pid: self._activate_partition(i),
             )
         self._update_partition_status_btn()
+        # 若当前激活的分区已被删除，重置使其落入激活链
+        if self._active_partition_id and not self._repository.get_partition_name_map().get(
+            self._active_partition_id
+        ):
+            self._active_partition_id = None
         if not self._active_partition_id:
-            current = self._config.get("general", "last_partition_id", default="")
-            if current:
-                self._activate_partition(current)
-            else:
+            # 激活优先级：上次使用的分区 > 默认分区 > 第一个未锁定分区
+            activated = False
+            for key in ("last_partition_id", "default_partition"):
+                pid = self._config.get("general", key, default="")
+                if pid and self._repository.get_partition_name_map().get(pid):
+                    self._activate_partition(pid)
+                    activated = True
+                    break
+            if not activated:
                 first = self._find_first_unlocked_partition()
                 if first:
                     self._activate_partition(first)
@@ -1865,6 +1875,7 @@ class MainWindow(QMainWindow):
         if self._task_model.rowCount() > 0:
             self._on_task_selected(self._task_model.tasks[0])
         else:
+            self._edit_panel.set_active_partition(self._active_partition_id)
             self._edit_panel.show_empty()
 
     def _on_unlock_partition(self) -> None:

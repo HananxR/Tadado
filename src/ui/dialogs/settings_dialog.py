@@ -429,6 +429,9 @@ class SettingsDialog(QDialog):
         get_signal_bus().partitions_changed.emit()
 
     def _confirm_delete_partition(self, p: dict) -> None:
+        if len(self._partitions_data) <= 1:
+            QMessageBox.warning(self, "无法删除", "至少需要保留一个分区。")
+            return
         result = QMessageBox.question(
             self, "确认删除",
             f'确定要删除分区 "{p["name"]}" 吗？\n该分区下的任务将变为"未分类"。',
