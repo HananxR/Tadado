@@ -1858,13 +1858,13 @@ class MainWindow(QMainWindow):
             self._splitter_stack.setCurrentIndex(1)
         else:
             self._splitter_stack.setCurrentIndex(0)
-        self._carousel_filter = self._quick_overview.build_filter()
         self._page = 0
         self._update_partition_status_btn()
         self._heatmap_widget.set_partition_id(pid or None)
         self._status_badge.set_partition_id(pid or None)
         self._progress_bar.set_partition_id(pid or None)
-        self._quick_overview.set_partition_id(pid or None)
+        self._quick_overview.set_partition_id(pid or None)  # 必须在 build_filter 之前
+        self._carousel_filter = self._quick_overview.build_filter()
         self._batch_tag_panel.set_partition_id(pid or "")
         if hasattr(self, '_batch_task_model'):
             self._refresh_batch_page()
