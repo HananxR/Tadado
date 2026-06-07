@@ -89,261 +89,198 @@ def main() -> None:
     def _ago(days: int = 0, hours: int = 0) -> str:
         return (datetime.now() - timedelta(days=days, hours=hours)).isoformat()
 
-    # Each entry: (raw_md, title, status, urgency, tags, activity_log, progress, completed_at, recurrence_rule, suspended, notes)
+    # Each entry: (raw_md, title, status, urgency, tags, activity_log, progress,
+    #               completed_at, recurrence_rule, suspended, notes, created_at_days_ago)
     # - raw_md: valid Markdown line parsable by MarkdownTaskParser
     # - activity_log: list of {"ts": iso, "content": str, "status": str} dicts
-    # - completed_at: datetime for DONE tasks
+    # - created_at_days_ago: int, how many days before today the task was "created"
+    #   (must satisfy: deadline_date >= created_at)
     demos: list[tuple] = [
         # ── 1. DONE — complete status cycle, rich activity log ──
+        # created 10 days ago, deadline 2 days ago, completed 2 days ago
         (
             f"- [x] <{today - timedelta(days=2)}> 完成Q3产品需求文档评审 #工作 #产品",
             "完成Q3产品需求文档评审",
-            TaskStatus.DONE,
-            0,  # urgency 0 = 紧急
-            ["工作", "产品"],
+            TaskStatus.DONE, 0, ["工作", "产品"],
             [
-                {"ts": _ago(4), "content": "收集各团队Q3数据报表，整理需求池", "status": "TODO"},
-                {"ts": _ago(3), "content": "确定PRD框架：功能概述、用户故事、验收标准", "status": "DOING", "progress": 30},
-                {"ts": _ago(2), "content": "完成初稿 15 页，交付组长审阅", "status": "DOING", "progress": 70},
-                {"ts": _ago(1), "content": "终稿审核通过 ✓，同步到Confluence", "status": "DONE", "progress": 100},
+                {"ts": _ago(8), "content": "收集各团队Q3数据报表，整理需求池", "status": "TODO"},
+                {"ts": _ago(5), "content": "确定PRD框架：功能概述、用户故事、验收标准", "status": "DOING", "progress": 30},
+                {"ts": _ago(3), "content": "完成初稿 15 页，交付组长审阅", "status": "DOING", "progress": 70},
+                {"ts": _ago(2), "content": "终稿审核通过 ✓，同步到Confluence", "status": "DONE", "progress": 100},
             ],
-            100,
-            datetime.now() - timedelta(days=2),  # completed_at
-            None,  # no recurrence
-            False,  # not suspended
-            None,  # no notes
+            100, datetime.now() - timedelta(days=2), None, False, None, 10,
         ),
-        # ── 2. DOING — urgency 0, multi-tag, activity log ──
+        # ── 2. DOING — urgency 0, multi-tag, active development ──
+        # created 5 days ago, deadline 2 days from now
         (
             f"- [***] <{today + timedelta(days=2)}> 修复用户登录模块并发Bug #工作 #后端 #Bug",
             "修复用户登录模块并发Bug",
-            TaskStatus.DOING,
-            0,
-            ["工作", "后端", "Bug"],
+            TaskStatus.DOING, 0, ["工作", "后端", "Bug"],
             [
-                {"ts": _ago(3), "content": "定位问题：高并发下 session 锁竞争导致死锁", "status": "TODO"},
-                {"ts": _ago(1), "content": "引入 Redis 分布式锁，重构 token 刷新逻辑，已完成 60%", "status": "DOING", "progress": 60},
-                {"ts": datetime.now().isoformat(), "content": "单元测试通过，等待 Code Review", "status": "DOING", "progress": 80},
+                {"ts": _ago(4), "content": "定位问题：高并发下 session 锁竞争导致死锁", "status": "TODO"},
+                {"ts": _ago(2), "content": "引入 Redis 分布式锁，重构 token 刷新逻辑，已完成 60%", "status": "DOING", "progress": 60},
+                {"ts": _ago(1), "content": "单元测试通过，等待 Code Review", "status": "DOING", "progress": 80},
             ],
-            80,
-            None,
-            None,
-            False,
-            None,
+            80, None, None, False, None, 5,
         ),
         # ── 3. TODO — urgency 1, near-term deadline ──
+        # created 5 days ago, deadline 5 days from now
         (
             f"- [** ] <{today + timedelta(days=5)}> 准备周五组会演示文稿 #工作 #团队",
             "准备周五组会演示文稿",
-            TaskStatus.TODO,
-            1,
-            ["工作", "团队"],
+            TaskStatus.TODO, 1, ["工作", "团队"],
             [
-                {"ts": datetime.now().isoformat(), "content": "确定汇报主题：Sprint 回顾与下周期规划", "status": "TODO"},
+                {"ts": _ago(3), "content": "确定汇报主题：Sprint 回顾与下周期规划", "status": "TODO"},
+                {"ts": _ago(1), "content": "收集各团队 Sprint 数据，整理燃尽图和 velocity", "status": "TODO"},
             ],
-            0,
-            None,
-            None,
-            False,
-            None,
+            0, None, None, False, None, 5,
         ),
         # ── 4. TODO — recurrence +1w, health tag ──
+        # created 8 days ago, deadline 5 days from now
         (
             f"- [   ] <{today + timedelta(days=5)}> 每周三次有氧运动 #健康 #运动",
             "每周三次有氧运动",
-            TaskStatus.TODO,
-            3,
-            ["健康", "运动"],
+            TaskStatus.TODO, 3, ["健康", "运动"],
             [
-                {"ts": _ago(2), "content": "本周完成 1/3 次：跑步 5km，平均配速 5'30\"", "status": "TODO"},
+                {"ts": _ago(4), "content": "本周完成 1/3 次：跑步 5km，平均配速 5'30\"", "status": "TODO"},
             ],
-            0,
-            None,
-            "+1w",  # recurrence rule
-            False,
-            None,
+            0, None, "+1w", False, None, 8,
         ),
         # ── 5. OVERDUE — auto overdue detection demo ──
+        # created 12 days ago, deadline 3 days ago
         (
             f"- [*  ] <{today - timedelta(days=3)}> 归还借阅的书籍 #生活 #日常",
             "归还借阅的书籍",
-            TaskStatus.OVERDUE,
-            2,
-            ["生活", "日常"],
+            TaskStatus.OVERDUE, 2, ["生活", "日常"],
             [
-                {"ts": _ago(10), "content": "从市图书馆借阅《系统设计》和《代码整洁之道》", "status": "TODO"},
+                {"ts": _ago(12), "content": "从市图书馆借阅《系统设计》和《代码整洁之道》", "status": "TODO"},
+                {"ts": _ago(5), "content": "收到图书馆续借提醒邮件", "status": "TODO"},
             ],
-            0,
-            None,
-            None,
-            False,
-            None,
+            0, None, None, False, None, 12,
         ),
         # ── 6. DOING — urgency 1, rich activity log with progress ──
+        # created 10 days ago, deadline 10 days from now
         (
             f"- [** ] <{today + timedelta(days=10)}> 学习Kubernetes基础 #学习 #技术",
             "学习Kubernetes基础",
-            TaskStatus.DOING,
-            1,
-            ["学习", "技术"],
+            TaskStatus.DOING, 1, ["学习", "技术"],
             [
-                {"ts": _ago(7), "content": "完成环境搭建：minikube + kubectl + 本地集群", "status": "DOING", "progress": 10},
-                {"ts": _ago(4), "content": "学习 Pod、Deployment、Service 核心概念，做笔记 5 页", "status": "DOING", "progress": 30},
-                {"ts": _ago(1), "content": "动手实践：部署一个 3 副本的 Nginx + 负载均衡，遇到 Ingress 配置问题", "status": "DOING", "progress": 50},
+                {"ts": _ago(9), "content": "完成环境搭建：minikube + kubectl + 本地集群", "status": "DOING", "progress": 10},
+                {"ts": _ago(6), "content": "学习 Pod、Deployment、Service 核心概念，做笔记 5 页", "status": "DOING", "progress": 30},
+                {"ts": _ago(3), "content": "动手实践：部署一个 3 副本的 Nginx + 负载均衡", "status": "DOING", "progress": 50},
             ],
-            50,
-            None,
-            None,
-            False,
-            None,
+            50, None, None, False, None, 10,
         ),
-        # ── 7. TODO — urgency 2, deadline only ──
+        # ── 7. TODO — urgency 2, personal health ──
+        # created 3 days ago, deadline 3 days from now
         (
             f"- [*  ] <{today + timedelta(days=3)}> 预约牙科洗牙 #健康 #生活",
             "预约牙科洗牙",
-            TaskStatus.TODO,
-            2,
-            ["健康", "生活"],
-            [],
-            0,
-            None,
-            None,
-            False,
-            None,
+            TaskStatus.TODO, 2, ["健康", "生活"],
+            [
+                {"ts": _ago(3), "content": "发现牙科诊所新开业优惠，洗牙套餐 ¥198", "status": "TODO"},
+            ],
+            0, None, None, False, None, 3,
         ),
         # ── 8. OVERDUE — urgency 0, past deadline ──
+        # created 6 days ago, deadline yesterday
         (
             f"- [***] <{today - timedelta(days=1)}> 整理本月房租账单 #生活 #财务",
             "整理本月房租账单",
-            TaskStatus.OVERDUE,
-            0,
-            ["生活", "财务"],
+            TaskStatus.OVERDUE, 0, ["生活", "财务"],
             [
-                {"ts": _ago(5), "content": "导出支付宝账单 CSV（1-15日）", "status": "TODO"},
-                {"ts": _ago(3), "content": "导出微信账单 CSV，发现几笔不明扣款需核实", "status": "TODO"},
+                {"ts": _ago(6), "content": "导出支付宝账单 CSV（1-15日）", "status": "TODO"},
+                {"ts": _ago(4), "content": "导出微信账单 CSV，发现几笔不明扣款需核实", "status": "TODO"},
             ],
-            0,
-            None,
-            None,
-            False,
-            None,
+            0, None, None, False, None, 6,
         ),
         # ── 9. DOING — urgency 2, writing task with progress ──
+        # created 8 days ago, deadline 7 days from now
         (
             f"- [*  ] <{today + timedelta(days=7)}> 编写技术博客：Python装饰器详解 #学习 #写作",
             "编写技术博客：Python装饰器详解",
-            TaskStatus.DOING,
-            2,
-            ["学习", "写作"],
+            TaskStatus.DOING, 2, ["学习", "写作"],
             [
-                {"ts": _ago(5), "content": "确定选题和三级大纲：基础装饰器 → 带参数装饰器 → 类装饰器 → 实战案例", "status": "TODO"},
-                {"ts": _ago(3), "content": "完成第一章草稿：函数是一等公民、闭包原理", "status": "DOING", "progress": 40},
-                {"ts": _ago(1), "content": "编写代码示例：计时器、日志、权限校验三个装饰器", "status": "DOING", "progress": 60},
+                {"ts": _ago(7), "content": "确定选题和三级大纲：基础装饰器 → 带参数装饰器 → 类装饰器 → 实战案例", "status": "TODO"},
+                {"ts": _ago(4), "content": "完成第一章草稿：函数是一等公民、闭包原理", "status": "DOING", "progress": 40},
+                {"ts": _ago(2), "content": "编写代码示例：计时器、日志、权限校验三个装饰器", "status": "DOING", "progress": 60},
             ],
-            60,
-            None,
-            None,
-            False,
-            None,
+            60, None, None, False, None, 8,
         ),
-        # ── 10. TODO — urgency 1, upcoming deadline ──
+        # ── 10. TODO — urgency 1, upcoming social deadline ──
+        # created 2 days ago, deadline 4 days from now
         (
             f"- [** ] <{today + timedelta(days=4)}> 给朋友寄生日礼物 #生活 #社交",
             "给朋友寄生日礼物",
-            TaskStatus.TODO,
-            1,
-            ["生活", "社交"],
+            TaskStatus.TODO, 1, ["生活", "社交"],
             [
                 {"ts": _ago(2), "content": "选定礼物：机械键盘（Cherry MX 红轴），朋友念叨半年了", "status": "TODO"},
             ],
-            0,
-            None,
-            None,
-            False,
-            None,
+            0, None, None, False, None, 2,
         ),
         # ── 11. TODO — suspended, far future ──
+        # created 14 days ago, deadline 30 days from now
         (
             f"- [   ] <{today + timedelta(days=30)}> 研究周末短途旅行攻略 #生活 #旅行",
             "研究周末短途旅行攻略",
-            TaskStatus.TODO,
-            3,
-            ["生活", "旅行"],
+            TaskStatus.TODO, 3, ["生活", "旅行"],
             [
                 {"ts": _ago(10), "content": "初步筛选：杭州（西湖徒步）、苏州（园林+美食）、莫干山（民宿+徒步）", "status": "TODO"},
             ],
-            0,
-            None,
-            None,
-            True,  # suspended
-            None,
+            0, None, None, True, None, 14,
         ),
-        # ── 12. TODO — no deadline, urgency 3 ──
+        # ── 12. TODO — documentation task ──
+        # created 1 day ago, deadline 14 days from now
         (
-            f"- [   ]  更新API文档 #工作 #文档",
+            f"- [   ] <{today + timedelta(days=14)}> 更新API文档 #工作 #文档",
             "更新API文档",
-            TaskStatus.TODO,
-            3,
-            ["工作", "文档"],
-            [],
-            0,
-            None,
-            None,
-            False,
-            None,
+            TaskStatus.TODO, 3, ["工作", "文档"],
+            [
+                {"ts": _ago(1), "content": "整理新增接口列表（3 个 RESTful endpoint）", "status": "TODO"},
+            ],
+            0, None, None, False, None, 1,
         ),
         # ── 13. DONE — completed with activity log ──
+        # created 3 days ago, deadline yesterday, completed yesterday
         (
             f"- [x] <{today - timedelta(days=1)}> 超市采购食材 #生活 #购物",
             "超市采购食材",
-            TaskStatus.DONE,
-            2,
-            ["生活", "购物"],
+            TaskStatus.DONE, 2, ["生活", "购物"],
             [
-                {"ts": _ago(2), "content": "列购物清单：蔬菜、水果、牛奶、鸡蛋、鸡胸肉", "status": "TODO"},
+                {"ts": _ago(3), "content": "列购物清单：蔬菜、水果、牛奶、鸡蛋、鸡胸肉", "status": "TODO"},
                 {"ts": _ago(1), "content": "完成采购，花费 ¥186.5，比预算省了 ¥13.5 😊", "status": "DONE", "progress": 100},
             ],
-            100,
-            datetime.now() - timedelta(days=1),
-            None,
-            False,
-            None,
+            100, datetime.now() - timedelta(days=1), None, False, None, 3,
         ),
         # ── 14. DOING — urgency 1, reading task ──
+        # created 5 days ago, deadline 5 days from now
         (
             f"- [** ] <{today + timedelta(days=5)}> 读《重构》第8章 #学习 #阅读",
             "读《重构》第8章",
-            TaskStatus.DOING,
-            1,
-            ["学习", "阅读"],
+            TaskStatus.DOING, 1, ["学习", "阅读"],
             [
-                {"ts": _ago(3), "content": "开始第 8 章：简化条件表达式，已读 15 页", "status": "DOING", "progress": 30},
-                {"ts": _ago(1), "content": "完成：分解条件表达式、合并条件表达式、以卫语句取代嵌套", "status": "DOING", "progress": 65},
+                {"ts": _ago(4), "content": "开始第 8 章：简化条件表达式，已读 15 页", "status": "DOING", "progress": 30},
+                {"ts": _ago(2), "content": "完成：分解条件表达式、合并条件表达式、以卫语句取代嵌套", "status": "DOING", "progress": 65},
             ],
-            65,
-            None,
-            None,
-            False,
+            65, None, None, False,
             "第 8 章重点：Replace Nested Conditional with Guard Clauses 这个重构手法在日常 CR 中非常实用，建议结合项目代码实践。",
+            5,
         ),
-        # ── 15. TODO — far future, urgency 3 ──
+        # ── 15. TODO — far future, admin task ──
+        # created 21 days ago, deadline 21 days from now
         (
             f"- [   ] <{today + timedelta(days=21)}> 提交年假申请 #工作 #行政",
             "提交年假申请",
-            TaskStatus.TODO,
-            3,
-            ["工作", "行政"],
-            [],
-            0,
-            None,
-            None,
-            False,
-            None,
+            TaskStatus.TODO, 3, ["工作", "行政"],
+            [
+                {"ts": _ago(14), "content": "确认年假余额：剩余 5 天，需在 Q3 前使用", "status": "TODO"},
+            ],
+            0, None, None, False, None, 21,
         ),
     ]
 
     count = 0
-    for raw_md, title, status, urgency, tags, activity_log, progress, completed_at, recurrence_rule, suspended, notes in demos:
+    for raw_md, title, status, urgency, tags, activity_log, progress, completed_at, recurrence_rule, suspended, notes, created_at_days in demos:
         parsed = parser.parse(raw_md)
         task = Task(
             id=str(uuid.uuid4()),
@@ -362,6 +299,7 @@ def main() -> None:
             recurrence_rule=recurrence_rule,
             suspended=suspended,
             notes=notes,
+            created_at=datetime.now() - timedelta(days=created_at_days),
         )
         repo.insert(task)
         count += 1
