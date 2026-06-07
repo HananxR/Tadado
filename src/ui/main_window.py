@@ -874,9 +874,10 @@ class MainWindow(QMainWindow):
         self._status_partition_btn.setFlat(True)
         self._status_partition_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._status_partition_btn.setStyleSheet(
-            f"QPushButton {{ border: none; background: transparent; padding: 2px 8px; "
-            f"font-size: 11px; font-weight: bold; color: {t.accent if t else '#5b8def'}; }}"
-            f"QPushButton:hover {{ background: {t.accent}15; border-radius: 4px; }}"
+            f"QPushButton {{ border: none; background: {t.accent}18; border-radius: 5px; "
+            f"padding: 2px 10px; font-size: 11px; font-weight: bold; "
+            f"color: {t.accent if t else '#5b8def'}; }}"
+            f"QPushButton:hover {{ background: {t.accent}30; border-radius: 5px; }}"
         )
         self._status_partition_menu = QMenu(self._status_partition_btn)
         self._status_partition_btn.setMenu(self._status_partition_menu)
@@ -1808,9 +1809,9 @@ class MainWindow(QMainWindow):
         ):
             self._active_partition_id = None
         if not self._active_partition_id:
-            # 激活优先级：上次使用的分区 > 默认分区 > 第一个未锁定分区
+            # 激活优先级：默认分区 > 上次使用的分区 > 第一个未锁定分区
             activated = False
-            for key in ("last_partition_id", "default_partition"):
+            for key in ("default_partition", "last_partition_id"):
                 pid = self._config.get("general", key, default="")
                 if pid and self._repository.get_partition_name_map().get(pid):
                     self._activate_partition(pid)
@@ -1831,7 +1832,11 @@ class MainWindow(QMainWindow):
             locked = "🔓" if self._partition_passwords.get(pid, "") == "" else "🔒"
         else:
             locked = ""
-        txt = f"📁 {locked}{pname}" if pname else "📁 切换分区"
+        if pname:
+            prefix = locked if locked else "●"
+            txt = f"{prefix} {pname}"
+        else:
+            txt = "● 切换分区"
         self._status_partition_btn.setText(txt)
 
     def _activate_partition(self, pid: str) -> None:
@@ -1849,10 +1854,7 @@ class MainWindow(QMainWindow):
             self._splitter_stack.setCurrentIndex(1)
         else:
             self._splitter_stack.setCurrentIndex(0)
-        today = date.today()
-        self._carousel_filter = self._filter_bar.build_filter()
-        self._carousel_filter.date_from = today
-        self._carousel_filter.date_to = today
+        self._carousel_filter = self._quick_overview.build_filter()
         self._page = 0
         self._update_partition_status_btn()
         self._heatmap_widget.set_partition_id(pid or None)
