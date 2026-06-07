@@ -1145,7 +1145,7 @@ class TaskEditPanel(QWidget):
         qt = self._deadline_time_edit.time()
         new_dl = f"<{new_date} {qt.toString('HH:mm')}>"
         if dl_pattern.search(text):
-            text = dl_pattern.sub(new_dl, text, count=1)
+            text = dl_pattern.sub(new_dl, text)
         else:
             # No deadline in text — insert before the title
             parts = text.rsplit(" ", 1) if " " in text else [text, ""]
