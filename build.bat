@@ -20,6 +20,10 @@ if exist resources\tasks.db (
     del resources\tasks.db
     set /a BACKUP_COUNT+=1
 )
+if exist resources\config.json (
+    copy resources\config.json "%DB_BACKUP%\config.json" >nul
+    set /a BACKUP_COUNT+=1
+)
 
 :: Generate package database with pre-seeded demo data
 echo Generating package database...
@@ -48,6 +52,7 @@ uv run pyinstaller ^
 
 :: Remove package database before restoring dev DB
 if exist resources\tadado.data del resources\tadado.data
+if exist resources\config.json del resources\config.json
 
 :: Restore dev database files
 if exist "%DB_BACKUP%\tadado.data" (
@@ -55,6 +60,9 @@ if exist "%DB_BACKUP%\tadado.data" (
 )
 if exist "%DB_BACKUP%\tasks.db" (
     copy "%DB_BACKUP%\tasks.db" resources\tasks.db >nul
+)
+if exist "%DB_BACKUP%\config.json" (
+    copy "%DB_BACKUP%\config.json" resources\config.json >nul
 )
 rmdir /s /q "%DB_BACKUP%"
 

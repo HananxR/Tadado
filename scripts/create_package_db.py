@@ -370,6 +370,20 @@ def main() -> None:
     print(f"Seeded {count} demo tasks into 演示空间.")
     print(f"Package database created at: {output_path}")
 
+    # ------------------------------------------------------------------
+    # Phase 5: Generate clean package config.json
+    # ------------------------------------------------------------------
+    import json as _json
+    from src.config import DEFAULT_CONFIG
+
+    pkg_config = _json.loads(_json.dumps(DEFAULT_CONFIG))  # deep copy
+    pkg_config["general"]["default_partition"] = pid_work
+    pkg_config["general"]["last_partition_id"] = pid_work
+    config_path = _PROJECT_ROOT / "resources" / "config.json"
+    with open(config_path, "w", encoding="utf-8") as f:
+        _json.dump(pkg_config, f, ensure_ascii=False, indent=2)
+    print(f"Generated clean package config: {config_path}")
+
 
 if __name__ == "__main__":
     main()

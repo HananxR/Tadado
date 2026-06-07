@@ -1767,9 +1767,10 @@ class MainWindow(QMainWindow):
     def _load_partitions(self) -> None:
         self._in_load_partitions = True
         default_pid = self._repository.ensure_default_partition()  # 无分区时自动创建"功能演示"分区
-        # 首次创建默认分区后持久化到 config
+        # 持久化默认分区到 config（首次创建 / 旧 UUID 指向已删除分区时自动修复）
         current_default = self._config.get("general", "default_partition", default="")
-        if not current_default:
+        name_map = self._repository.get_partition_name_map()
+        if not current_default or not name_map.get(current_default):
             self._config.set("general", "default_partition", value=default_pid)
             self._config.save()
         partitions = self._repository.get_all_partitions()
