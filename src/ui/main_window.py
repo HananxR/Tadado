@@ -2266,11 +2266,12 @@ class MainWindow(QMainWindow):
     def _on_settings(self) -> None:
         dlg = SettingsDialog(self._config, self._repository, self)
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
-            self._load_partitions()  # 同步分区密码、auto_lock 等 DB → 内存
-            # 设置保存后强制激活默认分区，确保状态栏与设置一致
+            # 设置保存后强制激活默认分区
             default_pid = self._config.get("general", "default_partition", default="")
-            if default_pid and default_pid != (self._active_partition_id or ""):
-                self._activate_partition(default_pid)
+            if default_pid:
+                # 先清除当前活动分区强制走激活链
+                self._active_partition_id = None
+            self._load_partitions()  # 同步分区密码、auto_lock 等 DB → 内存 + 激活默认分区
             self._signal_bus.config_changed.emit()
 
     def _on_about(self) -> None:
