@@ -870,14 +870,18 @@ class MainWindow(QMainWindow):
         self._status_bar.setSizeGripEnabled(True)
 
         # Partition selector button (prominent, left side)
-        self._status_partition_btn = QPushButton("📁 切换分区")
+        self._status_partition_btn = QPushButton("● 切换分区")
         self._status_partition_btn.setFlat(True)
         self._status_partition_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # 解析 accent 色为 RGB 分量，用 rgba 保证背景可见
+        accent = t.accent if t else "#5b8def"
+        r, g, b = int(accent[1:3], 16), int(accent[3:5], 16), int(accent[5:7], 16)
         self._status_partition_btn.setStyleSheet(
-            f"QPushButton {{ border: none; background: {t.accent}18; border-radius: 5px; "
-            f"padding: 2px 10px; font-size: 11px; font-weight: bold; "
-            f"color: {t.accent if t else '#5b8def'}; }}"
-            f"QPushButton:hover {{ background: {t.accent}30; border-radius: 5px; }}"
+            f"QPushButton {{ border: none; border-left: 3px solid {accent}; "
+            f"background: rgba({r},{g},{b},0.15); border-radius: 4px; "
+            f"padding: 2px 8px 2px 6px; font-size: 11px; "
+            f"font-weight: bold; color: {accent}; }}"
+            f"QPushButton:hover {{ background: rgba({r},{g},{b},0.25); }}"
         )
         self._status_partition_menu = QMenu(self._status_partition_btn)
         self._status_partition_btn.setMenu(self._status_partition_menu)
@@ -2263,6 +2267,10 @@ class MainWindow(QMainWindow):
         dlg = SettingsDialog(self._config, self._repository, self)
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
             self._load_partitions()  # 同步分区密码、auto_lock 等 DB → 内存
+            # 设置保存后强制激活默认分区，确保状态栏与设置一致
+            default_pid = self._config.get("general", "default_partition", default="")
+            if default_pid and default_pid != (self._active_partition_id or ""):
+                self._activate_partition(default_pid)
             self._signal_bus.config_changed.emit()
 
     def _on_about(self) -> None:
