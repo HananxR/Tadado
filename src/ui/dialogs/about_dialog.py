@@ -108,7 +108,7 @@ class AboutDialog(QDialog):
         repo.setStyleSheet("font-size: 11px;")
         layout.addWidget(repo)
 
-        foot = QLabel("MIT License  ·  Hanxy <hanxy8413@gmail.com>")
+        foot = QLabel("MIT License  ·  HananxR <hanxy8413@gmail.com>")
         foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
         foot.setStyleSheet("font-size: 11px; color: palette(mid);")
         layout.addWidget(foot)

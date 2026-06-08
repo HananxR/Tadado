@@ -5,7 +5,7 @@
 
 #define MyAppName "Tadado"
 #define MyAppVersion "0.1.0"
-#define MyAppPublisher "Han.X.Yun"
+#define MyAppPublisher "HananxR"
 #define MyAppExeName "Tadado.exe"
 
 [Setup]

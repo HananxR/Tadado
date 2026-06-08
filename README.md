@@ -46,6 +46,6 @@ Python 3.10 · PySide6 (Qt) · SQLite + FTS5 · APScheduler
 
 ## 📄 许可
 
-Tadado 对个人用户**免费**使用。如需商用，请联系作者获取授权。
+Tadado 采用 [MIT License](LICENSE) 开源，可自由使用、修改、分发，包括商业用途。
 
-MIT License · [Hanxy](mailto:hanxy8413@gmail.com) · [github.com/HananxR/Tadado](https://github.com/HananxR/Tadado)
+MIT License · [HananxR](mailto:hanxy8413@gmail.com) · [github.com/HananxR/Tadado](https://github.com/HananxR/Tadado)

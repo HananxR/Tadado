@@ -1,7 +1,7 @@
 # Tadado 详细设计说明
 
 > 本文档按功能模块记录需求、实现方案和界面布局标注，用于快速项目重建和迭代参考。
-> 运行时 AI 指令参见 [CLAUDE.md](CLAUDE.md)，开发进度追踪参见 [项目进度.md](项目进度.md)。
+> 运行时 AI 指令参见 [CLAUDE.md](CLAUDE.md)，更新日志参见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 
@@ -1120,4 +1120,4 @@ CREATE INDEX idx_tasks_suspended ON tasks(suspended);
 
 ---
 
-> 本文档关联 [CLAUDE.md](CLAUDE.md)（AI 工作指令）和 [项目进度.md](项目进度.md)（功能进度追踪）。
+> 本文档关联 [CLAUDE.md](CLAUDE.md) 和 [CHANGELOG.md](CHANGELOG.md)。

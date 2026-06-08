@@ -14,6 +14,8 @@ build/
 
 # Data (user-generated)
 data/
+resources/tadado.data
+resources/config.json
 
 # Claude (local only)
 .claude/settings.local.json
