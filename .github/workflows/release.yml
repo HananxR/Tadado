@@ -48,18 +48,23 @@ jobs:
         run: choco install innosetup -y --no-progress --version=6.4.1
 
       - name: Build installer (Inno Setup)
-        shell: pwsh
+        shell: cmd
         run: |
-          $iscc = Get-ChildItem -Path "C:\Program Files (x86)\Inno Setup*" -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($iscc) {
-            & $iscc.FullName installer.iss
-            Get-ChildItem dist/*.exe
-          } else {
-            Write-Warning "ISCC.exe not found, skipping installer"
-          }
+          set "ISCC="
+          for /d %%i in ("C:\Program Files (x86)\Inno Setup*") do if exist "%%i\ISCC.exe" set "ISCC=%%i\ISCC.exe"
+          if defined ISCC (
+            "%ISCC%" installer.iss
+            dir dist\*.exe
+          ) else (
+            echo ISCC not found, skipping installer
+          )
 
       - name: Pack portable ZIP
-        run: Compress-Archive -Path dist/Tadado/* -DestinationPath dist/Tadado_v${{ github.ref_name }}_portable.zip
+        run: Compress-Archive -Path dist/Tadado/* -DestinationPath dist/Tadado_portable.zip
+
+      - name: Check build artifacts
+        shell: pwsh
+        run: Get-ChildItem dist/ -Recurse -Name
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -67,5 +72,5 @@ jobs:
           name: Tadado ${{ github.ref_name }}
           body_path: CHANGELOG.md
           files: |
-            dist/Tadado_v${{ github.ref_name }}_portable.zip
+            dist/Tadado_portable.zip
             dist/Tadado_setup_*.exe
