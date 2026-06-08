@@ -27,4 +27,6 @@ RELEASE.md
 .DS_Store
 Thumbs.db
 release.ps1
+build.bat
+installer.iss
 releases/
