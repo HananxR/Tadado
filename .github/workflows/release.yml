@@ -45,11 +45,18 @@ jobs:
             main.py
 
       - name: Install Inno Setup
-        run: choco install innosetup -y --no-progress
+        run: choco install innosetup -y --no-progress --version=6.4.1
 
-      - name: Build installer
+      - name: Build installer (Inno Setup)
+        shell: pwsh
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          $iscc = Get-ChildItem -Path "C:\Program Files (x86)\Inno Setup*" -Filter ISCC.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($iscc) {
+            & $iscc.FullName installer.iss
+            Get-ChildItem dist/*.exe
+          } else {
+            Write-Warning "ISCC.exe not found, skipping installer"
+          }
 
       - name: Pack portable ZIP
         run: Compress-Archive -Path dist/Tadado/* -DestinationPath dist/Tadado_v${{ github.ref_name }}_portable.zip

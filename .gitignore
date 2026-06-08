@@ -20,6 +20,9 @@ resources/config.json
 # Claude (local only)
 .claude/settings.local.json
 
+# Local docs (not for public repo)
+RELEASE.md
+
 # OS
 .DS_Store
 Thumbs.db
