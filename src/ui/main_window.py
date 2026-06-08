@@ -7,7 +7,7 @@ import datetime as dt
 from ctypes import wintypes
 from datetime import date
 
-from PySide6.QtCore import QDateTime, QEvent, QSize, Qt, QTime, QTimer
+from PySide6.QtCore import QDateTime, QEvent, QPoint, QSize, Qt, QTime, QTimer
 from PySide6.QtGui import (
     QGuiApplication,
     QShortcut, QKeySequence,
@@ -306,15 +306,15 @@ class MainWindow(QMainWindow):
         g = self.geometry()
         title_h = 36
         if g.y() <= y < g.y() + title_h:
-            # Right-side window buttons area (4 * 36px icon buttons)
-            if x >= g.x() + g.width() - 144:
-                return False, 0
-            # Nav buttons area (logo + icon buttons — must NOT be HTCAPTION)
-            nav_right = getattr(self, '_title_nav_right', 700)
-            if x < g.x() + nav_right:
-                return False, 0
-            # Empty stretch area between nav and window buttons = draggable
-            return True, 2  # HTCAPTION
+            # Use childAt() to distinguish buttons from empty draggable space.
+            # Any child widget under the cursor → HTCLIENT (button works).
+            # Empty area → HTCAPTION (entire title bar can drag to Snap).
+            bar = self.menuWidget()
+            if bar is not None:
+                local = bar.mapFromGlobal(QPoint(x, y))
+                if bar.childAt(local) is not None:
+                    return False, 0  # HTCLIENT — button receives click
+            return True, 2  # HTCAPTION — draggable
         left = x < g.x() + border
         right = x > g.x() + g.width() - border
         top = y < g.y() + border
