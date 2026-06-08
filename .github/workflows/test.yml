@@ -32,4 +32,6 @@ jobs:
         run: uv run ruff check src/ tests/
 
       - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: uv run pytest
