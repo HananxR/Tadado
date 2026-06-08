@@ -10,6 +10,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/HananxR/Tadado/releases"><img src="https://img.shields.io/github/v/release/HananxR/Tadado?color=6366F1"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green"></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.10+-blue"></a>
   <a href="#"><img src="https://img.shields.io/badge/platform-Windows_10_11-0078D6"></a>
