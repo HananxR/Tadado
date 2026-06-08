@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/icons/app.svg" width="96" alt="Tadado">
+  <img src="resources/icons/app.svg" width="96" alt="Tadado">
 </p>
 
 <h1 align="center">Tadado</h1>
