@@ -80,23 +80,17 @@ jobs:
 
       - name: Install Inno Setup
         shell: powershell
-        run: |
-          $url = "https://files.jrsoftware.org/is/6/innosetup-6.2.2.exe"
-          $installer = "$env:TEMP\innosetup.exe"
-          Invoke-WebRequest -Uri $url -OutFile $installer
-          Start-Process -FilePath $installer -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-" -Wait
-          echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -Append -FilePath $env:GITHUB_PATH
+        run: choco install innosetup --yes --limit-output
 
       - name: Update installer version
         shell: powershell
         run: |
           $tag = "${{ github.ref_name }}" -replace '^v', ''
           (Get-Content installer.iss) -replace '#define MyAppVersion ".*"', "#define MyAppVersion ""$tag""" | Set-Content installer.iss
+          Write-Host "Installer version set to: $tag"
 
       - name: Inno Setup compile
-        shell: cmd
-        run: |
-          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+        run: iscc installer.iss
 
       - name: Upload artifacts (portable)
         uses: actions/upload-artifact@v4
