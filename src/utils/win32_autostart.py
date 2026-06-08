@@ -56,7 +56,6 @@ def _startup_command() -> str:
     if _is_frozen():
         return sys.executable
     # Dev mode: pythonw.exe (no console) + main.py absolute path
-    import os
     from pathlib import Path
 
     pythonw = Path(sys.executable).with_name("pythonw.exe")

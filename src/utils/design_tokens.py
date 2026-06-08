@@ -65,7 +65,6 @@ class DesignTokens:
         Produces a 'glowing' heatmap effect. Index 0 is the darkest/emptiest,
         index -1 is the brightest/most active.
         """
-        from PySide6.QtGui import QColor as _QColor
         # Fixed cool-toned stops (not dependent on accent/bg_primary)
         stops = [
             (25, 30, 60),     # deep navy (empty)

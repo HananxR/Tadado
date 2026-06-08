@@ -10,7 +10,6 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
 
-
 DEFAULT_CONFIG: dict = {
     "general": {
         "minimize_to_tray": True,

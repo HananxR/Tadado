@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import QModelIndex, QPoint, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QMenu,
     QTableView,
+    QWidget,
 )
 
 from ...models.repository import TaskRepository
@@ -86,8 +87,17 @@ class TaskListView(QTableView):
 
     def _apply_column_widths(self) -> None:
         """9 columns: checkbox(30), row#(30), created(80), content(Stretch), deadline(95), progress(45), status(55), tags(80), archived(55)."""
-        from .task_list_model import COL_CHECK, COL_ROW, COL_CREATED, COL_CONTENT
-        from .task_list_model import COL_DEADLINE, COL_PROGRESS, COL_STATUS, COL_TAGS, COL_ARCHIVED
+        from .task_list_model import (
+            COL_ARCHIVED,
+            COL_CHECK,
+            COL_CONTENT,
+            COL_CREATED,
+            COL_DEADLINE,
+            COL_PROGRESS,
+            COL_ROW,
+            COL_STATUS,
+            COL_TAGS,
+        )
 
         h = self.horizontalHeader()
         col_count = self.model().columnCount() if self.model() else 0

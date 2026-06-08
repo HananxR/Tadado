@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from src.models.task_status import TaskStatus
-from src.services.md_parser import MarkdownTaskParser, ParsedTask
+from src.services.md_parser import MarkdownTaskParser
 
 
 @pytest.fixture

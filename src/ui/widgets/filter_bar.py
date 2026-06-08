@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QWidget,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QSizePolicy,
+    QWidget,
 )
 
 from ...models.task_filter import SortCriterion, TaskFilter
 from ...models.task_status import TaskStatus
-
 from ...utils.widget_utils import combo_width
-
 from .dropdown import DropdownWidget
 
 

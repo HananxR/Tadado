@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 
 from dateutil.relativedelta import relativedelta
 

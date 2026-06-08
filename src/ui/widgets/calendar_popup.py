@@ -11,7 +11,6 @@ from datetime import date
 
 from PySide6.QtCore import QDate, QPoint, QPointF, QRect, Qt, Signal
 from PySide6.QtGui import (
-    QBrush,
     QColor,
     QFont,
     QMouseEvent,
@@ -213,7 +212,7 @@ class CalendarPopup(QDialog):
 
     # ── Refresh ──────────────────────────────────────────────────────
     def _refresh(self) -> None:
-        t = get_tokens()
+        get_tokens()
         y, m = self._viewing.year, self._viewing.month
         today = date.today()
 

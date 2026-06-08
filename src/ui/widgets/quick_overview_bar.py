@@ -5,18 +5,16 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QVBoxLayout,
     QWidget,
 )
 
 from ...models.repository import TaskRepository
 from ...models.task import Task
-from ...models.task_filter import TaskFilter, SortCriterion
+from ...models.task_filter import SortCriterion, TaskFilter
 from ...models.task_status import TaskStatus
 from ...utils.design_tokens import get_tokens
 

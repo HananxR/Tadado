@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QLabel,
     QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )

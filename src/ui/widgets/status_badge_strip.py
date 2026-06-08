@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
 from ...models.repository import TaskRepository
-from ...models.task_filter import TaskFilter, SortCriterion
+from ...models.task_filter import SortCriterion, TaskFilter
 from ...models.task_status import TaskStatus
 from ...utils.design_tokens import get_tokens
 

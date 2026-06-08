@@ -11,7 +11,6 @@ from PySide6.QtCore import QEvent, QPoint, QRect, Qt, QTime, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
-    QIntValidator,
     QMouseEvent,
     QPainter,
     QPaintEvent,

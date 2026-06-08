@@ -14,8 +14,7 @@ from PySide6.QtWidgets import (
 
 from ...models.repository import TaskRepository
 from ...models.task import Task
-from ...models.task_filter import TaskFilter, SortCriterion
-from ...utils.design_tokens import get_tokens
+from ...models.task_filter import SortCriterion, TaskFilter
 
 PERIODS = [
     ("yesterday", "昨天"),

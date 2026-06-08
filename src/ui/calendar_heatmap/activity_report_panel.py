@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date, datetime
 
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -59,7 +58,7 @@ class ActivityReportPanel(QWidget):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        t = get_tokens()
+        get_tokens()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -256,7 +255,7 @@ class ActivityReportPanel(QWidget):
     # ------------------------------------------------------------------
 
     def _update_header(self, label: str, date_from: date, date_to: date) -> None:
-        t = get_tokens()
+        get_tokens()
         if date_from == date_to:
             date_str = date_from.strftime("%Y年%m月%d日")
         else:
@@ -393,7 +392,7 @@ class ActivityReportPanel(QWidget):
 
         status = entries[-1]["status"] if entries else "TODO"
         status_color = _STATUS_COLORS.get(status, t.text_secondary)
-        status_label = _STATUS_LABELS.get(status, status)
+        _STATUS_LABELS.get(status, status)
         dot = "●" if entries else "○"
 
         progress_bar = ""

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from PySide6.QtCore import QDate, Qt, Signal, QTimer, QEvent
+from PySide6.QtCore import QDate, QEvent, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QDateEdit,
@@ -119,7 +119,7 @@ class PeriodSelectorBar(QWidget):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        t = get_tokens()
+        get_tokens()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(3)

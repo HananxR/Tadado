@@ -5,7 +5,6 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -19,7 +18,6 @@ from PySide6.QtWidgets import (
 
 from ...models.repository import TaskRepository
 from ...models.task import Task
-from ...models.task_status import TaskStatus
 from ...services.md_formatter import MarkdownTaskFormatter
 from ...services.md_parser import MarkdownTaskParser
 from ...utils.signal_bus import get_signal_bus

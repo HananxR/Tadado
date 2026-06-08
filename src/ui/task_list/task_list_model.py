@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
-from PySide6.QtGui import QColor, QFont as QtFont
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt
+from PySide6.QtGui import QColor
+from PySide6.QtGui import QFont as QtFont
 
 from ...models.task import Task
 from ...models.task_status import TaskStatus

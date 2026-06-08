@@ -167,7 +167,8 @@ class TestOverdueStatus:
 
     def test_auto_overdue(self, repository: TaskRepository) -> None:
         """Tasks past deadline become OVERDUE; future/DONE tasks don't."""
-        from datetime import date as _date, timedelta
+        from datetime import date as _date
+        from datetime import timedelta
         past = _date.today() - timedelta(days=7)
         future = _date.today() + timedelta(days=365)
         repository.insert(_make_task(task_id="1", title="past", deadline_date=past))
@@ -186,7 +187,8 @@ class TestOverdueStatus:
 
     def test_revert_overdue(self, repository: TaskRepository) -> None:
         """OVERDUE tasks with future deadline revert to DOING."""
-        from datetime import date as _date, timedelta
+        from datetime import date as _date
+        from datetime import timedelta
         future = _date.today() + timedelta(days=365)
         task = _make_task(task_id="1", title="revert", status=TaskStatus.OVERDUE, deadline_date=future)
         repository.insert(task)

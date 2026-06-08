@@ -16,7 +16,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -27,8 +26,8 @@ from PySide6.QtWidgets import (
 from ...config import AppConfig
 from ...models.repository import TaskRepository
 from ...utils.design_tokens import get_surface_color, get_tokens, is_dark
-from ...utils.win32_theme import set_window_dark_mode, is_dark_mode_supported
 from ...utils.signal_bus import get_signal_bus
+from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 from ..widgets.dropdown import DropdownWidget
 
 _DROP_W = 120

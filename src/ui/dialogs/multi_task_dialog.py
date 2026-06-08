@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 
-from PySide6.QtCore import QDate, QTime, Qt, Signal
+from PySide6.QtCore import QDate, QTime, Signal
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QDateEdit,

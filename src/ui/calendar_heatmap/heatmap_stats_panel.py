@@ -1,11 +1,7 @@
 """Statistics summary panel for the calendar heatmap."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QWidget
-
-from ...utils.design_tokens import get_tokens
 
 
 class _StatCard(QWidget):

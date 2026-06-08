@@ -3,16 +3,29 @@
 from __future__ import annotations
 
 import re
-
+import sys
 from datetime import date, datetime, timedelta
-from typing import Callable
+from pathlib import Path as _Path
 
-from PySide6.QtCore import QDate, QDateTime, QEvent, QPointF, QRect, QSize, QTime, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QPainter, QBrush, QColor, QIntValidator, QPen, QPixmap, QTextDocument
+from PySide6.QtCore import (
+    QDate,
+    QDateTime,
+    QEvent,
+    Qt,
+    QTime,
+    QTimer,
+    Signal,
+)
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QIntValidator,
+    QPainter,
+    QPixmap,
+    QTextDocument,
+)
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
-    QApplication,
-    QCheckBox,
     QDateEdit,
     QHBoxLayout,
     QLabel,
@@ -20,7 +33,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QTextBrowser,
     QTextEdit,
     QTimeEdit,
@@ -28,10 +40,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import sys
-from pathlib import Path as _Path
-
-from ...config import AppConfig
 from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...models.task_status import TaskStatus
@@ -40,7 +48,6 @@ from ...services.md_parser import MarkdownTaskParser
 from ...utils.design_tokens import get_tokens
 from ...utils.signal_bus import get_signal_bus
 from ..widgets.deadline_calculator import DeadlineIntervalCalculator
-from ...utils.widget_utils import combo_width
 from ..widgets.dropdown import DropdownWidget
 
 
@@ -666,7 +673,7 @@ class TaskEditPanel(QWidget):
         self._updating_from_md = False
         self._clear_entries()
         self._hide_log_detail()
-    
+
     def _build_welcome_html(self) -> str:
         t = get_tokens()
         c = t.text_welcome_accent
@@ -1000,7 +1007,7 @@ class TaskEditPanel(QWidget):
             self._preview_render.setText("(空)")
             self._created_label.setText("创建: —")
             return
-        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        lines = [line.strip() for line in text.split("\n") if line.strip()]
         if not lines:
             self._preview_render.setText("(空)")
             return
@@ -1056,7 +1063,8 @@ class TaskEditPanel(QWidget):
                 next_nl = text.index("\n", pos) if "\n" in text[pos:] else len(text)
                 pos = next_nl + 1
             if dupe_positions:
-                from PySide6.QtGui import QColor as _QColor, QTextCharFormat
+                from PySide6.QtGui import QColor as _QColor
+                from PySide6.QtGui import QTextCharFormat
                 fmt = QTextCharFormat()
                 fmt.setBackground(_QColor(255, 60, 60, 100))
                 extra_sels = []
@@ -1148,7 +1156,7 @@ class TaskEditPanel(QWidget):
             text = dl_pattern.sub(new_dl, text)
         else:
             # No deadline in text — insert before the title
-            parts = text.rsplit(" ", 1) if " " in text else [text, ""]
+            text.rsplit(" ", 1) if " " in text else [text, ""]
             # Insert deadline before last part (title)
             idx = text.rfind(">")
             if idx >= 0:
@@ -1177,6 +1185,7 @@ class TaskEditPanel(QWidget):
         if is_new:
             # Creating a new task from empty/welcome state
             import uuid
+
             from ...models.task import Task as TaskCls
             self._current_task = TaskCls(
                 id="",
@@ -1307,6 +1316,7 @@ class TaskEditPanel(QWidget):
     def _save_multi_tasks(self, lines: list[str]) -> None:
         """Split multi-line input into individual tasks and save them."""
         import uuid
+
         from ...models.task import Task as TaskCls
 
         # Check for duplicate titles+tags within the batch
@@ -1506,7 +1516,6 @@ class TaskEditPanel(QWidget):
 
     def _on_quick_set_deadline(self) -> None:
         """Open deadline calculator popup."""
-        from ..widgets.deadline_calculator import DeadlineIntervalCalculator
         dlg = DeadlineIntervalCalculator(parent=self)
         dlg.deadline_suggested.connect(self._on_deadline_suggested)
         dlg.exec()

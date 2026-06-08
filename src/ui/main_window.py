@@ -10,7 +10,8 @@ from datetime import date
 from PySide6.QtCore import QDateTime, QEvent, QPoint, QSize, Qt, QTime, QTimer
 from PySide6.QtGui import (
     QGuiApplication,
-    QShortcut, QKeySequence,
+    QKeySequence,
+    QShortcut,
 )
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -20,7 +21,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMenu,
-    QMenuBar,
     QMessageBox,
     QPushButton,
     QSizePolicy,
@@ -34,26 +34,24 @@ from PySide6.QtWidgets import (
 from ..config import AppConfig
 from ..models.repository import TaskRepository
 from ..models.task import Task
-from ..models.task_filter import TaskFilter, SortCriterion
+from ..models.task_filter import TaskFilter
 from ..models.task_status import TaskStatus
-from ..services.md_formatter import MarkdownTaskFormatter
-from ..services.md_parser import MarkdownTaskParser
 from ..utils.icon_loader import load_icon
 from ..utils.signal_bus import get_signal_bus
+from ..utils.widget_utils import combo_width
+from .calendar_heatmap.activity_content_view import ActivityContentView
 from .calendar_heatmap.calendar_heatmap_widget import CalendarHeatmapWidget
 from .calendar_heatmap.collapse_panel import HeatmapCollapsePanel
 from .calendar_heatmap.period_selector import PeriodSelectorBar
 from .calendar_heatmap.task_tree_panel import TaskTreePanel
-from .calendar_heatmap.activity_content_view import ActivityContentView
-from ..utils.widget_utils import combo_width
-from .widgets.calendar_popup import CalendarPopup
-from .widgets.dropdown import DropdownWidget
 from .dialogs.about_dialog import AboutDialog
 from .dialogs.settings_dialog import SettingsDialog
 from .task_list.batch_toolbar import BatchToolbar
 from .task_list.task_edit_panel import TaskEditPanel
 from .task_list.task_list_model import COL_ARCHIVED, TaskListModel
 from .task_list.task_list_view import TaskListView
+from .widgets.calendar_popup import CalendarPopup
+from .widgets.dropdown import DropdownWidget
 from .widgets.filter_bar import FilterBar
 from .widgets.progress_dynamics_bar import ProgressDynamicsBar
 from .widgets.quick_overview_bar import QuickOverviewBar
@@ -72,9 +70,9 @@ class MainWindow(QMainWindow):
         # before DWM ever composites a single frame for this window.
         self.winId()
         from ..utils.win32_theme import (
-            set_window_nc_rendering_disabled,
-            set_window_cloaked,
             enable_window_snap,
+            set_window_cloaked,
+            set_window_nc_rendering_disabled,
         )
         set_window_nc_rendering_disabled(self)   # never draw native NC buttons
         set_window_cloaked(self, True)           # hide from DWM until fully ready
@@ -319,13 +317,20 @@ class MainWindow(QMainWindow):
         right = x > g.x() + g.width() - border
         top = y < g.y() + border
         bottom = y > g.y() + g.height() - border
-        if top and left: return True, 13
-        if top and right: return True, 14
-        if bottom and left: return True, 16
-        if bottom and right: return True, 17
-        if left: return True, 10
-        if right: return True, 11
-        if bottom: return True, 15
+        if top and left:
+            return True, 13
+        if top and right:
+            return True, 14
+        if bottom and left:
+            return True, 16
+        if bottom and right:
+            return True, 17
+        if left:
+            return True, 10
+        if right:
+            return True, 11
+        if bottom:
+            return True, 15
         return False, 0
 
     def _on_minimize(self) -> None:
@@ -600,7 +605,6 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(analysis_page)
 
         # === Page 2: Task Management Console ===
-        from ..utils.design_tokens import get_tokens as _gt4
 
         batch_page = QWidget()
         batch_page_layout = QHBoxLayout(batch_page)
@@ -620,11 +624,15 @@ class MainWindow(QMainWindow):
         SIDEBAR_BTN = "QPushButton { font-size: 10px; padding: 4px 8px; }"
 
         def _add_sep():
-            s = QWidget(); s.setObjectName("sidebarSep"); s.setFixedHeight(1)
+            s = QWidget()
+            s.setObjectName("sidebarSep")
+            s.setFixedHeight(1)
             sidebar_layout.addWidget(s)
 
         def _add_label(text: str):
-            lb = QLabel(text); lb.setStyleSheet(SIDEBAR_LABEL); sidebar_layout.addWidget(lb)
+            lb = QLabel(text)
+            lb.setStyleSheet(SIDEBAR_LABEL)
+            sidebar_layout.addWidget(lb)
 
         def _add_date_row(placeholder: str) -> QLineEdit:
             """Return a date QLineEdit wrapped in a row with a clear button."""
@@ -1381,7 +1389,13 @@ class MainWindow(QMainWindow):
 
     def _on_batch_move_partition(self, ids: list[str]) -> None:
         """Move selected tasks to a different partition with password checks."""
-        from PySide6.QtWidgets import QDialog, QListWidget, QListWidgetItem, QVBoxLayout, QDialogButtonBox
+        from PySide6.QtWidgets import (
+            QDialog,
+            QDialogButtonBox,
+            QListWidget,
+            QListWidgetItem,
+            QVBoxLayout,
+        )
 
         from_partition_id = self._active_partition_id or ""
         name_map = self._repository.get_partition_name_map()
@@ -1634,7 +1648,7 @@ class MainWindow(QMainWindow):
             f.statuses = _NON_DONE
         elif "days" in preset:
             try:
-                days = int(preset.split("_")[0])
+                int(preset.split("_")[0])
                 f.created_to = date.today()
                 f.statuses = _NON_DONE
             except ValueError:
@@ -1817,7 +1831,7 @@ class MainWindow(QMainWindow):
             else:
                 locked = ""
             check = "✓ " if pid == current_pid else "  "
-            action = self._status_partition_menu.addAction(
+            self._status_partition_menu.addAction(
                 f"{check}{locked}{pname}",
                 lambda checked=False, i=pid: self._activate_partition(i),
             )
@@ -2099,7 +2113,7 @@ class MainWindow(QMainWindow):
         """Export as Excel with split columns: 序号, 任务, 状态变更, 进度变更, 活动信息."""
         try:
             import openpyxl
-            from openpyxl.styles import Font, Alignment
+            from openpyxl.styles import Font
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "活动报告"
@@ -2239,7 +2253,7 @@ class MainWindow(QMainWindow):
         msg.setText("当前有未保存的新建任务，是否保存？")
         save_btn = msg.addButton("保存", QMessageBox.ButtonRole.AcceptRole)
         discard_btn = msg.addButton("放弃", QMessageBox.ButtonRole.DestructiveRole)
-        cancel_btn = msg.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+        msg.addButton("取消", QMessageBox.ButtonRole.RejectRole)
         msg.exec()
         clicked = msg.clickedButton()
         if clicked == save_btn:
@@ -2296,8 +2310,9 @@ class MainWindow(QMainWindow):
     def _on_help_docs(self) -> None:
         import sys
         from pathlib import Path
-        from PySide6.QtGui import QDesktopServices
+
         from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
 
         base = getattr(sys, "_MEIPASS", None)
         if base:

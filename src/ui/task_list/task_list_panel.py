@@ -4,13 +4,12 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...models.task_filter import SortCriterion, TaskFilter
-from ...models.task_status import TaskStatus
 from ...utils.signal_bus import get_signal_bus
 from ..widgets.filter_bar import FilterBar
 from ..widgets.task_input import TaskInputWidget

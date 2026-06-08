@@ -6,19 +6,19 @@ import calendar
 from datetime import date, timedelta
 
 from PySide6.QtCore import QDate, QTime, Signal
-from ...utils.design_tokens import get_tokens
-from ...utils.widget_utils import combo_width
-from .dropdown import DropdownWidget
 from PySide6.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QRadioButton,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
+
+from ...utils.design_tokens import get_tokens
+from ...utils.widget_utils import combo_width
+from .dropdown import DropdownWidget
 
 
 class DeadlineIntervalCalculator(QDialog):

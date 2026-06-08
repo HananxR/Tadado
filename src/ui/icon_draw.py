@@ -122,7 +122,7 @@ def draw_new_task(p: QPainter, r: QRectF, color: QColor) -> None:
 
 def draw_new_multi_task(p: QPainter, r: QRectF, color: QColor) -> None:
     """Two overlapping rounded squares with white lines (documents), centered."""
-    m = r.width() * 0.12
+    r.width() * 0.12
     sq = r.width() * 0.40
     ox = r.width() * 0.12
     oy = r.height() * 0.12
@@ -268,7 +268,7 @@ def draw_tray_hide(p: QPainter, r: QRectF, color: QColor) -> None:
     """Down arrow to a dash (minimize to tray)."""
     cx, cy = r.center().x(), r.center().y()
     m = r.width() * 0.18
-    arm = r.width() * 0.22
+    r.width() * 0.22
     p.setPen(_pen(_dark_color(), max(2, r.width() * 0.08)))
     # Down arrow
     arrow_top = r.y() + m

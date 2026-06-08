@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -311,7 +311,8 @@ class TagManagementPanel(QWidget):
 
     def _show_merge_dialog(self, source_tags: list[str]) -> None:
         """Show a dialog to choose the merge target."""
-        from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QVBoxLayout as _VL
+        from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox
+        from PySide6.QtWidgets import QVBoxLayout as _VL
 
         dlg = QDialog(self)
         dlg.setWindowTitle("合并标签")

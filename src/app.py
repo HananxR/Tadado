@@ -8,7 +8,6 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import QApplication
 
@@ -17,11 +16,11 @@ from .models.repository import TaskRepository
 from .models.task import Task
 from .services.archiver import TaskArchiver
 from .services.notifier import TaskNotifier
-from .utils.design_tokens import init_tokens, refresh_tokens
 from .services.recurrence import TaskRecurrence
 from .services.scheduler import TaskScheduler
 from .ui.main_window import MainWindow
 from .ui.system_tray import SystemTrayManager
+from .utils.design_tokens import init_tokens, refresh_tokens
 from .utils.icon_loader import get_icon_loader
 from .utils.signal_bus import get_signal_bus
 
@@ -45,7 +44,6 @@ def _ensure_test_partition(repo: TaskRepository) -> None:
         _seed_optimization_tasks(repo, pid)
         return
 
-    from .models.task_filter import TaskFilter
 
     test = repo.upsert_partition("测试分区", sort_order=200)
     pid = test["id"]
@@ -174,8 +172,8 @@ def _seed_optimization_tasks(repo: TaskRepository, pid: str) -> None:
 
 def _ensure_demo_partition(repo: TaskRepository) -> None:
     """Seed the 「功能演示」partition with demo tasks if empty or missing."""
-    from .services.md_parser import MarkdownTaskParser
     from .models.task_filter import TaskFilter
+    from .services.md_parser import MarkdownTaskParser
 
     partitions = repo.get_all_partitions()
     demo_p = next((p for p in partitions if p["name"] == "功能演示"), None)

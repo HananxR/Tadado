@@ -19,7 +19,6 @@ from PySide6.QtGui import (
     QFont,
     QGuiApplication,
     QPainter,
-    QPen,
     QPixmap,
     QScreen,
 )
