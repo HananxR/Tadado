@@ -39,6 +39,10 @@ Write-Host "`n=== Step 1: Find Inno Setup ===" -ForegroundColor Cyan
 
 $Iscc = $null
 $IsccPaths = @(
+    "C:\Program Files (x86)\Inno Setup 7\ISCC.exe"
+    "C:\Program Files\Inno Setup 7\ISCC.exe"
+    "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe"
+    "${env:ProgramFiles}\Inno Setup 7\ISCC.exe"
     "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
     "C:\Program Files\Inno Setup 6\ISCC.exe"
     "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
