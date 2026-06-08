@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: windows-latest
@@ -45,24 +48,17 @@ jobs:
             main.py
 
       - name: Install Inno Setup
-        run: choco install innosetup -y --no-progress --version=6.4.1
+        run: choco install innosetup -y --no-progress
 
-      - name: Build installer (Inno Setup)
-        shell: cmd
+      - name: Build installer
         run: |
-          set "ISCC="
-          for /d %%i in ("C:\Program Files (x86)\Inno Setup*") do if exist "%%i\ISCC.exe" set "ISCC=%%i\ISCC.exe"
-          if defined ISCC (
-            "%ISCC%" installer.iss
-            dir dist\*.exe
-          ) else (
-            echo ISCC not found, skipping installer
-          )
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+          dir dist\*.exe
 
       - name: Pack portable ZIP
         run: Compress-Archive -Path dist/Tadado/* -DestinationPath dist/Tadado_portable.zip
 
-      - name: Check build artifacts
+      - name: List artifacts
         shell: pwsh
         run: Get-ChildItem dist/ -Recurse -Name
 
