@@ -1,0 +1,64 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Generate package database
+        run: uv run python scripts/create_package_db.py
+
+      - name: Build with PyInstaller
+        run: |
+          uv run pyinstaller `
+            --noconsole `
+            --name=Tadado `
+            --add-data="resources;resources" `
+            --icon=resources/icons/app.ico `
+            --hidden-import=PySide6.QtSvg `
+            --clean `
+            main.py
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+
+      - name: Pack portable ZIP
+        run: Compress-Archive -Path dist/Tadado/* -DestinationPath dist/Tadado_v${{ github.ref_name }}_portable.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Tadado ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          files: |
+            dist/Tadado_v${{ github.ref_name }}_portable.zip
+            dist/Tadado_setup_*.exe
