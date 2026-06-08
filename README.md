@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="resources/icons/app.svg" width="96" alt="Tadado">
+  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/icons/app.svg" width="96" alt="Tadado">
 </p>
 
 <h1 align="center">Tadado</h1>
@@ -13,17 +13,9 @@
   <a href="https://github.com/HananxR/Tadado/releases"><img src="https://img.shields.io/github/v/release/HananxR/Tadado?color=6366F1&label=最新版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green"></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.10+-blue"></a>
-  <a href="#"><img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6"></a>
-  <a href="https://github.com/HananxR/Tadado/actions"><img src="https://github.com/HananxR/Tadado/actions/workflows/test.yml/badge.svg"></a>
+  <a href="#"><img src="https://img.shields.io/badge/platform-Windows_10_11-0078D6"></a>
+  <a href="https://github.com/HananxR/Tadado/actions"><img src="https://github.com/HananxR/Tadado/actions/workflows/test.yml/badge.svg?branch=main"></a>
 </p>
-
----
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/welcome_bg.jpg" width="720" alt="Tadado 界面截图" style="border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.15);">
-</p>
-
-<p align="center"><sub>⚠ 图片来源于网络，忘记出处，侵权请联系删除</sub></p>
 
 ---
 
@@ -42,6 +34,10 @@
 ## Tadado 是什么？
 
 Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown 语法写任务，它帮你组织、追踪、回顾。所有数据存本地，无需联网，无需注册。
+
+> **名字由来**：项目最初名为 **DeskTodoSeq**，灵感来自 Obsidian 社区插件 TodoSeq — 一个用 Markdown 记录和追踪 todo 任务的插件。使用过程中深感"任务管理"值得从笔记软件中独立出来，成为一个专注的桌面工具，于是有了 Tadado。
+>
+> 改名 **Tadado** = "**Tada!**" + "**do**" — "Tada!" 是英语中完成任务时的欢呼声（相当于"搞定！""看，完成了！"），表达事项完成那一刻的满足感；"do" 代表行动与执行。合起来即"把事做成，享受完成的快感"。LOGO 设计为简洁的勾选标记，传达"完成事项"的核心意图。
 
 ### Markdown 语法速查
 
@@ -73,7 +69,7 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 </tr>
 </table>
 
-> 💡 **演示空间**：首次启动内置 15 个演示任务，覆盖 4 级优先级（紧急/重要/关注/普通）、全部状态（待办/进行中/已完成/逾期）、循环任务、活动时间线等高级特性。切换到「演示空间」分区即可体验全部功能，无需从零开始创建数据。
+> 💡 **演示空间**：首次启动内置 15 个演示任务，覆盖 4 级优先级（紧急/重要/关注/普通）、全部状态（待办/进行中/已完成/逾期）、活动时间线等高级特性。切换到「演示空间」分区即可体验全部功能，无需从零开始创建数据。
 
 <p align="right"><sub><a href="#">↑ 返回顶部</a></sub></p>
 
@@ -81,44 +77,109 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 
 ## 📸 界面导览
 
-<table>
-<tr>
-<td width="50%">
+> 以下按视图逐个介绍每个 UI 组件的**名称**、**位置**与**功能定位**，帮助快速上手。
+
+---
+
+### 编辑视图（主界面）
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/task-view.png" width="100%" alt="任务视图">
+  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/task-view.png" width="100%" alt="编辑视图">
 </p>
-<p align="center"><sub>▲ 任务视图：9 列表格 + 编辑面板 + 状态栏，优先级整行红/橙/绿/蓝渲染</sub></p>
-</td>
-<td width="50%">
+
+| # | 组件 | 位置 | 功能定位 |
+|---|------|------|----------|
+| ① | **标题栏** | 顶部 36px | App 图标（点击回到首页）+ 6 个功能按钮：新建单任务 / 新建多任务 / 活动分析 / 任务管理 / 设置 / 帮助。右侧窗口控制按钮（最小化/全屏/关闭）。标题栏空白区域可拖拽移动窗口 |
+| ② | **速览栏** | 标题栏下方 | 昨天 / 今天 / 上周 / 本周 / 上月 / 本月 6 个预设按钮，点击按**创建时间**过滤任务（排除已完成），右侧自动轮播最近任务卡片。定位：快速查看"某个时间窗口内还有哪些事没做完" |
+| ③ | **筛选栏** | 速览栏下方 | 全文搜索框（实时搜索）+ 优先级下拉 + 状态下拉 + 排序下拉。定位：在海量任务中精准定位目标 |
+| ④ | **进度动态栏** | 筛选栏下方 | 6 个时段按钮（昨天/今天/上周/本周/上月/本月），**未点击**时显示最近活跃任务的最新进展，**点击后**按活动日志数量轮播 Top 6 活跃任务。定位：发现"哪些任务最近在推进" |
+| ⑤ | **批操作栏** | 表格上方 | 全选复选框 + 更改状态下拉 + 更改优先级下拉 + 删除/中止/重启/延后处理按钮 + 已选计数。定位：对选中任务批量执行操作，替代逐条编辑 |
+| ⑥ | **任务列表** | 左侧主体 | 9 列表格（复选框/序号/创建时间/任务内容/截止时间/进度/状态徽章/标签/归档），整行优先级红橙绿蓝渲染，分页可选 20/50/100 条。**右键菜单**：更改状态 / 更改优先级 / 调整分区 / 延后处理 / 中止 / 重启 / 删除 / 复制 Markdown。定位：所有任务的中枢浏览与管理 |
+| ⑦ | **编辑面板** | 右侧 | 选中任务后展开：Markdown 源码编辑 + 实时 HTML 预览 + 截止日期选择 + 活动时间线 + 保存/删除按钮。定位：单任务的深度编辑与进展追踪 |
+| ⑧ | **状态栏** | 底部 | 分区切换按钮（📁 分区名 ▾）+ 各状态计数（逾期/进行中/待办/已完成/共计）+ 每日名言 + 实时时钟。定位：全局状态一览 + 分区快速切换 |
+
+---
+
+### 任务输入
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/task-input.png" width="100%" alt="Markdown 输入">
+  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/task-input.png" width="100%" alt="任务输入">
 </p>
-<p align="center"><sub>▲ 输入框支持完整 Markdown 语法：优先级 + 日期 + 标题 + 标签，一行搞定</sub></p>
-</td>
-</tr>
-<tr>
-<td width="50%">
+
+| # | 组件 | 功能定位 |
+|---|------|----------|
+| ① | **单任务输入框** | 底部 Markdown 输入框，支持完整语法 `- [***] <日期> 标题 #标签`，Enter 一键创建。解析失败红色边框闪烁提示 |
+| ② | **多任务弹窗** | 标题栏「新建多任务」→ 弹出 3 行模板编辑器，一次性创建 3 条任务，自动带当前分区标签模板。定位：快速拆分复杂工作 |
+
+---
+
+### 活动分析
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/heatmap.png" width="100%" alt="日历热力图">
+  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/heatmap.png" width="100%" alt="活动分析">
 </p>
-<p align="center"><sub>▲ 12 月 × 7 天 × 5 周矩阵，12px 深蓝→青色渐变，悬浮显示活动详情</sub></p>
-</td>
-<td width="50%">
+
+| # | 组件 | 功能定位 |
+|---|------|----------|
+| ① | **热力图网格** | 12 个月 × 7 天 × 5 周矩阵，12px 单元格深蓝→青色 8 级渐变（accent 单色插值），图例 0–7+。悬浮 Tooltip 显示日期 + 条目数 + 任务数 + 标签分布。点击日期可快速创建任务 |
+| ② | **时段选择器** | 昨天/今天/上周/本周/上月/本月 + 自定义日期范围（日历弹窗）。定位：切换热力图和报告的统计时间窗口 |
+| ③ | **统计卡片** | 热力图同行右侧：总计条目 / 活跃天数 / 最长连续 / 当前连续 / 日均 / 月均 / 周均。定位：一目了然的量化指标 |
+| ④ | **标签云** | 左侧 FlowLayout 胶囊标签，按使用次数排列，可勾选/取消（默认全选），顶部搜索框实时过滤标签 + 紧凑全选切换按钮。定位：按标签维度筛选活动内容 |
+| ⑤ | **活动报告** | 右侧有序列表 HTML 渲染，按勾选标签分组显示活动摘要。导航栏 ◀ ▶ 在标签队列间切换。支持**导出** Markdown / Excel / TXT（按勾选标签全量导出，文件名含分区+日期范围+标签数） |
+
+---
+
+### 批量管理控制台
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/batch-view.png" width="100%" alt="批量管理控制台">
 </p>
-<p align="center"><sub>▲ 全宽表格 + 批量工具栏 + 标签管理面板，支持批量操作和标签重命名/合并</sub></p>
-</td>
-</tr>
-<tr>
-<td colspan="2">
+
+| # | 组件 | 功能定位 |
+|---|------|----------|
+| ① | **筛选面板** | 左侧 180px：关键词搜索 + 状态下拉 + 优先级下拉 + 标签搜索框（自动剥离 `#` 前缀）。定位：批量视图中筛选目标任务集 |
+| ② | **任务表格** | 9 列全宽（含归档列：已归档/未归档/—），分页 20 条。定位：全维度审视任务，发现需处置的异常项 |
+| ③ | **批操作栏** | 全选 + 更改状态下拉 + 更改优先级下拉 + 删除/中止/重启/延后处理 + **导出下拉**（MD/Excel）。定位：批量处置多任务 |
+| ④ | **标签管理面板** | 右侧 30%：当前分区标签按使用次数降序排列，支持**重命名**（选中→输入新名→全局更新）和**合并**（多选→选择目标→源标签替换后删除），搜索框实时过滤。定位：规范化统一标签 |
+| ⑤ | **归档操作** | 「归档已完成」立即归档当前分区所有 DONE 任务（不依赖自动归档阈值），「清除已归档」永久删除已归档任务（需二次确认）。定位：手动即时清理 |
+
+---
+
+### 活动时间线
+
 <p align="center">
-  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/demo-space.png" width="60%" alt="演示空间">
+  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/timeline.png" width="100%" alt="活动时间线">
 </p>
-<p align="center"><sub>▲ 切换到「演示空间」分区，15 个预置任务覆盖全部核心功能，开箱即体验</sub></p>
-</td>
-</tr>
-</table>
+
+| # | 组件 | 功能定位 |
+|---|------|----------|
+| ① | **时间线卡片** | 编辑面板下半部分，48px 卡片列表：圆形图标 + 时间戳 + 内容（记录每次状态变更、进度推进、备注文本）。定位：完整回溯任务从创建到完成的全过程 |
+| ② | **状态/优先级/进度** | 三个控件横向排列：状态下拉（待办/进行中/已完成/逾期）、优先级下拉（紧急/重要/关注/普通）、进度输入（0–100%）。修改后自动追加一条时间线记录 |
+| ③ | **追加进展** | 底部文本输入框 + 按钮，自由输入进展备注，追加到时间线 |
+
+---
+
+### 演示空间
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/demo-space.png" width="100%" alt="演示空间">
+</p>
+
+首次启动自动创建「演示空间」分区，内含 15 个预置任务，覆盖全部核心功能：
+
+- **4 级优先级**：紧急 `[***]` / 重要 `[** ]` / 关注 `[*  ]` / 普通 `[   ]`
+- **4 种状态**：TODO(7) / DOING(4) / DONE(2) / OVERDUE(2) / SUSPENDED(1)
+- **活动时间线**、**多标签**（工作/后端/Bug/团队/学习/健康/生活等 15+ 标签）
+- 通过状态栏左侧分区按钮切换到「演示空间」即可体验，无需从零创建数据
+
+---
+
+### 欢迎页 & 设置
+
+| 组件 | 触发方式 | 功能定位 |
+|------|----------|----------|
+| **欢迎页** | 无任务选中时自动显示 | 欢迎横幅 + 背景图 + 每日名言，提供「新建任务」快捷入口。定位：首页占位 + 降低首次使用的空态焦虑 |
+| **设置对话框** | 标题栏「设置」按钮 | 单页滚动，6 个区块：🎨 外观（亮色/暗色主题、最小化到托盘）/ 📋 任务列表（每页条数、默认排序、热力图起始年份）/ 🔔 提醒（启用开关、间隔分钟、安静时段）/ 🔒 分区管理（7 列表格：名称/默认/可见/归档阈值/自动锁定/密码）/ 💬 激励语（4 条自定义语录） |
 
 <p align="right"><sub><a href="#">↑ 返回顶部</a></sub></p>
 
@@ -131,9 +192,8 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 ### 📝 任务管理
 
 <p>
-  <img src="https://img.shields.io/badge/FTS5-全文搜索-6366F1" alt="FTS5">
-  <img src="https://img.shields.io/badge/9列-表格视图-success" alt="9列">
-  <img src="https://img.shields.io/badge/优先级-四级渲染-orange" alt="优先级">
+  <img src="https://img.shields.io/badge/Columns-9-success" alt="9列">
+  <img src="https://img.shields.io/badge/Priority-4_Levels-orange" alt="优先级">
 </p>
 
 **🆕 新建任务**
@@ -171,7 +231,7 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 
 **🔍 筛选与排序**
 
-- **全文搜索** — SQLite FTS5 驱动，输入即搜，响应 < 50ms
+- **全文搜索** — SQLite 全文索引驱动，输入即搜，响应 < 50ms
 - **状态过滤** — 待办 / 进行中 / 已完成 / 逾期
 - **排序** — 优先级 → 截止日期 → 创建时间
 
@@ -188,9 +248,8 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 ### 📊 活动分析
 
 <p>
-  <img src="https://img.shields.io/badge/热力图-12月×7天×5周-8b5cf6" alt="热力图">
-  <img src="https://img.shields.io/badge/渐变-深蓝→青色-yellow" alt="渐变">
-  <img src="https://img.shields.io/badge/导出-MD%20|%20Excel%20|%20TXT-blue" alt="导出">
+  <img src="https://img.shields.io/badge/Heatmap-12m_7d_5w-8b5cf6" alt="热力图">
+  <img src="https://img.shields.io/badge/Export-MD_Excel_TXT-blue" alt="导出">
 </p>
 
 **🗓 日历热力图**
@@ -259,7 +318,6 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 
 **免打扰** — 安静时段（默认 22:00–08:00）内不弹通知。
 
-**循环任务** — 任务完成后自动创建下一实例（+1天/+1周/+1月/+1年），继承标题、标签、优先级。
 
 <p align="right"><sub><a href="#">↑ 返回顶部</a></sub></p>
 
@@ -308,9 +366,17 @@ uv run python main.py
 |------|------|
 | 语言 | Python 3.10+ |
 | GUI | PySide6 ≥ 6.5 |
-| 数据库 | SQLite 3 + FTS5 全文索引 |
+| 数据库 | SQLite 3 + 全文索引 |
 | 定时 | APScheduler ≥ 3.10 |
-| 打包 | Nuitka + Inno Setup |
+| 打包 | PyInstaller + Inno Setup |
+
+<p align="right"><sub><a href="#">↑ 返回顶部</a></sub></p>
+
+---
+
+## 🤖 开发方式
+
+本项目受益于大模型技术的快速提升，采用 **Claude Code + DeepSeek v4** 进行 AI 辅助独立开发。初版效果可能不尽完善，但核心功能已就绪，后续将持续迭代优化。
 
 <p align="right"><sub><a href="#">↑ 返回顶部</a></sub></p>
 
@@ -374,9 +440,15 @@ uv run python main.py
 - 技术设计文档 → [DESIGN.md](DESIGN.md)
 - 贡献指南 → [CONTRIBUTING.md](CONTRIBUTING.md)
 
-## 💡 灵感
+## 🙏 致谢
 
-[Obsidian Calendar](https://github.com/liamcain/obsidian-calendar-plugin) · [Obsidian Dataview](https://github.com/blacksmithgu/obsidian-dataview) · [Heatmap Tracker](https://github.com/mokkiebear/heatmap-tracker)
+Tadado 深受以下优秀项目和软件的启发，谨致以诚挚感谢：
+
+- [Obsidian TodoSeq](https://github.com/scross01/obsidian-todoseq) — 项目最初的灵感来源，Markdown todo 任务追踪理念
+- [Obsidian Calendar](https://github.com/liamcain/obsidian-calendar-plugin) — Markdown 本地化笔记理念
+- [Obsidian Dataview](https://github.com/blacksmithgu/obsidian-dataview) — 数据化查询与视图
+- [Heatmap Tracker](https://github.com/mokkiebear/heatmap-tracker) — 日历热力图可视化
+- 🖼 默认欢迎页壁纸 — 图片来源于网络，如有侵权，请联系我删除
 
 ## 📄 许可
 
