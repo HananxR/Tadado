@@ -74,9 +74,11 @@ class MainWindow(QMainWindow):
         from ..utils.win32_theme import (
             set_window_nc_rendering_disabled,
             set_window_cloaked,
+            enable_window_snap,
         )
         set_window_nc_rendering_disabled(self)   # never draw native NC buttons
         set_window_cloaked(self, True)           # hide from DWM until fully ready
+        enable_window_snap(self)                 # restore WS_THICKFRAME for Aero Snap
         # ──────────────────────────────────────────────────────────────────────
 
         self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
@@ -278,8 +280,17 @@ class MainWindow(QMainWindow):
             msg = wintypes.MSG.from_address(message.__int__())
             if msg.message == 0x0084:  # WM_NCHITTEST
                 return self._nc_hit_test(msg)
-            elif msg.message == 0x0083 and not msg.wParam:  # WM_NCCALCSIZE
+            elif msg.message == 0x0083:  # WM_NCCALCSIZE
+                # Extend the client area to cover the entire window rect.
+                # wParam==0 → simple RECT; wParam==1 → NCCALCSIZE_PARAMS.
+                # In both cases we return True,0 to claim we handled it and
+                # request the full window area — the invisible border added
+                # by WS_THICKFRAME must not shrink our client area.
                 return True, 0
+            elif msg.message == 0x0024:  # WM_GETMINMAXINFO
+                # Let DefWindowProc handle it; the default maximised monitor
+                # rect works correctly with WS_THICKFRAME on Win10/11.
+                return False, 0
         return super().nativeEvent(event_type, message)
 
     def _nc_hit_test(self, msg) -> tuple:
@@ -291,7 +302,7 @@ class MainWindow(QMainWindow):
         if dpr != 1.0:
             x = int(x / dpr)
             y = int(y / dpr)
-        border = 6
+        border = 8  # match Win10/11 standard invisible resize border
         g = self.geometry()
         title_h = 36
         if g.y() <= y < g.y() + title_h:

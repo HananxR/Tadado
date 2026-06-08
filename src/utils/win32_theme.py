@@ -240,3 +240,52 @@ def _set_caption_color(hwnd: int, hex_color: str) -> bool:
         ctypes.sizeof(colorref),
     )
     return hr == 0
+
+
+def enable_window_snap(widget: QWidget) -> bool:
+    """Add WS_THICKFRAME | WS_CAPTION to the underlying HWND style.
+
+    ``FramelessWindowHint`` removes these styles, which also disables
+    Windows Aero Snap (left/right docking, quarter-screen, maximise-via-drag).
+    Adding them back restores Snap while ``DWMWA_NCRENDERING_POLICY =
+    DWMNCRP_DISABLED`` (set separately) prevents DWM from actually painting
+    the native title bar.
+
+    Call after ``winId()`` has created the HWND and before ``show()``.
+    Returns True on success.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+
+        GWL_STYLE = -16
+        WS_THICKFRAME = 0x00040000
+        WS_CAPTION = 0x00C00000
+        SWP_NOMOVE = 0x0002
+        SWP_NOSIZE = 0x0001
+        SWP_NOZORDER = 0x0004
+        SWP_FRAMECHANGED = 0x0020
+
+        user32 = ctypes.WinDLL("user32.dll")
+        hwnd = int(widget.winId())
+
+        style = user32.GetWindowLongW(ctypes.c_void_p(hwnd), GWL_STYLE)
+        if style == 0:
+            return False
+
+        new_style = style | WS_THICKFRAME | WS_CAPTION
+        user32.SetWindowLongW(ctypes.c_void_p(hwnd), GWL_STYLE, new_style)
+
+        user32.SetWindowPos(
+            ctypes.c_void_p(hwnd),
+            ctypes.c_void_p(0),  # HWND_TOP = 0 after insert-after
+            ctypes.c_int(0),
+            ctypes.c_int(0),
+            ctypes.c_int(0),
+            ctypes.c_int(0),
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+        )
+        return True
+    except Exception:
+        return False
