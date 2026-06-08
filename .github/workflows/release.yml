@@ -1,4 +1,4 @@
-name: Build & Release
+name: Release
 
 on:
   push:
@@ -12,7 +12,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build:
+  test:
     runs-on: windows-latest
 
     steps:
@@ -28,55 +28,24 @@ jobs:
         run: pip install uv
 
       - name: Sync dependencies
-        run: uv sync
+        run: uv sync --dev
 
-      - name: Run tests
+      - name: Lint
+        run: uv run ruff check src/ tests/
+
+      - name: Test
         env:
           QT_QPA_PLATFORM: offscreen
-        continue-on-error: true
         run: uv run pytest
 
-      - name: Generate package database
-        run: uv run python scripts/create_package_db.py
+  release:
+    needs: test
+    runs-on: ubuntu-latest
 
-      - name: Build with PyInstaller
-        run: |
-          uv run pyinstaller `
-            --noconsole `
-            --name=Tadado `
-            --add-data="resources;resources" `
-            --icon=resources/icons/app.ico `
-            --hidden-import=PySide6.QtSvg `
-            --clean `
-            main.py
-
-      - name: Install Inno Setup
-        run: choco install innosetup -y --no-progress
-
-      - name: Build installer
-        shell: cmd
-        run: |
-          for /d %%i in ("C:\Program Files (x86)\Inno Setup*") do set "ISCC_DIR=%%i"
-          if defined ISCC_DIR (
-            "%ISCC_DIR%\ISCC.exe" installer.iss
-          ) else (
-            echo Trying PATH fallback...
-            iscc installer.iss
-          )
-          dir dist\*.exe
-
-      - name: Pack portable ZIP
-        run: Compress-Archive -Path dist/Tadado/* -DestinationPath dist/Tadado_portable.zip
-
-      - name: List artifacts
-        shell: pwsh
-        run: Get-ChildItem dist/ -Recurse -Name
-
+    steps:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: Tadado ${{ github.ref_name }}
           body_path: CHANGELOG.md
-          files: |
-            dist/Tadado_portable.zip
-            dist/Tadado_setup_*.exe
+          draft: true
