@@ -1,7 +1,7 @@
 <#
-  Tadado 自动发布脚本
+  Tadado 自动发布脚本（基于 git 推送）
   用法: .\release.ps1 v0.1.0
-  前置: 设置环境变量 $env:GITHUB_TOKEN 或在脚本中填入你的 GitHub Token
+  说明: 本地构建完后，通过 git 分支上传产物，自动创建 Release
 #>
 
 param(
@@ -12,82 +12,65 @@ param(
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
-
-# ── 获取 GitHub Token ──
 $Token = $env:GITHUB_TOKEN
-if (-not $Token) {
-    $Token = Read-Host -Prompt "请输入 GitHub Personal Access Token (repo 权限)"
-}
-$Headers = @{
-    Authorization = "Bearer $Token"
-    Accept = "application/vnd.github+json"
-}
+if (-not $Token) { $Token = Read-Host "GitHub Token" }
+
 $Repo = "HananxR/Tadado"
+$Headers = @{ Authorization = "Bearer $Token"; Accept = "application/vnd.github+json" }
 
-# ── Step 1: 本地构建 ──
-Write-Host "`n[1/5] 构建 PyInstaller ..." -ForegroundColor Cyan
+# ── 1. Build ──
+Write-Host "`n[1/4] PyInstaller 构建 ..." -ForegroundColor Cyan
 & cmd /c build.bat
-if ($LASTEXITCODE -ne 0) { throw "build.bat 失败" }
+if ($LASTEXITCODE -ne 0) { throw "build.bat failed" }
 
-# ── Step 2: Inno Setup 安装包 ──
-Write-Host "`n[2/5] 编译 Inno Setup 安装包 ..." -ForegroundColor Cyan
-$isccPaths = @(
-    "C:\Program Files\Inno Setup 7\ISCC.exe",
-    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-    "C:\Program Files (x86)\Inno Setup 5\ISCC.exe"
-)
-$iscc = $null
-foreach ($p in $isccPaths) { if (Test-Path $p) { $iscc = $p; break } }
+# ── 2. Inno Setup ──
+Write-Host "`n[2/4] Inno Setup 安装包 ..." -ForegroundColor Cyan
+$iscc = @("C:\Program Files\Inno Setup 7\ISCC.exe",
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if ($iscc) {
     & $iscc installer.iss
     $setupExe = Get-ChildItem dist/Tadado_setup_*.exe | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    Write-Host "  OK: $($setupExe.Name)" -ForegroundColor Green
-} else {
-    Write-Warning "Inno Setup 未安装，跳过安装包"
-}
+} else { Write-Warning "Inno Setup not found" }
 
-# ── Step 3: 便携 ZIP ──
-Write-Host "`n[3/5] 压缩便携版 ..." -ForegroundColor Cyan
+# ── 3. ZIP ──
 $zipPath = "dist/Tadado_${Version}_portable.zip"
 Compress-Archive -Path dist/Tadado/* -DestinationPath $zipPath -Force
-Write-Host "  OK: $zipPath" -ForegroundColor Green
 
-# ── Step 4: 创建 Release ──
-Write-Host "`n[4/5] 创建 GitHub Release ..." -ForegroundColor Cyan
-$tagCheck = git tag -l $Version
-if (-not $tagCheck) {
-    git tag $Version -m "Tadado $Version"
-    git push origin $Version
-}
+# ── 4. Push assets branch ──
+Write-Host "`n[3/4] Push assets to git ..." -ForegroundColor Cyan
+$branch = "release-$Version"
+git checkout --orphan $branch 2>$null
+git rm -rf --cached . 2>$null
+Copy-Item $setupExe.FullName . -Force
+Copy-Item $zipPath . -Force
+git add *.exe *.zip
+git commit -m "Release $Version assets"
+git push origin $branch --force
+git checkout main
+
+# ── 5. Create release ──
+Write-Host "`n[4/4] Create GitHub Release ..." -ForegroundColor Cyan
+git tag -d $Version 2>$null
+git tag $Version -m "Tadado $Version"
+git push origin :refs/tags/$Version 2>$null
+git push origin $Version
 
 $changelog = Get-Content CHANGELOG.md -Raw -Encoding UTF8
-$body = @{
-    tag_name = $Version
-    name = "Tadado $Version"
-    body = $changelog
-    draft = $false
-    prerelease = $false
-} | ConvertTo-Json
+$setupName = Split-Path $setupExe.FullName -Leaf
+$zipName = Split-Path $zipPath -Leaf
+$body = @"
+$changelog
 
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases" `
-    -Method Post -Headers $Headers -Body $body -ContentType "application/json"
-$uploadUrl = $release.upload_url -replace '\{.*\}', ''
-Write-Host "  Release created: $($release.html_url)" -ForegroundColor Green
+## 下载
 
-# ── Step 5: 上传产物 ──
-Write-Host "`n[5/5] 上传产物 ..." -ForegroundColor Cyan
-$assets = @($zipPath)
-if ($setupExe) { $assets += $setupExe.FullName }
+| 文件 | 说明 |
+|------|------|
+| [$setupName](https://github.com/HananxR/Tadado/raw/$branch/$setupName) | Inno Setup 安装包 |
+| [$zipName](https://github.com/HananxR/Tadado/raw/$branch/$zipName) | 便携版，解压即用 |
+"@
 
-foreach ($file in $assets) {
-    $name = Split-Path $file -Leaf
-    Write-Host "  上传: $name ..."
-    $contentType = if ($file.EndsWith(".zip")) { "application/zip" } else { "application/vnd.microsoft.portable-executable" }
-    Invoke-RestMethod -Uri "${uploadUrl}?name=$name" `
-        -Method Post -Headers $Headers `
-        -InFile $file `
-        -ContentType $contentType
-    Write-Host "  OK: $name" -ForegroundColor Green
-}
+$releaseData = @{ tag_name = $Version; name = "Tadado $Version"; body = $body; draft = $false } | ConvertTo-Json
+$release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases" `
+    -Method Post -Headers $Headers -Body $releaseData -ContentType "application/json"
 
-Write-Host "`n=== 发布完成! $($release.html_url) ===" -ForegroundColor Green
+Write-Host "`n=== Done! $($release.html_url) ===" -ForegroundColor Green
