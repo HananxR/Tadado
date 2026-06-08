@@ -45,7 +45,7 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 | 步骤 | 操作 |
 |------|------|
 | **1. 写任务** | 输入 `- [***] <日期> 任务标题 #标签`，Enter 一键创建 |
-| **2. 三视图** | `Ctrl+1` 编辑视图 · `Ctrl+2` 活动分析 · `Ctrl+3` 批量管理 |
+| **2. 三视图** | 标题栏按钮切换：编辑视图 · 活动分析 · 批量管理 |
 | **3. 演示空间** | 首次启动内置 15 个演示任务，覆盖全部功能，开箱即体验 |
 | **4. 右键操作** | 任务列表右键 → 改状态 / 改优先级 / 复制 Markdown / 批量管理 |
 
@@ -65,7 +65,7 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 <p align="center">
   <img src="https://raw.githubusercontent.com/HananxR/Tadado/main/resources/screenshots/task-input.png" width="720" alt="Markdown 任务输入">
 </p>
-<p align="center"><sub>▲ 输入框支持完整 Markdown 语法：优先级 + 日期 + 标题 + 标签，一行搞定。Enter 创建，Ctrl+N 全局聚焦。</sub></p>
+<p align="center"><sub>▲ 输入框支持完整 Markdown 语法：优先级 + 日期 + 标题 + 标签，一行搞定。Enter 创建。</sub></p>
 
 ### 活动分析 — 日历热力图
 
@@ -172,7 +172,7 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 
 ### 🔧 批量管理控制台
 
-`Ctrl+3` 进入，三栏布局：左侧筛选面板（180px）+ 中间全宽表格 + 右侧标签管理（30%）。
+点击标题栏「任务管理」进入，三栏布局：左侧筛选面板（180px）+ 中间全宽表格 + 右侧标签管理（30%）。
 
 **批量操作**
 
