@@ -8,7 +8,7 @@ Tadado 版本更新日志。格式参考 [Keep a Changelog](https://keepachangel
 
 ### Added
 - **版本与更新**：关于对话框新增检查更新功能（GitHub Release API + 阿里云盘自动回退），20 秒超时，检测到新版本时下载渠道标注 ⭐ 推荐
-- **阿里云盘下载渠道**：关于对话框 + README 增加阿里云盘分享链接（国内用户推荐，仅提供安装版）
+- **阿里云盘下载渠道**：关于对话框 + README 增加阿里云盘分享链接（仅提供安装版）
 - **交流方式**：关于对话框新增邮箱 `hanxy8413@gmail.com`、微信公众号 `Pyvan`、GitHub 项目地址
 - **`src/version.py`**：统一版本号来源，消除与 `pyproject.toml` 的不一致
 - **`src/services/update_checker.py`**：异步更新检测服务，QNetworkAccessManager + QProcess 双通道
