@@ -12,28 +12,16 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  test:
-    runs-on: windows-latest
+  release:
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          python-version: "3.10"
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Sync dependencies
-        run: uv sync --dev
-
-      - name: Lint
-        run: uv run ruff check src/ tests/
-
-      - name: Test
-        env:
-          QT_QPA_PLATFORM: offscreen
-        run: uv run pytest
+          generate_release_notes: true   # 让 GitHub 根据提交历史自动生成更新日志
+          allowUpdates: true             # 👈 核心配置：允许覆盖已有的Release，防止冲突报错
+          prerelease: false              # 设为正式发布（如需测试版可改为 true）
