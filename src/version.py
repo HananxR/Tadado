@@ -12,23 +12,27 @@ Usage::
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.1.2.1"
 
 
 def get_version() -> str:
-    """Return the raw semver string, e.g. ``"0.1.0"``."""
+    """Return the raw semver string, e.g. ``"0.1.2.1"``."""
     return __version__
 
 
 def get_version_display() -> str:
-    """Return the user-facing version string, e.g. ``"v0.1.0"``."""
+    """Return the user-facing version string, e.g. ``"v0.1.2.1"``."""
     return f"v{__version__}"
 
 
-def parse_version(version_str: str) -> tuple[int, int, int]:
-    """Parse a version string like ``"v1.2.3"`` or ``"1.2.3"`` into a tuple."""
+def parse_version(version_str: str) -> tuple[int, ...]:
+    """Parse a version string like ``"v1.2.3"`` or ``"1.2.3.1"`` into a
+    variable-length tuple. 3-digit versions are padded to 4 for comparison."""
     clean = version_str.lstrip("v").strip()
     parts = clean.split(".")
-    if len(parts) != 3:
+    if len(parts) < 3 or len(parts) > 4:
         raise ValueError(f"Invalid version format: {version_str!r}")
+    # Pad 3-digit → 4 for comparison: "0.1.0" → (0,1,0,0)
+    while len(parts) < 4:
+        parts.append("0")
     return tuple(int(p) for p in parts)  # type: ignore[return-value]
