@@ -36,6 +36,7 @@ from ..models.repository import TaskRepository
 from ..models.task import Task
 from ..models.task_filter import TaskFilter
 from ..models.task_status import TaskStatus
+from ..services.update_checker import UpdateChecker
 from ..utils.icon_loader import load_icon
 from ..utils.signal_bus import get_signal_bus
 from ..utils.widget_utils import combo_width
@@ -95,6 +96,7 @@ class MainWindow(QMainWindow):
         self._selection_guard: bool = False  # prevents signal recursion from selectRow()
         self._new_task_sort_active: bool = False  # True after task creation, reset on user nav
         self._setting_sort_internally: bool = False  # guard against self-triggered filter change
+        self._update_checker = UpdateChecker(self)
 
         self.setWindowTitle("Tadado")
 
@@ -2317,7 +2319,7 @@ class MainWindow(QMainWindow):
             self._signal_bus.config_changed.emit()
 
     def _on_about(self) -> None:
-        dlg = AboutDialog(self)
+        dlg = AboutDialog(self, update_checker=self._update_checker)
         dlg.exec()
 
     def _on_help_docs(self) -> None:

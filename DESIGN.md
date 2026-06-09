@@ -29,7 +29,7 @@
 ├──────────────────────────────────────────┤
 │  服务层 (src/services/)                   │
 │  Parser, Formatter, Scheduler, Notifier, │
-│  Archiver, Recurrence                    │
+│  Archiver, Recurrence, UpdateChecker     │
 ├──────────────────────────────────────────┤
 │  模型层 (src/models/)                     │
 │  Task, TaskStatus, TaskFilter,           │
@@ -679,7 +679,30 @@
 
 ---
 
-### 2.10 后台服务
+### 2.10 版本与更新
+
+**文件**：[src/services/update_checker.py](src/services/update_checker.py)、[src/ui/dialogs/about_dialog.py](src/ui/dialogs/about_dialog.py)
+
+#### 需求
+
+帮助 → 关于对话框提供版本追溯和更新检测：
+- 显示当前版本号（统一来源 `src/version.py`）
+- [检查更新] 按钮：先查 GitHub Release API，不可达则自动回退到阿里云盘（通过本地 `aliyunpan` CLI 查询文件夹内安装包文件名解析最新版本）
+- 20 秒超时，超时按"无更新"处理
+- 检测到新版本时，下载渠道区标注 ⭐ 推荐
+- 提供 GitHub Releases + 阿里云盘双下载渠道
+- 交流方式：邮箱 + 微信公众号 + GitHub 项目地址
+
+#### 实现方案
+
+- `UpdateChecker(QObject)`：`QNetworkAccessManager` 异步查询 GitHub API，失败时通过 `QProcess` 调 `aliyunpan ls` 解析云盘文件版本
+- `AboutDialog` 新增 `update_checker` 参数，[检查更新] 按钮禁用态、结果文字、下载渠道动态 ⭐ 标注
+- 版本比较：`tuple(int,int,int)` 去 `v` 前缀
+- 阿里云盘上传：`release.ps1` + `upload_aliyun.ps1`（本地脚本，不入库）通过 `aliyunpan` CLI 上传至资源库 `/Tadado/`
+
+---
+
+### 2.11 后台服务
 
 **文件**：[src/services/scheduler.py](src/services/scheduler.py)、[notifier.py](src/services/notifier.py)、[archiver.py](src/services/archiver.py)、[recurrence.py](src/services/recurrence.py)
 

@@ -22,11 +22,14 @@ resources/config.json
 
 # Local docs (not for public repo)
 RELEASE.md
+Tadado公众号文章.md
 
 # OS
 .DS_Store
 Thumbs.db
 release.ps1
+upload_aliyun.ps1
 build.bat
+.github_token
 installer.iss
 releases/

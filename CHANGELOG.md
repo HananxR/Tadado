@@ -6,6 +6,21 @@ Tadado 版本更新日志。格式参考 [Keep a Changelog](https://keepachangel
 
 ## [0.1.2] — 2026-06-09
 
+### Added
+- **版本与更新**：关于对话框新增检查更新功能（GitHub Release API + 阿里云盘自动回退），20 秒超时，检测到新版本时下载渠道标注 ⭐ 推荐
+- **阿里云盘下载渠道**：关于对话框 + README 增加阿里云盘分享链接（国内用户推荐，仅提供安装版）
+- **交流方式**：关于对话框新增邮箱 `hanxy8413@gmail.com`、微信公众号 `Pyvan`、GitHub 项目地址
+- **`src/version.py`**：统一版本号来源，消除与 `pyproject.toml` 的不一致
+- **`src/services/update_checker.py`**：异步更新检测服务，QNetworkAccessManager + QProcess 双通道
+- **发布脚本增强**：`release.ps1` 新增源码包生成（`git archive`）和阿里云盘上传步骤
+
+### Changed
+- 关于对话框重新布局：版本状态 + 检查更新 + 下载渠道 + 交流方式集中在同一区域
+
+---
+
+## [0.1.2-pre] — 2026-06-09
+
 ### Fixed
 - 进度栏按钮筛选结果错误：原按 `deadline_date`/`scheduled_date` 范围过滤，改为按 `activity_log` 活动时间戳精准过滤，与活动报告（TaskTreePanel）结果一致
 - 进度栏与活动报告活动计数不一致：统一 `_ts_in_range` 与 `_entry_date` 时间戳解析逻辑（双格式支持、key 名兼容）

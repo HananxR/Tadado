@@ -221,7 +221,10 @@ Tadado 是一款 **Windows 桌面任务管理工具**。你用简单的 Markdown
 
 ### 方式一：下载安装包（推荐）
 
-从 [Releases](https://github.com/HananxR/Tadado/releases) 下载最新版安装包，一键安装。
+| 渠道 | 说明 |
+|------|------|
+| 🌐 [GitHub Releases](https://github.com/HananxR/Tadado/releases) | 便携版 + 安装版 + 源码包 |
+| ☁️ [阿里云盘](https://www.alipan.com/s/E2FBppaMPZj) | 仅提供安装版（国内用户推荐） |
 
 ### 方式二：从源码运行
 
