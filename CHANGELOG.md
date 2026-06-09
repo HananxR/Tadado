@@ -4,34 +4,28 @@ Tadado 版本更新日志。格式参考 [Keep a Changelog](https://keepachangel
 
 ---
 
-## [0.1.2] — 2026-06-09
+## [0.1.2.1] — 2026-06-09
 
 ### Added
 - **版本与更新**：关于对话框新增检查更新功能（GitHub Release API + 阿里云盘自动回退），20 秒超时，检测到新版本时下载渠道标注 ⭐ 推荐
 - **阿里云盘下载渠道**：关于对话框 + README 增加阿里云盘分享链接（仅提供安装版）
 - **交流方式**：关于对话框新增邮箱 `hanxy8413@gmail.com`、微信公众号 `Pyvan`、GitHub 项目地址
-- **`src/version.py`**：统一版本号来源，消除与 `pyproject.toml` 的不一致
+- **`src/version.py`**：统一版本号来源，4 位版本号格式（绕过 GitHub immutable tag 限制）
 - **`src/services/update_checker.py`**：异步更新检测服务，QNetworkAccessManager + QProcess 双通道
-- **发布脚本增强**：`release.ps1` 新增源码包生成（`git archive`）和阿里云盘上传步骤
+- **发布脚本增强**：`release.ps1` 新增源码包生成（`git archive`），阿里云盘独立上传脚本 `upload_aliyun.ps1`
 
 ### Changed
 - 关于对话框重新布局：版本状态 + 检查更新 + 下载渠道 + 交流方式集中在同一区域
-
----
-
-## [0.1.2-pre] — 2026-06-09
+- 版本格式升级为 4 位（v0.1.2.1），`parse_version` 自动补齐 3/4 位比较
 
 ### Fixed
-- 进度栏按钮筛选结果错误：原按 `deadline_date`/`scheduled_date` 范围过滤，改为按 `activity_log` 活动时间戳精准过滤，与活动报告（TaskTreePanel）结果一致
-- 进度栏与活动报告活动计数不一致：统一 `_ts_in_range` 与 `_entry_date` 时间戳解析逻辑（双格式支持、key 名兼容）
-
-### Changed
-- 取消进度栏与速览栏的按钮联动锁定：6 个周期按钮始终可点击，`set_synced_period()` 替换为 `reset_to_unclicked()`
-- 进度栏活动过滤从 SQL 层 `activity_*` 预计算列改为 Python 层 `filter_tasks_by_activity()` 精准扫描，避免跨天列值过时
+- 进度栏按钮筛选结果错误：原按 `deadline_date`/`scheduled_date` 范围过滤，改为按 `activity_log` 活动时间戳精准过滤
+- 进度栏与活动报告活动计数不一致：统一时间戳解析逻辑
+- 取消进度栏与速览栏的按钮联动锁定，进度栏活动过滤改用 Python 层精准扫描
 
 ---
 
-## [1.0.0] — 2026-06
+## [0.1.0] — 2026-06
 
 ### 核心功能
 - Markdown 语法创建和管理任务，支持优先级、截止时间、标签
