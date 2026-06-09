@@ -329,6 +329,14 @@ Tadado 深受以下优秀项目和软件的启发，谨致以诚挚感谢：
 - [Heatmap Tracker](https://github.com/mokkiebear/heatmap-tracker) — 日历热力图可视化
 - 🖼 默认欢迎页壁纸 — 图片来源于网络，如有侵权，请联系我删除
 
+## 💬 联系方式
+
+| 渠道 | 地址 |
+|------|------|
+| 📧 邮箱 | [hanxy8413@gmail.com](mailto:hanxy8413@gmail.com) |
+| 💬 微信公众号 | **Pyvan** |
+| 🌐 项目地址 | [github.com/HananxR/Tadado](https://github.com/HananxR/Tadado) |
+
 ## 📄 许可
 
 [MIT License](LICENSE) — 自由使用、修改、分发，包括商业用途。
