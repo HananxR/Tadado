@@ -4,6 +4,16 @@ Tadado 版本更新日志。格式参考 [Keep a Changelog](https://keepachangel
 
 ---
 
+## [0.1.2.2] — 2026-06-09
+
+### Added
+- 安装程序新增简体中文界面支持（ChineseSimplified.isl），英文为回退语言
+
+### Fixed
+- 修复 Inno Setup 安装程序中文显示乱码：`installer.iss` 编码改为 UTF-8 with BOM
+
+---
+
 ## [0.1.2.1] — 2026-06-09
 
 ### Added
