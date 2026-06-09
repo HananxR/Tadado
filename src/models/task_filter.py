@@ -29,6 +29,8 @@ class TaskFilter:
     created_to: Optional[date] = None
     progress_min: int = 0
     progress_max: int = 100
+    activity_field: Optional[str] = None  # "activity_today" / "activity_week" 等
+    activity_min: int = 0  # activity >= N，0=不过滤
     overdue_only: bool = False
     show_archived: bool = False
     show_suspended: bool = True  # always show, use visual dimming instead

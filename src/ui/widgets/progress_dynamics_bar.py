@@ -88,7 +88,6 @@ class ProgressDynamicsBar(QWidget):
         self._repository = repository
         self._enabled_periods = enabled_periods or [p[0] for p in PERIODS]
         self._active_period = ""  # unclicked by default
-        self._synced_key: str | None = None
         self._partition_id: str | None = None
         self._max_items = max_items
         self._interval_ms = interval_seconds * 1000
@@ -141,36 +140,20 @@ class ProgressDynamicsBar(QWidget):
         for key, btn in self._period_buttons.items():
             btn.setEnabled(key in self._enabled_periods)
 
-    def set_synced_period(self, period_key: str | None) -> None:
-        """Sync with 速览栏: only matching period clickable, others disabled."""
-        self._synced_key = period_key
-        for key, btn in self._period_buttons.items():
-            if period_key is None:
-                btn.setEnabled(False)
-            else:
-                btn.setEnabled(key == period_key)
-            btn.setChecked(False)
-        self._active_period = ""
-        self._enter_hint_mode()
-
     def reset_to_unclicked(self) -> None:
-        """Restore synced period to unclicked state (after task changes)."""
-        if self._synced_key:
-            for key, btn in self._period_buttons.items():
-                btn.setEnabled(key == self._synced_key)
-                btn.setChecked(False)
-            self._active_period = ""
-            self._enter_hint_mode()
+        """Restore to unclicked hint mode — all period buttons remain enabled."""
+        self._active_period = ""
+        for btn in self._period_buttons.values():
+            btn.setEnabled(True)
+            btn.setChecked(False)
+        self._enter_hint_mode()
+        self._carousel_label.setText("")
 
     def refresh(self) -> None:
         """Re-query repository and update display based on current mode."""
-        period_start, period_end = _get_period_range(self._active_period)
-        filter_ = TaskFilter(
-            partition_id=self._partition_id,
-            date_from=period_start,
-            date_to=period_end,
-            sort_by=[SortCriterion("progress", ascending=False)],
-        )
+        if not self._active_period:
+            return
+        filter_ = TaskFilter(partition_id=self._partition_id)
         tasks = self._repository.search(filter_)
         self.set_items(tasks)
 
@@ -190,7 +173,7 @@ class ProgressDynamicsBar(QWidget):
         for task in ranked[:self._max_items]:
             count = sum(
                 1 for e in task.activity_log
-                if self._ts_in_range(e.get("ts", ""), period_start, period_end)
+                if self._ts_in_range(e.get("ts", e.get("time", "")), period_start, period_end)
             )
             self._items.append({
                 "task_id": task.id,
@@ -205,15 +188,25 @@ class ProgressDynamicsBar(QWidget):
             self._enter_hint_mode()
 
     def build_filter(self) -> TaskFilter:
-        """Build TaskFilter for the active period, sorted by activity count descending."""
-        period_start, period_end = _get_period_range(self._active_period)
-        activity_field = f"activity_{self._active_period}" if self._active_period else "activity_today"
+        """Build TaskFilter for the active period, sorted by urgency."""
         return TaskFilter(
             partition_id=self._partition_id,
-            date_from=period_start,
-            date_to=period_end,
-            sort_by=[SortCriterion(activity_field, ascending=False)],
+            sort_by=[SortCriterion("urgency", ascending=True)],
         )
+
+    def filter_tasks_by_activity(self, tasks: list[Task]) -> list[Task]:
+        """Return tasks that have activity_log entries in the active period."""
+        if not self._active_period:
+            return tasks
+        period_start, period_end = _get_period_range(self._active_period)
+        result = []
+        for t in tasks:
+            for e in t.activity_log:
+                ts = e.get("ts", e.get("time", ""))
+                if self._ts_in_range(ts, period_start, period_end):
+                    result.append(t)
+                    break
+        return result
 
     # ------------------------------------------------------------------
     # Hint mode (unclicked) -- latest activity
@@ -289,15 +282,21 @@ class ProgressDynamicsBar(QWidget):
         def score(task: Task) -> tuple[int, int]:
             count = sum(
                 1 for e in task.activity_log
-                if self._ts_in_range(e.get("ts", ""), period_start, period_end)
+                if self._ts_in_range(e.get("ts", e.get("time", "")), period_start, period_end)
             )
             return (count, task.progress)
         return sorted(tasks, key=score, reverse=True)
 
     @staticmethod
     def _ts_in_range(ts: str, start: date, end: date) -> bool:
+        """与 TaskTreePanel._entry_date 行为一致的 timestamp 解析。"""
+        if not ts:
+            return False
         try:
-            dt = datetime.fromisoformat(ts)
+            if "T" in ts:
+                dt = datetime.fromisoformat(ts)
+            else:
+                dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
             return start <= dt.date() <= end
         except (ValueError, TypeError):
             return False
@@ -308,12 +307,8 @@ class ProgressDynamicsBar(QWidget):
 
     def _on_period_clicked(self, period_key: str) -> None:
         if self._active_period == period_key:
-            # Toggle off: back to unclicked hint mode
-            self._active_period = ""
-            for key, btn in self._period_buttons.items():
-                btn.setChecked(False)
-            self._enter_hint_mode()
-            self._carousel_label.setText("")
+            # Toggle off: back to unclicked hint mode, restore default sort
+            self.reset_to_unclicked()
             self.progress_filter_activated.emit(TaskFilter(
                 partition_id=self._partition_id,
                 sort_by=[SortCriterion("urgency", ascending=True)],

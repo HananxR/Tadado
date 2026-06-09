@@ -293,6 +293,11 @@ class TaskRepository:
             where_clauses.append("progress >= ? AND progress <= ?")
             params.extend([filter_.progress_min, filter_.progress_max])
 
+        # Activity period filter (进度栏: 使用已有 activity_* 列过滤有活动记录的任务)
+        if filter_.activity_field and filter_.activity_min > 0:
+            where_clauses.append(f"{filter_.activity_field} >= ?")
+            params.append(filter_.activity_min)
+
         # Overdue only
         if filter_.overdue_only:
             today = date.today().isoformat()
@@ -378,6 +383,9 @@ class TaskRepository:
         if filter_.progress_min > 0 or filter_.progress_max < 100:
             where_clauses.append("progress >= ? AND progress <= ?")
             params.extend([filter_.progress_min, filter_.progress_max])
+        if filter_.activity_field and filter_.activity_min > 0:
+            where_clauses.append(f"{filter_.activity_field} >= ?")
+            params.append(filter_.activity_min)
         if filter_.tags:
             for tag in filter_.tags:
                 where_clauses.append("tags LIKE ?")

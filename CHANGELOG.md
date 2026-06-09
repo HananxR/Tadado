@@ -4,6 +4,18 @@ Tadado 版本更新日志。格式参考 [Keep a Changelog](https://keepachangel
 
 ---
 
+## [0.1.2] — 2026-06-09
+
+### Fixed
+- 进度栏按钮筛选结果错误：原按 `deadline_date`/`scheduled_date` 范围过滤，改为按 `activity_log` 活动时间戳精准过滤，与活动报告（TaskTreePanel）结果一致
+- 进度栏与活动报告活动计数不一致：统一 `_ts_in_range` 与 `_entry_date` 时间戳解析逻辑（双格式支持、key 名兼容）
+
+### Changed
+- 取消进度栏与速览栏的按钮联动锁定：6 个周期按钮始终可点击，`set_synced_period()` 替换为 `reset_to_unclicked()`
+- 进度栏活动过滤从 SQL 层 `activity_*` 预计算列改为 Python 层 `filter_tasks_by_activity()` 精准扫描，避免跨天列值过时
+
+---
+
 ## [1.0.0] — 2026-06
 
 ### 核心功能

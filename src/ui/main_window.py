@@ -484,7 +484,6 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._progress_bar)
         self._progress_bar.progress_filter_activated.connect(self._on_progress_filter)
         self._progress_bar.task_clicked.connect(self._on_carousel_clicked)
-        self._progress_bar.set_synced_period("today")
 
         self._edit_panel = TaskEditPanel(self._repository, self._task_model)
         right_layout.addWidget(self._edit_panel, 1)
@@ -1043,6 +1042,8 @@ class MainWindow(QMainWindow):
         if self._carousel_filter is not None:
             f.date_from = self._carousel_filter.date_from
             f.date_to = self._carousel_filter.date_to
+            f.activity_field = self._carousel_filter.activity_field
+            f.activity_min = self._carousel_filter.activity_min
             f.partition_id = self._carousel_filter.partition_id or self._active_partition_id or None  # "" → None
         else:
             f.partition_id = self._active_partition_id or None  # "" → None
@@ -1655,7 +1656,7 @@ class MainWindow(QMainWindow):
                 pass
         self._carousel_filter = f
         self._refresh_all_views(f)
-        self._progress_bar.set_synced_period(preset)
+        self._progress_bar.reset_to_unclicked()
         if hasattr(self, '_task_model') and self._task_model.rowCount() > 0:
             self._on_task_selected(self._task_model.tasks[0])
         if self._current_view != "edit":
@@ -1671,7 +1672,19 @@ class MainWindow(QMainWindow):
 
     def _on_progress_filter(self, filter_: TaskFilter) -> None:
         self._carousel_filter = filter_
-        self._refresh_all_views(filter_)
+        # 通过 _build_filter_with_sort() 合并速览栏 scope
+        merged = self._build_filter_with_sort()
+        self._refresh_all_views(merged)
+        # 进度栏: 对任务列表额外做 activity_log 活动过滤
+        if self._progress_bar._active_period:
+            active_tasks = self._progress_bar.filter_tasks_by_activity(
+                self._task_model.tasks
+            )
+            if len(active_tasks) < len(self._task_model.tasks):
+                self._total_count = len(active_tasks)
+                self._task_model.set_offset(0)
+                self._task_model.load_tasks(active_tasks[:self._page_size])
+                self._update_page_label()
         if self._task_model.tasks:
             self._on_task_selected(self._task_model.tasks[0])
 

@@ -313,16 +313,16 @@
 
 #### 2.5.2 ProgressDynamicsBar — 进度动态栏
 
-**需求**：6 个时段按钮联动速览栏（仅匹配按钮可点击）。双重模式：未点击时 1 列显示最近活跃任务的最新进展；点击后 1 列轮播按活动日志数量降序的 Top 6 任务。
+**需求**：6 个时段按钮（始终可点击，不再联动速览栏）。双重模式：未点击时 1 列显示最近活跃任务的最新进展；点击后 1 列轮播按活动日志数量降序的 Top 6 任务。
 
-**实现方案**：`_show_latest_activity()` 扫描 activity_log 找最新记录。`_rank_tasks()` 按活动日志数降序排列。`set_synced_period()` 联动速览栏按钮启用状态。点击发射 `progress_filter_activated(TaskFilter)` 过滤任务列表。DB 层新增 `activity_yesterday/today/last_week/week/last_month/month` 六列（迁移 1→2/2→3/3→4），`compute_activity_counts()` 共享函数在 update/insert/batch 中自动重算。
+**实现方案**：`_show_latest_activity()` 扫描 activity_log 找最新记录。`_rank_tasks()` 按活动日志数降序排列。`reset_to_unclicked()` 取消选中并回到 hint 模式（不锁定按钮）。点击发射 `progress_filter_activated(TaskFilter)`，`_on_progress_filter` 通过 `_build_filter_with_sort()` 合并速览栏 scope 后过滤任务列表。`filter_tasks_by_activity()` 做 Python 层 activity_log timestamp 精准扫描，`_ts_in_range()` 与 TaskTreePanel `_entry_date()` 解析逻辑一致（支持 ISO + `%Y-%m-%d %H:%M:%S` 双格式、同时检查 `ts`/`time` key）。
 
 **预览**：
 ```
 未点击:  [昨天] [今天] [上周] [本周] [上月] [本月]   │ 最新: 重构认证模块 — 完成了接口联调
 点击后:  [昨天] [■今天] [上周] [本周] [上月] [本月]   │ +3条 重构认证模块
 ```
-  按钮联动速览栏 (仅匹配可点)     轮播区 (单列, 点击后每5s切换)
+  按钮始终可点击 (不与速览栏锁定)     轮播区 (单列, 点击后每5s切换)
 
 #### 2.5.3 QuickOverviewBar — 速览栏
 
