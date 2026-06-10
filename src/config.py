@@ -23,6 +23,7 @@ DEFAULT_CONFIG: dict = {
     "display": {
         "theme": "light",
         "heatmap_start_year": 2026,
+        "heatmap_color_scheme": "sunbeam",
     },
     "reminders": {
         "enabled": False,

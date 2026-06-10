@@ -2365,6 +2365,10 @@ class MainWindow(QMainWindow):
             self._batch_tag_panel.set_page_size(new_page_size)
             self._batch_tag_panel.refresh_theme()
 
+        # Heatmap: repaint on colour-scheme change (refresh_tokens already called by app.py)
+        if hasattr(self, '_heatmap_widget'):
+            self._heatmap_widget.force_refresh()
+
         self._on_data_changed()
 
     # ------------------------------------------------------------------

@@ -60,33 +60,165 @@ class DesignTokens:
     # ── Methods ────────────────────────────────────────────────────
 
     def heatmap_gradient(self, levels: int = 8) -> list[str]:
-        """Cool gradient: deep indigo → vivid blue → bright cyan.
+        """Return *levels* ``#RRGGBB`` colours from the current scheme.
 
-        Produces a 'glowing' heatmap effect. Index 0 is the darkest/emptiest,
-        index -1 is the brightest/most active.
+        Index 0 is the empty-cell colour; indices 1..levels-1 form the
+        activity gradient from low to high.
         """
-        # Fixed cool-toned stops (not dependent on accent/bg_primary)
-        stops = [
-            (25, 30, 60),     # deep navy (empty)
-            (40, 55, 120),    # dark blue
-            (55, 90, 180),    # medium blue
-            (70, 130, 220),   # light blue
-            (90, 165, 240),   # sky blue
-            (120, 195, 250),  # pale blue
-            (60, 210, 220),   # teal
-            (0, 230, 200),    # bright cyan (max activity)
-        ]
-        result: list[str] = []
-        for i in range(levels):
-            idx = i * (len(stops) - 1) / max(levels - 1, 1)
-            lo = int(idx)
-            hi = min(lo + 1, len(stops) - 1)
-            frac = idx - lo
-            r = int(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * frac)
-            g = int(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * frac)
-            b_val = int(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * frac)
-            result.append(f"#{r:02x}{g:02x}{b_val:02x}")
-        return result
+        return _compute_heatmap_gradient(_current_scheme_key, is_dark(), levels)
+
+
+# ── Heatmap colour schemes ──────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class HeatmapScheme:
+    """Named colour scheme for the activity heatmap — 8 gradient stops.
+
+    Stop 0 is the empty-cell colour; stops 1–7 are the activity gradient
+    from low to high.
+    """
+
+    name: str
+    gradient_stops: list[tuple[int, int, int]]  # 8 RGB triples
+
+
+HEATMAP_SCHEMES: dict[str, dict[str, HeatmapScheme]] = {
+    "sunbeam": {
+        "light": HeatmapScheme(
+            "暖阳",
+            [
+                (245, 240, 224),  # empty: warm cream
+                (252, 228, 184),  # pale gold
+                (252, 216, 139),  # golden straw
+                (252, 200, 96),   # amber
+                (249, 168, 37),   # warm amber
+                (245, 124, 0),    # orange
+                (230, 81, 0),     # deep orange
+                (191, 54, 12),    # burnt orange
+            ],
+        ),
+        "dark": HeatmapScheme(
+            "暖阳",
+            [
+                (58, 48, 40),     # empty: dark brown
+                (80, 60, 35),     # dark amber
+                (120, 85, 40),    # bronze
+                (170, 120, 45),   # golden brown
+                (220, 160, 50),   # gold
+                (245, 190, 30),   # bright gold
+                (255, 210, 20),   # vivid yellow-gold
+                (255, 230, 60),   # sun yellow
+            ],
+        ),
+    },
+    "sprout": {
+        "light": HeatmapScheme(
+            "新绿",
+            [
+                (217, 232, 208),  # empty: pale sage
+                (210, 235, 195),  # very light green
+                (180, 222, 168),  # light green
+                (140, 204, 130),  # medium-light green
+                (102, 187, 106),  # medium green
+                (76, 175, 80),    # green
+                (56, 142, 60),    # dark green
+                (46, 125, 50),    # deep emerald
+            ],
+        ),
+        "dark": HeatmapScheme(
+            "新绿",
+            [
+                (42, 53, 40),     # empty: dark olive
+                (55, 71, 48),     # dark forest
+                (76, 110, 60),    # medium-dark green
+                (102, 150, 75),   # medium green
+                (129, 185, 95),   # medium-light green
+                (156, 210, 110),  # bright green
+                (180, 230, 130),  # vivid green
+                (200, 245, 150),  # neon lime
+            ],
+        ),
+    },
+    "ocean": {
+        "light": HeatmapScheme(
+            "海洋",
+            [
+                (214, 221, 230),  # empty: pale blue-gray
+                (200, 215, 235),  # light steel blue
+                (170, 200, 230),  # soft blue
+                (130, 175, 220),  # medium blue
+                (90, 150, 210),   # blue
+                (60, 120, 190),   # deeper blue
+                (40, 90, 165),    # dark blue
+                (21, 65, 140),    # deep navy
+            ],
+        ),
+        "dark": HeatmapScheme(
+            "海洋",
+            [
+                (37, 42, 56),     # empty: dark navy
+                (45, 55, 80),     # dark blue
+                (55, 75, 120),    # medium-dark blue
+                (70, 100, 160),   # medium blue
+                (90, 135, 200),   # light blue
+                (120, 170, 230),  # sky blue
+                (80, 210, 210),   # teal
+                (0, 230, 200),    # bright cyan
+            ],
+        ),
+    },
+    "sakura": {
+        "light": HeatmapScheme(
+            "樱花",
+            [
+                (245, 232, 236),  # empty: pale pink
+                (248, 220, 228),  # very light pink
+                (245, 200, 212),  # light pink
+                (240, 170, 188),  # medium pink
+                (230, 140, 160),  # rose pink
+                (215, 100, 130),  # deep rose
+                (190, 60, 95),    # cherry
+                (173, 20, 87),    # deep cherry
+            ],
+        ),
+        "dark": HeatmapScheme(
+            "樱花",
+            [
+                (58, 40, 50),     # empty: dark mauve
+                (80, 48, 60),     # dark rose
+                (120, 60, 80),    # medium-dark rose
+                (160, 75, 100),   # medium rose
+                (195, 95, 125),   # rose pink
+                (220, 120, 150),  # soft pink
+                (240, 150, 175),  # light pink
+                (255, 175, 195),  # blossom pink
+            ],
+        ),
+    },
+}
+
+_current_scheme_key: str = "sunbeam"
+
+
+def _compute_heatmap_gradient(
+    scheme_key: str, is_dark: bool, levels: int = 8
+) -> list[str]:
+    """Return *levels* ``#RRGGBB`` colours interpolated from a scheme's stops."""
+    theme = "dark" if is_dark else "light"
+    scheme = HEATMAP_SCHEMES.get(scheme_key, HEATMAP_SCHEMES["sunbeam"])[theme]
+    stops = scheme.gradient_stops  # 8 RGB triples
+    result: list[str] = []
+    for i in range(levels):
+        idx = i * (len(stops) - 1) / max(levels - 1, 1)
+        lo = int(idx)
+        hi = min(lo + 1, len(stops) - 1)
+        frac = idx - lo
+        r = int(stops[lo][0] + (stops[hi][0] - stops[lo][0]) * frac)
+        g = int(stops[lo][1] + (stops[hi][1] - stops[lo][1]) * frac)
+        b = int(stops[lo][2] + (stops[hi][2] - stops[lo][2]) * frac)
+        result.append(f"#{r:02x}{g:02x}{b:02x}")
+    return result
 
 
 # ── Light palette ──────────────────────────────────────────────────────────
@@ -255,13 +387,17 @@ def refresh_tokens() -> None:
 
 
 def _resolve() -> None:
-    global _tokens
+    global _tokens, _current_scheme_key
     if _config_ref is None:
         _tokens = LIGHT_TOKENS
+        _current_scheme_key = "sunbeam"
         return
 
     theme_name: str = _config_ref.theme  # type: ignore[union-attr]
     _tokens = DARK_TOKENS if theme_name == "dark" else LIGHT_TOKENS
+    _current_scheme_key = _config_ref.get(  # type: ignore[union-attr]
+        "display", "heatmap_color_scheme", default="sunbeam"
+    )
 
 
 # ── QPalette builders ────────────────────────────────────────────────────────

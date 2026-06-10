@@ -358,7 +358,7 @@
 #### 需求
 
 - Ctrl+2 切换，上下两区布局：「活动热力图」+「活动报告」
-- 紧凑热力图（12px 单元格，深蓝→青色 8 级酷炫渐变）+ 悬浮 Tooltip + 点击日期选中
+- 紧凑热力图（12px 单元格，4 组配色方案可选：☀️ 暖阳 / 🌱 新绿 / 🌊 海洋 / 🌸 樱花）+ 悬浮 Tooltip + 点击日期选中
 - 统计卡片同行右侧显示
 - PeriodSelectorBar：昨天/今天/上周/本周/上月/本月 + 自定义日期范围（CalendarPopup）
 - 左侧 TaskTreePanel：FlowLayout 胶囊标签云（可勾选，默认全选），顶部搜索框（实时筛选标签）+ 紧凑全选切换按钮（28×22），标签名超 8 字截断；与右侧导航栏同行水平对齐
@@ -369,7 +369,7 @@
 
 #### 实现方案
 
-- `CalendarHeatmapWidget`（紧凑常量 + 酷炫渐变 `heatmap_gradient()`）
+- `CalendarHeatmapWidget`（紧凑常量 + 配色方案 `heatmap_gradient()`，支持 4 组方案切换）
 - `HeatmapStatsPanel`、`PeriodSelectorBar`（`_CalendarDateEdit` 子类 + CalendarPopup）
 - `TaskTreePanel`：FlowLayout 胶囊标签云 + 搜索框 `_apply_tag_filter()` 实时过滤 + 紧凑全选按钮（`toggle_all_checked()`） + `tag_selected`/`checked_tags_changed` 信号 + `select_prev()`/`select_next()` 循环切换
 - `ActivityContentView`：顶部导航栏（`prev_requested`/`next_requested` 信号）+ QTextBrowser HTML 有序列表 + `set_current_tag(tag, pos, total)` 显示序号 + `set_search_text`/`get_plain_text`
@@ -512,7 +512,7 @@
 #### 需求
 
 - 12 月 × 7 天(行) × 5 周(列) 矩阵布局
-- accent 单色渐变(empty→满，`heatmap_gradient()` 8 级)
+- 配色方案渐变（4 组可选，`heatmap_gradient()` 8 级，空单元格→高活跃）
 - 月份标题横轴、星期标签纵轴
 - 日期悬浮 Tooltip：显示日期 + 条目数 + 任务数 + 标签分解
 - 标签筛选下拉 + 年份切换(< 2026 >)
@@ -618,23 +618,23 @@
 
 #### 需求
 
-单页滚动布局，6 个功能区块：
+单页布局，7 个功能区块，QGridLayout 双列统一对齐：
 
 | 区块 | 配置项 | 控件 |
 |------|--------|------|
-| 外观 | 主题、最小化到托盘、开机自动启动 | 下拉 / 复选框 / 复选框 |
-| 任务列表 | 每页条数、默认排序、热力图起始年份 | 下拉(20/50/100) / 下拉 / 输入框(1900-2200) |
-| 提醒 | 启用提醒、间隔(小时)、安静时段 | 复选框 / 输入框(HH:MM) |
-| 归档 | 分区设定表格 | 7列：名称\|默认分区\|可见\|自动归档\|归档阈值(天)\|自动锁定(分)\|密码 |
-| — | 表格操作 | 右键菜单：设为默认、重命名、设置密码、删除 |
-| 激励语 | 4条激励语 | 单列文本输入 |
+| 外观 | 主题、最小化到托盘、开机自动启动 | 下拉(120px) / 复选框 / 复选框 |
+| 任务列表 | 每页条数、默认排序 | 下拉(120px) / 下拉(120px)，同行显示 |
+| 提醒 | 启用提醒、间隔(小时)、安静时段 | 复选框 / 输入框 / HH:MM 输入框，同行显示 |
+| 归档 | 分区设定表格 | 7列：名称\|默认分区\|可见\|自动归档\|归档阈值(天)\|自动锁定(分)\|密码；名称列居中 |
+| 活动热力图 | 起始年份、配色方案 | 下拉(当前年份±5) / 下拉(4组方案)，同行显示 |
+| 激励语 | 4条激励语 | QLineEdit，标签统一右对齐 |
 
 归档阈值 >= 0，0=任务完成后即时归档，9999=不归档。自动归档每日 00:00 执行，按分区独立开关+阈值控制。
 
 #### 实现方案
 
-- 单页 QVBoxLayout，无标签页
-- 分区表格使用 QCheckBox(cellWidget) + QLineEdit(cellWidget)，QTableWidgetItem 只读文本
+- QGridLayout 双列布局：列 0 标签（76px 右对齐）、列 1 字段（自适应），section header 跨两列
+- 分区表格使用 QCheckBox(cellWidget) + QLineEdit(cellWidget)，QTableWidgetItem 只读文本，名称列居中
 - 默认分区 QCheckBox 单选互斥（`_on_default_toggled`），**禁止取消最后一个默认分区**
 - 删除分区校验：`count_tasks_in_partition()` > 0 时阻止；**仅剩一个分区时禁止删除**
 - **保存前校验**：`_on_accept` 验证有且仅有一个默认分区，不通过则拒绝关闭
@@ -857,7 +857,7 @@ QApplication → AppConfig + init_tokens() + _load_theme() → StartupShield.sho
 - **DARK_TOKENS**: 深炭黑 `#1a1b26` 主背景, 柔和蓝 `#7aa2f7` 强调, `#c9d1d9` 主文字
 - `get_tokens()` 单例, `init_tokens(config)` 绑定, `refresh_tokens()` 重新解析
 - `build_palette()` — 构造 QPalette(Window/Base/Button/Highlight/Link/ToolTip/BrightText/Disabled 等色组)
-- `heatmap_gradient(levels)` — bg_primary → accent 插值生成渐变
+- `heatmap_gradient(levels)` — 基于当前配色方案（`HEATMAP_SCHEMES` 注册表，4 组预设）插值生成渐变，亮/暗双主题各 8 级色阶
 - QSS 文件覆盖：全局/菜单/标题栏/工具栏/状态栏/按钮/复选框/选项卡/输入框/下拉框/文本编辑/表格/标签/热力图/报告/对话框/日期时间/分区蒙版/卡片/弹窗
 
 #### 主题切换流程

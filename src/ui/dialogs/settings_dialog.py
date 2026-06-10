@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -16,7 +18,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -43,16 +44,18 @@ def _wrap_center(w: QWidget) -> QWidget:
     return c
 
 
-def _hrow(*widgets: QWidget, spacing: int = 6) -> QHBoxLayout:
-    lay = QHBoxLayout()
-    lay.setSpacing(spacing)
-    for w in widgets:
-        if isinstance(w, QHBoxLayout):
-            lay.addLayout(w)
-        else:
-            lay.addWidget(w)
-    lay.addStretch()
-    return lay
+def _section_header(text: str) -> QLabel:
+    """Return a theme-coloured section header label with top spacing."""
+    t = get_tokens()
+    label = QLabel(text)
+    label.setStyleSheet(
+        f"QLabel {{"
+        f"  font-size: 13px; font-weight: bold;"
+        f"  color: {t.text_primary};"
+        f"  padding-top: 14px; padding-bottom: 4px;"
+        f"}}"
+    )
+    return label
 
 
 class SettingsDialog(QDialog):
@@ -71,14 +74,47 @@ class SettingsDialog(QDialog):
         self.resize(600, 550)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(8, 8, 8, 8)
-        outer.setSpacing(8)
-        layout = outer  # all subsequent code uses `layout`
+        outer.setContentsMargins(20, 12, 20, 12)
+
+        grid = QGridLayout()
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnMinimumWidth(0, 72)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+
+        def _label(text: str) -> QLabel:
+            """Right-aligned form label, theme-coloured, fixed width for uniform indent."""
+            t = get_tokens()
+            lb = QLabel(text)
+            lb.setFixedWidth(76)
+            lb.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            lb.setStyleSheet(f"QLabel {{ color: {t.text_secondary}; font-size: 12px; }}")
+            return lb
+
+        def _field(*widgets: QWidget, spacing: int = 12) -> QWidget:
+            """Wrap widgets in a container with even horizontal spacing."""
+            w = QWidget()
+            row = QHBoxLayout(w)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(spacing)
+            for widget in widgets:
+                row.addWidget(widget)
+            row.addStretch()
+            return w
+
+        def _sub(text: str) -> QLabel:
+            """Inline label inside a field row."""
+            t = get_tokens()
+            lb = QLabel(text)
+            lb.setStyleSheet(f"QLabel {{ color: {t.text_secondary}; font-size: 12px; }}")
+            return lb
+
+        r = 0  # row counter
 
         # ── 外观 ──
-        layout.addWidget(QLabel("<b>外观</b>"))
+        grid.addWidget(_section_header("外观"), r, 0, 1, 2); r += 1
         self._theme_combo = DropdownWidget()
-        self._theme_combo.setObjectName("settingsThemeCombo")
         self._theme_combo.setFixedWidth(_DROP_W)
         self._theme_combo.addItem("浅色", "light")
         self._theme_combo.addItem("深色", "dark")
@@ -90,13 +126,13 @@ class SettingsDialog(QDialog):
         self._minimize_cb.setChecked(self._config.minimize_to_tray)
         self._auto_start_cb = QCheckBox("开机自动启动")
         self._auto_start_cb.setChecked(self._config.auto_start)
-        layout.addLayout(_hrow(QLabel("主题:"), self._theme_combo,
-                                self._minimize_cb, self._auto_start_cb))
+        grid.addWidget(_label("主题:"), r, 0)
+        grid.addWidget(_field(self._theme_combo, self._minimize_cb, self._auto_start_cb), r, 1); r += 1
 
         # ── 任务列表 ──
-        layout.addWidget(QLabel("<b>任务列表</b>"))
+        grid.addWidget(_section_header("任务列表"), r, 0, 1, 2); r += 1
         self._page_size_combo = DropdownWidget()
-        self._page_size_combo.setFixedWidth(80)
+        self._page_size_combo.setFixedWidth(_DROP_W)
         for n in (20, 50, 100):
             self._page_size_combo.addItem(str(n), n)
         ps = self._config.get("general", "page_size", default=20)
@@ -105,7 +141,6 @@ class SettingsDialog(QDialog):
                 self._page_size_combo.setCurrentIndex(i)
                 break
         self._default_sort_combo = DropdownWidget()
-        self._default_sort_combo.setObjectName("settingsSortCombo")
         self._default_sort_combo.setFixedWidth(_DROP_W)
         for key, label in [("urgency", "优先级"), ("status", "状态"), ("deadline", "截止时间"),
                             ("created", "创建时间"), ("title", "标题")]:
@@ -114,15 +149,12 @@ class SettingsDialog(QDialog):
         idx = self._default_sort_combo.findData(cur_sort)
         if idx >= 0:
             self._default_sort_combo.setCurrentIndex(idx)
-        self._heatmap_year = QSpinBox()
-        self._heatmap_year.setRange(1900, 2200)
-        self._heatmap_year.setValue(self._config.get("display", "heatmap_start_year", default=2025))
-        layout.addLayout(_hrow(QLabel("每页:"), self._page_size_combo,
-                                QLabel("排序:"), self._default_sort_combo,
-                                QLabel("年份:"), self._heatmap_year))
+        grid.addWidget(_label("每页:"), r, 0)
+        grid.addWidget(_field(self._page_size_combo,
+                               _sub("排序:"), self._default_sort_combo), r, 1); r += 1
 
         # ── 提醒 ──
-        layout.addWidget(QLabel("<b>提醒</b>"))
+        grid.addWidget(_section_header("提醒"), r, 0, 1, 2); r += 1
         self._reminders_cb = QCheckBox("启用提醒")
         self._reminders_cb.setChecked(self._config.reminders_enabled)
         hours = max(1, self._config.reminder_intervals[0] // 60) if self._config.reminder_intervals else 1
@@ -133,31 +165,45 @@ class SettingsDialog(QDialog):
         qs = self._config.get("reminders", "quiet_hours_start", default="22:00")
         qe = self._config.get("reminders", "quiet_hours_end", default="08:00")
         self._quiet_start_edit = QLineEdit(qs)
-        self._quiet_start_edit.setFixedWidth(70)
+        self._quiet_start_edit.setFixedWidth(72)
         self._quiet_start_edit.setPlaceholderText("HH:MM")
         self._quiet_end_edit = QLineEdit(qe)
-        self._quiet_end_edit.setFixedWidth(70)
+        self._quiet_end_edit.setFixedWidth(72)
         self._quiet_end_edit.setPlaceholderText("HH:MM")
-        layout.addLayout(_hrow(self._reminders_cb,
-                                QLabel("间隔:"), self._interval_edit, QLabel("H"),
-                                QLabel("安静:"), self._quiet_start_edit,
-                                QLabel("—"), self._quiet_end_edit))
+        grid.addWidget(_label(""), r, 0)  # empty label for indent alignment
+        grid.addWidget(_field(self._reminders_cb,
+                               _sub("间隔:"), self._interval_edit, QLabel("小时"),
+                               _sub("安静:"), self._quiet_start_edit,
+                               QLabel("—"), self._quiet_end_edit), r, 1); r += 1
 
         # ── 归档 ──
-        header_row = QHBoxLayout()
-        header_row.addWidget(QLabel("<b>归档</b>"))
-        header_row.addStretch()
-        add_btn = QPushButton("新增分区")
+        archive_header = QWidget()
+        ah = QHBoxLayout(archive_header)
+        ah.setContentsMargins(0, 0, 0, 0)
+        ah.addWidget(_section_header("归档"))
+        ah.addStretch()
+        t = get_tokens()
+        add_btn = QPushButton("+ 新增分区")
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size: 11px; padding: 2px 10px; min-height: 22px;"
+            f"  color: {t.accent}; border: 1px solid {t.border_primary};"
+            f"  border-radius: 4px; background: transparent;"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background: {t.bg_tertiary}; border-color: {t.accent};"
+            f"}}"
+        )
         add_btn.clicked.connect(self._on_add_partition)
-        header_row.addWidget(add_btn)
-        layout.addLayout(header_row)
+        ah.addWidget(add_btn)
+        grid.addWidget(archive_header, r, 0, 1, 2); r += 1
 
         self._partition_table = QTableWidget(0, 7)
         self._partition_table.setHorizontalHeaderLabels(
             ["名称", "默认分区", "可见", "自动归档", "归档阈值(天)", "自动锁定(分)", "密码"]
         )
         hh = self._partition_table.horizontalHeader()
-        # 名称: stretch; rest: fixed
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         hh.resizeSection(1, 80)
         hh.resizeSection(2, 60)
@@ -173,13 +219,37 @@ class SettingsDialog(QDialog):
         self._partition_table.setShowGrid(True)
         self._partition_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._partition_table.customContextMenuRequested.connect(self._on_table_context_menu)
-        layout.addWidget(self._partition_table, stretch=1)
+        grid.addWidget(self._partition_table, r, 0, 1, 2); r += 1
+
+        # ── 活动热力图 ──
+        grid.addWidget(_section_header("活动热力图"), r, 0, 1, 2); r += 1
+        self._heatmap_year_combo = DropdownWidget()
+        self._heatmap_year_combo.setFixedWidth(_DROP_W)
+        cur_year = date.today().year
+        for y in range(cur_year - 5, cur_year + 1):
+            self._heatmap_year_combo.addItem(str(y), y)
+        saved_year = self._config.get("display", "heatmap_start_year", default=cur_year)
+        idx = self._heatmap_year_combo.findData(saved_year)
+        if idx < 0:
+            self._heatmap_year_combo.insertItem(0, str(saved_year), saved_year)
+            self._heatmap_year_combo.setCurrentIndex(0)
+        else:
+            self._heatmap_year_combo.setCurrentIndex(idx)
+        self._color_scheme_combo = DropdownWidget()
+        self._color_scheme_combo.setFixedWidth(_DROP_W)
+        for key, label in [("sunbeam", "☀️ 暖阳"), ("sprout", "🌱 新绿"),
+                           ("ocean", "🌊 海洋"), ("sakura", "🌸 樱花")]:
+            self._color_scheme_combo.addItem(label, key)
+        cur_scheme = self._config.get("display", "heatmap_color_scheme", default="sunbeam")
+        idx = self._color_scheme_combo.findData(cur_scheme)
+        if idx >= 0:
+            self._color_scheme_combo.setCurrentIndex(idx)
+        grid.addWidget(_label("起始年份:"), r, 0)
+        grid.addWidget(_field(self._heatmap_year_combo,
+                               _sub("配色方案:"), self._color_scheme_combo), r, 1); r += 1
 
         # ── 激励语 ──
-        layout.addWidget(QLabel("<b>激励语</b>"))
-        from PySide6.QtWidgets import QFormLayout
-        motd_form = QFormLayout()
-        motd_form.setSpacing(4)
+        grid.addWidget(_section_header("激励语"), r, 0, 1, 2); r += 1
         motd = self._config.get("motd", default={})
         self._motd_edits: dict[str, QLineEdit] = {}
         for key, label_text in [("today", "今日无事时"), ("week", "本周无事时"),
@@ -188,18 +258,20 @@ class SettingsDialog(QDialog):
             edit.setText(motd.get(key, ""))
             edit.setPlaceholderText("输入激励语…")
             self._motd_edits[key] = edit
-            motd_form.addRow(label_text + ":", edit)
-        layout.addLayout(motd_form)
+            grid.addWidget(_label(label_text + ":"), r, 0)
+            grid.addWidget(edit, r, 1); r += 1
 
-        layout.addStretch()
-        self._populate_partition_table()
+        outer.addLayout(grid)
+        outer.addStretch()
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        buttons = QDialogButtonBox()
+        buttons.addButton("确定", QDialogButtonBox.ButtonRole.AcceptRole)
+        buttons.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
+
+        self._populate_partition_table()
 
     # ------------------------------------------------------------------
     # Partition table
@@ -217,9 +289,10 @@ class SettingsDialog(QDialog):
             self._partition_table.insertRow(row)
             pid = p["id"]
 
-            # 0: 名称
+            # 0: 名称 — 居中与表头一致
             name_item = QTableWidgetItem(p["name"])
             name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            name_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self._partition_table.setItem(row, 0, name_item)
 
             # 1: 默认分区 — QCheckBox 居中
@@ -490,7 +563,8 @@ class SettingsDialog(QDialog):
         self._config.set("general", "page_size", value=self._page_size_combo.currentData())
         self._config.set("general", "default_sort", value=self._default_sort_combo.currentData())
         self._config.set("display", "theme", value=self._theme_combo.currentData())
-        self._config.set("display", "heatmap_start_year", value=self._heatmap_year.value())
+        self._config.set("display", "heatmap_start_year", value=self._heatmap_year_combo.currentData())
+        self._config.set("display", "heatmap_color_scheme", value=self._color_scheme_combo.currentData())
         self._config.set("reminders", "enabled", value=self._reminders_cb.isChecked())
         try:
             hours = int(self._interval_edit.text().strip())

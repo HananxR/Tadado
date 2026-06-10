@@ -224,34 +224,41 @@ class _HeatmapGrid(QWidget):
             p.drawRoundedRect(rect, 3, 3)
             return
 
+        # ── Scheme gradient (index 0 = empty, 1..7 = activity levels) ──
+        gradient = t.heatmap_gradient(8)
+
         # ── Base: empty cell ──
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor(t.heatmap_empty))
+        p.setBrush(QColor(gradient[0]))
         p.drawRoundedRect(rect, 3, 3)
 
         # ── Activity / today fill ──
+        ring_color = QColor(gradient[7])  # schemeʼs most intense colour
         if cell_date == date.today():
-            # Today: accent fill + ring
-            color = QColor(t.accent)
             if count == 0:
+                # Today empty: scheme-coloured semi-transparent fill
+                color = QColor(ring_color)
                 color.setAlpha(60)
-            p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(color)
-            p.drawRoundedRect(rect, 3, 3)
-            # Accent ring (prominent)
-            p.setPen(QPen(QColor(t.accent), 3))
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(color)
+                p.drawRoundedRect(rect, 3, 3)
+            else:
+                # Today active: scheme colour + scheme-coloured ring
+                level = self._model.color_level(count, max_count)
+                level_idx = int(level.split("_")[1])  # 0..7
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(gradient[level_idx]))
+                p.drawRoundedRect(rect, 3, 3)
+            # Ring (scheme colour, prominent)
+            p.setPen(QPen(ring_color, 3))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRoundedRect(rect.adjusted(-1, -1, 1, 1), 4, 4)
         elif count > 0:
-            # Activity: accent gradient (heatmap_empty → accent)
-            ratio = count / max(max_count, 1)
-            empty = QColor(t.heatmap_empty)
-            accent = QColor(t.accent)
-            r2 = int(empty.red() + (accent.red() - empty.red()) * ratio)
-            g2 = int(empty.green() + (accent.green() - empty.green()) * ratio)
-            b2 = int(empty.blue() + (accent.blue() - empty.blue()) * ratio)
+            # Activity: scheme gradient level (unified with legend)
+            level = self._model.color_level(count, max_count)
+            level_idx = int(level.split("_")[1])  # 0..7
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(r2, g2, b2))
+            p.setBrush(QColor(gradient[level_idx]))
             p.drawRoundedRect(rect, 3, 3)
 
         # ── Hover highlight ──
@@ -280,15 +287,11 @@ class _HeatmapGrid(QWidget):
         gap = 1
         num_swatches = 8
         swatch_start = _LEFT_MARGIN + label_w + 2
+        gradient = t.heatmap_gradient(8)  # unified: index 0 = empty, 1..7 = activity
         for i in range(num_swatches):
             sx = swatch_start + i * (swatch_size + gap)
-            if i == 0:
-                color = QColor(t.heatmap_empty)
-            else:
-                gradient = t.heatmap_gradient(7)
-                color = QColor(gradient[i - 1])
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(color)
+            p.setBrush(QColor(gradient[i]))
             p.drawRoundedRect(sx, legend_y + 2, swatch_size, swatch_size, 2, 2)
 
         p.setPen(QColor(t.text_secondary))
