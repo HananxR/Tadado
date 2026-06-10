@@ -60,7 +60,8 @@
 | `task_updated` | Task | TaskEditPanel | MainWindow, HeatmapWidget |
 | `task_deleted` | task_id (str) | TaskListView, BatchToolbar | MainWindow |
 | `task_status_changed` | Task, old_status | TaskEditPanel, BatchToolbar, Recurrence | MainWindow, HeatmapWidget |
-| `reminders_fired` | list[tuple[Task, int]] | TaskScheduler | TaskNotifier |
+| `reminders_fired` | list[tuple[Task, int]] | TaskScheduler (已废弃) | — |
+| `daily_digest` | — | TaskScheduler | TaskNotifier |
 | `archive_completed` | count (int) | TaskArchiver | MainWindow |
 | `date_selected` | date | CalendarHeatmapWidget | MainWindow |
 | `date_range_selected` | date, date | CalendarHeatmapWidget | MainWindow, ActivityReportPanel |
@@ -313,20 +314,20 @@
 
 #### 2.5.2 ProgressDynamicsBar — 进度动态栏
 
-**需求**：6 个时段按钮（始终可点击，不再联动速览栏）。双重模式：未点击时 1 列显示最近活跃任务的最新进展；点击后 1 列轮播按活动日志数量降序的 Top 6 任务。
+**需求**：6 个时段按钮（始终可点击，不再联动速览栏）。双重模式：未点击时 1 列显示最近活跃任务的最新进展（包含截止紧迫度）；点击后 1 列轮播按活动日志数量降序的 Top 6 任务。
 
-**实现方案**：`_show_latest_activity()` 扫描 activity_log 找最新记录。`_rank_tasks()` 按活动日志数降序排列。`reset_to_unclicked()` 取消选中并回到 hint 模式（不锁定按钮）。点击发射 `progress_filter_activated(TaskFilter)`，`_on_progress_filter` 通过 `_build_filter_with_sort()` 合并速览栏 scope 后过滤任务列表。`filter_tasks_by_activity()` 做 Python 层 activity_log timestamp 精准扫描，`_ts_in_range()` 与 TaskTreePanel `_entry_date()` 解析逻辑一致（支持 ISO + `%Y-%m-%d %H:%M:%S` 双格式、同时检查 `ts`/`time` key）。
+**实现方案**：`_show_latest_activity()` 扫描 activity_log 找最新记录，追加 `deadline_suffix()`（如 `⏰14:30截止`、`⚠逾期2天`）。`_rank_tasks()` 按 `activity_count × deadline_weight` 降序排列（今日/逾期任务加权 2×，3 天内加权 1.5×）。`reset_to_unclicked()` 取消选中并回到 hint 模式。点击发射 `progress_filter_activated(TaskFilter)`。`filter_tasks_by_activity()` 做 Python 层 activity_log timestamp 精准扫描。
 
 **预览**：
 ```
-未点击:  [昨天] [今天] [上周] [本周] [上月] [本月]   │ 最新: 重构认证模块 — 完成了接口联调
-点击后:  [昨天] [■今天] [上周] [本周] [上月] [本月]   │ +3条 重构认证模块
+未点击:  [昨天] [今天] [上周] [本周] [上月] [本月]   │ 最新: 重构认证模块 — 完成了接口联调 ⏰14:30截止
+点击后:  [昨天] [■今天] [上周] [本周] [上月] [本月]   │ +3条 重构认证模块 ⚠逾期2天
 ```
   按钮始终可点击 (不与速览栏锁定)     轮播区 (单列, 点击后每5s切换)
 
 #### 2.5.3 QuickOverviewBar — 速览栏
 
-**需求**：6 个预设按钮(昨天/今天/上周/本周/上月/本月) + 自动轮播(按紧急度排序，每 5 秒切换展示组，每组 3 个任务)。
+**需求**：6 个预设按钮(昨天/今天/上周/本周/上月/本月) + 自动轮播(按紧急度排序，每 5 秒切换展示组，每组 3 个任务)。标签支持时间粒度：当 `deadline_time` 存在且 deadline 为今天时，显示"X 分钟后"/"X 小时后"/"HH:MM截止"/"已超时"；颜色按剩余时间分 4 档（>3h 绿、1-3h 橙、<1h 红、已超时 红）。tooltip 显示精确截止日期时间。
 
 **过滤逻辑**（2026-06-07 重构）：按 `created_at ≤ 时间上限` + `status ≠ DONE`（排除已完成），不再按 `deadline_date` 过滤：
 
@@ -624,7 +625,7 @@
 |------|--------|------|
 | 外观 | 主题、最小化到托盘、开机自动启动 | 下拉(120px) / 复选框 / 复选框 |
 | 任务列表 | 每页条数、默认排序 | 下拉(120px) / 下拉(120px)，同行显示 |
-| 提醒 | 启用提醒、间隔(小时)、安静时段 | 复选框 / 输入框 / HH:MM 输入框，同行显示 |
+| 提醒 | 每日摘要开关、推送时间、安静时段 | 复选框 / HH:MM 输入框 / HH:MM 输入框，同行显示 |
 | 归档 | 分区设定表格 | 7列：名称\|默认分区\|可见\|自动归档\|归档阈值(天)\|自动锁定(分)\|密码；名称列居中 |
 | 活动热力图 | 起始年份、配色方案 | 下拉(当前年份±5) / 下拉(4组方案)，同行显示 |
 | 激励语 | 4条激励语 | QLineEdit，标签统一右对齐 |
@@ -652,7 +653,7 @@
 - 系统托盘图标(QSystemTrayIcon)
 - 右键菜单：显示/隐藏窗口、新建任务(打开+聚焦输入)、退出
 - 双击托盘图标切换窗口可见性
-- `show_message()` 用于通知提醒(task_notification 方法)
+- `show_message()` 用于每日摘要推送（TaskNotifier 调用）
 
 #### 实现方案
 
@@ -669,12 +670,13 @@
               │ ──────────── │
               │ 退出          │
               └──────────────┘
-  通知气泡:
-  ┌──────────────────────┐
-  │ ⏰ 任务提醒           │
-  │ "重构认证模块" 将在   │
-  │ 30 分钟后到期         │
-  └──────────────────────┘
+  每日摘要气泡:
+  ┌──────────────────────────┐
+  │ Tadado 每日摘要          │
+  │ 逾期 2 项，今日到期 5 项 │
+  │ 写报告、修Bug、开会      │
+  │ …等 7 项                 │
+  └──────────────────────────┘
 ```
 
 ---
@@ -708,15 +710,15 @@
 
 #### 2.10.1 TaskScheduler — 定时调度
 
-**需求**：每分钟检查到期任务，自动设置/恢复 OVERDUE，收集所有提醒后合并发射 `reminders_fired(list)`。按当前活动分区过滤。默认关闭，需在设置中手动开启。
+**需求**：每分钟 `refresh_overdue_status()` 自动设置/恢复 OVERDUE 状态。每天在配置时间（`daily_digest_time`，默认 09:00）发射 `daily_digest` 信号供 Notifier 发送每日摘要。
 
-**实现方案**：APScheduler `QtScheduler` + IntervalTrigger(1min)。`_check_due_tasks()`：(1) 始终 `refresh_overdue_status()`，(2) 若提醒启用，获取当前分区到期+逾期任务（`last_partition_id`），收集去重后批量发射 `reminders_fired`。
+**实现方案**：APScheduler `QtScheduler` + 双 job：(1) IntervalTrigger(1min) 做 overdue 刷新，(2) CronTrigger(hour, minute) 做每日摘要。提醒的主要能力已迁移到轮播栏（QuickOverviewBar / ProgressDynamicsBar）的被动信息展示。
 
-#### 2.10.2 TaskNotifier — 通知提醒
+#### 2.10.2 TaskNotifier — 每日摘要
 
-**需求**：监听 `reminders_fired`，遵守安静时段(默认 22:00-08:00)，合并为单条托盘通知。
+**需求**：监听 `daily_digest`，遵守安静时段与 `reminders.enabled` 开关，查询今日到期+逾期任务，合并为单条托盘摘要通知。
 
-**实现方案**：`_in_quiet_hours()` 支持跨夜时段判断。收到批量提醒后，取前 5 个任务标题拼接为"任务A、任务B…等 N 项"，显示一条托盘消息。
+**实现方案**：`_on_daily_digest()` → 查 `get_due_today()` + `get_overdue()` → 拼装 "逾期 N 项，今日到期 M 项\nA、B、C…等 X 项" → `tray.show_message()`。安静时段逻辑不变。
 
 #### 2.10.3 TaskArchiver — 自动归档
 
@@ -734,10 +736,11 @@
 
 ```
 每分钟 ──→ TaskScheduler._check_due_tasks()
-              ├─ refresh_overdue_status()
-              ├─ get_due_today() / get_overdue()
-              └─ emit(reminders_fired) ──→ TaskNotifier
-                                            └─ 检查 quiet_hours → 合并为单条托盘通知
+              └─ refresh_overdue_status()
+
+每日 09:00 ──→ TaskScheduler._emit_daily_digest()
+                 └─ emit(daily_digest) ──→ TaskNotifier
+                                            └─ 检查 enabled + quiet_hours → 查询到期/逾期 → 合并为单条托盘摘要
 
 每日 02:07 ──→ TaskArchiver._run_archive()
                  └─ 按分区 archive_days 归档 → emit(archive_completed)
@@ -1111,7 +1114,7 @@ CREATE INDEX idx_tasks_suspended ON tasks(suspended);
 | 自动归档时间 | 02:07 | archiver.py |
 | 状态徽章圆角 | 12px | task_list_delegate.py |
 | 下拉框宽度 | `max_chars*12+36` | widget_utils.py `combo_width()` |
-| 默认提醒间隔 | [15, 30, 60] 分钟 | config.py |
+| 每日摘要推送时间 | 09:00 | config.py |
 | 默认安静时段 | 22:00-08:00 | config.py |
 
 ### 3.4 依赖清单

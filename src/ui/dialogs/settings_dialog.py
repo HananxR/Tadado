@@ -155,13 +155,12 @@ class SettingsDialog(QDialog):
 
         # ── 提醒 ──
         grid.addWidget(_section_header("提醒"), r, 0, 1, 2); r += 1
-        self._reminders_cb = QCheckBox("启用提醒")
+        self._reminders_cb = QCheckBox("每日摘要")
         self._reminders_cb.setChecked(self._config.reminders_enabled)
-        hours = max(1, self._config.reminder_intervals[0] // 60) if self._config.reminder_intervals else 1
-        self._interval_edit = QLineEdit()
-        self._interval_edit.setFixedWidth(60)
-        self._interval_edit.setText(str(hours))
-        self._interval_edit.setPlaceholderText("小时")
+        digest_time = self._config.get("reminders", "daily_digest_time", default="09:00") or "09:00"
+        self._digest_time_edit = QLineEdit(digest_time)
+        self._digest_time_edit.setFixedWidth(72)
+        self._digest_time_edit.setPlaceholderText("HH:MM")
         qs = self._config.get("reminders", "quiet_hours_start", default="22:00")
         qe = self._config.get("reminders", "quiet_hours_end", default="08:00")
         self._quiet_start_edit = QLineEdit(qs)
@@ -172,7 +171,7 @@ class SettingsDialog(QDialog):
         self._quiet_end_edit.setPlaceholderText("HH:MM")
         grid.addWidget(_label(""), r, 0)  # empty label for indent alignment
         grid.addWidget(_field(self._reminders_cb,
-                               _sub("间隔:"), self._interval_edit, QLabel("小时"),
+                               _sub("推送:"), self._digest_time_edit,
                                _sub("安静:"), self._quiet_start_edit,
                                QLabel("—"), self._quiet_end_edit), r, 1); r += 1
 
@@ -566,13 +565,9 @@ class SettingsDialog(QDialog):
         self._config.set("display", "heatmap_start_year", value=self._heatmap_year_combo.currentData())
         self._config.set("display", "heatmap_color_scheme", value=self._color_scheme_combo.currentData())
         self._config.set("reminders", "enabled", value=self._reminders_cb.isChecked())
-        try:
-            hours = int(self._interval_edit.text().strip())
-            if hours <= 0:
-                hours = 1
-        except ValueError:
-            hours = 1
-        self._config.set("reminders", "intervals_minutes", value=[hours * 60])
+        dt = self._digest_time_edit.text().strip()
+        if self._validate_time(dt):
+            self._config.set("reminders", "daily_digest_time", value=dt)
         qs = self._quiet_start_edit.text().strip()
         qe = self._quiet_end_edit.text().strip()
         if self._validate_time(qs):

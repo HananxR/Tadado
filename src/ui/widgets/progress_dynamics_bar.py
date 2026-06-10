@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...models.task_filter import SortCriterion, TaskFilter
+from ...models.task_status import TaskStatus
 
 PERIODS = [
     ("yesterday", "昨天"),
@@ -175,10 +176,12 @@ class ProgressDynamicsBar(QWidget):
                 1 for e in task.activity_log
                 if self._ts_in_range(e.get("ts", e.get("time", "")), period_start, period_end)
             )
+            suffix = self.deadline_suffix(task)
             self._items.append({
                 "task_id": task.id,
                 "text": task.title,
                 "activity_count": count,
+                "suffix": suffix,
             })
         self._scroll_index = 0
         if self._items:
@@ -225,8 +228,15 @@ class ProgressDynamicsBar(QWidget):
                     best_task = task
                     best_content = entry.get("content", "")
         if best_task:
-            self._carousel_label.setText(f"最新: {best_task.title} — {best_content}")
-            self._carousel_label.setToolTip(best_task.title)
+            suffix = self.deadline_suffix(best_task)
+            self._carousel_label.setText(
+                f"最新: {best_task.title} — {best_content}{suffix}"
+            )
+            self._carousel_label.setToolTip(
+                f"{best_task.title}"
+                f"{' — 截止: ' + best_task.deadline_date.isoformat() if best_task.deadline_date else ''}"
+                f"{' ' + best_task.deadline_time if best_task.deadline_time else ''}"
+            )
         else:
             self._carousel_label.setText("")
             self._carousel_label.setToolTip("")
@@ -238,7 +248,10 @@ class ProgressDynamicsBar(QWidget):
     def _render(self) -> None:
         if self._items:
             item = self._items[self._scroll_index]
-            self._carousel_label.setText(f"+{item['activity_count']}条 {item['text']}")
+            suffix = item.get("suffix", "")
+            self._carousel_label.setText(
+                f"+{item['activity_count']}条 {item['text']}{suffix}"
+            )
             self._carousel_label.setToolTip(item["text"])
 
     def _scroll(self) -> None:
@@ -278,13 +291,31 @@ class ProgressDynamicsBar(QWidget):
     # ------------------------------------------------------------------
 
     def _rank_tasks(self, tasks: list[Task], period_start: date, period_end: date) -> list[Task]:
-        """Rank tasks by activity_count DESC, then progress DESC."""
-        def score(task: Task) -> tuple[int, int]:
+        """Rank tasks by activity_count * deadline_weight DESC, then progress DESC.
+
+        Tasks due today or overdue get a 2× boost so they surface prominently.
+        """
+        today = date.today()
+
+        def _deadline_boost(task: Task) -> float:
+            """1.0 for normal, 2.0 for today/overdue, 1.5 for within 3 days."""
+            dl = task.deadline_date or task.scheduled_date
+            if dl is None:
+                return 1.0
+            days = (today - dl).days
+            if days >= 0:
+                return 2.0  # overdue or today
+            elif days >= -3:
+                return 1.5  # within 3 days
+            return 1.0
+
+        def score(task: Task) -> tuple[float, int]:
             count = sum(
                 1 for e in task.activity_log
                 if self._ts_in_range(e.get("ts", e.get("time", "")), period_start, period_end)
             )
-            return (count, task.progress)
+            return (count * _deadline_boost(task), task.progress)
+
         return sorted(tasks, key=score, reverse=True)
 
     @staticmethod
@@ -300,6 +331,43 @@ class ProgressDynamicsBar(QWidget):
             return start <= dt.date() <= end
         except (ValueError, TypeError):
             return False
+
+    @staticmethod
+    def deadline_suffix(task: Task) -> str:
+        """Return a compact deadline indicator for carousel display.
+
+        Examples: ``⏰14:30``, ``⏰2h后``, ``⚠逾期3天``, ``📅6/15``.
+        """
+        if task.status == TaskStatus.DONE:
+            return ""
+        dl = task.deadline_date or task.scheduled_date
+        if dl is None:
+            return ""
+        today = date.today()
+        days = (today - dl).days
+        if days > 0:
+            return f"  ⚠逾期{days}天"
+        elif days == 0:
+            if task.deadline_time:
+                try:
+                    h, m = map(int, task.deadline_time.split(":")[:2])
+                    now = datetime.now()
+                    dl_dt = datetime(dl.year, dl.month, dl.day, h, m)
+                    remaining = (dl_dt - now).total_seconds()
+                    if remaining < 0:
+                        return "  ⚠已超时"
+                    elif remaining < 3600:
+                        return f"  ⏰{int(remaining // 60)}m后"
+                    elif remaining < 3600 * 6:
+                        return f"  ⏰{int(remaining // 3600)}h后"
+                    else:
+                        return f"  ⏰{h:02d}:{m:02d}"
+                except (ValueError, IndexError):
+                    pass
+            return "  ⏰今天"
+        elif days < 0:
+            return f"  📅{dl.month}/{dl.day}"
+        return ""
 
     # ------------------------------------------------------------------
     # Period toggle

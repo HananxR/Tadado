@@ -196,7 +196,28 @@ class QuickOverviewBar(QWidget):
         if days > 0:
             return f"逾期{days}天"
         elif days == 0:
+            # Time-granular label when deadline_time is set
+            if task.deadline_time:
+                try:
+                    h, m = map(int, task.deadline_time.split(":")[:2])
+                    now = datetime.now()
+                    dl_dt = datetime(dl.year, dl.month, dl.day, h, m)
+                    remaining = (dl_dt - now).total_seconds()
+                    if remaining < 0:
+                        return "已超时"
+                    elif remaining < 3600:
+                        return f"{int(remaining // 60)}分钟后"
+                    elif remaining < 6 * 3600:
+                        return f"{int(remaining // 3600)}小时后"
+                    else:
+                        return f"{h:02d}:{m:02d}截止"
+                except (ValueError, IndexError):
+                    pass
             return "今日截止"
+        elif days == -1:
+            return "明天截止"
+        elif days >= -3:
+            return f"{-days}天后"
         else:
             return f"剩余{-days}天"
 
@@ -206,6 +227,7 @@ class QuickOverviewBar(QWidget):
 
     def _render(self) -> None:
         t = get_tokens()
+        today = date.today()
         for i, label in enumerate(self._carousel_labels):
             idx = self._scroll_index + i
             if idx < len(self._items):
@@ -216,11 +238,28 @@ class QuickOverviewBar(QWidget):
                     lc = t.success
                 elif task.deadline_date or task.scheduled_date:
                     dl = task.deadline_date or task.scheduled_date
-                    days = (date.today() - dl).days if dl else 0
+                    days = (today - dl).days if dl else 0
                     if days > 0:
                         lc = t.danger
                     elif days == 0:
-                        lc = t.timeline_dot  # theme-aware amber
+                        # Today: finer color based on remaining time
+                        lc = t.timeline_dot  # default amber
+                        if task.deadline_time:
+                            try:
+                                h, m = map(int, task.deadline_time.split(":")[:2])
+                                now = datetime.now()
+                                dl_dt = datetime(dl.year, dl.month, dl.day, h, m)
+                                remaining = (dl_dt - now).total_seconds()
+                                if remaining < 0:
+                                    lc = t.danger  # already past: red
+                                elif remaining < 3600:
+                                    lc = t.danger  # <1h: red
+                                elif remaining < 3 * 3600:
+                                    lc = getattr(t, 'warning', t.timeline_dot)  # <3h: orange/amber
+                                else:
+                                    lc = t.success  # >3h: green
+                            except (ValueError, IndexError):
+                                pass
                     else:
                         lc = t.success
                 else:
@@ -231,7 +270,13 @@ class QuickOverviewBar(QWidget):
                 _PRIORITY_PREFIX = {0: "🔴", 1: "🟠", 2: "🔵"}
                 prefix = _PRIORITY_PREFIX.get(task_urgency, "")
                 label.setText(f"{prefix}{urgency_text}  {item['text']}".strip())
-                label.setToolTip(item["text"])
+                # Tooltip with precise deadline info
+                tooltip = item["text"]
+                if task.deadline_date:
+                    tooltip = f"{task.title} — 截止: {task.deadline_date.isoformat()}"
+                    if task.deadline_time:
+                        tooltip += f" {task.deadline_time}"
+                label.setToolTip(tooltip)
                 label.setStyleSheet(
                     f"QLabel {{ padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; "
                     f"color: {lc}; background: {t.bg_tertiary}; }}"

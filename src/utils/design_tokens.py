@@ -42,6 +42,7 @@ class DesignTokens:
     danger_hover: str
     danger_bg: str            # danger button background
     success: str              # completion (green)
+    warning: str              # time-sensitive warning (orange, <3h deadlines)
 
     # ── Heatmap ────────────────────────────────────────────────────
     heatmap_empty: str         # cell with no tasks
@@ -242,6 +243,7 @@ LIGHT_TOKENS = DesignTokens(
     danger_hover="#e07070",
     danger_bg="#fdf0ef",
     success="#27ae60",
+    warning="#e67e22",
     heatmap_empty="#dad6cc",
     separator="#e0ddd6",
     timeline_dot="#f39c12",
@@ -273,6 +275,7 @@ DARK_TOKENS = DesignTokens(
     danger_hover="#c05050",
     danger_bg="#362430",
     success="#27ae60",
+    warning="#f0a060",
     heatmap_empty="#35374a",
     separator="#2f3040",
     timeline_dot="#f39c12",

@@ -340,7 +340,7 @@ class TadadoApp(QApplication):
 
         # Background services
         self._scheduler = TaskScheduler(self._repository, self._config)
-        self._notifier = TaskNotifier(self._tray, self._config)
+        self._notifier = TaskNotifier(self._tray, self._config, self._repository)
         self._archiver = TaskArchiver(self._repository, self._config)
         self._recurrence = TaskRecurrence(self._repository)
 

@@ -27,7 +27,7 @@ DEFAULT_CONFIG: dict = {
     },
     "reminders": {
         "enabled": False,
-        "intervals_minutes": [30, 60, 1440],
+        "daily_digest_time": "09:00",
         "quiet_hours_start": "22:00",
         "quiet_hours_end": "08:00",
     },
@@ -136,8 +136,8 @@ class AppConfig(QObject):
         return bool(self._get("reminders", "enabled"))
 
     @property
-    def reminder_intervals(self) -> list[int]:
-        return list(self._get("reminders", "intervals_minutes"))
+    def reminder_daily_digest_time(self) -> str:
+        return str(self._get("reminders", "daily_digest_time") or "09:00")
 
     @property
     def archive_enabled(self) -> bool:

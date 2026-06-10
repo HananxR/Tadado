@@ -1,35 +1,61 @@
-"""Tray notification handler — listens to reminders_fired and shows a merged tray message."""
+"""Tray notification handler — daily digest summary via tray message."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
 from ..config import AppConfig
+from ..models.repository import TaskRepository
 from ..utils.signal_bus import get_signal_bus
 
 
 class TaskNotifier:
-    """Listens to reminders_fired signals and shows a single merged tray notification,
-    respecting quiet hours defined in config."""
+    """Listens to daily_digest and shows a single merged tray notification
+    summarizing today's due tasks, respecting quiet hours."""
 
-    def __init__(self, tray_manager, config: AppConfig) -> None:
+    def __init__(self, tray_manager, config: AppConfig, repository: TaskRepository) -> None:
         self._tray = tray_manager
         self._config = config
+        self._repository = repository
         self._signal_bus = get_signal_bus()
-        self._signal_bus.reminders_fired.connect(self._on_reminders_fired)
+        self._signal_bus.daily_digest.connect(self._on_daily_digest)
 
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
 
-    def _on_reminders_fired(self, reminders: list) -> None:
-        if self._in_quiet_hours() or not reminders:
+    def _on_daily_digest(self) -> None:
+        """Called once per day at the configured digest time."""
+        if not self._config.reminders_enabled:
             return
-        # 合并所有任务标题为一条消息（最多显示 5 个）
-        names = [t.title for t, _ in reminders[:5]]
-        suffix = f" 等 {len(reminders)} 项" if len(reminders) > 5 else ""
-        msg = "、".join(names) + suffix
-        self._tray.show_message("任务提醒", msg)
+        if self._in_quiet_hours():
+            return
+
+        pid = self._config.get("general", "last_partition_id", default="") or None
+        due_today = self._repository.get_due_today(partition_id=pid)
+        overdue = self._repository.get_overdue(partition_id=pid)
+
+        total = len(due_today) + len(overdue)
+        if total == 0:
+            return
+
+        parts: list[str] = []
+        if overdue:
+            parts.append(f"逾期 {len(overdue)} 项")
+        if due_today:
+            parts.append(f"今日到期 {len(due_today)} 项")
+
+        title = "Tadado 每日摘要"
+        msg = "，".join(parts)
+
+        # Show up to 3 task titles
+        sample = [t.title for t in (overdue + due_today)[:3]]
+        if sample:
+            msg += "\n" + "、".join(sample)
+        if total > 3:
+            msg += f"\n…等 {total} 项"
+
+        self._tray.show_message(title, msg)
 
     # ------------------------------------------------------------------
     # Quiet hours

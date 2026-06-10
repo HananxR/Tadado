@@ -1,4 +1,4 @@
-"""APScheduler-based service that periodically checks for due tasks."""
+"""APScheduler-based service: overdue refresh + optional daily digest."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ..utils.signal_bus import get_signal_bus
 
 
 class TaskScheduler:
-    """Checks for due/overdue tasks every minute and emits reminder signals."""
+    """Periodically refreshes overdue status, plus an optional daily digest."""
 
     def __init__(self, repository: TaskRepository, config) -> None:
         self._repository = repository
@@ -18,13 +18,28 @@ class TaskScheduler:
         self._scheduler = QtScheduler()
 
     def start(self) -> None:
+        # Overdue refresh: every minute
         self._scheduler.add_job(
             self._check_due_tasks,
             "interval",
             minutes=1,
-            id="reminder_check",
+            id="overdue_refresh",
             replace_existing=True,
         )
+        # Daily digest: at configured time
+        digest_time = self._config.reminder_daily_digest_time or "09:00"
+        try:
+            h, m = map(int, digest_time.split(":"))
+            self._scheduler.add_job(
+                self._emit_daily_digest,
+                "cron",
+                hour=h,
+                minute=m,
+                id="daily_digest",
+                replace_existing=True,
+            )
+        except (ValueError, AttributeError):
+            pass
         self._scheduler.start()
 
     def stop(self) -> None:
@@ -32,29 +47,15 @@ class TaskScheduler:
             self._scheduler.shutdown(wait=False)
 
     # ------------------------------------------------------------------
-    # Check
+    # Jobs
     # ------------------------------------------------------------------
 
     def _check_due_tasks(self) -> None:
-        # Phase 1: Auto-set/revert OVERDUE status (always runs)
+        """Auto-set/revert OVERDUE status for all tasks."""
         changed = self._repository.refresh_overdue_status()
         for task, old_status in changed:
             self._signal_bus.task_status_changed.emit(task, old_status)
 
-        # Phase 2: Reminder check (respects reminders_enabled)
-        if not self._config.reminders_enabled:
-            return
-
-        pid = self._config.get("general", "last_partition_id", default="") or None
-        due = self._repository.get_due_today(partition_id=pid)
-        overdue = self._repository.get_overdue(partition_id=pid)
-        intervals = self._config.reminder_intervals
-
-        reminders: list = []
-        for task in due + overdue:
-            for interval in intervals:
-                if not self._repository.notification_sent(task.id, interval):
-                    reminders.append((task, interval))
-                    self._repository.mark_notification_sent(task.id, interval)
-        if reminders:
-            self._signal_bus.reminders_fired.emit(reminders)
+    def _emit_daily_digest(self) -> None:
+        """Emit daily digest signal (notifier handles the rest)."""
+        self._signal_bus.daily_digest.emit()
