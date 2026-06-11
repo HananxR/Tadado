@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from ...services.update_checker import ALIYUN_DRIVE_URL, UpdateChecker
 from ...utils.design_tokens import get_surface_color, get_tokens, is_dark
 from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
-from ...version import __version__, get_release_highlights, get_version_display
+from ...version import get_release_highlights, get_version_display
 
 _FEATURES = [
     ("📝 Markdown 任务管理", "语法创建，优先级、截止时间、全文搜索"),
@@ -128,37 +128,12 @@ class AboutDialog(QDialog):
         layout.addSpacing(14)
 
         # ══════════════════════════════════════════════════════════════
-        # 升级日志
-        # ══════════════════════════════════════════════════════════════
-        highlights = get_release_highlights()
-        if highlights:
-            hl_lines = [
-                '<p style="margin:0 0 4px 0;font-size:12px;font-weight:700;">'
-                f'📋 升级日志 · v{__version__}</p>'
-            ]
-            for item in highlights:
-                safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                hl_lines.append(
-                    f'<p style="margin:2px 0 2px 12px;font-size:11px;">{safe}</p>'
-                )
-            self._changelog_label = QLabel("".join(hl_lines))
-            self._changelog_label.setWordWrap(True)
-            self._changelog_label.setTextFormat(Qt.TextFormat.RichText)
-            self._changelog_label.setStyleSheet(
-                f"QLabel {{ padding: 2px 0; color: {t.text_primary}; }}"
-            )
-            layout.addWidget(self._changelog_label)
-            layout.addSpacing(12)
-            layout.addWidget(_h_line())
-            layout.addSpacing(14)
-
-        # ══════════════════════════════════════════════════════════════
-        # 版本与更新
+        # 版本与更新（含升级日志）
         # ══════════════════════════════════════════════════════════════
         section_label = QLabel("版本与更新")
         section_label.setStyleSheet("font-size: 12px; font-weight: 700;")
         layout.addWidget(section_label)
-        layout.addSpacing(6)
+        layout.addSpacing(4)
 
         # Row: version + check button
         version_row = QWidget()
@@ -192,6 +167,23 @@ class AboutDialog(QDialog):
         self._check_btn.clicked.connect(self._on_check_updates)
         version_row_layout.addWidget(self._check_btn)
         layout.addWidget(version_row)
+
+        # Upgrade highlights (below version row)
+        highlights = get_release_highlights()
+        if highlights:
+            hl_lines = ['<p style="margin:6px 0 2px 0;font-size:11px;font-weight:600;">升级内容</p>']
+            for item in highlights:
+                safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                hl_lines.append(
+                    f'<p style="margin:2px 0 2px 12px;font-size:11px;">· {safe}</p>'
+                )
+            hl_label = QLabel("".join(hl_lines))
+            hl_label.setWordWrap(True)
+            hl_label.setTextFormat(Qt.TextFormat.RichText)
+            hl_label.setStyleSheet(
+                f"QLabel {{ padding: 2px 0; color: {t.text_primary}; }}"
+            )
+            layout.addWidget(hl_label)
 
         # Result text (below version row)
         self._result_label = QLabel("")
