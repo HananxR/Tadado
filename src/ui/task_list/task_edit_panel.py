@@ -208,6 +208,15 @@ class _BannerWidget(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRect(0, 0, w, h)
 
+        # Semi-transparent overlay for text readability (mirrors splash_screen)
+        from ...utils.design_tokens import is_dark as _is_dark
+        t = get_tokens()
+        overlay_color = QColor(t.bg_welcome_fallback)
+        overlay_color.setAlpha(150 if _is_dark() else 160)
+        p.setBrush(QBrush(overlay_color))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawRect(0, 0, w, h)
+
         # Render HTML text centered both horizontally and vertically
         if self._html:
             doc = QTextDocument()
@@ -677,7 +686,7 @@ class TaskEditPanel(QWidget):
     def _build_welcome_html(self) -> str:
         t = get_tokens()
         c = t.text_welcome_accent
-        s = t.text_welcome_sub
+        s = t.text_secondary
         return (
             f'<span style="font-size:12px;color:{c};letter-spacing:4px;">'
             '─ 宜 ─</span><br>'
@@ -693,7 +702,7 @@ class TaskEditPanel(QWidget):
     def _build_draft_html(self) -> str:
         t = get_tokens()
         c = t.text_welcome_accent
-        s = t.text_welcome_sub
+        s = t.text_secondary
         return (
             f'<span style="font-size:12px;color:{c};letter-spacing:4px;">'
             '─ 宜 ─</span><br>'
@@ -705,6 +714,46 @@ class TaskEditPanel(QWidget):
             f'<span style="font-size:12px;color:{c};letter-spacing:4px;">'
             '─ 忌 ─</span>'
         )
+
+    def _build_date_html(self) -> str:
+        """Calendar-style date display matching the 宜/忌 frame structure."""
+        from datetime import datetime as _dt
+        t = get_tokens()
+        now = _dt.now()
+        weekday_cn = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+        date_str = f"{now.year}年{now.month}月{now.day}日 {weekday_cn[now.weekday()]}"
+        c = t.text_welcome_accent
+        s = t.text_secondary
+        return (
+            f'<span style="font-size:12px;color:{c};letter-spacing:4px;">'
+            '─ 宜 ─</span><br>'
+            '<span style="font-size:28px;">📅</span><br>'
+            f'<span style="font-size:18px;color:{c};font-weight:bold;">'
+            f'{date_str}</span><br>'
+            f'<span style="font-size:13px;color:{s};letter-spacing:2px;">'
+            '忌拖延 · 宜行动</span><br>'
+            f'<span style="font-size:12px;color:{c};letter-spacing:4px;">'
+            '─ 忌 ─</span>'
+        )
+
+    def _partition_has_tasks(self) -> bool:
+        """Check whether the active partition has any non-DONE tasks."""
+        if not self._repository:
+            return False
+        from ...models.task_filter import TaskFilter
+        filter_ = TaskFilter(
+            partition_id=self._draft_partition_id,
+            statuses={TaskStatus.TODO, TaskStatus.DOING, TaskStatus.OVERDUE},
+            limit=1,
+        )
+        results = self._repository.search(filter_)
+        return len(results) > 0
+
+    def _current_banner_html(self, is_draft: bool = False) -> str:
+        """Return date HTML when partition has tasks, welcome HTML otherwise."""
+        if self._partition_has_tasks():
+            return self._build_date_html()
+        return self._build_draft_html() if is_draft else self._build_welcome_html()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -722,7 +771,7 @@ class TaskEditPanel(QWidget):
         self._current_task = None
         self._original_md = ""
         self._banner_active = True
-        self._draft_banner.set_html(self._build_welcome_html())
+        self._draft_banner.set_html(self._current_banner_html(is_draft=False))
         self._draft_banner.set_bg_pixmap(self._welcome_pixmap)
         self._draft_banner.setVisible(True)
         self._adjust_banner_height()
@@ -824,7 +873,7 @@ class TaskEditPanel(QWidget):
         self._md_edit.blockSignals(False)
 
         self._banner_active = True
-        self._draft_banner.set_html(self._build_draft_html())
+        self._draft_banner.set_html(self._current_banner_html(is_draft=True))
         self._draft_banner.set_bg_pixmap(self._welcome_pixmap)
         self._draft_banner.setVisible(True)
         self._adjust_banner_height()
@@ -923,9 +972,9 @@ class TaskEditPanel(QWidget):
         # Rebuild welcome/draft banner HTML with current tokens
         if self._draft_banner.isVisible():
             if self._current_task is not None and self._current_task.id == "":
-                self._draft_banner.set_html(self._build_draft_html())
+                self._draft_banner.set_html(self._current_banner_html(is_draft=True))
             elif self._current_task is None:
-                self._draft_banner.set_html(self._build_welcome_html())
+                self._draft_banner.set_html(self._current_banner_html(is_draft=False))
         # Refresh timeline display if a task is loaded
         if self._current_task is not None and self._current_task.id != "":
             self._refresh_timeline()

@@ -201,7 +201,8 @@
 - **TaskEditPanel** (QWidget) — 外层 QVBoxLayout：`_editor_header_widget`(固定顶部标签+折叠按钮) → QScrollArea(内部含 `_draft_banner`、`_editor_collapsible`、`_task_summary`、`_timeline_card`)
 - `_editor_collapsible` 包含：`_source_edit`(QTextEdit, Markdown 源) → `_preview_label`(QLabel, 实时 HTML 渲染) → 时间行(`_deadline_date_edit`+`_deadline_time_edit`+快速计算按钮) → 操作按钮(编辑/保存/删除)
 - `_timeline_card` 包含：状态+进度输入 → `_timeline_browser`(QTextBrowser 检测锚点点击) → `_new_log_input`(QTextEdit)
-- 内部类：`_TimelineEntryWidget`(时间线卡片, 图标+时间戳+内容, 48px)、`_TimelineBrowser`(QTextBrowser 子类)、`_BannerWidget`(背景图+半透明叠加+HTML 文本)
+- 内部类：`_TimelineEntryWidget`(时间线卡片, 图标+时间戳+内容, 48px)、`_TimelineBrowser`(QTextBrowser 子类)、`_BannerWidget`(背景图→半透明遮罩→HTML 文本三层渲染，遮罩 150/160 alpha 确保文字可读)
+- Banner 动态切换：`_partition_has_tasks()` 查询当前分区是否有活跃任务，有任务时显示日历日期（`_build_date_html`，📅 + 日期 + 忌拖延·宜行动），无任务时显示欢迎语（`_build_welcome_html`/`_build_draft_html`，🎉/✍️ + 今日无事）
 - 信号：`textChanged` → `_on_raw_md_changed()` 实时解析预览
 
 #### 预览效果
@@ -210,7 +211,8 @@
 ┌───────────────────────────────────────────────┐
 │ ▼ 编辑任务                           [折叠 ▲] │ ← _editor_header_widget
 ├───────────────────────────────────────────────┤
-│ ┌─ 草稿未保存 ────────────────────────────┐   │ ← _draft_banner
+│ ┌─ 草稿未保存 ────────────────────────────┐   │ ← _draft_banner (半透明遮罩 + 动态HTML)
+│ │  📅 2026年6月11日 星期三                 │   │   有任务→日历 / 空分区→欢迎
 │ └──────────────────────────────────────────┘   │
 │ ── Markdown ─────────────────────────────────  │
 │ ┌─────────────────────────────────────────┐   │
