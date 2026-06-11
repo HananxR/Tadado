@@ -1,6 +1,9 @@
 # Tadado — 入口
 
+import os
 import sys
+
+os.environ["QT_LOGGING_RULES"] = "qt.network.ssl.warning=false"
 
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 

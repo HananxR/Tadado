@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QTimer, QUrl, Signal
@@ -24,10 +23,8 @@ _VERSION_RE = re.compile(r"v(\d+\.\d+\.\d+)")
 
 
 class UpdateChecker(QObject):
-    """Fetch the latest GitHub Release and compare against the local version.
-
-    When GitHub is unreachable (common in China), automatically falls back
-    to querying the Aliyun Drive folder via the local ``aliyunpan`` CLI.
+    """Check for updates — Aliyun Drive first (fast for domestic users),
+    GitHub Release API as fallback.
 
     Usage::
 
@@ -56,7 +53,7 @@ class UpdateChecker(QObject):
     # ------------------------------------------------------------------
 
     def check_for_updates(self) -> None:
-        """Initiate an async check — GitHub first, Aliyun Drive on failure.
+        """Initiate an async check — Aliyun Drive first, GitHub on failure.
 
         20-second timeout: if no result arrives, silently treat as no-update.
         """
@@ -64,12 +61,16 @@ class UpdateChecker(QObject):
         if self._reply is not None and self._reply.isRunning():
             self._reply.abort()
 
+        # Try Aliyun Drive first (faster for domestic users)
+        self._try_aliyun_check()
+
+    def _try_github_check(self) -> None:
+        """GitHub API as fallback."""
         self._timeout_timer.start(self._TIMEOUT_MS)
 
         request = QNetworkRequest(QUrl(_GITHUB_API))
         request.setRawHeader(b"Accept", b"application/vnd.github+json")
         request.setRawHeader(b"User-Agent", b"Tadado-UpdateChecker")
-        # Qt 6 follows redirects by default.
 
         self._reply = self._nam.get(request)
         self._reply.finished.connect(self._on_reply_finished)
@@ -109,8 +110,8 @@ class UpdateChecker(QObject):
 
         err = reply.error()
         if err != QNetworkReply.NetworkError.NoError:
-            # GitHub unreachable — try Aliyun Drive fallback
-            self._try_aliyun_fallback()
+            # GitHub unreachable — Aliyun was already tried first, give up
+            self.check_finished.emit(None)
             return
 
         status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
@@ -138,14 +139,15 @@ class UpdateChecker(QObject):
             self.check_error.emit(f"GitHub API 返回数据解析失败: {exc}")
 
     # ------------------------------------------------------------------
-    # Aliyun Drive fallback (via local aliyunpan CLI)
+    # Aliyun Drive primary check (via local aliyunpan CLI)
     # ------------------------------------------------------------------
 
-    def _try_aliyun_fallback(self) -> None:
-        """Locate aliyunpan CLI and query the cloud folder for latest version."""
+    def _try_aliyun_check(self) -> None:
+        """Locate aliyunpan CLI and query the cloud folder for latest version.
+        Falls back to GitHub if the CLI is unavailable or fails."""
         cli_path = self._find_aliyunpan()
         if cli_path is None:
-            self.check_finished.emit(None)  # silently no-update
+            self._try_github_check()  # fallback
             return
 
         self._aliyunpan_path = cli_path
@@ -166,13 +168,13 @@ class UpdateChecker(QObject):
         self._aliyun_process = None
 
         if process.exitStatus() != QProcess.ExitStatus.NormalExit or process.exitCode() != 0:
-            self.check_finished.emit(None)  # silently no-update
+            self._try_github_check()  # fallback
             return
 
         output = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace")
         latest_version = self._parse_aliyun_ls(output)
         if latest_version is None:
-            self.check_finished.emit(None)  # silently no-update
+            self._try_github_check()  # fallback
             return
 
         current = __version__
