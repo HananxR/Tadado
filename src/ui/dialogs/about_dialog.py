@@ -62,13 +62,13 @@ class AboutDialog(QDialog):
 
         self.setWindowTitle("关于 Tadado")
         self.setObjectName("aboutDialog")
-        self.resize(440, 560)
-        self.setMinimumSize(380, 480)
+        self.resize(440, 600)
+        self.setMinimumSize(380, 520)
 
         t = get_tokens()
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(0, 0, 0, 8)
         outer.setSpacing(0)
 
         scroll = QScrollArea()
