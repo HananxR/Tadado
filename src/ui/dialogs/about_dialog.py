@@ -62,8 +62,8 @@ class AboutDialog(QDialog):
 
         self.setWindowTitle("关于 Tadado")
         self.setObjectName("aboutDialog")
-        self.resize(440, 600)
-        self.setMinimumSize(380, 520)
+        self.resize(440, 560)
+        self.setMinimumSize(380, 480)
 
         t = get_tokens()
 
@@ -241,15 +241,6 @@ class AboutDialog(QDialog):
         layout.addWidget(repo)
 
         layout.addSpacing(12)
-
-        # ── Footer ──
-        layout.addWidget(_h_line())
-        layout.addSpacing(14)
-
-        foot = QLabel("MIT License  ·  HananxR")
-        foot.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        foot.setStyleSheet("font-size: 11px; color: palette(mid);")
-        layout.addWidget(foot)
 
         layout.addStretch()
 
