@@ -16,10 +16,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...services.changelog_parser import format_changelog_html, get_version_changelog
 from ...services.update_checker import ALIYUN_DRIVE_URL, UpdateChecker
 from ...utils.design_tokens import get_surface_color, get_tokens, is_dark
 from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
-from ...version import get_version_display
+from ...version import __version__, get_version_display
 
 _FEATURES = [
     ("📝 Markdown 任务管理", "语法创建，优先级、截止时间、全文搜索"),
@@ -126,6 +127,23 @@ class AboutDialog(QDialog):
         # ── Separator ──
         layout.addWidget(_h_line())
         layout.addSpacing(14)
+
+        # ══════════════════════════════════════════════════════════════
+        # 更新日志
+        # ══════════════════════════════════════════════════════════════
+        entry = get_version_changelog(__version__)
+        if entry:
+            cl_html = format_changelog_html(entry)
+            self._changelog_label = QLabel(cl_html)
+            self._changelog_label.setWordWrap(True)
+            self._changelog_label.setTextFormat(Qt.TextFormat.RichText)
+            self._changelog_label.setStyleSheet(
+                f"QLabel {{ padding: 2px 0; color: {t.text_primary}; }}"
+            )
+            layout.addWidget(self._changelog_label)
+            layout.addSpacing(12)
+            layout.addWidget(_h_line())
+            layout.addSpacing(14)
 
         # ══════════════════════════════════════════════════════════════
         # 版本与更新
