@@ -37,14 +37,20 @@ _GITHUB_RELEASES = f"{_GITHUB_REPO}/releases"
 class AboutDialog(QDialog):
     """App information, version, update check, download channels, and contact."""
 
-    _CHANNELS_GITHUB = "🌐 GitHub Releases"
-    _CHANNELS_ALIYUN = "☁️ 阿里云盘（仅提供安装版）"
-    _DEFAULT_CHANNELS = (
-        f'<a href="{_GITHUB_RELEASES}" style="color: palette(link);">'
-        f'{_CHANNELS_GITHUB}</a><br/>'
-        f'<a href="{ALIYUN_DRIVE_URL}" style="color: palette(link);">'
-        f'{_CHANNELS_ALIYUN}</a>'
-    )
+    @staticmethod
+    def _build_channels_html(github_star: bool = False, aliyun_star: bool = False) -> str:
+        """Build download channels HTML with optional ⭐ recommendation marker."""
+        gh = "⭐ 推荐 " if github_star else ""
+        ay = "⭐ 推荐 " if aliyun_star else ""
+        return (
+            '<p style="margin:6px 0 2px 0;font-size:11px;">下载渠道</p>'
+            '<p style="margin:2px 0 2px 12px;font-size:11px;">'
+            f'🌐 <a href="{_GITHUB_RELEASES}" style="color: palette(link);">{gh}GitHub Releases</a>'
+            '</p>'
+            '<p style="margin:2px 0 2px 12px;font-size:11px;">'
+            f'☁️ <a href="{ALIYUN_DRIVE_URL}" style="color: palette(link);">{ay}阿里云盘（仅提供安装版）</a>'
+            '</p>'
+        )
 
     def __init__(
         self,
@@ -171,34 +177,30 @@ class AboutDialog(QDialog):
         # Upgrade highlights (below version row)
         highlights = get_release_highlights()
         if highlights:
-            hl_lines = ['<p style="margin:6px 0 2px 0;font-size:11px;font-weight:600;">升级内容</p>']
+            hl_parts = ['<p style="margin:6px 0 2px 0;font-size:11px;">升级内容</p>']
             for item in highlights:
                 safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                hl_lines.append(
+                hl_parts.append(
                     f'<p style="margin:2px 0 2px 12px;font-size:11px;">· {safe}</p>'
                 )
-            hl_label = QLabel("".join(hl_lines))
+            hl_label = QLabel("".join(hl_parts))
             hl_label.setWordWrap(True)
             hl_label.setTextFormat(Qt.TextFormat.RichText)
-            hl_label.setStyleSheet(
-                f"QLabel {{ padding: 2px 0; color: {t.text_primary}; }}"
-            )
+            hl_label.setStyleSheet(f"QLabel {{ color: {t.text_primary}; }}")
             layout.addWidget(hl_label)
 
-        # Result text (below version row)
-        self._result_label = QLabel("")
-        self._result_label.setWordWrap(True)
-        self._result_label.setVisible(False)
-        layout.addWidget(self._result_label)
-
-        layout.addSpacing(10)
-
-        # Download channels (dynamic — ⭐ added when update found)
-        self._channels_label = QLabel(self._DEFAULT_CHANNELS)
+        # Download channels (below highlights)
+        self._channels_label = QLabel(self._build_channels_html())
         self._channels_label.setOpenExternalLinks(True)
         self._channels_label.setStyleSheet("font-size: 11px;")
         self._channels_label.setWordWrap(True)
         layout.addWidget(self._channels_label)
+
+        # Result text (below channels)
+        self._result_label = QLabel("")
+        self._result_label.setWordWrap(True)
+        self._result_label.setVisible(False)
+        layout.addWidget(self._result_label)
 
         layout.addSpacing(14)
 
@@ -271,7 +273,7 @@ class AboutDialog(QDialog):
         self._check_btn.setText("检查中...")
         self._result_label.setVisible(False)
         # Reset channels to default (remove any ⭐ from previous check)
-        self._channels_label.setText(self._DEFAULT_CHANNELS)
+        self._channels_label.setText(self._build_channels_html())
 
         self._update_checker.check_finished.connect(
             self._on_check_finished, type=Qt.ConnectionType.SingleShotConnection
@@ -306,16 +308,13 @@ class AboutDialog(QDialog):
             self._result_label.setVisible(True)
             # Mark the recommended channel with ⭐
             if source == "aliyunpan":
-                rec = "⭐ 推荐 ☁️ 阿里云盘（仅提供安装版）"
-                other = "🌐 GitHub Releases"
+                self._channels_label.setText(
+                    self._build_channels_html(aliyun_star=True)
+                )
             else:
-                rec = "⭐ 推荐 🌐 GitHub Releases"
-                other = "☁️ 阿里云盘（仅提供安装版）"
-            self._channels_label.setText(
-                f'<a href="{_GITHUB_RELEASES if source == "github" else ALIYUN_DRIVE_URL}"'
-                f' style="color: palette(link);">{rec}</a><br/>'
-                f'<span style="color: palette(mid); font-size:10px;">{other}</span>'
-            )
+                self._channels_label.setText(
+                    self._build_channels_html(github_star=True)
+                )
 
     def _on_check_error(self, message: str) -> None:
         """Shown only for non-timeout errors (e.g. GitHub rate limit)."""
