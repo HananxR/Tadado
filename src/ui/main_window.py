@@ -1687,6 +1687,8 @@ class MainWindow(QMainWindow):
                 self._task_model.set_offset(0)
                 self._task_model.load_tasks(active_tasks[:self._page_size])
                 self._update_page_label()
+        # 同步轮播数据到过滤后的列表，确保点击定位一致
+        self._progress_bar.set_items(list(self._task_model.tasks))
         if self._task_model.tasks:
             self._on_task_selected(self._task_model.tasks[0])
 
