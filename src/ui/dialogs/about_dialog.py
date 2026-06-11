@@ -270,10 +270,12 @@ class AboutDialog(QDialog):
 
         self._check_btn.setEnabled(False)
         self._check_btn.setText("检查中...")
-        # Reset version label to default
-        self._version_label.setText(f'当前版本: <b>{get_version_display()}</b>')
+        # Show checking status inline
+        self._version_label.setText(
+            f'当前版本: <b>{get_version_display()}</b>  ···'
+        )
         self._version_label.setStyleSheet(
-            f"font-size: 11px; color: {get_tokens().text_primary};"
+            f"font-size: 11px; color: {get_tokens().text_secondary};"
         )
         self._result_label.setVisible(False)
         # Reset channels to default (remove any ⭐ from previous check)
@@ -293,7 +295,10 @@ class AboutDialog(QDialog):
         self._check_btn.setText("检查更新")
 
         if update_info is None:
-            self._version_label.setText(f'当前版本: <b>{get_version_display()}</b>')
+            self._version_label.setText(
+                f'当前版本: <b>{get_version_display()}</b>'
+                f'  <span style="color:{t.success};">✓ 已是最新</span>'
+            )
             self._version_label.setStyleSheet(
                 f"font-size: 11px; color: {t.text_primary};"
             )
@@ -303,9 +308,10 @@ class AboutDialog(QDialog):
             source = update_info.get("source", "github")
             self._version_label.setText(
                 f'当前版本: <b>{get_version_display()}</b>  →  <b>{latest}</b>'
+                f'  <span style="color:{t.accent};">🆕</span>'
             )
             self._version_label.setStyleSheet(
-                f"font-size: 11px; color: {t.accent};"
+                f"font-size: 11px; color: {t.text_primary};"
             )
             # Mark the recommended channel with ⭐
             if source == "aliyunpan":
