@@ -36,3 +36,29 @@ def parse_version(version_str: str) -> tuple[int, ...]:
     while len(parts) < 4:
         parts.append("0")
     return tuple(int(p) for p in parts)  # type: ignore[return-value]
+
+
+# ------------------------------------------------------------------
+# Release highlights — user-facing feature summaries per version
+# ------------------------------------------------------------------
+
+_RELEASE_HIGHLIGHTS: dict[str, tuple[str, ...]] = {
+    "0.1.2.2": (
+        "安装程序支持简体中文界面",
+        "修复安装程序中文乱码问题",
+    ),
+    "0.1.2.1": (
+        "关于对话框支持检查更新，推荐最佳下载渠道",
+        "新增阿里云盘下载渠道，方便国内用户获取更新",
+        "修复进度栏时段筛选数据不一致的问题",
+    ),
+}
+
+
+def get_release_highlights(version: str | None = None) -> tuple[str, ...] | None:
+    """Return user-facing feature highlights for *version*, or ``None``.
+
+    When *version* is omitted, the current ``__version__`` is used.
+    """
+    v = version or __version__
+    return _RELEASE_HIGHLIGHTS.get(v)
