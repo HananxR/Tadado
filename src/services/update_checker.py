@@ -18,8 +18,8 @@ _GITHUB_API = "https://api.github.com/repos/HananxR/Tadado/releases/latest"
 ALIYUN_DRIVE_URL = "https://www.alipan.com/s/E2FBppaMPZj"
 _ALIYUN_REMOTE_DIR = "/Tadado"
 
-# Regex to extract version from filenames like Tadado_setup_v0.1.1.exe
-_VERSION_RE = re.compile(r"v(\d+\.\d+\.\d+)")
+# Regex to extract version from filenames like Tadado_setup_v0.1.2.3.exe
+_VERSION_RE = re.compile(r"v(\d+\.\d+\.\d+(?:\.\d+)?)")
 
 
 class UpdateChecker(QObject):
