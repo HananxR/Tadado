@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QPixmap, QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
-    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -107,7 +106,7 @@ class AboutDialog(QDialog):
         layout.addWidget(name)
         layout.addSpacing(2)
 
-        ver = QLabel(f"{get_version_display()}  ·  Less noise. More done.")
+        ver = QLabel("Less noise. More done.")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ver.setStyleSheet("font-size: 12px; color: palette(mid);")
         layout.addWidget(ver)
@@ -121,7 +120,7 @@ class AboutDialog(QDialog):
         for title, desc in _FEATURES:
             row = QLabel(
                 f'<b style="font-size:12px;">{title}</b>'
-                f'<span style="font-size:11px; color:palette(mid);"> &nbsp;—&nbsp; {desc}</span>'
+                f'<span style="font-size:11px; color:palette(mid);">: {desc}</span>'
             )
             row.setWordWrap(True)
             layout.addWidget(row)
@@ -252,10 +251,14 @@ class AboutDialog(QDialog):
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(self.reject)
-        buttons.setCenterButtons(True)
-        outer.addWidget(buttons)
+        close_btn = QPushButton("关闭")
+        close_btn.setFixedHeight(30)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.clicked.connect(self.reject)
+        close_wrapper = QHBoxLayout()
+        close_wrapper.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        close_wrapper.addWidget(close_btn)
+        outer.addLayout(close_wrapper)
 
     # ── Update check slots ────────────────────────────────────────
 
