@@ -181,12 +181,20 @@ class AboutDialog(QDialog):
         # Upgrade highlights (below version row)
         highlights = get_release_highlights()
         if highlights:
+            _CAT_ICONS = {"新增": "✨", "优化": "🔧", "修复": "🐛"}
             hl_parts = ['<p style="margin:6px 0 2px 0;font-size:11px;">升级内容</p>']
-            for item in highlights:
-                safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            for cat, items in highlights.items():
+                if not items:
+                    continue
+                icon = _CAT_ICONS.get(cat, "•")
                 hl_parts.append(
-                    f'<p style="margin:2px 0 2px 12px;font-size:11px;">· {safe}</p>'
+                    f'<p style="margin:4px 0 2px 12px;font-size:11px;font-weight:600;">{icon} {cat}</p>'
                 )
+                for item in items:
+                    safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    hl_parts.append(
+                        f'<p style="margin:2px 0 2px 24px;font-size:11px;">· {safe}</p>'
+                    )
             hl_label = QLabel("".join(hl_parts))
             hl_label.setWordWrap(True)
             hl_label.setTextFormat(Qt.TextFormat.RichText)

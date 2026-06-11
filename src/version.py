@@ -42,28 +42,50 @@ def parse_version(version_str: str) -> tuple[int, ...]:
 # Release highlights — user-facing feature summaries per version
 # ------------------------------------------------------------------
 
-_RELEASE_HIGHLIGHTS: dict[str, tuple[str, ...]] = {
-    "0.1.2.3": (
-        "速览栏与进度栏被动提醒，时间粒度细化至分钟",
-        "关于对话框显示升级内容与下载渠道，检查更新结果内联",
-        "欢迎页 Banner 动态适配分区状态，遮罩文字可读性优化",
-        "更新检查优先阿里云盘，启动时消除转圈光标",
-    ),
-    "0.1.2.2": (
-        "安装程序支持简体中文界面",
-        "修复安装程序中文乱码问题",
-    ),
-    "0.1.2.1": (
-        "关于对话框支持检查更新，推荐最佳下载渠道",
-        "新增阿里云盘下载渠道，方便国内用户获取更新",
-        "修复进度栏时段筛选数据不一致的问题",
-    ),
+_RELEASE_HIGHLIGHTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "0.1.2.3": {
+        "新增": (
+            "关于对话框展示升级内容与下载渠道，更新结果内联反馈",
+        ),
+        "优化": (
+            "提醒信息融入速览栏与进度栏被动展示，时间粒度细化至分钟",
+            "欢迎页 Banner 动态适配分区状态",
+            "更新检查优先阿里云盘",
+        ),
+        "修复": (
+            "Banner 背景文字可读性",
+            "启动遮罩期间鼠标转圈",
+        ),
+    },
+    "0.1.2.2": {
+        "新增": (
+            "安装程序支持简体中文界面",
+        ),
+        "修复": (
+            "安装程序中文乱码问题",
+        ),
+    },
+    "0.1.2.1": {
+        "新增": (
+            "关于对话框检查更新与阿里云盘下载渠道",
+            "联系方式与反馈渠道",
+        ),
+        "优化": (
+            "关于对话框重新布局",
+            "版本号统一为 4 位格式",
+        ),
+        "修复": (
+            "进度栏时段筛选数据不一致",
+            "进度栏与活动报告计数不匹配",
+        ),
+    },
 }
 
 
-def get_release_highlights(version: str | None = None) -> tuple[str, ...] | None:
-    """Return user-facing feature highlights for *version*, or ``None``.
+def get_release_highlights(version: str | None = None) -> dict[str, tuple[str, ...]] | None:
+    """Return categorized feature highlights for *version*, or ``None``.
 
+    Returns a dict like ``{"新增": (...), "优化": (...), "修复": (...)}``.
     When *version* is omitted, the current ``__version__`` is used.
     """
     v = version or __version__
