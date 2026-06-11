@@ -146,8 +146,13 @@ class AboutDialog(QDialog):
         version_row_layout.setContentsMargins(0, 0, 0, 0)
         version_row_layout.setSpacing(8)
 
-        self._version_label = QLabel(f"当前版本: {get_version_display()}")
-        self._version_label.setStyleSheet("font-size: 11px; color: palette(mid);")
+        self._version_label = QLabel(
+            f'当前版本: <b>{get_version_display()}</b>'
+        )
+        self._version_label.setTextFormat(Qt.TextFormat.RichText)
+        self._version_label.setStyleSheet(
+            f"font-size: 11px; color: {t.text_primary};"
+        )
         version_row_layout.addWidget(self._version_label, 1)
 
         self._check_btn = QPushButton("检查更新")
@@ -275,8 +280,10 @@ class AboutDialog(QDialog):
         self._check_btn.setEnabled(False)
         self._check_btn.setText("检查中...")
         # Reset version label to default
-        self._version_label.setText(f"当前版本: {get_version_display()}")
-        self._version_label.setStyleSheet("font-size: 11px; color: palette(mid);")
+        self._version_label.setText(f'当前版本: <b>{get_version_display()}</b>')
+        self._version_label.setStyleSheet(
+            f"font-size: 11px; color: {get_tokens().text_primary};"
+        )
         self._result_label.setVisible(False)
         # Reset channels to default (remove any ⭐ from previous check)
         self._channels_label.setText(self._build_channels_html())
@@ -295,17 +302,19 @@ class AboutDialog(QDialog):
         self._check_btn.setText("检查更新")
 
         if update_info is None:
-            self._version_label.setText(f"当前版本: {get_version_display()}")
-            self._version_label.setStyleSheet("font-size: 11px; color: palette(mid);")
+            self._version_label.setText(f'当前版本: <b>{get_version_display()}</b>')
+            self._version_label.setStyleSheet(
+                f"font-size: 11px; color: {t.text_primary};"
+            )
         else:
             self._update_info = update_info
             latest = update_info.get("latest_version", "")
             source = update_info.get("source", "github")
             self._version_label.setText(
-                f"当前版本: {get_version_display()}  →  {latest}"
+                f'当前版本: <b>{get_version_display()}</b>  →  <b>{latest}</b>'
             )
             self._version_label.setStyleSheet(
-                f"font-size: 11px; font-weight: 600; color: {t.accent};"
+                f"font-size: 11px; color: {t.accent};"
             )
             # Mark the recommended channel with ⭐
             if source == "aliyunpan":
