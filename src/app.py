@@ -311,6 +311,7 @@ class TadadoApp(QApplication):
         )
         self._shield.match_main_window_geometry()  # match main window size & pos
         set_window_nc_rendering_disabled(self._shield)  # no ghost buttons on shield itself
+        self.setOverrideCursor(Qt.CursorShape.ArrowCursor)  # suppress busy cursor
         self._shield.show()
         self.processEvents()  # force immediate paint so user sees it now
         # ────────────────────────────────────────────────────────────────────
@@ -382,6 +383,7 @@ class TadadoApp(QApplication):
         if self._shield is not None:
             self._shield.dismiss()
             self._shield = None
+        self.restoreOverrideCursor()  # restore cursor after init
         self._tray.show()
         QTimer.singleShot(200, self._refresh_overdue_on_startup)
 
