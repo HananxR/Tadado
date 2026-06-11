@@ -331,18 +331,18 @@
 
 **需求**：6 个预设按钮(昨天/今天/上周/本周/上月/本月) + 自动轮播(按紧急度排序，每 5 秒切换展示组，每组 3 个任务)。标签支持时间粒度：当 `deadline_time` 存在且 deadline 为今天时，显示"X 分钟后"/"X 小时后"/"HH:MM截止"/"已超时"；颜色按剩余时间分 4 档（>3h 绿、1-3h 橙、<1h 红、已超时 红）。tooltip 显示精确截止日期时间。
 
-**过滤逻辑**（2026-06-07 重构）：按 `created_at ≤ 时间上限` + `status ≠ DONE`（排除已完成），不再按 `deadline_date` 过滤：
+**过滤逻辑**（2026-06-07 重构，2026-06-11 修订）：按 `created_at ≤ 时间上限` + `archived = 0`（排除已完成已归档），不再按 `deadline_date` 过滤：
 
 | 按钮 | 过滤 |
 |------|------|
-| 昨天 | 昨天及之前创建 + 非DONE |
-| 今天 | 今天及之前创建 + 非DONE |
-| 上周 | 上周日及之前创建 + 非DONE |
-| 本周 | 本周日及之前创建 + 非DONE |
-| 上月 | 上月最后一天及之前创建 + 非DONE |
-| 本月 | 本月最后一天及之前创建 + 非DONE |
+| 昨天 | 昨天及之前创建 + 排除已归档 |
+| 今天 | 今天及之前创建 + 排除已归档 |
+| 上周 | 上周日及之前创建 + 排除已归档 |
+| 本周 | 本周日及之前创建 + 排除已归档 |
+| 上月 | 上月最后一天及之前创建 + 排除已归档 |
+| 本月 | 本月最后一天及之前创建 + 排除已归档 |
 
-**实现方案**：`_build_ui()` 创建预设按钮 + 轮播区 QLabel，QTimer(5s) → `_scroll()`。`preset_activated(str)` 和 `task_clicked(task_id)` 信号。`build_filter()` 设置 `created_to` + `statuses={TODO,DOING,OVERDUE}`。
+**实现方案**：`_build_ui()` 创建预设按钮 + 轮播区 QLabel，QTimer(5s) → `_scroll()`。`preset_activated(str)` 和 `task_clicked(task_id)` 信号。`build_filter()` 设置 `created_to`，仓库层 `archived=0` 默认排除已归档。
 
 **预览**：
 ```

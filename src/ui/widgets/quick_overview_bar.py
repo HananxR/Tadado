@@ -311,12 +311,12 @@ class QuickOverviewBar(QWidget):
     def build_filter(self) -> TaskFilter:
         """Build a TaskFilter matching the active preset, sorted by urgency.
 
-        Filters by created_at ≤ time boundary + excludes DONE status.
+        Filters by created_at ≤ time boundary.
+        Archived-DONE tasks are excluded by repository's default archived=0 clause.
         """
         today = date.today()
         sort = [SortCriterion("urgency", ascending=True)]
         filter_ = TaskFilter(partition_id=self._partition_id, sort_by=sort)
-        _NON_DONE = {TaskStatus.TODO, TaskStatus.DOING, TaskStatus.OVERDUE}
 
         if self._active_preset == "yesterday":
             filter_.created_to = today - timedelta(days=1)
@@ -333,5 +333,4 @@ class QuickOverviewBar(QWidget):
             _, last = _cal.monthrange(today.year, today.month)
             filter_.created_to = today.replace(day=last)
 
-        filter_.statuses = _NON_DONE
         return filter_
