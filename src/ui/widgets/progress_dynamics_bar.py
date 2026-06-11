@@ -95,6 +95,7 @@ class ProgressDynamicsBar(QWidget):
         self._items: list[dict] = []
         self._scroll_index = 0
         self._carousel_active = False
+        self._hint_task_id: str | None = None
 
         self._build_ui()
 
@@ -228,6 +229,7 @@ class ProgressDynamicsBar(QWidget):
                     best_task = task
                     best_content = entry.get("content", "")
         if best_task:
+            self._hint_task_id = best_task.id
             suffix = self.deadline_suffix(best_task)
             self._carousel_label.setText(
                 f"最新: {best_task.title} — {best_content}{suffix}"
@@ -238,6 +240,7 @@ class ProgressDynamicsBar(QWidget):
                 f"{' ' + best_task.deadline_time if best_task.deadline_time else ''}"
             )
         else:
+            self._hint_task_id = None
             self._carousel_label.setText("")
             self._carousel_label.setToolTip("")
 
@@ -266,18 +269,24 @@ class ProgressDynamicsBar(QWidget):
                 self.task_clicked.emit(self._items[self._scroll_index]["task_id"])
         return handler
 
+    def _make_hint_click_handler(self):
+        def handler(event) -> None:
+            if self._hint_task_id:
+                self.task_clicked.emit(self._hint_task_id)
+        return handler
+
     # ------------------------------------------------------------------
     # Mode switching
     # ------------------------------------------------------------------
 
     def _enter_hint_mode(self) -> None:
-        """Switch to hint (unclicked) display: stop timer, clear items, non-interactive."""
+        """Switch to hint (unclicked) display: stop timer, keep label clickable."""
         self._timer.stop()
         self._carousel_active = False
         self._items = []
         self._scroll_index = 0
-        self._carousel_label.setCursor(Qt.CursorShape.ArrowCursor)
-        self._carousel_label.mousePressEvent = lambda event: None
+        self._carousel_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._carousel_label.mousePressEvent = self._make_hint_click_handler()
 
     def _enter_carousel_mode(self) -> None:
         """Switch to carousel (clicked) display: start timer, make label interactive."""
