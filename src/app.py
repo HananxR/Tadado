@@ -109,7 +109,7 @@ def _seed_optimization_tasks(repo: TaskRepository, pid: str) -> None:
         ], None),
         (f"- [ ] TODO<{today}> T8: 截止计算器(快速计算) #测试 #快速计算", "T8: 截止计算器(快速计算)", [
             {"ts": _ts(0), "content": "【步骤1】点击快速计算 → 验证弹窗显示", "status": "TODO", "progress": 0},
-            {"ts": _ts(0), "content": "【步骤2】切换临时/周/月 → 验证选项正确切换", "status": "TODO", "progress": 0},
+            {"ts": _ts(0), "content": "【步骤2】切换天/周/月 → 验证选项正确切换", "status": "TODO", "progress": 0},
             {"ts": _ts(0), "content": "【步骤3】验证不触发全局刷新(BUG修复验证)", "status": "TODO", "progress": 0},
         ], None),
         (f"- [ ] TODO<{today}> T9: 活动时间线+智能进度 #测试 #时间线", "T9: 活动时间线+智能进度", [

@@ -47,12 +47,12 @@ class DeadlineIntervalCalculator(QDialog):
 
         # Task type dropdown
         type_row = QHBoxLayout()
-        type_label = QLabel("任务类型:")
+        type_label = QLabel("时间粒度:")
         type_label.setStyleSheet(f"font-weight: bold; color: {t.text_primary};")
         type_row.addWidget(type_label)
         self._type_combo = DropdownWidget()
         self._type_combo.setObjectName("calcTypeCombo")
-        self._type_combo.addItems(["临时", "周", "月"])
+        self._type_combo.addItems(["天", "周", "月"])
         self._type_combo.setFixedWidth(combo_width(2))
         self._type_combo.currentIndexChanged.connect(self._on_type_changed)
         type_row.addWidget(self._type_combo)

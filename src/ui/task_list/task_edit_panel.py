@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path as _Path
 
 from PySide6.QtCore import (
@@ -777,8 +777,8 @@ class TaskEditPanel(QWidget):
         self._draft_banner.setVisible(True)
         self._adjust_banner_height()
 
-        now_str = QDateTime.currentDateTime().toString("yyyy-MM-dd HH:mm")
-        template = f"- [ ]  <{now_str}> 新任务 #标签"
+        date_str = QDate.currentDate().toString("yyyy-MM-dd")
+        template = f"- [ ]  <{date_str} 23:59> 新任务 #标签"
         self._md_edit.blockSignals(True)
         self._md_edit.setText(template)
         self._md_edit.blockSignals(False)
@@ -818,7 +818,7 @@ class TaskEditPanel(QWidget):
         self._progress_edit.setEnabled(True)
         self._urgency_combo.setCurrentIndex(3)  # default to 普通
         self._urgency_combo.setEnabled(True)
-        self._created_label.setText(f"创建: {now_str}")
+        self._created_label.setText(f"创建: {QDateTime.currentDateTime().toString('yyyy-MM-dd HH:mm')}")
         self._timeline_card.setVisible(False)
 
         self._updating_from_md = True
@@ -839,20 +839,11 @@ class TaskEditPanel(QWidget):
         self._draft_partition_id = partition_id
 
     def create_draft(self, deadline_date: date | None = None) -> None:
-        """Create an in-memory draft task with current time and mandatory tag template."""
+        """Create an in-memory draft task with default deadline and tag template."""
         now = datetime.now()
-        now_str = now.strftime("%Y-%m-%d %H:%M")
         today = date.today()
-        if deadline_date is not None:
-            target = deadline_date
-        else:
-            # Default deadline: nearest Friday 23:59
-            weekday = today.isoweekday()
-            days_ahead = (5 - weekday) % 7
-            if days_ahead == 0:
-                days_ahead = 7
-            target = today + timedelta(days=days_ahead)
-        template = f"- [ ]  <{now_str}> 新任务 #待分类"
+        target = deadline_date if deadline_date is not None else today
+        template = f"- [ ]  <{target.strftime('%Y-%m-%d')} 23:59> 新任务 #待分类"
         parsed = self._parser.parse(template)
         from ...models.task import Task as TaskCls
 
@@ -926,10 +917,9 @@ class TaskEditPanel(QWidget):
 
     def create_draft_single(self) -> None:
         """Create a single-task draft — identically to multi-task, but single line."""
-        now = datetime.now()
-        now_str = now.strftime("%Y-%m-%d %H:%M")
-        template = f"- [ ]  <{now_str}> 新任务 #待分类"
         self.create_draft()
+        d = self._deadline_date_edit.date()
+        template = f"- [ ]  <{d.toString('yyyy-MM-dd')} 23:59> 新任务 #待分类"
         self._md_edit.blockSignals(True)
         self._md_edit.setText(template)
         self._md_edit.blockSignals(False)
@@ -939,13 +929,14 @@ class TaskEditPanel(QWidget):
 
     def create_draft_multi(self) -> None:
         """Create a multi-task draft with pre-populated template lines."""
-        now = datetime.now()
-        now_str = now.strftime("%Y-%m-%d %H:%M")
+        self.create_draft()
+        d = self._deadline_date_edit.date()
+        date_str = d.toString("yyyy-MM-dd")
         template = (
-            f"- [***]  <{now_str}> 紧急修复 #工作\n"
-            f"- [** ]  <{now_str}> 代码开发 #开发\n"
-            f"- [*  ]  <{now_str}> 文档更新 #测试\n"
-            f"- [   ]  <{now_str}> 随便看看 #杂项"
+            f"- [***]  <{date_str} 23:59> 紧急修复 #工作\n"
+            f"- [** ]  <{date_str} 23:59> 代码开发 #开发\n"
+            f"- [*  ]  <{date_str} 23:59> 文档更新 #测试\n"
+            f"- [   ]  <{date_str} 23:59> 随便看看 #杂项"
         )
         self.create_draft()
         self._md_edit.blockSignals(True)
@@ -1292,8 +1283,14 @@ class TaskEditPanel(QWidget):
             self._urgency_combo.setCurrentIndex(parsed.urgency)
         task.urgency = self._urgency_combo.currentData()
         task.scheduled_date = parsed.scheduled_date
-        task.deadline_date = parsed.deadline_date
-        task.deadline_time = parsed.deadline_time
+        dl_date = date(
+            self._deadline_date_edit.date().year(),
+            self._deadline_date_edit.date().month(),
+            self._deadline_date_edit.date().day(),
+        )
+        dl_time = f"{self._deadline_time_edit.time().hour():02d}:{self._deadline_time_edit.time().minute():02d}"
+        task.deadline_date = parsed.deadline_date or dl_date
+        task.deadline_time = parsed.deadline_time or dl_time
         # created_at is auto-generated — keep existing or set for new drafts
         if not task.created_at:
             task.created_at = datetime.now()
