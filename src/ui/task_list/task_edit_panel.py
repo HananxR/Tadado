@@ -482,6 +482,8 @@ class TaskEditPanel(QWidget):
                 Qt.ItemDataRole.ForegroundRole,
             )
         self._status_combo.setEnabled(False)
+        self._status_combo.currentIndexChanged.connect(self._on_status_combo_changed)
+        self._prev_status_combo = None  # 追踪上一次用户选择的状态值
         progress_btn_row.addWidget(self._status_combo)
         # Urgency dropdown — same style as status combo
         self._urgency_combo = DropdownWidget()
@@ -506,7 +508,7 @@ class TaskEditPanel(QWidget):
         self._progress_edit = QLineEdit()
         self._progress_edit.setValidator(QIntValidator(0, 100))
         self._progress_edit.setText("0")
-        self._progress_edit.setFixedWidth(42)
+        self._progress_edit.setFixedWidth(55)
         self._progress_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_edit.setEnabled(False)
         tk = get_tokens()
@@ -614,8 +616,7 @@ class TaskEditPanel(QWidget):
                     self._status_combo.setCurrentIndex(i)
                     break
         self._status_combo.blockSignals(False)
-
-        # Set date/time pickers
+        self._prev_status_combo = self._status_combo.currentData()
         self._updating_from_md = True
         if task.deadline_date:
             qd = QDate(task.deadline_date.year, task.deadline_date.month, task.deadline_date.day)
@@ -810,6 +811,7 @@ class TaskEditPanel(QWidget):
         self._status_combo.setCurrentIndex(0)
         self._status_combo.setEnabled(True)
         self._status_combo.blockSignals(False)
+        self._prev_status_combo = self._status_combo.currentData()
         self._log_edit.setEnabled(True)
         self._log_save_btn.setEnabled(True)
         self._progress_edit.setText("0")
@@ -1301,10 +1303,12 @@ class TaskEditPanel(QWidget):
         if task.status != old_status:
             if task.status == TaskStatus.DONE:
                 task.completed_at = task.deadline_date or datetime.now()
+                task.progress = 100
                 task.activity_log.append({
                     "ts": task.completed_at.isoformat(),
                     "content": f"任务完成 ✓ 截止: {task.deadline_date.isoformat()}" if task.deadline_date else "任务完成 ✓",
                     "status": task.status.value,
+                    "progress": 100,
             })
             else:
                 task.activity_log.append({
@@ -1435,7 +1439,7 @@ class TaskEditPanel(QWidget):
                     "ts": task_now.isoformat(),
                     "content": f"[批量创建] 创建任务 {i}/{len(lines)}",
                     "status": parsed.status.value,
-                    "progress": 0,
+                    "progress": 100 if parsed.status == TaskStatus.DONE else 0,
                 }],
             )
             # Apply formatter for canonical raw_md
@@ -1731,6 +1735,20 @@ class TaskEditPanel(QWidget):
     # Log editor actions
     # ------------------------------------------------------------------
 
+    def _on_status_combo_changed(self, index: int) -> None:
+        """状态下拉框切换时，立即刷新进度字段。"""
+        if not self._status_combo.isEnabled() or index < 0:
+            return
+        new_status = self._status_combo.itemData(index)
+        prev = self._prev_status_combo
+        self._prev_status_combo = new_status
+        if prev is None:
+            return  # 首次初始化，不触发自动设值
+        if new_status == TaskStatus.DONE:
+            self._progress_edit.setText("100")
+        elif prev == TaskStatus.DONE and new_status == TaskStatus.DOING:
+            self._progress_edit.setText("80")
+
     def _on_log_save(self) -> None:
         """Add or update progress: optionally change status + record text."""
         if not self._current_task:
@@ -1787,7 +1805,7 @@ class TaskEditPanel(QWidget):
             cur_p = int(self._progress_edit.text() or 0)
             if new_status == TaskStatus.DONE:
                 cur_p = 100
-            elif old_status == TaskStatus.DONE and new_status == TaskStatus.DOING and cur_p == 0:
+            elif old_status == TaskStatus.DONE and new_status == TaskStatus.DOING:
                 cur_p = 80
             self._progress_edit.setText(str(cur_p))
             task.raw_md = self._formatter.format(task)

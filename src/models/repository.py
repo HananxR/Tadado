@@ -706,6 +706,9 @@ class TaskRepository:
             if task is None:
                 continue
             old_status = task.status.display_name
+            if new_status == TaskStatus.DONE:
+                task.progress = 100
+                task.completed_at = task.deadline_date or datetime.now()
             entry = {
                 "ts": now,
                 "content": f"[批量操作] 状态变更: {old_status} -> {new_status.display_name}",
@@ -714,8 +717,11 @@ class TaskRepository:
             }
             log = list(task.activity_log) + [entry]
             self.conn.execute(
-                "UPDATE tasks SET status=?, activity_log=?, updated_at=? WHERE id=?",
-                (status_value, json.dumps(log, ensure_ascii=False), now, task_id),
+                "UPDATE tasks SET status=?, activity_log=?, updated_at=?, progress=?, completed_at=? WHERE id=?",
+                (status_value, json.dumps(log, ensure_ascii=False), now,
+                 task.progress,
+                 task.completed_at.isoformat() if task.completed_at else None,
+                 task_id),
             )
             # Update task for FTS and raw_md sync
             task.status = new_status

@@ -63,7 +63,7 @@ class TaskInputWidget(QWidget):
                 "ts": now.isoformat(),
                 "content": "创建任务",
                 "status": parsed.status.value,
-                "progress": 0,
+                "progress": 100 if parsed.status == TaskStatus.DONE else 0,
             }],
         )
         # Normalize raw_md through the formatter

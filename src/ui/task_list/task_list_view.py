@@ -113,7 +113,7 @@ class TaskListView(QTableView):
         h.setSectionResizeMode(COL_DEADLINE, QHeaderView.ResizeMode.Fixed)
         h.resizeSection(COL_DEADLINE, 95)
         h.setSectionResizeMode(COL_PROGRESS, QHeaderView.ResizeMode.Fixed)
-        h.resizeSection(COL_PROGRESS, 45)
+        h.resizeSection(COL_PROGRESS, 55)
         h.setSectionResizeMode(COL_STATUS, QHeaderView.ResizeMode.Fixed)
         h.resizeSection(COL_STATUS, 55)
         h.setSectionResizeMode(COL_TAGS, QHeaderView.ResizeMode.Fixed)

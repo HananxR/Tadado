@@ -148,9 +148,13 @@ class TaskDialog(QDialog):
         recurrence = self._recurrence_edit.text().strip() or None
 
         if self._editing and self._task:
+            old_status = self._task.status
             self._task.raw_md = text
             self._task.title = parsed.clean_title
             self._task.status = parsed.status
+            if self._task.status == TaskStatus.DONE:
+                self._task.progress = 100
+                self._task.completed_at = self._task.deadline_date or datetime.now()
             self._task.tags = parsed.tags
             self._task.scheduled_date = parsed.scheduled_date
             self._task.deadline_date = parsed.deadline_date
@@ -158,7 +162,10 @@ class TaskDialog(QDialog):
             self._task.recurrence_rule = recurrence
             self._task.updated_at = datetime.now()
             self._repository.update(self._task)
-            self._signal_bus.task_updated.emit(self._task)
+            if self._task.status != old_status:
+                self._signal_bus.task_status_changed.emit(self._task, old_status)
+            else:
+                self._signal_bus.task_updated.emit(self._task)
         else:
             now = datetime.now()
             task = Task(
@@ -177,7 +184,7 @@ class TaskDialog(QDialog):
                     "ts": now.isoformat(),
                     "content": "创建任务",
                     "status": parsed.status.value,
-                    "progress": 0,
+                    "progress": 100 if parsed.status == TaskStatus.DONE else 0,
                 }],
             )
             self._repository.insert(task)
