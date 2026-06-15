@@ -1316,11 +1316,21 @@ class TaskEditPanel(QWidget):
 
         # Validate: created_at must not be after deadline
         if task.created_at and task.deadline_date:
-            cd = task.created_at.date()
-            if cd > task.deadline_date:
+            # Build full deadline datetime for precise comparison
+            if task.deadline_time:
+                try:
+                    t = datetime.strptime(task.deadline_time, "%H:%M").time()
+                    dl_dt = datetime.combine(task.deadline_date, t)
+                except (ValueError, TypeError):
+                    dl_dt = datetime.combine(task.deadline_date, datetime.max.time())
+            else:
+                dl_dt = datetime.combine(task.deadline_date, datetime.max.time())
+            if task.created_at > dl_dt:
+                dl_str = dl_dt.strftime("%Y-%m-%d %H:%M")
                 QMessageBox.warning(
                     self, "时间校验失败",
-                    f"创建时间({cd.isoformat()})不能晚于截止时间({task.deadline_date.isoformat()})，请调整后再保存。"
+                    f"创建时间({task.created_at.strftime('%Y-%m-%d %H:%M')})"
+                    f"不能晚于截止时间({dl_str})，请调整后再保存。"
                 )
                 return
 

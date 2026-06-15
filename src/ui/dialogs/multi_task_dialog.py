@@ -165,6 +165,24 @@ class MultiTaskDialog(QDialog):
             dl_date = parsed.deadline_date or shared_deadline_date
             dl_time = parsed.deadline_time or shared_deadline_time
 
+            # Validate: created_at must not be after deadline
+            if dl_date:
+                if dl_time:
+                    try:
+                        t = datetime.strptime(dl_time, "%H:%M").time()
+                        dl_dt = datetime.combine(dl_date, t)
+                    except (ValueError, TypeError):
+                        dl_dt = datetime.combine(dl_date, datetime.max.time())
+                else:
+                    dl_dt = datetime.combine(dl_date, datetime.max.time())
+                if created_dt > dl_dt:
+                    dl_str = dl_dt.strftime("%Y-%m-%d %H:%M")
+                    errors.append(
+                        f"第{i}行创建时间({created_dt.strftime('%Y-%m-%d %H:%M')})"
+                        f"不能晚于截止时间({dl_str})"
+                    )
+                    continue
+
             raw_md = self._formatter.format_fields(
                 status=parsed.status,
                 scheduled_date=parsed.scheduled_date,

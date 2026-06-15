@@ -11,13 +11,13 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from ...models.repository import TaskRepository
 from ...models.task import Task
+from ...models.task_status import TaskStatus
 from ...services.md_formatter import MarkdownTaskFormatter
 from ...services.md_parser import MarkdownTaskParser
 from ...utils.signal_bus import get_signal_bus
@@ -42,15 +42,17 @@ class TaskDialog(QDialog):
 
         self.setWindowTitle("编辑任务" if self._editing else "新建任务")
         self.setObjectName("taskDialog")
-        self.resize(520, 280)
-        self.setMinimumSize(420, 220)
+        self.resize(520, 300)
+        self.setMinimumSize(420, 240)
 
         self._build_ui()
         if self._editing and self._task:
             self._md_edit.setText(self._task.raw_md)
-            self._notes_edit.setText(self._task.notes or "")
-            if self._task.recurrence_rule:
-                self._recurrence_edit.setText(self._task.recurrence_rule)
+            if self._task.created_at:
+                self._created_label.setText(
+                    f"创建: {self._task.created_at.strftime('%Y-%m-%d %H:%M')}"
+                )
+                self._created_label.setVisible(True)
         self._update_preview()
 
     # ------------------------------------------------------------------
@@ -64,39 +66,36 @@ class TaskDialog(QDialog):
         # Markdown input
         root.addWidget(QLabel("Markdown 任务："))
         hint = QLabel(
-            '格式：<tt>- [ ] TODO &lt;2026-05-20&gt; 任务标题 #标签</tt>'
+            '格式：<tt>- [   ] &lt;2026-06-15 23:59&gt; 任务标题 #标签</tt>'
         )
         hint.setObjectName("formatHint")
         root.addWidget(hint)
 
         self._md_edit = QLineEdit()
         self._md_edit.setObjectName("mdEdit")
-        self._md_edit.setPlaceholderText("- [ ] TODO <2026-05-20> 任务标题 #标签")
+        self._md_edit.setPlaceholderText("- [   ] <2026-06-15 23:59> 任务标题 #标签")
         self._md_edit.textChanged.connect(self._update_preview)
         root.addWidget(self._md_edit)
 
         # Live preview
         root.addWidget(QLabel("解析预览："))
-        self._preview = QLineEdit()
-        self._preview.setReadOnly(True)
+        self._preview = QLabel()
+        self._preview.setWordWrap(True)
         self._preview.setObjectName("mdPreview")
         root.addWidget(self._preview)
 
-        # Recurrence (optional)
-        self._recurrence_edit = QLineEdit()
-        self._recurrence_edit.setPlaceholderText("循环规则（如 +1d、+1w、+1m、+1y，可选）")
-        root.addWidget(self._recurrence_edit)
-
-        # Notes (optional)
-        self._notes_edit = QTextEdit()
-        self._notes_edit.setMaximumHeight(50)
-        self._notes_edit.setPlaceholderText("备注（可选）...")
-        root.addWidget(self._notes_edit)
+        # Task metadata (edit mode only)
+        self._created_label = QLabel()
+        self._created_label.setObjectName("createdLabel")
+        self._created_label.setVisible(False)
+        root.addWidget(self._created_label)
 
         # Buttons
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText("确定")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("取消")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
@@ -112,14 +111,18 @@ class TaskDialog(QDialog):
             return
         try:
             parsed = self._parser.parse(text)
+            _urgency_labels = {0: "紧急", 1: "重要", 2: "关注", 3: "普通"}
             parts = [
-                f"状态={parsed.status.display_name}",
+                f"优先级={_urgency_labels.get(parsed.urgency, '?')}",
             ]
             if parsed.scheduled_date:
                 parts.append(f"计划={parsed.scheduled_date.isoformat()}")
             if parsed.deadline_date:
-                parts.append(f"截止={parsed.deadline_date.isoformat()}")
-            parts.append(f"标题=\"{parsed.clean_title}\"")
+                dl = parsed.deadline_date.isoformat()
+                if parsed.deadline_time:
+                    dl += f" {parsed.deadline_time}"
+                parts.append(f"截止={dl}")
+            parts.append(f'标题="{parsed.clean_title}"')
             if parsed.tags:
                 parts.append(f"标签={parsed.tags}")
             self._preview.setText(" | ".join(parts))
@@ -140,27 +143,51 @@ class TaskDialog(QDialog):
                 "解析失败",
                 "无法解析 Markdown 格式。\n\n"
                 "正确格式示例：\n"
-                "- [ ] TODO <2026-05-20> 标题 #标签",
+                "- [   ] <2026-06-15 23:59> 标题 #标签",
             )
             return
 
-        notes = self._notes_edit.toPlainText().strip() or None
-        recurrence = self._recurrence_edit.text().strip() or None
-
         if self._editing and self._task:
             old_status = self._task.status
-            self._task.raw_md = text
+            # Only update status from parsed text if a status keyword is
+            # explicitly present; otherwise preserve the existing status
+            # (the canonical format omits status keywords).
+            _has_status_kw = any(
+                kw in text.upper() for kw in ("TODO", "DOING", "DONE", "OVERDUE")
+            )
+            if _has_status_kw:
+                self._task.status = parsed.status
             self._task.title = parsed.clean_title
-            self._task.status = parsed.status
-            if self._task.status == TaskStatus.DONE:
-                self._task.progress = 100
-                self._task.completed_at = self._task.deadline_date or datetime.now()
             self._task.tags = parsed.tags
             self._task.scheduled_date = parsed.scheduled_date
             self._task.deadline_date = parsed.deadline_date
-            self._task.notes = notes
-            self._task.recurrence_rule = recurrence
+            self._task.deadline_time = parsed.deadline_time
+            self._task.urgency = parsed.urgency
             self._task.updated_at = datetime.now()
+            if self._task.status == TaskStatus.DONE:
+                self._task.progress = 100
+                self._task.completed_at = self._task.deadline_date or datetime.now()
+            # Validate: created_at must not be after deadline
+            if self._task.created_at and self._task.deadline_date:
+                # Build full deadline datetime for precise comparison
+                if self._task.deadline_time:
+                    try:
+                        t = datetime.strptime(self._task.deadline_time, "%H:%M").time()
+                        dl_dt = datetime.combine(self._task.deadline_date, t)
+                    except (ValueError, TypeError):
+                        dl_dt = datetime.combine(self._task.deadline_date, datetime.max.time())
+                else:
+                    dl_dt = datetime.combine(self._task.deadline_date, datetime.max.time())
+                if self._task.created_at > dl_dt:
+                    dl_str = dl_dt.strftime("%Y-%m-%d %H:%M")
+                    QMessageBox.warning(
+                        self, "时间校验失败",
+                        f"创建时间({self._task.created_at.strftime('%Y-%m-%d %H:%M')})"
+                        f"不能晚于截止时间({dl_str})，请调整后再保存。"
+                    )
+                    return
+            # Normalize to canonical Markdown (mirrors TaskEditPanel._on_save)
+            self._task.raw_md = self._formatter.format(self._task)
             self._repository.update(self._task)
             if self._task.status != old_status:
                 self._signal_bus.task_status_changed.emit(self._task, old_status)
@@ -170,14 +197,14 @@ class TaskDialog(QDialog):
             now = datetime.now()
             task = Task(
                 id=str(uuid.uuid4()),
-                raw_md=text,
+                raw_md=text,  # temporary; normalized below
                 title=parsed.clean_title,
                 status=parsed.status,
                 tags=parsed.tags,
                 scheduled_date=parsed.scheduled_date,
                 deadline_date=parsed.deadline_date,
-                notes=notes,
-                recurrence_rule=recurrence,
+                deadline_time=parsed.deadline_time,
+                urgency=parsed.urgency,
                 created_at=now,
                 updated_at=now,
                 activity_log=[{
@@ -187,6 +214,8 @@ class TaskDialog(QDialog):
                     "progress": 100 if parsed.status == TaskStatus.DONE else 0,
                 }],
             )
+            # Normalize to canonical Markdown
+            task.raw_md = self._formatter.format(task)
             self._repository.insert(task)
             self._signal_bus.task_created.emit(task)
 

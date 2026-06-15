@@ -934,7 +934,7 @@ AppConfig 主题变更
 #### 需求
 
 - 单行 QLineEdit，Enter 创建任务
-- Markdown 语法输入：`- [ ] TODO <date> 标题 #标签`
+- Markdown 语法输入：`- [   ] <YYYY-MM-DD HH:MM> 标题 #标签`（规范格式，无状态关键字）
 - 解析失败时红色边框闪烁(400ms QTimer)
 - 创建后清空并发射 `task_created`
 - Ctrl+N 全局快捷键聚焦
