@@ -108,7 +108,7 @@
 <body>
 
 <h1>Tadado 使用手册</h1>
-<p>v1.0.0 &mdash; Markdown 驱动的 Windows 桌面任务管理工具 &middot; 轻量、离线、开源</p>
+<p>v0.2.2 &mdash; Markdown 驱动的 Windows / Linux 桌面任务管理工具 &middot; 轻量、离线、开源</p>
 
 <div class="toc">
 <h3>目录</h3>
@@ -129,22 +129,22 @@
 <h2 id="quickstart">1. 快速入门</h2>
 
 <h3>1.1 安装与启动</h3>
-<p>Tadado 提供 Windows 安装包一键安装。启动后程序常驻系统托盘，主窗口同步打开。所有数据存储在本地 SQLite 文件，无需联网、无需注册。</p>
+<p>Tadado 提供 Windows 安装包（<code>.exe</code>）和便携压缩包（<code>.zip</code> / <code>linux.tar.gz</code>）。启动后程序常驻系统托盘，主窗口同步打开。所有数据存储在本地 SQLite 文件，无需联网、无需注册。</p>
 
 <h3>1.2 创建任务</h3>
 <p>在任务视图顶部的输入框中输入 Markdown 格式的任务：</p>
-<pre><code>- [   ] 2026-06-15 完成使用手册编写 #文档</code></pre>
+<pre><code>- [   ] &lt;2026-06-15 14:30&gt; 完成使用手册编写 #文档</code></pre>
 
 <p>格式说明：</p>
 <table>
   <tr><th>部分</th><th>说明</th><th>示例</th></tr>
   <tr><td><code>- [   ]</code></td><td>任务前缀 + 优先级（<code>*</code> 数量 0-3，越紧急越多）</td><td><code>- [***]</code>（紧急）</td></tr>
-  <tr><td>截止日期</td><td><code>YYYY-MM-DD</code>，可选</td><td><code>2026-06-15</code></td></tr>
+  <tr><td>&lt;截止日期 时间&gt;</td><td><code>&lt;YYYY-MM-DD HH:MM&gt;</code>，<strong>整个尖括号可选</strong>——日期和时间均可省略</td><td><code>&lt;2026-06-15 14:30&gt;</code></td></tr>
   <tr><td>任务标题</td><td>必填，描述任务内容</td><td><code>完成使用手册编写</code></td></tr>
-  <tr><td>标签</td><td><code>#</code> 开头，空格分隔，可选</td><td><code>#文档</code></td></tr>
+  <tr><td>标签</td><td><code>#</code> 开头，空格分隔，可选（<code>#</code> 前须有空格或行首才识别为标签）</td><td><code>#文档</code></td></tr>
 </table>
 
-<div class="tip"><strong>提示</strong>优先级通过 <code>- [   ]</code> 中 <code>*</code> 的数量表示：<code>[   ]</code>=普通、<code>[*  ]</code>=关注、<code>[** ]</code>=重要、<code>[***]</code>=紧急。</div>
+<div class="tip"><strong>提示</strong>优先级通过 <code>- [   ]</code> 中 <code>*</code> 的数量表示：<code>[   ]</code>=普通、<code>[*  ]</code>=关注、<code>[** ]</code>=重要、<code>[***]</code>=紧急。日期、时间均为可选——不写截止日期也可以创建任务。状态（待办/进行中/已完成/逾期）由软件自动管理，无需在 Markdown 中标记。</div>
 
 <h3>1.3 界面概览</h3>
 <p>Tadado 有三个视图，通过标题栏按钮切换：</p>
@@ -170,39 +170,50 @@
 <p>9 列表格展示：复选框 / 序号 / 创建时间 / 任务内容 / 截止时间 / 进度 / 状态 / 标签 / 归档。</p>
 <ul>
   <li><strong>优先级渲染</strong> — 整行背景色标识：红（紧急）→ 橙（重要）→ 绿（关注）→ 淡蓝（普通）</li>
-  <li><strong>状态徽章</strong> — 待办 / 进行中 / 已完成 / 已逾期，彩色区分</li>
-  <li><strong>行选择</strong> — 单选/多选，选中任务红色加粗凸显</li>
-  <li><strong>分页</strong> — 每页 20/50/100 条</li>
-  <li><strong>全选</strong> — 工具栏全选按钮，配合批量操作</li>
+  <li><strong>状态徽章</strong> — 待办（蓝）/ 进行中（橙）/ 已完成（绿）/ 逾期（红），彩色圆角徽章</li>
+  <li><strong>自动逾期检测</strong> — 超过截止日期的未完成任务自动标记为"逾期"</li>
+  <li><strong>行选择</strong> — 支持单行选中和 <kbd>Ctrl</kbd>/<kbd>Shift</kbd> 多选，选中任务红色加粗凸显</li>
+  <li><strong>分页</strong> — 每页 20/50/100 条，默认 20</li>
+  <li><strong>已完成任务置底</strong> — 已完成任务自动排到列表底部，设置中可关闭</li>
 </ul>
 
 <h3>2.3 编辑任务</h3>
-<p>点击任务行，右侧弹出编辑面板：</p>
+<p><strong>方式一：双击编辑（快速）</strong></p>
+<ul>
+  <li>在任务列表中双击任务行，弹出快速编辑对话框</li>
+  <li>直接编辑 Markdown 源码，右侧实时解析预览（优先级、日期、标题、标签）</li>
+  <li>对话框显示任务创建时间，方便对照调整截止日期</li>
+  <li>保存时自动校验截止时间不早于创建时间</li>
+</ul>
+<p><strong>方式二：右侧编辑面板（完整）</strong></p>
+<p>单击任务行，右侧弹出编辑面板：</p>
 <ul>
   <li><strong>Markdown 源码编辑</strong> — 直接编辑原始 Markdown，右侧实时预览</li>
-  <li><strong>截止日期</strong> — 日历选择器 + 时间选择器</li>
+  <li><strong>截止日期</strong> — 日历选择器 + 时间选择器（精确到分钟）</li>
   <li><strong>活动时间线</strong> — 任务进展记录，支持追加新进度</li>
-  <li><strong>优先级</strong> — 下拉切换紧急程度</li>
+  <li><strong>优先级</strong> — 下拉切换紧急程度（紧急 / 重要 / 关注 / 普通）</li>
+  <li><strong>状态切换</strong> — 下拉切换状态，切换至"已完成"进度自动设为 100</li>
   <li><strong>分区选择</strong> — 将任务迁移到其他分区</li>
 </ul>
 <p>编辑后点击 <code>保存</code> 提交，<code>删除</code> 移除任务。</p>
 
 <h3>2.4 筛选与排序</h3>
 <ul>
-  <li><strong>全文搜索</strong> — SQLite FTS5，实时匹配</li>
-  <li><strong>状态过滤</strong> — 待办 / 进行中 / 已完成 / 已逾期</li>
+  <li><strong>全文搜索</strong> — SQLite FTS5 引擎，实时匹配中文和英文关键词（300ms 防抖）</li>
+  <li><strong>状态过滤</strong> — 待办 / 进行中 / 已完成 / 逾期</li>
   <li><strong>优先级过滤</strong> — 紧急 / 重要 / 关注 / 普通</li>
-  <li><strong>排序</strong> — 优先级 → 截止日期 → 创建时间</li>
+  <li><strong>排序</strong> — 5 种模式：优先级 / 截止时间 / 创建时间 / 状态 / 标题，默认"优先级"</li>
+  <li><strong>已完成任务置底</strong> — 所有排序模式下已完成任务自动排到列表底部，设置中可关闭此行为。组内已完成任务按完成时间倒序（最近完成的在最前）</li>
 </ul>
 
 <h3>2.5 右键菜单</h3>
-<p>在任务行上右键可快速：更改状态 / 更改优先级 / 调整分区 / 延后处理 / 中止 / 重启 / 删除。支持多选批量操作。</p>
+<p>在任务行上右键可快速：更改状态 / 更改优先级 / 调整分区 / 延后处理 / 中止 / 重启 / 删除 / 复制 Markdown。支持多选批量操作。</p>
 
 <h3>2.6 统计与速览</h3>
 <ul>
-  <li><strong>状态徽章条</strong> — 各状态任务计数，点击快速筛选</li>
-  <li><strong>进度动态条</strong> — 6 个时间段按钮（昨天/今天/上周/本周/上月/本月），显示最近活跃任务的最新进展</li>
-  <li><strong>速览栏</strong> — 6 个预设按钮（昨天/今天/上周/本周/上月/本月）+ 自动轮播任务卡片（每 5 秒切换，每组 3 个）</li>
+  <li><strong>状态徽章条</strong> — 各状态任务计数（待办/进行中/已完成/逾期），点击快速筛选</li>
+  <li><strong>进度动态条</strong> — 6 个时间段按钮（昨天/今天/上周/本周/上月/本月），展示最近活跃任务的最新进展</li>
+  <li><strong>速览轮播</strong> — 自动轮播任务卡片（每 5 秒切换，每组最多 3 个），按优先级排序，已完成任务排在最末</li>
 </ul>
 <h4>速览栏过滤逻辑</h4>
 <p>点击预设按钮后，任务列表按 <strong>创建时间 ≤ 该日上限</strong> 过滤，并<strong>排除已完成已归档</strong>的任务：</p>
@@ -266,7 +277,7 @@
 <h2 id="partitions">5. 分区管理</h2>
 
 <h3>5.1 什么是分区</h3>
-<p>分区是独立的任务空间，不同分区的任务、标签互不影响。默认提供：<strong>工作</strong>、<strong>学习</strong>、<strong>个人</strong>。</p>
+<p>分区是独立的任务空间，不同分区的任务、标签互不影响。首次启动时自动创建 <strong>演示空间</strong>（含 15 个演示任务，覆盖全部优先级和状态），用户可自行创建更多分区。</p>
 
 <h3>5.2 切换分区</h3>
 <p>点击状态栏最左侧的分区名称 → 下拉菜单选择目标分区。当前分区以 ✓ 标记。</p>
@@ -280,7 +291,7 @@
 </ul>
 
 <h3>5.4 管理分区</h3>
-<p>在设置对话框的分区表格中：新建 / 重命名 / 设密码 / 删除（分区内有任务时不可删除）。</p>
+<p>在设置对话框的分区表格中：新建 / 重命名 / 设默认 / 设密码 / 可见性切换 / 归档配置 / 自动锁定配置 / 删除（分区内有任务时不可删除）。分区表格支持右键菜单快捷操作。</p>
 
 <!-- ===== 6. Tray ===== -->
 <h2 id="tray">6. 系统托盘与提醒</h2>
@@ -308,32 +319,43 @@
 
 <h3>7.1 外观</h3>
 <ul>
-  <li><strong>主题</strong> — 亮色 / 暗色</li>
-  <li><strong>最小化到托盘</strong> — 开启后最小化按钮隐藏到托盘</li>
+  <li><strong>主题</strong> — 亮色 / 暗色，自动适配系统偏好</li>
+  <li><strong>最小化到托盘</strong> — 开启后最小化按钮隐藏到系统托盘</li>
+  <li><strong>开机自动启动</strong> — 开启后随系统自动启动 Tadado</li>
 </ul>
 
 <h3>7.2 任务列表</h3>
 <ul>
   <li><strong>每页条数</strong> — 20 / 50 / 100</li>
   <li><strong>默认排序</strong> — 优先级 / 截止日期 / 创建时间 / 状态 / 标题</li>
+  <li><strong>已完成任务置底</strong> — 开启后（默认），所有排序模式下已完成任务自动排在列表底部；关闭后与活跃任务混合排列</li>
   <li><strong>热力图起始年份</strong> — 日历热力图的数据起始年</li>
+  <li><strong>热力图配色方案</strong> — 4 组配色可选</li>
 </ul>
 
 <h3>7.3 提醒</h3>
 <ul>
-  <li><strong>启用提醒</strong> — 开启/关闭（默认关闭）</li>
-  <li><strong>间隔分钟</strong> — 到期前多久提醒（30分/60分/1天）</li>
-  <li><strong>免打扰开始/结束</strong> — HH:MM 格式</li>
+  <li><strong>每日摘要</strong> — 开启/关闭（默认关闭），在设定时间推送今日任务摘要</li>
+  <li><strong>推送时间</strong> — HH:MM 格式，每日摘要的推送时刻（默认 09:00）</li>
+  <li><strong>安静时段</strong> — HH:MM 格式，该时段内不弹出任何通知（默认 22:00—08:00）</li>
 </ul>
 
-<h3>7.4 分区管理</h3>
+<h3>7.4 归档</h3>
 <ul>
-  <li>分区表格：名称 / 默认分区 / 可见 / 自动归档 / 归档阈值(天) / 自动锁定(分) / 密码</li>
-  <li>右键菜单：设默认 / 重命名 / 设密码 / 删除</li>
+  <li><strong>分区表格</strong> — 7 列：名称 / 默认分区 / 可见 / 自动归档 / 归档阈值(天) / 自动锁定(分) / 密码</li>
+  <li><strong>自动归档</strong> — 分区级别开关，开启后每日 0 点自动归档超过阈值的已完成任务</li>
+  <li><strong>归档阈值</strong> — 任务完成后多少天自动归档（默认 9999 = 不归档）</li>
+  <li><strong>新增分区</strong> — 点击 <code>+ 新增分区</code> 按钮创建新分区</li>
 </ul>
 
-<h3>7.5 MOTD</h3>
-<p>自定义励志语录，状态栏循环显示。</p>
+<h3>7.5 激励语</h3>
+<p>自定义欢迎页励志语录，4 条分别对应：今日无事 / 本周无事 / 无逾期 / 无任务四种场景。</p>
+<ul>
+  <li><strong>今日</strong> — 今天没有截止任务时显示</li>
+  <li><strong>本周</strong> — 本周没有截止任务时显示</li>
+  <li><strong>逾期</strong> — 无逾期任务时显示</li>
+  <li><strong>全部</strong> — 没有任何任务时显示</li>
+</ul>
 
 <!-- ===== 8. FAQ ===== -->
 <h2 id="faq">8. 常见问题</h2>
@@ -360,11 +382,18 @@
   <li>Windows 设置 → 通知 → 确认 Tadado 权限已开启</li>
 </ol>
 
+<h3>Q: 已完成任务为什么在列表底部</h3>
+<ol>
+  <li>这是 v0.2.2 新增的默认行为——已完成任务自动置底，让活跃任务始终在前</li>
+  <li>如需关闭：设置 → 任务列表 → 取消勾选"已完成任务置底" → 保存</li>
+</ol>
+
 <h3>Q: 如何备份数据</h3>
 <ol>
   <li>关闭 Tadado</li>
   <li>复制 <code>resources/tadado.data</code> 到安全位置</li>
   <li>恢复时将备份文件覆盖同名文件</li>
+  <li>配置文件位于 <code>resources/config.json</code>，可一并备份</li>
 </ol>
 
 <h3>Q: 程序无法启动</h3>
@@ -390,7 +419,7 @@
 <p>Tadado 采用 MIT 许可证开源，可自由使用、修改和分发，包括商业用途。</p>
 
 <hr>
-<footer>Tadado v1.0.0 &middot; MIT License &middot; <a href="https://github.com/HananxR/Tadado">GitHub</a> &middot; HananxR &lt;hanxy8413@gmail.com&gt;</footer>
+<footer>Tadado v0.2.2 &middot; MIT License &middot; <a href="https://github.com/HananxR/Tadado">GitHub</a> &middot; HananxR &lt;hanxy8413@gmail.com&gt;</footer>
 
 </body>
 </html>
