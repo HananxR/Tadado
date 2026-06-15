@@ -110,7 +110,7 @@ class ActivityContentView(QWidget):
     def show_hint(self) -> None:
         t = get_tokens()
         html = f"""<!DOCTYPE html><html><body style="
-            font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+            font-family: 'Microsoft YaHei', 'WenQuanYi Micro Hei', -apple-system, sans-serif;
             display: flex; align-items: center; justify-content: center;
             height: 100%; margin: 0; background: transparent;
         "><div style="text-align: center; color: {t.text_secondary}; font-size: 11px;">
@@ -164,7 +164,7 @@ class ActivityContentView(QWidget):
 
         if not items:
             html = f"""<!DOCTYPE html><html><body style="
-                font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+                font-family: 'Microsoft YaHei', 'WenQuanYi Micro Hei', -apple-system, sans-serif;
                 padding: 16px; margin: 0; background: transparent;
                 color: {t.text_secondary}; font-size: 11px;
             ">此时段内无活动记录</body></html>"""
@@ -182,7 +182,7 @@ class ActivityContentView(QWidget):
 
         if not items:
             html = f"""<!DOCTYPE html><html><body style="
-                font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+                font-family: 'Microsoft YaHei', 'WenQuanYi Micro Hei', -apple-system, sans-serif;
                 padding: 16px; margin: 0; background: transparent;
                 color: {t.text_secondary}; font-size: 11px;
             ">无匹配结果</body></html>"""
@@ -218,7 +218,7 @@ class ActivityContentView(QWidget):
                 plain_text += f"    {e}\n"
 
         html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-            body {{ font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+            body {{ font-family: 'Microsoft YaHei', 'WenQuanYi Micro Hei', -apple-system, sans-serif;
                    padding: 16px; margin: 0; background: transparent;
                    color: {t.text_primary}; font-size: 11px; line-height: 1.7; }}
         </style></head><body>{"".join(html_parts)}</body></html>"""

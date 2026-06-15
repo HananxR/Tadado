@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import QApplication
 
@@ -297,6 +298,9 @@ class TadadoApp(QApplication):
         self.setOrganizationName("Tadado")
         self.setQuitOnLastWindowClosed(False)
 
+        # ── Load bundled CJK font on Linux (Microsoft YaHei not available) ──
+        self._load_bundled_fonts()
+
         # ── Config + theme must load before the shield so QSS is stable ──
         self._config = AppConfig()
         init_tokens(self._config)
@@ -399,6 +403,24 @@ class TadadoApp(QApplication):
         w.setWindowState(w.windowState() & ~Qt.WindowState.WindowMinimized)
         w.raise_()
         w.activateWindow()
+
+    # ------------------------------------------------------------------
+    # Fonts
+    # ------------------------------------------------------------------
+
+    def _load_bundled_fonts(self) -> None:
+        """Load bundled CJK + Emoji fonts on Linux (Windows has these system-wide)."""
+        if sys.platform == "win32":
+            return
+        # CJK fallback: WenQuanYi Micro Hei (OFL)
+        cjk = self._resource_path("fonts", "WenQuanYiMicroHei.ttc")
+        if cjk and cjk.exists():
+            QFontDatabase.addApplicationFont(str(cjk))
+        # Emoji fallback: Noto Color Emoji (OFL)
+        emoji = self._resource_path("fonts", "NotoColorEmoji.ttf")
+        if emoji and emoji.exists():
+            QFontDatabase.addApplicationFont(str(emoji))
+        # Do NOT call setFont() — let Qt match fonts per-character via fallback chain.
 
     # ------------------------------------------------------------------
     # Theme

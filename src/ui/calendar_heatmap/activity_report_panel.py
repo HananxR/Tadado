@@ -134,7 +134,7 @@ class ActivityReportPanel(QWidget):
         """Show placeholder hint."""
         t = get_tokens()
         html = f"""<!DOCTYPE html><html><body style="
-            font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+            font-family: 'Microsoft YaHei', 'WenQuanYi Micro Hei', -apple-system, sans-serif;
             display: flex; align-items: center; justify-content: center;
             height: 100%; margin: 0; background: transparent;
         ">
@@ -371,7 +371,7 @@ class ActivityReportPanel(QWidget):
             footer += "</div>"
 
         html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-            body {{ font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+            body {{ font-family: 'Microsoft YaHei', 'WenQuanYi Micro Hei', -apple-system, sans-serif;
                    padding: 16px; margin: 0; background: transparent;
                    color: {t.text_primary}; font-size: 11px; line-height: 1.6; }}
         </style></head><body>
@@ -473,7 +473,7 @@ class ActivityReportPanel(QWidget):
         }
 
         html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-            body {{ font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+            body {{ font-family: 'Microsoft YaHei', 'WenQuanYi Micro Hei', -apple-system, sans-serif;
                    padding: 16px; margin: 0; background: transparent;
                    color: {t.text_primary}; font-size: 11px; line-height: 1.6; }}
         </style></head><body>

@@ -5,8 +5,8 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('resources', 'resources'), ('CHANGELOG.md', '.')],
-    hiddenimports=['PySide6.QtSvg'],
+    datas=[('resources', 'resources')],
+    hiddenimports=['PySide6.QtSvg', 'src.version'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -32,7 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['resources\\icons\\app.ico'],
+    icon=['resources/icons/app.png'],
 )
 coll = COLLECT(
     exe,

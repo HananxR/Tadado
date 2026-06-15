@@ -105,7 +105,7 @@ class TimelineDetailPanel(QWidget):
         """Show hint when no task is selected."""
         t = get_tokens()
         html = f"""<!DOCTYPE html><html><body style="
-            font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+            font-family: 'Microsoft YaHei', 'WenQuanYi Micro Hei', -apple-system, sans-serif;
             display: flex; align-items: center; justify-content: center;
             height: 100%; margin: 0; background: transparent;
         ">
@@ -199,7 +199,7 @@ class TimelineDetailPanel(QWidget):
             timeline = f'<div style="margin-top:16px; color:{t.text_secondary}; font-size:11px;">此时段内无活动记录</div>'
 
         html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-            body {{ font-family: -apple-system, 'Microsoft YaHei', sans-serif;
+            body {{ font-family: 'Microsoft YaHei', 'WenQuanYi Micro Hei', -apple-system, sans-serif;
                    padding: 16px; margin: 0; background: transparent;
                    color: {t.text_primary}; font-size: 11px; line-height: 1.5; }}
         </style></head><body>

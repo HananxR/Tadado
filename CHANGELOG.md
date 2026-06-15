@@ -4,6 +4,16 @@ Tadado 版本更新日志。格式参考 [Keep a Changelog](https://keepachangel
 
 ---
 
+## [0.2.1] — 2026-06-15
+
+### Added
+- **Linux 版本**：新增 Linux 打包支持，提供 `.tar.gz` 便携包
+- **内置 CJK 字体**：文泉驿微米黑，Linux 下自动注册为回退字体，解决中文显示异常
+- **内置 Emoji 字体**：Noto Color Emoji，Linux 下确保 emoji 正常渲染
+
+### Changed
+- **CSS `font-family` 跨平台回退**：新增 `WenQuanYi Micro Hei` 在 Linux 上替补 `Microsoft YaHei`
+
 ## [0.2.0] — 2026-06-12
 
 ### Changed
