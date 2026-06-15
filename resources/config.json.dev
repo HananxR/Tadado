@@ -1,0 +1,31 @@
+{
+  "general": {
+    "minimize_to_tray": true,
+    "auto_start": false,
+    "default_partition": "64d6aa31-bc20-4389-a2d8-11a3c2ec8d0e",
+    "hidden_partitions": [],
+    "last_partition_id": "64d6aa31-bc20-4389-a2d8-11a3c2ec8d0e",
+    "page_size": 20,
+    "default_sort": "urgency"
+  },
+  "display": {
+    "theme": "light",
+    "heatmap_start_year": 2026,
+    "heatmap_color_scheme": "sunbeam"
+  },
+  "reminders": {
+    "enabled": false,
+    "daily_digest_time": "09:00",
+    "quiet_hours_start": "22:00",
+    "quiet_hours_end": "08:00"
+  },
+  "archive": {
+    "enabled": false
+  },
+  "motd": {
+    "today": "今日无事，宜放松身心 🌿",
+    "week": "本周清风徐来，按自己的节奏前行 🚶",
+    "overdue": "无挂碍事，一身轻松，快乐生活 ✨",
+    "all": "一张白纸，正好画你想要的生活 🎨"
+  }
+}

@@ -153,7 +153,7 @@ class SettingsDialog(QDialog):
         grid.addWidget(_field(self._page_size_combo,
                                _sub("排序:"), self._default_sort_combo), r, 1); r += 1
 
-        self._completed_last_cb = QCheckBox("已完成任务置底")
+        self._completed_last_cb = QCheckBox("已完成任务排在末尾")
         self._completed_last_cb.setChecked(self._config.sort_completed_last)
         grid.addWidget(_label(""), r, 0)
         grid.addWidget(_field(self._completed_last_cb), r, 1); r += 1
