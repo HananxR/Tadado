@@ -19,6 +19,7 @@ DEFAULT_CONFIG: dict = {
         "last_partition_id": "",
         "page_size": 20,
         "default_sort": "urgency",
+        "sort_completed_last": True,
     },
     "display": {
         "theme": "light",
@@ -130,6 +131,10 @@ class AppConfig(QObject):
     @property
     def default_sort(self) -> str:
         return self._get("general", "default_sort")
+
+    @property
+    def sort_completed_last(self) -> bool:
+        return bool(self._get("general", "sort_completed_last"))
 
     @property
     def reminders_enabled(self) -> bool:

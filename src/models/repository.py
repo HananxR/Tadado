@@ -129,6 +129,7 @@ class TaskRepository:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
+        self.completed_last: bool = True  # 已完成任务自动置底
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -1099,8 +1100,7 @@ class TaskRepository:
             (task.id,),
         )
 
-    @staticmethod
-    def _build_order_clauses(sort_by: list[SortCriterion]) -> list[str]:
+    def _build_order_clauses(self, sort_by: list[SortCriterion]) -> list[str]:
         _field_map = {
             "deadline": "deadline_date",
             "created": "created_at",
@@ -1116,6 +1116,9 @@ class TaskRepository:
             "activity_month": "activity_month",
         }
         clauses: list[str] = []
+        # 已完成任务置底：DONE=1, 其他=0 → 活跃任务自然在前
+        if self.completed_last:
+            clauses.append("CASE WHEN status = 'DONE' THEN 1 ELSE 0 END ASC")
         for sc in sort_by:
             col = _field_map.get(sc.field, sc.field)
             if sc.field == "status":
@@ -1140,6 +1143,9 @@ class TaskRepository:
             else:
                 direction = "ASC" if sc.ascending else "DESC"
                 clauses.append(f"{col} {direction}")
+        # Completed tasks: order by completion time descending within the DONE group
+        if self.completed_last:
+            clauses.append("completed_at DESC")
         # Stable tiebreaker: insertion order for same-timestamp tasks
         clauses.append("rowid ASC")
         return clauses

@@ -2363,6 +2363,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_heatmap_widget'):
             self._heatmap_widget.force_refresh()
 
+        # Sync completed-last sort setting to repository
+        self._repository.completed_last = self._config.sort_completed_last
+
         self._on_data_changed()
 
     # ------------------------------------------------------------------

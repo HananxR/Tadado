@@ -322,6 +322,7 @@ class TadadoApp(QApplication):
 
         # Core services
         self._repository = TaskRepository(self._config.db_path())
+        self._repository.completed_last = self._config.sort_completed_last
         self._repository.open()
 
         # Ensure demo partition exists on first launch (skipped in frozen mode

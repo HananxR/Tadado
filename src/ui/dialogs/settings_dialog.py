@@ -153,6 +153,11 @@ class SettingsDialog(QDialog):
         grid.addWidget(_field(self._page_size_combo,
                                _sub("排序:"), self._default_sort_combo), r, 1); r += 1
 
+        self._completed_last_cb = QCheckBox("已完成任务置底")
+        self._completed_last_cb.setChecked(self._config.sort_completed_last)
+        grid.addWidget(_label(""), r, 0)
+        grid.addWidget(_field(self._completed_last_cb), r, 1); r += 1
+
         # ── 提醒 ──
         grid.addWidget(_section_header("提醒"), r, 0, 1, 2); r += 1
         self._reminders_cb = QCheckBox("每日摘要")
@@ -561,6 +566,7 @@ class SettingsDialog(QDialog):
         set_autostart(self._auto_start_cb.isChecked())
         self._config.set("general", "page_size", value=self._page_size_combo.currentData())
         self._config.set("general", "default_sort", value=self._default_sort_combo.currentData())
+        self._config.set("general", "sort_completed_last", value=self._completed_last_cb.isChecked())
         self._config.set("display", "theme", value=self._theme_combo.currentData())
         self._config.set("display", "heatmap_start_year", value=self._heatmap_year_combo.currentData())
         self._config.set("display", "heatmap_color_scheme", value=self._color_scheme_combo.currentData())

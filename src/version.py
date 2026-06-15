@@ -12,7 +12,7 @@ Usage::
 
 from __future__ import annotations
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 
 def get_version() -> str:
@@ -43,6 +43,21 @@ def parse_version(version_str: str) -> tuple[int, ...]:
 # ------------------------------------------------------------------
 
 _RELEASE_HIGHLIGHTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "0.2.2": {
+        "新增": (
+            "已完成任务置底排序：DONE 任务自动排到列表底部，设置中可关闭",
+            "双击编辑对话框：快速编辑 Markdown 内容，实时解析预览",
+        ),
+        "优化": (
+            "双击编辑 Markdown 格式对齐右侧编辑面板规范",
+            "预览增强：新增优先级和截止时刻显示",
+            "中文按钮：对话框确定/取消按钮中文化",
+        ),
+        "修复": (
+            "TaskDialog NameError：修复 TaskStatus 未导入导致崩溃",
+            "raw_md 规范化：双击编辑保存时统一输出格式",
+        ),
+    },
     "0.2.1": {
         "新增": (
             "Linux 版本: 提供 <code>linux.tar.gz</code> 便携包",
