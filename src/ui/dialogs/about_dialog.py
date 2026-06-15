@@ -21,8 +21,8 @@ from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 from ...version import get_release_highlights, get_version_display
 
 _FEATURES = [
-    ("📝 Markdown 任务管理", "语法创建，优先级、截止时间、全文搜索"),
-    ("📊 活动分析", "日历热力图、活动时间线、工作报告导出"),
+    ("📝 任务管理", "Markdown 语法一键配置优先级、截止日期与标签分类"),
+    ("📊 活动分析", "日历热力图、活动时间线、活动报告汇总与导出"),
     ("🔧 批量操作", "全选、右键批量变更状态、延后、中止、删除"),
     ("🏷 标签管理", "重命名、合并，全局自动同步"),
     ("🔒 分区管理", "多分区隔离，密码保护，自动锁定"),
@@ -42,12 +42,11 @@ class AboutDialog(QDialog):
         gh = "⭐ 推荐 " if github_star else ""
         ay = "⭐ 推荐 " if aliyun_star else ""
         return (
-            '<p style="margin:6px 0 2px 0;font-size:11px;">下载渠道</p>'
             '<p style="margin:2px 0 2px 12px;font-size:11px;">'
             f'🌐 <a href="{_GITHUB_RELEASES}" style="color: palette(link);">{gh}GitHub Releases</a>'
             '</p>'
             '<p style="margin:2px 0 2px 12px;font-size:11px;">'
-            f'☁️ <a href="{ALIYUN_DRIVE_URL}" style="color: palette(link);">{ay}阿里云盘（仅提供安装版）</a>'
+            f'☁️ <a href="{ALIYUN_DRIVE_URL}" style="color: palette(link);">{ay}阿里云盘（仅提供 .exe）</a>'
             '</p>'
         )
 
@@ -116,44 +115,76 @@ class AboutDialog(QDialog):
         layout.addWidget(_h_line())
         layout.addSpacing(14)
 
-        # ── Feature list ──
+        # ── 特色功能说明 ──
+        feat_title = QLabel("特色功能说明")
+        feat_title.setStyleSheet("font-size: 12px; font-weight: 700;")
+        layout.addWidget(feat_title)
+        layout.addSpacing(4)
+
         for title, desc in _FEATURES:
             row = QLabel(
-                f'<b style="font-size:12px;">{title}</b>'
-                f'<span style="font-size:11px; color:palette(mid);">: {desc}</span>'
+                f'<span style="font-size:11px;">{title}: {desc}</span>'
             )
             row.setWordWrap(True)
             layout.addWidget(row)
-            layout.addSpacing(6)
+            layout.addSpacing(2)
 
-        layout.addSpacing(6)
+        layout.addSpacing(4)
 
         # ── Separator ──
         layout.addWidget(_h_line())
         layout.addSpacing(14)
 
         # ══════════════════════════════════════════════════════════════
-        # 版本与更新（含升级日志）
+        # 版本更新记录
         # ══════════════════════════════════════════════════════════════
-        section_label = QLabel("版本与更新")
-        section_label.setStyleSheet("font-size: 12px; font-weight: 700;")
-        layout.addWidget(section_label)
+        highlights = get_release_highlights()
+        if highlights:
+            _CAT_ICONS = {"新增": "✨", "优化": "🔧", "修复": "🐛"}
+            hl_parts = [f'<p style="margin:0 0 2px 0;font-size:12px;font-weight:700;">版本更新记录 ({get_version_display()})</p>']
+            for cat, items in highlights.items():
+                if not items:
+                    continue
+                icon = _CAT_ICONS.get(cat, "•")
+                hl_parts.append(
+                    f'<p style="margin:4px 0 2px 12px;font-size:11px;font-weight:600;">{icon} {cat}</p>'
+                )
+                for item in items:
+                    safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    safe = safe.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
+                    hl_parts.append(
+                        f'<p style="margin:2px 0 2px 24px;font-size:11px;">· {safe}</p>'
+                    )
+            hl_label = QLabel("".join(hl_parts))
+            hl_label.setTextFormat(Qt.TextFormat.RichText)
+            hl_label.setStyleSheet(f"QLabel {{ color: {t.text_primary}; }}")
+        else:
+            hl_label = QLabel(
+                f'<p style="margin:6px 0 2px 0;font-size:11px;color:{t.text_secondary};">'
+                f'暂无当前版本更新记录</p>'
+            )
+            hl_label.setTextFormat(Qt.TextFormat.RichText)
+        hl_label.setWordWrap(True)
+        layout.addWidget(hl_label)
+
+        # ── 下载渠道 ──
+        section_label2 = QLabel("下载渠道")
+        section_label2.setStyleSheet("font-size: 12px; font-weight: 700;")
+        layout.addSpacing(10)
+        layout.addWidget(section_label2)
         layout.addSpacing(4)
 
-        # Row: version + check button
-        version_row = QWidget()
-        version_row_layout = QHBoxLayout(version_row)
-        version_row_layout.setContentsMargins(0, 0, 0, 0)
-        version_row_layout.setSpacing(8)
+        self._channels_label = QLabel(self._build_channels_html())
+        self._channels_label.setOpenExternalLinks(True)
+        self._channels_label.setStyleSheet("font-size: 11px;")
+        self._channels_label.setWordWrap(True)
+        layout.addWidget(self._channels_label)
 
-        self._version_label = QLabel(
-            f'当前版本: <b>{get_version_display()}</b>'
-        )
-        self._version_label.setTextFormat(Qt.TextFormat.RichText)
-        self._version_label.setStyleSheet(
-            f"font-size: 11px; color: {t.text_primary};"
-        )
-        version_row_layout.addWidget(self._version_label, 1)
+        # Update check (below channels, inline result avoids empty row)
+        check_row = QWidget()
+        check_row_layout = QHBoxLayout(check_row)
+        check_row_layout.setContentsMargins(0, 4, 0, 0)
+        check_row_layout.setSpacing(8)
 
         self._check_btn = QPushButton("检查更新")
         self._check_btn.setFixedHeight(26)
@@ -175,44 +206,15 @@ class AboutDialog(QDialog):
             f"}}"
         )
         self._check_btn.clicked.connect(self._on_check_updates)
-        version_row_layout.addWidget(self._check_btn)
-        layout.addWidget(version_row)
+        check_row_layout.addWidget(self._check_btn)
 
-        # Upgrade highlights (below version row)
-        highlights = get_release_highlights()
-        if highlights:
-            _CAT_ICONS = {"新增": "✨", "优化": "🔧", "修复": "🐛"}
-            hl_parts = ['<p style="margin:6px 0 2px 0;font-size:11px;">升级内容</p>']
-            for cat, items in highlights.items():
-                if not items:
-                    continue
-                icon = _CAT_ICONS.get(cat, "•")
-                hl_parts.append(
-                    f'<p style="margin:4px 0 2px 12px;font-size:11px;font-weight:600;">{icon} {cat}</p>'
-                )
-                for item in items:
-                    safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                    hl_parts.append(
-                        f'<p style="margin:2px 0 2px 24px;font-size:11px;">· {safe}</p>'
-                    )
-            hl_label = QLabel("".join(hl_parts))
-            hl_label.setWordWrap(True)
-            hl_label.setTextFormat(Qt.TextFormat.RichText)
-            hl_label.setStyleSheet(f"QLabel {{ color: {t.text_primary}; }}")
-            layout.addWidget(hl_label)
-
-        # Download channels (below highlights)
-        self._channels_label = QLabel(self._build_channels_html())
-        self._channels_label.setOpenExternalLinks(True)
-        self._channels_label.setStyleSheet("font-size: 11px;")
-        self._channels_label.setWordWrap(True)
-        layout.addWidget(self._channels_label)
-
-        # Result text (below channels)
         self._result_label = QLabel("")
         self._result_label.setWordWrap(True)
-        self._result_label.setVisible(False)
-        layout.addWidget(self._result_label)
+        self._result_label.setStyleSheet(
+            f"font-size: 11px; color: {t.text_secondary};"
+        )
+        check_row_layout.addWidget(self._result_label, 1)
+        layout.addWidget(check_row)
 
         layout.addSpacing(14)
 
@@ -221,9 +223,9 @@ class AboutDialog(QDialog):
         layout.addSpacing(14)
 
         # ══════════════════════════════════════════════════════════════
-        # 交流方式
+        # 交流反馈
         # ══════════════════════════════════════════════════════════════
-        contact_title = QLabel("交流方式")
+        contact_title = QLabel("交流反馈")
         contact_title.setStyleSheet("font-size: 12px; font-weight: 700;")
         layout.addWidget(contact_title)
         layout.addSpacing(4)
@@ -269,23 +271,13 @@ class AboutDialog(QDialog):
     def _on_check_updates(self) -> None:
         if self._update_checker is None:
             self._result_label.setText("⚠ 更新检测不可用")
-            self._result_label.setStyleSheet(
-                f"font-size: 11px; padding-top: 4px;"
-                f"color: {get_tokens().text_secondary};"
-            )
             self._result_label.setVisible(True)
             return
 
         self._check_btn.setEnabled(False)
         self._check_btn.setText("检查中...")
-        # Show checking status inline
-        self._version_label.setText(
-            f'当前版本: <b>{get_version_display()}</b>  ···'
-        )
-        self._version_label.setStyleSheet(
-            f"font-size: 11px; color: {get_tokens().text_secondary};"
-        )
-        self._result_label.setVisible(False)
+        self._result_label.setText("···")
+        self._result_label.setVisible(True)
         # Reset channels to default (remove any ⭐ from previous check)
         self._channels_label.setText(self._build_channels_html())
 
@@ -303,23 +295,16 @@ class AboutDialog(QDialog):
         self._check_btn.setText("检查更新")
 
         if update_info is None:
-            self._version_label.setText(
-                f'当前版本: <b>{get_version_display()}</b>'
-                f'  <span style="color:{t.success};">✓ 已是最新</span>'
-            )
-            self._version_label.setStyleSheet(
-                f"font-size: 11px; color: {t.text_primary};"
+            self._result_label.setText(
+                f'<span style="color:{t.success};">✓ 已是最新版本</span>'
             )
         else:
             self._update_info = update_info
             latest = update_info.get("latest_version", "")
             source = update_info.get("source", "github")
-            self._version_label.setText(
-                f'当前版本: <b>{get_version_display()}</b>  →  <b>{latest}</b>'
+            self._result_label.setText(
+                f'→ 发现新版本 <b>{latest}</b>'
                 f'  <span style="color:{t.accent};">🆕</span>'
-            )
-            self._version_label.setStyleSheet(
-                f"font-size: 11px; color: {t.text_primary};"
             )
             # Mark the recommended channel with ⭐
             if source == "aliyunpan":

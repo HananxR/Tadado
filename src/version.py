@@ -43,6 +43,12 @@ def parse_version(version_str: str) -> tuple[int, ...]:
 # ------------------------------------------------------------------
 
 _RELEASE_HIGHLIGHTS: dict[str, dict[str, tuple[str, ...]]] = {
+    "0.2.1": {
+        "新增": (
+            "Linux 版本: 提供 <code>linux.tar.gz</code> 便携包",
+        ),
+    },
+
     "0.2.0": {
         "新增": (
             "状态下拉框即时刷新进度：切换至已完成→100，切回进行中→80",

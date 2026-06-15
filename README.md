@@ -13,9 +13,11 @@
   <a href="https://github.com/HananxR/Tadado/releases"><img src="https://img.shields.io/github/v/release/HananxR/Tadado?color=6366F1"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green"></a>
   <a href="#"><img src="https://img.shields.io/badge/python-3.10+-blue"></a>
-  <a href="#"><img src="https://img.shields.io/badge/platform-Windows_10_11-0078D6"></a>
+  <a href="#"><img src="https://img.shields.io/badge/platform-Windows_Linux-0078D6"></a>
   <a href="https://github.com/HananxR/Tadado/actions"><img src="https://github.com/HananxR/Tadado/actions/workflows/test.yml/badge.svg?branch=main"></a>
 </p>
+
+> 🐧 **v0.2.1 起支持 Linux** — GitHub Releases 提供 `linux.tar.gz` 便携包，解压即用。
 
 ---
 

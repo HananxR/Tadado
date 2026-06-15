@@ -28,9 +28,9 @@ Tadado公众号文章.md
 # OS
 .DS_Store
 Thumbs.db
-release.ps1
-upload_aliyun.ps1
-build.bat
 .github_token
-installer.iss
 releases/
+pack_scripts/
+Tadado.spec
+installer.iss
+ChineseSimplified.isl
