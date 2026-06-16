@@ -194,7 +194,7 @@ class StartupShield(QWidget):
                 layout.addSpacing(22)
 
         # app name
-        name = QLabel("TADADO")
+        name = QLabel("Tadado")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name.setFont(QFont("Microsoft YaHei", 38, QFont.Weight.Bold))
         name.setStyleSheet(
