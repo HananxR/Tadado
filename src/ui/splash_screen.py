@@ -23,7 +23,7 @@ from PySide6.QtGui import (
     QScreen,
 )
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGraphicsDropShadowEffect, QLabel, QVBoxLayout, QWidget
 
 # ---------------------------------------------------------------------------
 # Chinese weekday names for date display
@@ -193,13 +193,18 @@ class StartupShield(QWidget):
                 layout.addLayout(ic_wrapper)
                 layout.addSpacing(22)
 
-        # app name
+        # app name — accent colour with subtle glow
         name = QLabel("Tadado")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name.setFont(QFont("Microsoft YaHei", 38, QFont.Weight.Bold))
         name.setStyleSheet(
-            f"color: {self._fg.name()}; background: transparent;"
+            f"color: {self._accent.name()}; background: transparent;"
         )
+        _name_glow = QGraphicsDropShadowEffect()
+        _name_glow.setBlurRadius(18)
+        _name_glow.setOffset(0, 0)
+        _name_glow.setColor(self._accent.lighter(140))
+        name.setGraphicsEffect(_name_glow)
         layout.addWidget(name)
 
         layout.addSpacing(8)
@@ -209,7 +214,7 @@ class StartupShield(QWidget):
         tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline.setFont(QFont("Microsoft YaHei", 13))
         tagline.setStyleSheet(
-            f"color: {self._accent.name()}; background: transparent;"
+            f"color: {self._sub.name()}; background: transparent;"
         )
         layout.addWidget(tagline)
 
