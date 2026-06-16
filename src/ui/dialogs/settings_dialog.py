@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import date
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -18,8 +18,9 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QTableWidget,
-    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -30,29 +31,43 @@ from ...utils.design_tokens import get_surface_color, get_tokens, is_dark
 from ...utils.signal_bus import get_signal_bus
 from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 from ..widgets.dropdown import DropdownWidget
+from ..widgets.toggle_switch import ToggleSwitch
 
 _DROP_W = 120
 
 
+class _CenterHost(QWidget):
+    """Transparent host that centers a child widget via stretch-sandwich layout."""
+
+    def __init__(self, child: QWidget, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.addStretch()
+        h = QHBoxLayout()
+        h.setContentsMargins(0, 0, 0, 0)
+        h.addStretch()
+        h.addWidget(child)
+        h.addStretch()
+        v.addLayout(h)
+        v.addStretch()
+
+
 def _wrap_center(w: QWidget) -> QWidget:
     """Wrap a widget in a centered container for table cell alignment."""
-    c = QWidget()
-    lay = QHBoxLayout(c)
-    lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    lay.addWidget(w)
-    lay.setContentsMargins(0, 0, 0, 0)
-    return c
+    return _CenterHost(w)
 
 
 def _section_header(text: str) -> QLabel:
-    """Return a theme-coloured section header label with top spacing."""
+    """Return a theme-coloured section header label."""
     t = get_tokens()
     label = QLabel(text)
     label.setStyleSheet(
         f"QLabel {{"
         f"  font-size: 13px; font-weight: bold;"
         f"  color: {t.text_primary};"
-        f"  padding-top: 14px; padding-bottom: 4px;"
+        f"  padding-top: 16px; padding-bottom: 4px;"
         f"}}"
     )
     return label
@@ -71,29 +86,32 @@ class SettingsDialog(QDialog):
 
         self.setWindowTitle("设置")
         self.setObjectName("settingsDialog")
-        self.resize(600, 550)
+        self.resize(640, 560)
+        self.setMinimumSize(520, 440)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(20, 12, 20, 12)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        grid = QGridLayout()
-        grid.setColumnStretch(0, 0)
-        grid.setColumnStretch(1, 1)
-        grid.setColumnMinimumWidth(0, 72)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(6)
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(20, 12, 20, 12)
+
+        t = get_tokens()
 
         def _label(text: str) -> QLabel:
-            """Right-aligned form label, theme-coloured, fixed width for uniform indent."""
-            t = get_tokens()
             lb = QLabel(text)
-            lb.setFixedWidth(76)
+            lb.setFixedWidth(100)
             lb.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            lb.setStyleSheet(f"QLabel {{ color: {t.text_secondary}; font-size: 12px; }}")
+            lb.setStyleSheet(f"QLabel {{ color: {t.text_primary}; font-size: 13px; }}")
             return lb
 
-        def _field(*widgets: QWidget, spacing: int = 12) -> QWidget:
-            """Wrap widgets in a container with even horizontal spacing."""
+        def _field(*widgets: QWidget, spacing: int = 10) -> QWidget:
             w = QWidget()
             row = QHBoxLayout(w)
             row.setContentsMargins(0, 0, 0, 0)
@@ -103,16 +121,23 @@ class SettingsDialog(QDialog):
             row.addStretch()
             return w
 
-        def _sub(text: str) -> QLabel:
-            """Inline label inside a field row."""
-            t = get_tokens()
-            lb = QLabel(text)
-            lb.setStyleSheet(f"QLabel {{ color: {t.text_secondary}; font-size: 12px; }}")
-            return lb
+        grid = QGridLayout()
+        grid.setColumnStretch(0, 0)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnMinimumWidth(0, 100)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(8)
+        r = 0
 
-        r = 0  # row counter
+        def _row(label_text: str, *widgets: QWidget) -> None:
+            nonlocal r
+            grid.addWidget(_label(label_text), r, 0)
+            grid.addWidget(_field(*widgets), r, 1)
+            r += 1
 
-        # ── 外观 ──
+        # ================================================================
+        # 外观
+        # ================================================================
         grid.addWidget(_section_header("外观"), r, 0, 1, 2); r += 1
         self._theme_combo = DropdownWidget()
         self._theme_combo.setFixedWidth(_DROP_W)
@@ -122,14 +147,17 @@ class SettingsDialog(QDialog):
             if self._theme_combo.itemData(i) == self._config.theme:
                 self._theme_combo.setCurrentIndex(i)
                 break
-        self._minimize_cb = QCheckBox("最小化到托盘")
+        self._minimize_cb = ToggleSwitch()
         self._minimize_cb.setChecked(self._config.minimize_to_tray)
-        self._auto_start_cb = QCheckBox("开机自动启动")
+        self._auto_start_cb = ToggleSwitch()
         self._auto_start_cb.setChecked(self._config.auto_start)
-        grid.addWidget(_label("主题:"), r, 0)
-        grid.addWidget(_field(self._theme_combo, self._minimize_cb, self._auto_start_cb), r, 1); r += 1
+        _row("主题:", self._theme_combo)
+        _row("最小化到托盘:", self._minimize_cb)
+        _row("开机自动启动:", self._auto_start_cb)
 
-        # ── 任务列表 ──
+        # ================================================================
+        # 任务列表
+        # ================================================================
         grid.addWidget(_section_header("任务列表"), r, 0, 1, 2); r += 1
         self._page_size_combo = DropdownWidget()
         self._page_size_combo.setFixedWidth(_DROP_W)
@@ -149,18 +177,17 @@ class SettingsDialog(QDialog):
         idx = self._default_sort_combo.findData(cur_sort)
         if idx >= 0:
             self._default_sort_combo.setCurrentIndex(idx)
-        grid.addWidget(_label("每页:"), r, 0)
-        grid.addWidget(_field(self._page_size_combo,
-                               _sub("排序:"), self._default_sort_combo), r, 1); r += 1
-
-        self._completed_last_cb = QCheckBox("已完成任务排在末尾")
+        self._completed_last_cb = ToggleSwitch()
         self._completed_last_cb.setChecked(self._config.sort_completed_last)
-        grid.addWidget(_label(""), r, 0)
-        grid.addWidget(_field(self._completed_last_cb), r, 1); r += 1
+        _row("每页条数:", self._page_size_combo)
+        _row("默认排序:", self._default_sort_combo)
+        _row("已完成置底:", self._completed_last_cb)
 
-        # ── 提醒 ──
+        # ================================================================
+        # 提醒
+        # ================================================================
         grid.addWidget(_section_header("提醒"), r, 0, 1, 2); r += 1
-        self._reminders_cb = QCheckBox("每日摘要")
+        self._reminders_cb = ToggleSwitch()
         self._reminders_cb.setChecked(self._config.reminders_enabled)
         digest_time = self._config.get("reminders", "daily_digest_time", default="09:00") or "09:00"
         self._digest_time_edit = QLineEdit(digest_time)
@@ -174,22 +201,16 @@ class SettingsDialog(QDialog):
         self._quiet_end_edit = QLineEdit(qe)
         self._quiet_end_edit.setFixedWidth(72)
         self._quiet_end_edit.setPlaceholderText("HH:MM")
-        grid.addWidget(_label(""), r, 0)  # empty label for indent alignment
-        grid.addWidget(_field(self._reminders_cb,
-                               _sub("推送:"), self._digest_time_edit,
-                               _sub("安静:"), self._quiet_start_edit,
-                               QLabel("—"), self._quiet_end_edit), r, 1); r += 1
+        _row("每日摘要:", self._reminders_cb)
+        _row("推送时间:", self._digest_time_edit)
+        _row("安静时段:", self._quiet_start_edit, QLabel("—"), self._quiet_end_edit)
 
-        # ── 归档 ──
-        archive_header = QWidget()
-        ah = QHBoxLayout(archive_header)
-        ah.setContentsMargins(0, 0, 0, 0)
-        ah.addWidget(_section_header("归档"))
-        ah.addStretch()
-        t = get_tokens()
-        add_btn = QPushButton("+ 新增分区")
-        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        add_btn.setStyleSheet(
+        # ================================================================
+        # 归档 / 分区管理
+        # ================================================================
+        grid.addWidget(_section_header("归档 / 分区管理"), r, 0, 1, 2); r += 1
+
+        btn_style = (
             f"QPushButton {{"
             f"  font-size: 11px; padding: 2px 10px; min-height: 22px;"
             f"  color: {t.accent}; border: 1px solid {t.border_primary};"
@@ -198,10 +219,33 @@ class SettingsDialog(QDialog):
             f"QPushButton:hover {{"
             f"  background: {t.bg_tertiary}; border-color: {t.accent};"
             f"}}"
+            f"QPushButton:disabled {{"
+            f"  color: {t.text_disabled}; border-color: {t.border_primary};"
+            f"}}"
         )
-        add_btn.clicked.connect(self._on_add_partition)
-        ah.addWidget(add_btn)
-        grid.addWidget(archive_header, r, 0, 1, 2); r += 1
+        toolbar = QWidget()
+        tl = QHBoxLayout(toolbar)
+        tl.setContentsMargins(0, 0, 0, 2)
+        tl.setSpacing(6)
+        self._add_partition_btn = QPushButton("+ 新增")
+        self._add_partition_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._add_partition_btn.setStyleSheet(btn_style)
+        self._add_partition_btn.clicked.connect(self._on_add_partition_row)
+        tl.addWidget(self._add_partition_btn)
+        self._delete_partition_btn = QPushButton("− 删除")
+        self._delete_partition_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._delete_partition_btn.setStyleSheet(btn_style)
+        self._delete_partition_btn.clicked.connect(self._on_delete_partition_rows)
+        self._delete_partition_btn.setEnabled(False)
+        tl.addWidget(self._delete_partition_btn)
+        self._selection_label = QLabel("")
+        self._selection_label.setStyleSheet(
+            f"QLabel {{ color: {t.text_secondary}; font-size: 11px; }}"
+        )
+        tl.addWidget(self._selection_label)
+        tl.addStretch()
+        grid.addWidget(toolbar, r, 0, 1, 2); r += 1
+
 
         self._partition_table = QTableWidget(0, 7)
         self._partition_table.setHorizontalHeaderLabels(
@@ -219,13 +263,40 @@ class SettingsDialog(QDialog):
             hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
         self._partition_table.verticalHeader().hide()
         self._partition_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._partition_table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
         self._partition_table.setAlternatingRowColors(True)
         self._partition_table.setShowGrid(True)
         self._partition_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._partition_table.customContextMenuRequested.connect(self._on_table_context_menu)
+        self._partition_table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._partition_table.setObjectName("settingsPartitionTable")
+        table_qss = (
+            f"QTableWidget#settingsPartitionTable {{"
+            f"  border: 1px solid {t.border_primary};"
+            f"  border-radius: 4px;"
+            f"  gridline-color: {t.border_primary};"
+            f"  selection-background-color: {t.bg_tertiary};"
+            f"  selection-color: {t.text_primary};"
+            f"  outline: none;"
+            f"}}"
+            f"QTableWidget#settingsPartitionTable QHeaderView::section {{"
+            f"  text-align: center;"
+            f"  background-color: {t.bg_secondary};"
+            f"  color: {t.text_primary};"
+            f"  font-weight: bold;"
+            f"  font-size: 11px;"
+            f"  padding: 6px 4px;"
+            f"  border: none;"
+            f"  border-bottom: 1px solid {t.border_primary};"
+            f"  border-right: 1px solid {t.border_primary};"
+            f"}}"
+        )
+        self._partition_table.setStyleSheet(table_qss)
         grid.addWidget(self._partition_table, r, 0, 1, 2); r += 1
 
-        # ── 活动热力图 ──
+        # ================================================================
+        # 活动热力图
+        # ================================================================
         grid.addWidget(_section_header("活动热力图"), r, 0, 1, 2); r += 1
         self._heatmap_year_combo = DropdownWidget()
         self._heatmap_year_combo.setFixedWidth(_DROP_W)
@@ -248,11 +319,12 @@ class SettingsDialog(QDialog):
         idx = self._color_scheme_combo.findData(cur_scheme)
         if idx >= 0:
             self._color_scheme_combo.setCurrentIndex(idx)
-        grid.addWidget(_label("起始年份:"), r, 0)
-        grid.addWidget(_field(self._heatmap_year_combo,
-                               _sub("配色方案:"), self._color_scheme_combo), r, 1); r += 1
+        _row("起始年份:", self._heatmap_year_combo)
+        _row("配色方案:", self._color_scheme_combo)
 
-        # ── 激励语 ──
+        # ================================================================
+        # 激励语
+        # ================================================================
         grid.addWidget(_section_header("激励语"), r, 0, 1, 2); r += 1
         motd = self._config.get("motd", default={})
         self._motd_edits: dict[str, QLineEdit] = {}
@@ -262,26 +334,166 @@ class SettingsDialog(QDialog):
             edit.setText(motd.get(key, ""))
             edit.setPlaceholderText("输入激励语…")
             self._motd_edits[key] = edit
-            grid.addWidget(_label(label_text + ":"), r, 0)
-            grid.addWidget(edit, r, 1); r += 1
+            _row(label_text + ":", edit)
 
-        outer.addLayout(grid)
-        outer.addStretch()
+        content_layout.addLayout(grid)
+        content_layout.addStretch()
+        self._scroll.setWidget(content)
+        outer.addWidget(self._scroll)
 
-        buttons = QDialogButtonBox()
-        buttons.addButton("确定", QDialogButtonBox.ButtonRole.AcceptRole)
-        buttons.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
-        buttons.accepted.connect(self._on_accept)
-        buttons.rejected.connect(self.reject)
-        outer.addWidget(buttons)
+        # --- Immediate-save signal connections ---
+        self._theme_combo.currentIndexChanged.connect(self._save_appearance)
+        self._minimize_cb.toggled.connect(self._save_appearance)
+        self._auto_start_cb.toggled.connect(self._save_appearance)
+        self._page_size_combo.currentIndexChanged.connect(self._save_tasklist)
+        self._default_sort_combo.currentIndexChanged.connect(self._save_tasklist)
+        self._completed_last_cb.toggled.connect(self._save_tasklist)
+        self._reminders_cb.toggled.connect(self._save_reminders)
+        self._digest_time_edit.editingFinished.connect(self._save_reminders)
+        self._quiet_start_edit.editingFinished.connect(self._save_reminders)
+        self._quiet_end_edit.editingFinished.connect(self._save_reminders)
+        self._heatmap_year_combo.currentIndexChanged.connect(self._save_display)
+        self._color_scheme_combo.currentIndexChanged.connect(self._save_display)
+        for edit in self._motd_edits.values():
+            edit.editingFinished.connect(self._save_motd)
 
-        self._populate_partition_table()
+        self._populated = False
+
+    # ------------------------------------------------------------------
+    # QLabel ↔ QLineEdit swap helpers
+    # ------------------------------------------------------------------
+
+    def eventFilter(self, obj, event) -> bool:
+        """Double-click a table QLabel → swap to QLineEdit for editing."""
+        if isinstance(obj, QLabel) and obj.property("table_edit") is True:
+            if event.type() == QEvent.Type.MouseButtonDblClick:
+                self._swap_to_editor(obj)
+                return True
+        return super().eventFilter(obj, event)
+
+    def _make_table_label(self, text: str, col: int, pid: str = "") -> QLabel:
+        """Create a display-only QLabel (double-click to edit)."""
+        lb = QLabel(text)
+        lb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lb.setProperty("table_edit", True)
+        lb.setProperty("edit_col", col)
+        lb.setProperty("partition_id", pid)
+        lb.installEventFilter(self)
+        return lb
+
+    def _commit_pending_edits(self) -> None:
+        """Force any active QLineEdit back to QLabel before switching rows."""
+        if getattr(self, "_committing", False):
+            return
+        self._committing = True
+        try:
+            for col in (0, 4, 5):
+                for r in range(self._partition_table.rowCount()):
+                    w = self._partition_table.cellWidget(r, col)
+                    if isinstance(w, QLineEdit) and w.property("edit_col") is not None:
+                        if w.property("pending_new") is True:
+                            continue  # skip brand-new row, user hasn't typed yet
+                        if col == 0:
+                            self._on_name_edit_finished(w)
+                        else:
+                            self._swap_to_label(w)
+        finally:
+            self._committing = False
+
+    def _swap_to_editor(self, label: QLabel) -> None:
+        """Replace a QLabel with QLineEdit in the table."""
+        self._commit_pending_edits()
+        col = label.property("edit_col")
+        pid = label.property("partition_id") or ""
+        row = self._find_widget_row(col, label)
+        if row < 0:
+            return
+        edit = QLineEdit(label.text())
+        edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        edit.setFrame(True)
+        edit.setFixedHeight(30)
+        edit.setProperty("edit_col", col)
+        edit.setProperty("partition_id", pid)
+        if col == 0:
+            edit.editingFinished.connect(lambda: self._on_name_edit_finished(edit))
+        elif col in (4, 5):
+            edit.editingFinished.connect(lambda: self._swap_to_label(edit))
+        self._partition_table.setCellWidget(row, col, edit)
+        edit.selectAll()
+        edit.setFocus()
+
+    def _swap_to_label(self, edit: QLineEdit) -> None:
+        """Replace a QLineEdit back with QLabel."""
+        col = edit.property("edit_col")
+        pid = edit.property("partition_id") or ""
+        row = self._find_widget_row(col, edit)
+        if row < 0:
+            return
+        lb = self._make_table_label(edit.text(), col, pid)
+        self._partition_table.setCellWidget(row, col, lb)
+
+    def _find_widget_row(self, col: int, target: QWidget) -> int:
+        """Find the table row containing *target* in column *col*."""
+        for r in range(self._partition_table.rowCount()):
+            if self._partition_table.cellWidget(r, col) is target:
+                return r
+        return -1
+
+    def _on_name_edit_finished(self, edit: QLineEdit) -> None:
+        """Auto-save name edit, then swap back to QLabel."""
+        edit.setProperty("pending_new", False)
+        new_name = edit.text().strip()
+        pid = edit.property("partition_id") or ""
+
+        if not new_name and pid:
+            for p in self._partitions_data:
+                if p["id"] == pid:
+                    edit.setText(p["name"])
+                    break
+        if not new_name and not pid:
+            row = self._find_widget_row(0, edit)
+            if row >= 0:
+                self._partition_table.removeRow(row)
+                self._update_table_height()
+            return
+
+        # Duplicate name check
+        if new_name and any(
+            p["name"] == new_name and p["id"] != pid
+            for p in self._partitions_data
+        ):
+            QMessageBox.warning(self, "名称重复", f'分区 "{new_name}" 已存在，请使用其他名称。')
+            edit.setText("" if not pid else next(
+                (p["name"] for p in self._partitions_data if p["id"] == pid), ""
+            ))
+            self._swap_to_label(edit)
+            return
+
+        if pid and new_name:
+            self._repository.upsert_partition(new_name, partition_id=pid)
+        elif not pid and new_name:
+            result = self._repository.upsert_partition(new_name)
+            edit.setProperty("partition_id", result["id"])
+            row = self._find_widget_row(0, edit)
+            if row >= 0:
+                def_w = self._partition_table.cellWidget(row, 1)
+                if def_w:
+                    def_cb = def_w.findChild(QCheckBox)
+                    if def_cb:
+                        def_cb.toggled.connect(
+                            lambda checked, r=row: self._on_default_toggled(r, checked)
+                        )
+            self._partitions_data.append(result)
+            get_signal_bus().partitions_changed.emit()
+
+        self._swap_to_label(edit)
 
     # ------------------------------------------------------------------
     # Partition table
     # ------------------------------------------------------------------
 
     def _populate_partition_table(self) -> None:
+        self._partition_table.blockSignals(True)
         self._partitions_data = self._repository.get_all_partitions()
         hidden = set(self._config.get("general", "hidden_partitions", default=[]))
         default_id = self._config.get("general", "default_partition", default="")
@@ -291,51 +503,53 @@ class SettingsDialog(QDialog):
         for p in self._partitions_data:
             row = self._partition_table.rowCount()
             self._partition_table.insertRow(row)
+            self._partition_table.setRowHeight(row, 40)
             pid = p["id"]
 
-            # 0: 名称 — 居中与表头一致
-            name_item = QTableWidgetItem(p["name"])
-            name_item.setFlags(name_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            name_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._partition_table.setItem(row, 0, name_item)
+            # 0: 名称 — QLabel (double-click to edit)
+            self._partition_table.setCellWidget(
+                row, 0, self._make_table_label(p["name"], 0, pid)
+            )
 
-            # 1: 默认分区 — QCheckBox 居中
+            # 1: 默认分区 — QCheckBox
             def_cb = QCheckBox()
+            def_cb.setStyleSheet("spacing: 0px;")
             def_cb.setChecked(pid == default_id)
             def_cb.toggled.connect(lambda checked, r=row: self._on_default_toggled(r, checked))
             self._partition_table.setCellWidget(row, 1, _wrap_center(def_cb))
 
-            # 2: 可见 — QCheckBox 居中
+            # 2: 可见 — QCheckBox
             vis_cb = QCheckBox()
+            vis_cb.setStyleSheet("spacing: 0px;")
             vis_cb.setChecked(pid not in hidden)
             self._partition_table.setCellWidget(row, 2, _wrap_center(vis_cb))
 
-            # 3: 自动归档 — QCheckBox 居中
+            # 3: 自动归档 — QCheckBox
             auto_cb = QCheckBox()
+            auto_cb.setStyleSheet("spacing: 0px;")
             auto_cb.setChecked(p.get("archive_enabled", 0) == 1)
             self._partition_table.setCellWidget(row, 3, _wrap_center(auto_cb))
 
-            # 4: 归档阈值(天)
-            days_edit = QLineEdit(str(p.get("archive_days", 9999)))
-            days_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            days_edit.setMinimumWidth(60)
-            self._partition_table.setCellWidget(row, 4, days_edit)
+            # 4: 归档阈值(天) — QLabel (double-click to edit)
+            self._partition_table.setCellWidget(
+                row, 4, self._make_table_label(str(p.get("archive_days", 9999)), 4, pid)
+            )
 
-            # 5: 自动锁定(分)
-            lock_edit = QLineEdit(str(p.get("auto_lock_minutes", 3)))
-            lock_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lock_edit.setMinimumWidth(60)
-            self._partition_table.setCellWidget(row, 5, lock_edit)
+            # 5: 自动锁定(分) — QLabel (double-click to edit)
+            self._partition_table.setCellWidget(
+                row, 5, self._make_table_label(str(p.get("auto_lock_minutes", 3)), 5, pid)
+            )
 
-            # 6: 密码 — 🔒/🔓 按钮，主题色适配
+            # 6: 密码 — button
             tokens = get_tokens()
             has_pwd = bool(p.get("password", ""))
             pwd_btn = QPushButton("🔒" if has_pwd else "🔓")
             pwd_btn.setFlat(True)
+            pwd_btn.setFixedSize(32, 32)
             pwd_btn.setCursor(Qt.CursorShape.PointingHandCursor)
             color = tokens.accent if has_pwd else tokens.text_secondary
             pwd_btn.setStyleSheet(
-                f"QPushButton {{ font-size: 14px; color: {color}; border: none; background: transparent; }}"
+                f"QPushButton {{ font-size: 16px; color: {color}; border: none; background: transparent; padding: 0px; }}"
             )
             pwd_btn.clicked.connect(
                 lambda checked=False, pid=pid: self._on_set_partition_password(pid)
@@ -343,11 +557,8 @@ class SettingsDialog(QDialog):
             self._partition_table.setCellWidget(row, 6, _wrap_center(pwd_btn))
 
         self._partition_table.verticalHeader().setDefaultSectionSize(40)
-        n = max(1, self._partition_table.rowCount())
-        h = self._partition_table.horizontalHeader().height() + n * 40 + 4
-        self._partition_table.setMinimumHeight(h)
+        self._update_table_height()
 
-        # 校验：确保有且仅有一个默认分区（处理 default_id 失效/为空的情况）
         if self._partition_table.rowCount() > 0:
             any_checked = False
             for r in range(self._partition_table.rowCount()):
@@ -358,7 +569,6 @@ class SettingsDialog(QDialog):
                         any_checked = True
                         break
             if not any_checked:
-                # 自动勾选第一个分区为默认
                 first_cw = self._partition_table.cellWidget(0, 1)
                 if first_cw:
                     first_cb = first_cw.findChild(QCheckBox)
@@ -367,10 +577,11 @@ class SettingsDialog(QDialog):
                         first_pid = self._partitions_data[0]["id"]
                         self._config.set("general", "default_partition", value=first_pid)
 
+        self._partition_table.blockSignals(False)
+
     def _on_default_toggled(self, row: int, checked: bool) -> None:
-        """Mutually exclusive default partition: at least one must remain checked."""
+        """Mutually exclusive default partition."""
         if not checked:
-            # 防止取消最后一个默认分区 — 检查是否有其他已勾选的
             other_checked = False
             for r in range(self._partition_table.rowCount()):
                 if r == row:
@@ -382,7 +593,6 @@ class SettingsDialog(QDialog):
                         other_checked = True
                         break
             if not other_checked:
-                # 最后一个默认分区不可取消
                 cw = self._partition_table.cellWidget(row, 1)
                 if cw:
                     cb = cw.findChild(QCheckBox)
@@ -392,7 +602,6 @@ class SettingsDialog(QDialog):
                         cb.blockSignals(False)
                 return
         else:
-            # 勾选时取消其他所有分区
             for r in range(self._partition_table.rowCount()):
                 cw = self._partition_table.cellWidget(r, 1)
                 if cw and r != row:
@@ -404,63 +613,179 @@ class SettingsDialog(QDialog):
         pid = self._partitions_data[row]["id"]
         self._config.set("general", "default_partition", value=pid)
 
+    # ------------------------------------------------------------------
+    # Selection tracking
+    # ------------------------------------------------------------------
+
+    def _on_selection_changed(self) -> None:
+        self._commit_pending_edits()
+        sel = self._partition_table.selectionModel().selectedRows()
+        count = len(sel)
+        self._delete_partition_btn.setEnabled(count > 0)
+        if count > 0:
+            self._selection_label.setText(f"已选 {count} 个分区")
+        else:
+            self._selection_label.setText("")
+
+    # ------------------------------------------------------------------
+    # Inline add / delete
+    # ------------------------------------------------------------------
+
+    def _on_add_partition_row(self) -> None:
+        """Insert an empty row — name column directly editable."""
+        self._commit_pending_edits()
+        for r in range(self._partition_table.rowCount()):
+            w = self._partition_table.cellWidget(r, 0)
+            if isinstance(w, QLineEdit) and not w.property("partition_id") and not w.text().strip():
+                w.setFocus()
+                return
+
+        row = self._partition_table.rowCount()
+        self._partition_table.insertRow(row)
+        self._partition_table.setRowHeight(row, 40)
+
+        # Column 0: QLineEdit directly (new row, ready to type)
+        name_edit = QLineEdit()
+        name_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name_edit.setFrame(True)
+        name_edit.setFixedHeight(30)
+        name_edit.setProperty("edit_col", 0)
+        name_edit.setProperty("partition_id", "")
+        name_edit.setProperty("pending_new", True)
+        name_edit.editingFinished.connect(lambda: self._on_name_edit_finished(name_edit))
+        self._partition_table.setCellWidget(row, 0, name_edit)
+
+        # Column 1-3: checkboxes
+        for col in (1, 2, 3):
+            cb = QCheckBox()
+            cb.setStyleSheet("spacing: 0px;")
+            self._partition_table.setCellWidget(row, col, _wrap_center(cb))
+
+        # Column 4-5: QLabel (double-click to edit)
+        for col, default_text in [(4, "9999"), (5, "3")]:
+            self._partition_table.setCellWidget(
+                row, col, self._make_table_label(default_text, col)
+            )
+
+        # Column 6: password button
+        tokens = get_tokens()
+        pwd_btn = QPushButton("🔓")
+        pwd_btn.setFlat(True)
+        pwd_btn.setFixedSize(32, 32)
+        pwd_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        pwd_btn.setStyleSheet(
+            f"QPushButton {{ font-size: 16px; color: {tokens.text_secondary}; border: none; background: transparent; padding: 0px; }}"
+        )
+        self._partition_table.setCellWidget(row, 6, _wrap_center(pwd_btn))
+
+        self._partition_table.verticalHeader().setDefaultSectionSize(40)
+        self._update_table_height()
+        name_edit.setFocus()
+
+    def _update_table_height(self) -> None:
+        MAX_TABLE_HEIGHT = 300
+        n = max(1, self._partition_table.rowCount())
+        h = self._partition_table.horizontalHeader().height() + n * 40 + 6
+        desired = min(h, MAX_TABLE_HEIGHT)
+        self._partition_table.setMinimumHeight(desired)
+        self._partition_table.setMaximumHeight(MAX_TABLE_HEIGHT)
+
+    def _on_delete_partition_rows(self) -> None:
+        """Delete selected partition rows with validations."""
+        self._commit_pending_edits()
+        sel = self._partition_table.selectionModel().selectedRows()
+        if not sel:
+            return
+
+        def _name_text(row: int) -> str:
+            w = self._partition_table.cellWidget(row, 0)
+            if isinstance(w, QLineEdit):
+                return w.text().strip()
+            if isinstance(w, QLabel):
+                return w.text().strip()
+            return ""
+
+        def _pid(row: int) -> str:
+            w = self._partition_table.cellWidget(row, 0)
+            if w:
+                return w.property("partition_id") or ""
+            return ""
+
+        pids_to_delete: list[str] = []
+        names: list[str] = []
+        for idx in sorted(sel, key=lambda i: i.row(), reverse=True):
+            row = idx.row()
+            pid = _pid(row)
+            if not pid:
+                self._partition_table.removeRow(row)
+                continue
+            pids_to_delete.append(pid)
+            names.append(_name_text(row))
+
+        if not pids_to_delete:
+            self._update_table_height()
+            get_signal_bus().partitions_changed.emit()
+            return
+
+        remaining = sum(1 for r in range(self._partition_table.rowCount()) if _pid(r))
+        if remaining - len(pids_to_delete) < 1:
+            QMessageBox.warning(self, "无法删除", "至少需要保留一个分区。")
+            return
+
+        for pid, name in zip(pids_to_delete, names):
+            count = self._repository.count_tasks_in_partition(pid)
+            if count > 0:
+                QMessageBox.warning(
+                    self, "无法删除",
+                    f'分区 "{name}" 中还有 {count} 个任务，'
+                    f"请先在任务管理中调整分区或者删除",
+                )
+                return
+
+        name_list = "、".join(names)
+        result = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除以下分区吗？\n{name_list}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if result != QMessageBox.StandardButton.Yes:
+            return
+
+        default_id = self._config.get("general", "default_partition", default="")
+        for pid in pids_to_delete:
+            if pid == default_id:
+                for r in range(self._partition_table.rowCount()):
+                    other_pid = _pid(r)
+                    if other_pid and other_pid not in pids_to_delete:
+                        self._config.set("general", "default_partition", value=other_pid)
+                        break
+            self._repository.delete_partition(pid)
+
+        self._populate_partition_table()
+        get_signal_bus().partitions_changed.emit()
+
     def _on_table_context_menu(self, pos) -> None:
-        item = self._partition_table.itemAt(pos)
-        if item is None:
+        idx = self._partition_table.indexAt(pos)
+        if not idx.isValid():
             return
-        row = item.row()
-        if row < 0 or row >= len(self._partitions_data):
+        row = idx.row()
+        w = self._partition_table.cellWidget(row, 0)
+        if w is None:
             return
-        p = self._partitions_data[row]
+        pid = w.property("partition_id") or ""
+        if not pid:
+            return
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
-        act_default = menu.addAction("设为默认分区")
-        menu.addSeparator()
-        act_rename = menu.addAction("重命名")
         act_password = menu.addAction("设置密码")
         menu.addSeparator()
         act_delete = menu.addAction("删除")
         action = menu.exec(self._partition_table.viewport().mapToGlobal(pos))
-        if action == act_default:
-            def_w = self._partition_table.cellWidget(row, 1)
-            if def_w:
-                def_cb = def_w.findChild(QCheckBox)
-                if def_cb:
-                    def_cb.setChecked(True)
-        elif action == act_rename:
-            self._on_rename_row(row)
-        elif action == act_password:
-            self._on_set_partition_password(p["id"])
+        if action == act_password:
+            self._on_set_partition_password(pid)
         elif action == act_delete:
-            self._on_delete_single_partition(p["id"])
-
-    def _on_rename_row(self, row: int) -> None:
-        p = self._partitions_data[row]
-        name, ok = QInputDialog.getText(self, "重命名分区", "新名称：", text=p["name"])
-        if ok and name.strip():
-            self._repository.upsert_partition(name.strip(), partition_id=p["id"])
-            self._populate_partition_table()
-            get_signal_bus().partitions_changed.emit()
-
-    def _on_add_partition(self) -> None:
-        name, ok = QInputDialog.getText(self, "新增分区", "分区名称：")
-        if ok and name.strip():
-            self._repository.upsert_partition(name.strip())
-            self._populate_partition_table()
-            get_signal_bus().partitions_changed.emit()
-
-    def _on_delete_single_partition(self, pid: str) -> None:
-        for p in self._partitions_data:
-            if p["id"] == pid:
-                count = self._repository.count_tasks_in_partition(pid)
-                if count > 0:
-                    QMessageBox.warning(
-                        self, "无法删除",
-                        f'分区 "{p["name"]}" 中还有 {count} 个任务，请先清空后再删除。',
-                    )
-                    return
-                self._confirm_delete_partition(p)
-                return
+            self._partition_table.selectRow(row)
+            self._on_delete_partition_rows()
 
     def _on_set_partition_password(self, pid: str) -> None:
         has_pwd, cur = self._repository.check_partition_password(pid)
@@ -504,31 +829,12 @@ class SettingsDialog(QDialog):
         self._populate_partition_table()
         get_signal_bus().partitions_changed.emit()
 
-    def _confirm_delete_partition(self, p: dict) -> None:
-        if len(self._partitions_data) <= 1:
-            QMessageBox.warning(self, "无法删除", "至少需要保留一个分区。")
-            return
-        result = QMessageBox.question(
-            self, "确认删除",
-            f'确定要删除分区 "{p["name"]}" 吗？\n该分区下的任务将变为"未分类"。',
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if result == QMessageBox.StandardButton.Yes:
-            # 若删除的是默认分区，先转移默认到其他分区
-            default_id = self._config.get("general", "default_partition", default="")
-            if p["id"] == default_id:
-                other = [d for d in self._partitions_data if d["id"] != p["id"]]
-                if other:
-                    self._config.set("general", "default_partition", value=other[0]["id"])
-                else:
-                    self._config.set("general", "default_partition", value="")
-            self._repository.delete_partition(p["id"])
-            self._populate_partition_table()
-            get_signal_bus().partitions_changed.emit()
-
     def showEvent(self, event) -> None:
-        """Apply dark title bar on Windows when the current theme is dark."""
+        """Apply dark title bar + lazy-load partition table on first show."""
         super().showEvent(event)
+        if not self._populated:
+            self._populate_partition_table()
+            self._populated = True
         if is_dark_mode_supported() and is_dark():
             set_window_dark_mode(self, True, caption_color=get_surface_color())
 
@@ -541,35 +847,27 @@ class SettingsDialog(QDialog):
         return bool(re.match(r"^\d{1,2}:\d{2}$", text))
 
     # ------------------------------------------------------------------
-    # Save
+    # Immediate-save helpers
     # ------------------------------------------------------------------
 
-    def _on_accept(self) -> None:
-        # 校验：有且仅有一个默认分区
-        if self._partition_table.rowCount() > 0:
-            default_count = 0
-            for r in range(self._partition_table.rowCount()):
-                cw = self._partition_table.cellWidget(r, 1)
-                if cw:
-                    cb = cw.findChild(QCheckBox)
-                    if cb and cb.isChecked():
-                        default_count += 1
-            if default_count != 1:
-                QMessageBox.warning(
-                    self, "校验失败",
-                    f"必须设定且仅设定一个默认分区，当前已设定 {default_count} 个。",
-                )
-                return
+    def _save_config(self) -> None:
+        self._config.save()
+
+    def _save_appearance(self) -> None:
+        self._config.set("display", "theme", value=self._theme_combo.currentData())
         self._config.set("general", "minimize_to_tray", value=self._minimize_cb.isChecked())
         self._config.set("general", "auto_start", value=self._auto_start_cb.isChecked())
         from ...utils.win32_autostart import set_autostart
         set_autostart(self._auto_start_cb.isChecked())
+        self._save_config()
+
+    def _save_tasklist(self) -> None:
         self._config.set("general", "page_size", value=self._page_size_combo.currentData())
         self._config.set("general", "default_sort", value=self._default_sort_combo.currentData())
         self._config.set("general", "sort_completed_last", value=self._completed_last_cb.isChecked())
-        self._config.set("display", "theme", value=self._theme_combo.currentData())
-        self._config.set("display", "heatmap_start_year", value=self._heatmap_year_combo.currentData())
-        self._config.set("display", "heatmap_color_scheme", value=self._color_scheme_combo.currentData())
+        self._save_config()
+
+    def _save_reminders(self) -> None:
         self._config.set("reminders", "enabled", value=self._reminders_cb.isChecked())
         dt = self._digest_time_edit.text().strip()
         if self._validate_time(dt):
@@ -580,43 +878,20 @@ class SettingsDialog(QDialog):
             self._config.set("reminders", "quiet_hours_start", value=qs)
         if self._validate_time(qe):
             self._config.set("reminders", "quiet_hours_end", value=qe)
-        hidden = []
-        for r in range(self._partition_table.rowCount()):
-            pid = self._partitions_data[r]["id"]
-            vis_w = self._partition_table.cellWidget(r, 2)
-            if vis_w:
-                vis_cb = vis_w.findChild(QCheckBox)
-                if vis_cb and not vis_cb.isChecked():
-                    hidden.append(pid)
-            auto_w = self._partition_table.cellWidget(r, 3)
-            if auto_w:
-                auto_cb = auto_w.findChild(QCheckBox)
-                if auto_cb:
-                    self._repository.update_partition_archive_enabled(
-                        pid, 1 if auto_cb.isChecked() else 0
-                    )
-            days_w = self._partition_table.cellWidget(r, 4)
-            if days_w:
-                try:
-                    days = max(0, int(days_w.text().strip()))
-                except ValueError:
-                    days = 9999
-                self._repository.update_partition_archive_days(pid, days)
-            lock_w = self._partition_table.cellWidget(r, 5)
-            if lock_w:
-                try:
-                    lock_mins = max(0, int(lock_w.text().strip()))
-                except ValueError:
-                    lock_mins = 3
-                self._repository.update_partition_auto_lock(pid, lock_mins)
-        self._config.set("general", "hidden_partitions", value=hidden)
+        self._save_config()
+
+    def _save_display(self) -> None:
+        self._config.set("display", "heatmap_start_year", value=self._heatmap_year_combo.currentData())
+        self._config.set("display", "heatmap_color_scheme", value=self._color_scheme_combo.currentData())
+        self._save_config()
+
+    def _save_motd(self) -> None:
         motd_cfg = {}
         for key, edit in self._motd_edits.items():
             if edit.text().strip():
                 motd_cfg[key] = edit.text().strip()
         self._config.set("motd", value=motd_cfg)
-        self._config.save()
-        self.accept()
+        self._save_config()
 
     def theme_changed(self) -> bool:
         return self._theme_combo.currentData() != "system"

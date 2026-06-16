@@ -628,7 +628,7 @@
 | 外观 | 主题、最小化到托盘、开机自动启动 | 下拉(120px) / 复选框 / 复选框 |
 | 任务列表 | 每页条数、默认排序、已完成任务排在末尾 | 下拉(120px) / 下拉(120px) / 复选框，同列显示 |
 | 提醒 | 每日摘要开关、推送时间、安静时段 | 复选框 / HH:MM 输入框 / HH:MM 输入框，同行显示 |
-| 归档 | 分区设定表格 | 7列：名称\|默认分区\|可见\|自动归档\|归档阈值(天)\|自动锁定(分)\|密码；名称列居中 |
+| 归档 | 分区设定表格 | 含 `_section_header` 标题；7列均水平垂直居中（名称/阈值/锁定列为 QLabel+AlignCenter，复选框/密码按钮用 stretch-sandwich 布局 `_CenterHost` 居中）；工具栏"+ 新增""− 删除"始终可见；表格最大高度 300px，超出行数自动滚动，表头固定可见 |
 | 活动热力图 | 起始年份、配色方案 | 下拉(当前年份±5) / 下拉(4组方案)，同行显示 |
 | 激励语 | 4条激励语 | QLineEdit，标签统一右对齐 |
 
@@ -636,8 +636,12 @@
 
 #### 实现方案
 
-- QGridLayout 双列布局：列 0 标签（76px 右对齐）、列 1 字段（自适应），section header 跨两列
-- 分区表格使用 QCheckBox(cellWidget) + QLineEdit(cellWidget)，QTableWidgetItem 只读文本，名称列居中
+- QGridLayout 双列布局：列 0 标签（100px 右对齐）、列 1 字段（自适应），section header 跨两列
+- 归档分区表格使用 `_CenterHost`（stretch-sandwich 布局：VBox+stretch+HBox+stretch+widget+stretch+stretch）包裹 QCheckBox/QPushButton 实现水平垂直居中，避免 `sizeHint()` 受全局 QSS 污染
+- QCheckBox 设置 `spacing: 0px;` 消除全局 QSS 的 8px 文本间距对无文字复选框的偏移
+- QPushButton（密码按钮）设置 `padding: 0px;` 覆盖全局 QSS 内边距
+- `_update_table_height()` 设置 `setMaximumHeight(300)` + `setMinimumHeight(min(content, 300))`，表头固定、表体内部滚动
+- 工具栏（+ 新增 / − 删除）位于表格上方、ScrollArea 内，始终可见
 - 默认分区 QCheckBox 单选互斥（`_on_default_toggled`），**禁止取消最后一个默认分区**
 - 删除分区校验：`count_tasks_in_partition()` > 0 时阻止；**仅剩一个分区时禁止删除**
 - **保存前校验**：`_on_accept` 验证有且仅有一个默认分区，不通过则拒绝关闭
