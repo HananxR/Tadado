@@ -90,7 +90,7 @@ class SettingsDialog(QDialog):
         self.setMinimumSize(520, 440)
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setContentsMargins(4, 4, 4, 4)
         outer.setSpacing(0)
 
         self._scroll = QScrollArea()
