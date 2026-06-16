@@ -50,6 +50,8 @@ class _StatBadge(QPushButton):
             f"QPushButton {{ background: {bg}; color: {fg}; border: 1.5px solid {bd}; "
             f"border-radius: 12px; padding: 3px 12px; font-weight: bold; }}"
             f"QPushButton:hover {{ border-color: {self._color}; }}"
+            f"QPushButton:disabled {{ background: {bg}; color: {fg}; border: 1.5px solid {bd}; "
+            f"border-radius: 12px; padding: 3px 12px; font-weight: bold; }}"
         )
 
     def mousePressEvent(self, event) -> None:
