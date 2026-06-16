@@ -25,6 +25,7 @@ class _StatBadge(QPushButton):
         super().__init__(text)
         self._color = color
         self._active = False
+        self._cached_ss: str = ""
         self.setObjectName("statusBadge")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         font = self.font()
@@ -33,6 +34,8 @@ class _StatBadge(QPushButton):
         self._render()
 
     def set_active(self, active: bool) -> None:
+        if self._active == active:
+            return
         self._active = active
         self._render()
 
@@ -46,13 +49,17 @@ class _StatBadge(QPushButton):
             bg = t.bg_tertiary
             fg = self._color
             bd = f"{self._color}55"
-        self.setStyleSheet(
+        ss = (
             f"QPushButton {{ background: {bg}; color: {fg}; border: 1.5px solid {bd}; "
             f"border-radius: 12px; padding: 3px 12px; font-weight: bold; }}"
             f"QPushButton:hover {{ border-color: {self._color}; }}"
             f"QPushButton:disabled {{ background: {bg}; color: {fg}; border: 1.5px solid {bd}; "
             f"border-radius: 12px; padding: 3px 12px; font-weight: bold; }}"
         )
+        if ss == self._cached_ss:
+            return
+        self._cached_ss = ss
+        self.setStyleSheet(ss)
 
     def mousePressEvent(self, event) -> None:
         self.clicked.emit()
