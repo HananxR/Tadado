@@ -540,13 +540,31 @@ class MainWindow(QMainWindow):
 
         self._stack.addWidget(task_page)
 
-        # === Page 1: Activity Analysis ===
+        # Page 1 & 2 are built lazily on first access
+        self._stack.insertWidget(1, QWidget())  # placeholder for page 1
+        self._stack.insertWidget(2, QWidget())  # placeholder for page 2
+        self._page1_built = False
+        self._page2_built = False
+
+        self._batch_page = 0
+        self._batch_total_count = 0
+        self._batch_pending_action: dict = {}
+
+        self.setCentralWidget(self._stack)
+
+    # ------------------------------------------------------------------
+    # Lazy page builders
+    # ------------------------------------------------------------------
+
+    def _build_page1(self) -> None:
+        """Build Activity Analysis page on first access."""
+        from .calendar_heatmap.heatmap_stats_panel import HeatmapStatsPanel
+
         analysis_page = QWidget()
         analysis_layout = QVBoxLayout(analysis_page)
         analysis_layout.setContentsMargins(12, 8, 12, 8)
         analysis_layout.setSpacing(8)
 
-        from .calendar_heatmap.heatmap_stats_panel import HeatmapStatsPanel
         # ── Section: Heatmap ──
         heatmap_label = QLabel("活动热力图")
         heatmap_label.setObjectName("analysisSectionLabel")
@@ -625,10 +643,16 @@ class MainWindow(QMainWindow):
         # Connect heatmap grid signals
         self._heatmap_widget.grid.date_clicked.connect(self._on_heatmap_date_clicked)
 
-        self._stack.addWidget(analysis_page)
+        # Replace placeholder
+        old = self._stack.widget(1)
+        self._stack.removeWidget(old)
+        if old:
+            old.deleteLater()
+        self._stack.insertWidget(1, analysis_page)
+        self._page1_built = True
 
-        # === Page 2: Task Management Console ===
-
+    def _build_page2(self) -> None:
+        """Build Task Management Console page on first access."""
         batch_page = QWidget()
         batch_page_layout = QHBoxLayout(batch_page)
         batch_page_layout.setContentsMargins(0, 0, 0, 0)
@@ -872,12 +896,21 @@ class MainWindow(QMainWindow):
         self._batch_splitter.setStretchFactor(1, 0)
 
         batch_page_layout.addWidget(self._batch_splitter)
-        self._stack.addWidget(batch_page)
-        self._batch_page = 0
-        self._batch_total_count = 0
-        self._batch_pending_action: dict = {}
 
-        self.setCentralWidget(self._stack)
+        # Connect tag panel signals (moved here from _connect_signals)
+        bus = get_signal_bus()
+        self._batch_tag_panel.tag_changed.connect(lambda: bus.tag_changed.emit())
+        bus.task_created.connect(lambda *_: self._batch_tag_panel.refresh())
+        bus.task_updated.connect(lambda *_: self._batch_tag_panel.refresh())
+        bus.task_deleted.connect(lambda *_: self._batch_tag_panel.refresh())
+
+        # Replace placeholder
+        old = self._stack.widget(2)
+        self._stack.removeWidget(old)
+        if old:
+            old.deleteLater()
+        self._stack.insertWidget(2, batch_page)
+        self._page2_built = True
 
     def _on_new_multi_task(self) -> None:
         if not self.isVisible() and self._edit_panel.has_unsaved_draft():
@@ -982,12 +1015,8 @@ class MainWindow(QMainWindow):
         bus.config_changed.connect(self._on_config_changed)
         bus.archive_completed.connect(self._on_data_changed)
 
-        # Tag management
-        self._batch_tag_panel.tag_changed.connect(lambda: bus.tag_changed.emit())
+        # Tag management (tag_changed relay is in _build_page2)
         bus.tag_changed.connect(self._on_data_changed)
-        bus.task_created.connect(lambda *_: self._batch_tag_panel.refresh())
-        bus.task_updated.connect(lambda *_: self._batch_tag_panel.refresh())
-        bus.task_deleted.connect(lambda *_: self._batch_tag_panel.refresh())
 
         bus.task_created.connect(self._on_heatmap_data_changed)
         bus.task_updated.connect(self._on_heatmap_data_changed)
@@ -1065,8 +1094,7 @@ class MainWindow(QMainWindow):
         if reset_page:
             self._reset_pagination()
         filter_.partition_id = filter_.partition_id or self._active_partition_id or None  # "" → None
-        all_tasks = self._repository.search(filter_)
-        self._total_count = self._repository.count(filter_)
+        all_tasks, self._total_count = self._repository.search_with_total(filter_)
         # Paginate table display — full list still passed to overview / progress bar
         start = self._page * self._page_size
         page_tasks = all_tasks[start:start + self._page_size]
@@ -1155,8 +1183,7 @@ class MainWindow(QMainWindow):
         else:
             f.limit = self._batch_page_size
             f.offset = self._batch_page * self._batch_page_size
-            tasks = self._repository.search(f)
-            self._batch_total_count = self._repository.count(f)
+            tasks, self._batch_total_count = self._repository.search_with_total(f)
         self._batch_task_model.set_offset(self._batch_page * self._batch_page_size)
         self._batch_task_model.load_tasks(tasks)
         self._update_batch_pagination()
@@ -1822,11 +1849,12 @@ class MainWindow(QMainWindow):
         default_pid = self._repository.ensure_default_partition()  # 无分区时自动创建"功能演示"分区
         # 持久化默认分区到 config（首次创建 / 旧 UUID 指向已删除分区时自动修复）
         current_default = self._config.get("general", "default_partition", default="")
-        name_map = self._repository.get_partition_name_map()
-        if not current_default or not name_map.get(current_default):
+        if not current_default or current_default != default_pid:
             self._config.set("general", "default_partition", value=default_pid)
             self._config.save()
         partitions = self._repository.get_all_partitions()
+        # Build name_map once from partitions — avoids multiple get_partition_name_map() SELECTs
+        name_map: dict[str, str] = {p["id"]: p["name"] for p in partitions}
         # 同步密码 + auto_lock 到内存
         for p in partitions:
             pid = p["id"]
@@ -1840,7 +1868,6 @@ class MainWindow(QMainWindow):
                 self._partition_passwords.pop(pid, None)
             self._partition_auto_lock[pid] = p.get("auto_lock_minutes", 3)
         self._status_partition_menu.clear()
-        name_map = self._repository.get_partition_name_map()
         current_pid = self._active_partition_id or ""
         for p in partitions:
             pid, pname = p["id"], p["name"]
@@ -1854,18 +1881,16 @@ class MainWindow(QMainWindow):
                 f"{check}{locked}{pname}",
                 lambda checked=False, i=pid: self._activate_partition(i),
             )
-        self._update_partition_status_btn()
+        self._update_partition_status_btn(name_map)
         # 若当前激活的分区已被删除，重置使其落入激活链
-        if self._active_partition_id and not self._repository.get_partition_name_map().get(
-            self._active_partition_id
-        ):
+        if self._active_partition_id and self._active_partition_id not in name_map:
             self._active_partition_id = None
         if not self._active_partition_id:
             # 激活优先级：默认分区 > 上次使用的分区 > 第一个未锁定分区
             activated = False
             for key in ("default_partition", "last_partition_id"):
                 pid = self._config.get("general", key, default="")
-                if pid and self._repository.get_partition_name_map().get(pid):
+                if pid and pid in name_map:
                     self._activate_partition(pid)
                     activated = True
                     break
@@ -1875,11 +1900,12 @@ class MainWindow(QMainWindow):
                     self._activate_partition(first)
         self._in_load_partitions = False
 
-    def _update_partition_status_btn(self) -> None:
+    def _update_partition_status_btn(self, name_map: dict[str, str] | None = None) -> None:
         pid = self._active_partition_id or ""
-        name_map = self._repository.get_partition_name_map()
+        if name_map is None:
+            name_map = self._repository.get_partition_name_map()
         pname = name_map.get(pid, "")
-        has_pw, _ = self._repository.check_partition_password(pid) if pid else (False, "")
+        has_pw = bool(self._partition_passwords.get(pid, ""))
         if has_pw:
             locked = "🔓" if self._partition_passwords.get(pid, "") == "" else "🔒"
         else:
@@ -1913,7 +1939,8 @@ class MainWindow(QMainWindow):
         self._progress_bar.set_partition_id(pid or None)
         self._quick_overview.set_partition_id(pid or None)  # 必须在 build_filter 之前
         self._carousel_filter = self._quick_overview.build_filter()
-        self._batch_tag_panel.set_partition_id(pid or "")
+        if hasattr(self, '_batch_tag_panel'):
+            self._batch_tag_panel.set_partition_id(pid or "")
         if hasattr(self, '_batch_task_model'):
             self._refresh_batch_page()
         self._on_data_changed()
@@ -1985,6 +2012,8 @@ class MainWindow(QMainWindow):
             self._top_bar.show()
             self._apply_splitter_sizes()
         elif view == "dashboard":
+            if not self._page1_built:
+                self._build_page1()
             self._stack.setCurrentIndex(1)
             self._heatmap_widget.nav_bar.setVisible(True)
             self._top_bar.hide()
@@ -1993,6 +2022,8 @@ class MainWindow(QMainWindow):
             self._deferred_timer.timeout.connect(self._load_dashboard_data)
             self._deferred_timer.start(0)
         elif view == "batch":
+            if not self._page2_built:
+                self._build_page2()
             self._stack.setCurrentIndex(2)
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.hide()

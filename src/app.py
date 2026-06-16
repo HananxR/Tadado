@@ -298,27 +298,25 @@ class TadadoApp(QApplication):
         self.setOrganizationName("Tadado")
         self.setQuitOnLastWindowClosed(False)
 
-        # ── Load bundled CJK font on Linux (Microsoft YaHei not available) ──
-        self._load_bundled_fonts()
-
-        # ── Config + theme must load before the shield so QSS is stable ──
-        self._config = AppConfig()
-        init_tokens(self._config)
-        self._load_theme()  # set global QSS & QPalette BEFORE any widget is shown
-
-        # Show startup shield — sized to exactly cover the main window area
+        # ── Show startup shield FIRST — eliminates the blank-window gap ────
         from .ui.splash_screen import StartupShield
         from .utils.win32_theme import set_window_nc_rendering_disabled
 
-        self._shield: StartupShield | None = StartupShield(
-            is_dark=(self._config.theme == "dark")
-        )
-        self._shield.match_main_window_geometry()  # match main window size & pos
-        set_window_nc_rendering_disabled(self._shield)  # no ghost buttons on shield itself
-        self.setOverrideCursor(Qt.CursorShape.ArrowCursor)  # suppress busy cursor
+        self._shield: StartupShield | None = StartupShield(is_dark=False)
+        self._shield.match_main_window_geometry()
+        set_window_nc_rendering_disabled(self._shield)
+        self.setOverrideCursor(Qt.CursorShape.ArrowCursor)
         self._shield.show()
         self.processEvents()  # force immediate paint so user sees it now
         # ────────────────────────────────────────────────────────────────────
+
+        # ── Load bundled CJK font on Linux (Microsoft YaHei not available) ──
+        self._load_bundled_fonts()
+
+        # ── Config + theme ──
+        self._config = AppConfig()
+        init_tokens(self._config)
+        self._load_theme()  # set global QSS & QPalette BEFORE any widget is shown
 
         # Core services
         self._repository = TaskRepository(self._config.db_path())

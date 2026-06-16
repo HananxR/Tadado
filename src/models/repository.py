@@ -328,6 +328,125 @@ class TaskRepository:
         rows = self.conn.execute(sql, params).fetchall()
         return [_row_to_task(tuple(r)) for r in rows]
 
+    def search_with_total(self, filter_: TaskFilter) -> tuple[list[Task], int]:
+        """Query tasks + total count in one scan via COUNT(*) OVER().
+
+        Returns (tasks, total_matching_rows_before_pagination).
+        """
+        where_clauses: list[str] = []
+        params: list = []
+
+        # Archived filter (default: hide archived)
+        if not filter_.show_archived:
+            where_clauses.append("archived = 0")
+
+        # Full-text search (FTS5 + LIKE fallback for CJK)
+        if filter_.search_text:
+            text = filter_.search_text
+            where_clauses.append(
+                "(rowid IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH ?)"
+                " OR raw_md LIKE ? OR title LIKE ?)"
+            )
+            params.extend([text, f"%{text}%", f"%{text}%"])
+
+        # Status filter
+        if filter_.statuses is not None:
+            status_values = [s.value for s in filter_.statuses]
+            placeholders = ", ".join("?" for _ in status_values)
+            where_clauses.append(f"status IN ({placeholders})")
+            params.extend(status_values)
+
+        # Urgency filter
+        if filter_.urgencies is not None:
+            placeholders = ", ".join("?" for _ in filter_.urgencies)
+            where_clauses.append(f"urgency IN ({placeholders})")
+            params.extend(filter_.urgencies)
+
+        # Tag filter (each tag must be present)
+        if filter_.tags:
+            for tag in filter_.tags:
+                where_clauses.append("tags LIKE ?")
+                params.append(f'%"{tag}"%')
+
+        # Partition filter
+        if filter_.partition_id is not None:
+            where_clauses.append("partition_id = ?")
+            params.append(filter_.partition_id)
+
+        # Date range filter
+        if filter_.date_from and filter_.date_to:
+            where_clauses.append(
+                "(deadline_date BETWEEN ? AND ?"
+                " OR scheduled_date BETWEEN ? AND ?"
+                " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
+            )
+            params.extend([
+                filter_.date_from.isoformat(), filter_.date_to.isoformat(),
+                filter_.date_from.isoformat(), filter_.date_to.isoformat(),
+            ])
+        elif filter_.date_from:
+            where_clauses.append(
+                "(deadline_date >= ? OR scheduled_date >= ?"
+                " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
+            )
+            params.extend([filter_.date_from.isoformat(), filter_.date_from.isoformat()])
+        elif filter_.date_to:
+            where_clauses.append(
+                "(deadline_date <= ? OR scheduled_date <= ?"
+                " OR (deadline_date IS NULL AND scheduled_date IS NULL))"
+            )
+            params.extend([filter_.date_to.isoformat(), filter_.date_to.isoformat()])
+
+        # Created time range filter
+        if filter_.created_from:
+            where_clauses.append("created_at >= ?")
+            params.append(filter_.created_from.isoformat() + "T00:00:00")
+        if filter_.created_to:
+            where_clauses.append("created_at <= ?")
+            params.append(filter_.created_to.isoformat() + "T23:59:59")
+
+        # Progress range filter
+        if filter_.progress_min > 0 or filter_.progress_max < 100:
+            where_clauses.append("progress >= ? AND progress <= ?")
+            params.extend([filter_.progress_min, filter_.progress_max])
+
+        # Activity period filter
+        if filter_.activity_field and filter_.activity_min > 0:
+            where_clauses.append(f"{filter_.activity_field} >= ?")
+            params.append(filter_.activity_min)
+
+        # Overdue only
+        if filter_.overdue_only:
+            today = date.today().isoformat()
+            where_clauses.append("deadline_date < ?")
+            params.append(today)
+
+        # Suspended filter (default: hide suspended)
+        if not filter_.show_suspended:
+            where_clauses.append("suspended = 0")
+        elif filter_.suspended_only:
+            where_clauses.append("suspended = 1")
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        # Sorting
+        order_clauses = self._build_order_clauses(filter_.sort_by)
+        order_sql = f"ORDER BY {', '.join(order_clauses)}" if order_clauses else ""
+
+        # Pagination
+        limit_sql = f"LIMIT {int(filter_.limit)}" if filter_.limit is not None else ""
+        offset_sql = f"OFFSET {int(filter_.offset)}" if filter_.offset else ""
+
+        cols = ", ".join(_TASK_COLUMNS)
+        sql = (
+            f"SELECT {cols}, COUNT(*) OVER() AS _total "
+            f"FROM tasks {where_sql} {order_sql} {limit_sql} {offset_sql}"
+        )
+        rows = self.conn.execute(sql, params).fetchall()
+        total = rows[0]["_total"] if rows else 0
+        tasks = [_row_to_task(tuple(r)[:len(_TASK_COLUMNS)]) for r in rows]
+        return tasks, total
+
     def count(self, filter_: TaskFilter) -> int:
         """Count tasks matching the given filter."""
         where_clauses: list[str] = []
