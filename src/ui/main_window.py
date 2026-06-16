@@ -163,14 +163,39 @@ class MainWindow(QMainWindow):
         self._edit_panel.refresh_theme()
         if hasattr(self, '_analysis_content_view'):
             self._analysis_content_view.refresh_theme()
+        if hasattr(self, '_title_icon_btn'):
+            self._refresh_title_bar_theme()
+        if hasattr(self, '_status_partition_btn'):
+            self._refresh_status_partition_style()
+
+    def _refresh_title_bar_theme(self) -> None:
+        """Re-apply inline QSS on the title-bar logo button after theme switch."""
+        from ..utils.design_tokens import get_tokens as _gt
+        t = _gt()
+        self._title_icon_btn.setStyleSheet(
+            f"QPushButton {{ border: none; background: transparent; padding: 0px; }}"
+            f"QPushButton:hover {{ background: {t.accent}20; }}"
+        )
+
+    def _refresh_status_partition_style(self) -> None:
+        """Re-apply inline QSS on the status-bar partition button after theme switch."""
+        from ..utils.design_tokens import get_tokens as _gt
+        t = _gt()
+        accent = t.accent if t else "#5b8def"
+        r, g, b = int(accent[1:3], 16), int(accent[3:5], 16), int(accent[5:7], 16)
+        self._status_partition_btn.setStyleSheet(
+            f"QPushButton {{ border: none; border-left: 3px solid {accent}; "
+            f"background: rgba({r},{g},{b},0.15); border-radius: 4px; "
+            f"padding: 2px 8px 2px 6px; font-size: 11px; "
+            f"font-weight: bold; color: {accent}; }}"
+            f"QPushButton:hover {{ background: rgba({r},{g},{b},0.25); }}"
+        )
 
     # ------------------------------------------------------------------
     # Custom title bar — VS Code style: icon + menu + window buttons
     # ------------------------------------------------------------------
 
     def _setup_custom_title_bar(self) -> None:
-        from ..utils.design_tokens import get_tokens as _gt
-        t = _gt()
         bar_h = 36
 
         title_bar = QWidget()
@@ -181,18 +206,15 @@ class MainWindow(QMainWindow):
         tb.setSpacing(0)
 
         # Logo button
-        icon_btn = QPushButton()
-        icon_btn.setIcon(load_icon("app"))
-        icon_btn.setIconSize(QSize(20, 20))
-        icon_btn.setFixedSize(bar_h, bar_h)
-        icon_btn.setFlat(True)
-        icon_btn.setToolTip("返回主界面")
-        icon_btn.clicked.connect(self._on_go_home)
-        icon_btn.setStyleSheet(
-            f"QPushButton {{ border: none; background: transparent; padding: 0px; }}"
-            f"QPushButton:hover {{ background: {t.accent}20; }}"
-        )
-        tb.addWidget(icon_btn)
+        self._title_icon_btn = QPushButton()
+        self._title_icon_btn.setIcon(load_icon("app"))
+        self._title_icon_btn.setIconSize(QSize(20, 20))
+        self._title_icon_btn.setFixedSize(bar_h, bar_h)
+        self._title_icon_btn.setFlat(True)
+        self._title_icon_btn.setToolTip("返回主界面")
+        self._title_icon_btn.clicked.connect(self._on_go_home)
+        self._refresh_title_bar_theme()
+        tb.addWidget(self._title_icon_btn)
 
         # Nav buttons (icon + text, flat style) — colors via base.qss
         btn_style = (
@@ -883,9 +905,6 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _setup_status_bar(self) -> None:
-        from ..utils.design_tokens import get_tokens as _gt2
-        t = _gt2()
-
         self._status_bar = QStatusBar()
         self._status_bar.setSizeGripEnabled(True)
 
@@ -893,16 +912,7 @@ class MainWindow(QMainWindow):
         self._status_partition_btn = QPushButton("● 切换分区")
         self._status_partition_btn.setFlat(True)
         self._status_partition_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # 解析 accent 色为 RGB 分量，用 rgba 保证背景可见
-        accent = t.accent if t else "#5b8def"
-        r, g, b = int(accent[1:3], 16), int(accent[3:5], 16), int(accent[5:7], 16)
-        self._status_partition_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-left: 3px solid {accent}; "
-            f"background: rgba({r},{g},{b},0.15); border-radius: 4px; "
-            f"padding: 2px 8px 2px 6px; font-size: 11px; "
-            f"font-weight: bold; color: {accent}; }}"
-            f"QPushButton:hover {{ background: rgba({r},{g},{b},0.25); }}"
-        )
+        self._refresh_status_partition_style()
         self._status_partition_menu = QMenu(self._status_partition_btn)
         self._status_partition_btn.setMenu(self._status_partition_menu)
         self._status_partition_btn.clicked.connect(lambda: self._status_partition_btn.showMenu())

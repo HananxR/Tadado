@@ -341,7 +341,15 @@ class SettingsDialog(QDialog):
         self._scroll.setWidget(content)
         outer.addWidget(self._scroll)
 
-        # --- Immediate-save signal connections ---
+        # --- OK / Cancel buttons ---
+        self._button_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self._button_box.accepted.connect(self._on_accept)
+        self._button_box.rejected.connect(self._on_reject)
+        outer.addWidget(self._button_box)
+
+        # --- In-memory signal connections (persisted on OK) ---
         self._theme_combo.currentIndexChanged.connect(self._save_appearance)
         self._minimize_cb.toggled.connect(self._save_appearance)
         self._auto_start_cb.toggled.connect(self._save_appearance)
@@ -576,7 +584,6 @@ class SettingsDialog(QDialog):
                         first_cb.setChecked(True)
                         first_pid = self._partitions_data[0]["id"]
                         self._config.set("general", "default_partition", value=first_pid)
-                        self._save_config()
 
         self._partition_table.blockSignals(False)
 
@@ -613,7 +620,6 @@ class SettingsDialog(QDialog):
                         cb.blockSignals(False)
         pid = self._partitions_data[row]["id"]
         self._config.set("general", "default_partition", value=pid)
-        self._save_config()
 
     # ------------------------------------------------------------------
     # Selection tracking
@@ -760,7 +766,6 @@ class SettingsDialog(QDialog):
                     other_pid = _pid(r)
                     if other_pid and other_pid not in pids_to_delete:
                         self._config.set("general", "default_partition", value=other_pid)
-                        self._save_config()
                         break
             self._repository.delete_partition(pid)
 
@@ -850,10 +855,25 @@ class SettingsDialog(QDialog):
         return bool(re.match(r"^\d{1,2}:\d{2}$", text))
 
     # ------------------------------------------------------------------
-    # Immediate-save helpers
+    # Accept / Reject
+    # ------------------------------------------------------------------
+
+    def _on_accept(self) -> None:
+        """Persist all in-memory changes and close."""
+        self._save_config()
+        self.accept()
+
+    def _on_reject(self) -> None:
+        """Revert in-memory changes by reloading from disk."""
+        self._config._load()
+        self.reject()
+
+    # ------------------------------------------------------------------
+    # In-memory change helpers (persisted on OK, reverted on Cancel)
     # ------------------------------------------------------------------
 
     def _save_config(self) -> None:
+        """Persist all pending in-memory changes to disk."""
         self._config.save()
 
     def _save_appearance(self) -> None:
@@ -862,13 +882,11 @@ class SettingsDialog(QDialog):
         self._config.set("general", "auto_start", value=self._auto_start_cb.isChecked())
         from ...utils.win32_autostart import set_autostart
         set_autostart(self._auto_start_cb.isChecked())
-        self._save_config()
 
     def _save_tasklist(self) -> None:
         self._config.set("general", "page_size", value=self._page_size_combo.currentData())
         self._config.set("general", "default_sort", value=self._default_sort_combo.currentData())
         self._config.set("general", "sort_completed_last", value=self._completed_last_cb.isChecked())
-        self._save_config()
 
     def _save_reminders(self) -> None:
         self._config.set("reminders", "enabled", value=self._reminders_cb.isChecked())
@@ -881,12 +899,10 @@ class SettingsDialog(QDialog):
             self._config.set("reminders", "quiet_hours_start", value=qs)
         if self._validate_time(qe):
             self._config.set("reminders", "quiet_hours_end", value=qe)
-        self._save_config()
 
     def _save_display(self) -> None:
         self._config.set("display", "heatmap_start_year", value=self._heatmap_year_combo.currentData())
         self._config.set("display", "heatmap_color_scheme", value=self._color_scheme_combo.currentData())
-        self._save_config()
 
     def _save_motd(self) -> None:
         motd_cfg = {}
@@ -894,7 +910,6 @@ class SettingsDialog(QDialog):
             if edit.text().strip():
                 motd_cfg[key] = edit.text().strip()
         self._config.set("motd", value=motd_cfg)
-        self._save_config()
 
     def theme_changed(self) -> bool:
         return self._theme_combo.currentData() != "system"
