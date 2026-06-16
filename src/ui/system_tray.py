@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from ..config import AppConfig
-from ..utils.icon_loader import load_icon
+from ..utils.icon_loader import get_icon_loader
 
 
 class SystemTrayManager:
@@ -16,7 +16,7 @@ class SystemTrayManager:
         self._main_window = main_window
         self._config = config
 
-        icon = load_icon("tray_normal")
+        icon = get_icon_loader().app_icon()
         self._tray = QSystemTrayIcon(icon)
         self._tray.setToolTip("Tadado")
 
