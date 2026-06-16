@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
 
 from ...models.repository import TaskRepository
@@ -28,6 +28,7 @@ class _StatBadge(QPushButton):
         self._cached_ss: str = ""
         self.setObjectName("statusBadge")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMinimumWidth(72)
         font = self.font()
         font.setPointSize(10)
         self.setFont(font)
@@ -60,6 +61,11 @@ class _StatBadge(QPushButton):
             return
         self._cached_ss = ss
         self.setStyleSheet(ss)
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.Type.EnabledChange:
+            return  # suppress unpolish/re-polish when parent is disabled
+        super().changeEvent(event)
 
     def mousePressEvent(self, event) -> None:
         self.clicked.emit()
