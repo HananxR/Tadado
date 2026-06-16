@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import datetime as dt
+import json
 from ctypes import wintypes
 from datetime import date
 
@@ -2344,8 +2345,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "导出失败", str(e))
 
     def _on_settings(self) -> None:
+        _before = json.dumps(self._config.to_dict(), sort_keys=True)
         dlg = SettingsDialog(self._config, self._repository, self)
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
+            _after = json.dumps(self._config.to_dict(), sort_keys=True)
+            if _before == _after:
+                return  # 零变更，跳过全部刷新
             # 设置保存后强制激活默认分区
             default_pid = self._config.get("general", "default_partition", default="")
             if default_pid:
