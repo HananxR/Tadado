@@ -302,7 +302,19 @@ class TadadoApp(QApplication):
         from .ui.splash_screen import StartupShield
         from .utils.win32_theme import set_window_nc_rendering_disabled
 
-        self._shield: StartupShield | None = StartupShield(is_dark=False)
+        # Peek at config theme without full load, so shield matches user preference
+        _shield_dark = False
+        try:
+            import json
+            _cfg_path = self._resource_path("config.json")
+            if _cfg_path and _cfg_path.exists():
+                with open(_cfg_path, "r", encoding="utf-8") as _f:
+                    _raw = json.load(_f)
+                _shield_dark = _raw.get("display", {}).get("theme") == "dark"
+        except Exception:
+            pass
+
+        self._shield: StartupShield | None = StartupShield(is_dark=_shield_dark)
         self._shield.match_main_window_geometry()
         set_window_nc_rendering_disabled(self._shield)
         self.setOverrideCursor(Qt.CursorShape.ArrowCursor)

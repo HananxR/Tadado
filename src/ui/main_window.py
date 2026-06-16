@@ -2394,7 +2394,7 @@ class MainWindow(QMainWindow):
             data_changed = True
             if hasattr(self, '_page_size_combo'):
                 self._page_size_combo.setCurrentText(str(new_page_size))
-        if self._batch_page_size != new_page_size:
+        if hasattr(self, '_batch_page_size') and self._batch_page_size != new_page_size:
             self._batch_page_size = new_page_size
             self._batch_page = 0
             data_changed = True
