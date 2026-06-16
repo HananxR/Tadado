@@ -347,6 +347,7 @@ class SettingsDialog(QDialog):
         self._button_box.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
         self._button_box.accepted.connect(self._on_accept)
         self._button_box.rejected.connect(self._on_reject)
+        self._button_box.setCenterButtons(True)
         outer.addWidget(self._button_box)
 
         # --- In-memory signal connections (persisted on OK) ---
