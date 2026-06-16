@@ -82,6 +82,7 @@ class MainWindow(QMainWindow):
 
         self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
         self._config = config
+        self._last_applied_theme = config.theme
         self._repository = repository
         self._signal_bus = get_signal_bus()
         self._carousel_filter: TaskFilter | None = None
@@ -2381,10 +2382,17 @@ class MainWindow(QMainWindow):
 
     def _on_config_changed(self) -> None:
         data_changed = False
+        theme_changed = self._config.theme != self._last_applied_theme
 
         self._filter_bar.set_sort(self._config.default_sort)
-        if hasattr(self, '_status_badge'):
-            self._status_badge.refresh_theme()
+
+        # Only refresh theme-dependent widgets when the theme actually changed
+        if theme_changed:
+            if hasattr(self, '_status_badge'):
+                self._status_badge.refresh_theme()
+            if hasattr(self, '_batch_tag_panel'):
+                self._batch_tag_panel.refresh_theme()
+            self._last_applied_theme = self._config.theme
 
         # Re-read page_size from config and sync all pagination controls
         new_page_size = self._config.get("general", "page_size", default=20)
@@ -2402,7 +2410,6 @@ class MainWindow(QMainWindow):
                 self._batch_page_size_combo.setCurrentText(str(new_page_size))
         if hasattr(self, '_batch_tag_panel'):
             self._batch_tag_panel.set_page_size(new_page_size)
-            self._batch_tag_panel.refresh_theme()
 
         # Heatmap: repaint on colour-scheme change (refresh_tokens already called by app.py)
         if hasattr(self, '_heatmap_widget'):
