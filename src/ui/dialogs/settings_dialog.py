@@ -576,6 +576,7 @@ class SettingsDialog(QDialog):
                         first_cb.setChecked(True)
                         first_pid = self._partitions_data[0]["id"]
                         self._config.set("general", "default_partition", value=first_pid)
+                        self._save_config()
 
         self._partition_table.blockSignals(False)
 
@@ -612,6 +613,7 @@ class SettingsDialog(QDialog):
                         cb.blockSignals(False)
         pid = self._partitions_data[row]["id"]
         self._config.set("general", "default_partition", value=pid)
+        self._save_config()
 
     # ------------------------------------------------------------------
     # Selection tracking
@@ -758,6 +760,7 @@ class SettingsDialog(QDialog):
                     other_pid = _pid(r)
                     if other_pid and other_pid not in pids_to_delete:
                         self._config.set("general", "default_partition", value=other_pid)
+                        self._save_config()
                         break
             self._repository.delete_partition(pid)
 
