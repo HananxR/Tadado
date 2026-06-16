@@ -85,19 +85,17 @@ class StartupShield(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
 
-        # ── theme palette ──────────────────────────────────────────
-        if is_dark:
-            self._bg = QColor("#24253a")
-            self._fg = QColor("#c9d1d9")
-            self._accent = QColor("#7aa2f7")
-            self._sub = QColor("#8b949e")
-            self._overlay_alpha = 140  # ~55%
-        else:
-            self._bg = QColor("#ffffff")
-            self._fg = QColor("#2c2c2c")
-            self._accent = QColor("#5b8def")
-            self._sub = QColor("#999999")
-            self._overlay_alpha = 170  # ~67%
+        # ── brand palette — matches app-icon logo gradient ────────────
+        # Logo: bg #4F46E5→#1E1B4B | arc #818CF8→#A78BFA→#22D3EE | white checkmark
+        self._brand_navy = QColor("#1E1B4B")
+        self._brand_indigo = QColor("#4F46E5")
+        self._brand_cyan = QColor("#22D3EE")
+        self._brand_lavender = QColor("#A78BFA")
+        self._brand_light = QColor("#818CF8")
+
+        # Unified dark overlay — logo-branded, works on any welcome bg
+        self._overlay_color = self._brand_navy
+        self._overlay_alpha = 210  # ~82%
 
         # ── preload welcome background ─────────────────────────────
         bg_path = _welcome_bg_path()
@@ -127,13 +125,17 @@ class StartupShield(QWidget):
                 )
             p.drawPixmap(0, 0, self._scaled_bg)
         else:
-            p.setBrush(QBrush(self._bg))
+            p.setBrush(QBrush(self._brand_navy))
             p.setPen(Qt.PenStyle.NoPen)
             p.drawRect(0, 0, w, h)
 
         # 2. semi-transparent overlay for text readability
-        overlay = QColor(self._bg.red(), self._bg.green(), self._bg.blue(),
-                         self._overlay_alpha)
+        overlay = QColor(
+            self._overlay_color.red(),
+            self._overlay_color.green(),
+            self._overlay_color.blue(),
+            self._overlay_alpha,
+        )
         p.setBrush(QBrush(overlay))
         p.setPen(Qt.PenStyle.NoPen)
         p.drawRect(0, 0, w, h)
@@ -153,11 +155,11 @@ class StartupShield(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # -- top accent bar --
+        # -- top accent bar (cyan, matches app-icon arc endpoint) --
         accent_bar = QLabel()
         accent_bar.setFixedHeight(3)
         accent_bar.setStyleSheet(
-            f"background-color: {self._accent.name()}; border: none;"
+            f"background-color: {self._brand_cyan.name()}; border: none;"
         )
         root.addWidget(accent_bar)
 
@@ -193,28 +195,28 @@ class StartupShield(QWidget):
                 layout.addLayout(ic_wrapper)
                 layout.addSpacing(22)
 
-        # app name — accent colour with subtle glow
+        # app name — cyan glow, matches app-icon #22D3EE
         name = QLabel("Tadado")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name.setFont(QFont("Microsoft YaHei", 38, QFont.Weight.Bold))
         name.setStyleSheet(
-            f"color: {self._accent.name()}; background: transparent;"
+            f"color: {self._brand_cyan.name()}; background: transparent;"
         )
         _name_glow = QGraphicsDropShadowEffect()
-        _name_glow.setBlurRadius(18)
+        _name_glow.setBlurRadius(24)
         _name_glow.setOffset(0, 0)
-        _name_glow.setColor(self._accent.lighter(140))
+        _name_glow.setColor(self._brand_cyan.lighter(120))
         name.setGraphicsEffect(_name_glow)
         layout.addWidget(name)
 
         layout.addSpacing(8)
 
-        # tagline
+        # tagline — lavender, matches app-icon #A78BFA
         tagline = QLabel("Less Noise, More Done")
         tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline.setFont(QFont("Microsoft YaHei", 13))
         tagline.setStyleSheet(
-            f"color: {self._sub.name()}; background: transparent;"
+            f"color: {self._brand_lavender.name()}; background: transparent;"
         )
         layout.addWidget(tagline)
 
@@ -230,19 +232,19 @@ class StartupShield(QWidget):
         date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         date_label.setFont(QFont("Microsoft YaHei", 12))
         date_label.setStyleSheet(
-            f"color: {self._sub.name()}; background: transparent;"
+            f"color: {self._brand_light.name()}; background: transparent;"
         )
         layout.addWidget(date_label)
 
         layout.addSpacing(28)
 
-        # decorative separator — accent diamond between thin lines
+        # decorative separator — cyan diamond between light-indigo lines
         sep = QLabel(
-            f'<span style="color:{self._sub.name()};font-size:10px;">'
+            f'<span style="color:{self._brand_light.name()};font-size:10px;">'
             f'━  </span>'
-            f'<span style="color:{self._accent.name()};font-size:11px;">'
+            f'<span style="color:{self._brand_cyan.name()};font-size:11px;">'
             f'&#9670;</span>'   # ◆
-            f'<span style="color:{self._sub.name()};font-size:10px;">'
+            f'<span style="color:{self._brand_light.name()};font-size:10px;">'
             f'  ━</span>'
         )
         sep.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -257,7 +259,7 @@ class StartupShield(QWidget):
         loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading.setFont(QFont("Microsoft YaHei", 10))
         loading.setStyleSheet(
-            f"color: {self._sub.name()}; background: transparent;"
+            f"color: {self._brand_light.name()}; background: transparent;"
         )
         layout.addWidget(loading)
 
@@ -272,7 +274,7 @@ class StartupShield(QWidget):
         ver_label = QLabel("v0.1.0")
         ver_label.setFont(QFont("Microsoft YaHei", 8))
         ver_label.setStyleSheet(
-            f"color: {self._sub.name()}; background: transparent; "
+            f"color: {self._brand_light.name()}; background: transparent; "
             "padding: 8px 14px;"
         )
         ver_wrapper = QVBoxLayout()
