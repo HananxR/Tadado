@@ -339,12 +339,14 @@ class TadadoApp(QApplication):
         self._signal_bus = get_signal_bus()
         self._signal_bus.application_quit.connect(self._on_quit)
         self._signal_bus.config_changed.connect(self._on_config_changed)
-        # Bridge: AppConfig.save() → SignalBus.config_changed, so every
-        # immediate save from SettingsDialog triggers full UI refresh.
-        self._config.config_changed.connect(self._signal_bus.config_changed.emit)
 
         # UI
         self._main_window = MainWindow(self._config, self._repository)
+        # Bridge: AppConfig.save() → SignalBus.config_changed, so every
+        # immediate save from SettingsDialog triggers full UI refresh.
+        # Must be AFTER MainWindow creation — its __init__ may call
+        # config.save() which would fire _on_config_changed prematurely.
+        self._config.config_changed.connect(self._signal_bus.config_changed.emit)
         self._tray = SystemTrayManager(self._main_window, self._config)
 
         # Background services
