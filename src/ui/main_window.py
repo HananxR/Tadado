@@ -2349,6 +2349,8 @@ class MainWindow(QMainWindow):
         self._on_data_changed()
 
     def _on_config_changed(self) -> None:
+        data_changed = False
+
         self._filter_bar.set_sort(self._config.default_sort)
         if hasattr(self, '_status_badge'):
             self._status_badge.refresh_theme()
@@ -2358,11 +2360,13 @@ class MainWindow(QMainWindow):
         if self._page_size != new_page_size:
             self._page_size = new_page_size
             self._page = 0
+            data_changed = True
             if hasattr(self, '_page_size_combo'):
                 self._page_size_combo.setCurrentText(str(new_page_size))
         if self._batch_page_size != new_page_size:
             self._batch_page_size = new_page_size
             self._batch_page = 0
+            data_changed = True
             if hasattr(self, '_batch_page_size_combo'):
                 self._batch_page_size_combo.setCurrentText(str(new_page_size))
         if hasattr(self, '_batch_tag_panel'):
@@ -2374,9 +2378,13 @@ class MainWindow(QMainWindow):
             self._heatmap_widget.force_refresh()
 
         # Sync completed-last sort setting to repository
-        self._repository.completed_last = self._config.sort_completed_last
+        if self._repository.completed_last != self._config.sort_completed_last:
+            self._repository.completed_last = self._config.sort_completed_last
+            data_changed = True
 
-        self._on_data_changed()
+        # Only reload task data when sort/pagination actually changed
+        if data_changed:
+            self._on_data_changed()
 
     # ------------------------------------------------------------------
     # Midnight timer

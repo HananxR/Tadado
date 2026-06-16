@@ -342,9 +342,9 @@ class SettingsDialog(QDialog):
         outer.addWidget(self._scroll)
 
         # --- OK / Cancel buttons ---
-        self._button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        self._button_box = QDialogButtonBox()
+        self._button_box.addButton("确认", QDialogButtonBox.ButtonRole.AcceptRole)
+        self._button_box.addButton("取消", QDialogButtonBox.ButtonRole.RejectRole)
         self._button_box.accepted.connect(self._on_accept)
         self._button_box.rejected.connect(self._on_reject)
         outer.addWidget(self._button_box)
@@ -860,6 +860,8 @@ class SettingsDialog(QDialog):
 
     def _on_accept(self) -> None:
         """Persist all in-memory changes and close."""
+        from ...utils.win32_autostart import set_autostart
+        set_autostart(self._auto_start_cb.isChecked())
         self._save_config()
         self.accept()
 
@@ -880,8 +882,6 @@ class SettingsDialog(QDialog):
         self._config.set("display", "theme", value=self._theme_combo.currentData())
         self._config.set("general", "minimize_to_tray", value=self._minimize_cb.isChecked())
         self._config.set("general", "auto_start", value=self._auto_start_cb.isChecked())
-        from ...utils.win32_autostart import set_autostart
-        set_autostart(self._auto_start_cb.isChecked())
 
     def _save_tasklist(self) -> None:
         self._config.set("general", "page_size", value=self._page_size_combo.currentData())
