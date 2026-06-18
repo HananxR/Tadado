@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date
 
@@ -32,6 +33,8 @@ from ...utils.signal_bus import get_signal_bus
 from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 from ..widgets.dropdown import DropdownWidget
 from ..widgets.toggle_switch import ToggleSwitch
+
+_log = logging.getLogger("runlog")
 
 _DROP_W = 120
 
@@ -480,8 +483,10 @@ class SettingsDialog(QDialog):
 
         if pid and new_name:
             self._repository.upsert_partition(new_name, partition_id=pid)
+            _log.info("Partition renamed: id=%s new_name=%s", pid, new_name)
         elif not pid and new_name:
             result = self._repository.upsert_partition(new_name)
+            _log.info("Partition created: %s id=%s", new_name, result["id"])
             edit.setProperty("partition_id", result["id"])
             row = self._find_widget_row(0, edit)
             if row >= 0:
@@ -769,6 +774,7 @@ class SettingsDialog(QDialog):
                         self._config.set("general", "default_partition", value=other_pid)
                         break
             self._repository.delete_partition(pid)
+            _log.info("Partition deleted via settings: id=%s", pid)
 
         self._populate_partition_table()
         get_signal_bus().partitions_changed.emit()

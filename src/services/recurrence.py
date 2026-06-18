@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from datetime import datetime, timedelta
@@ -12,6 +13,8 @@ from ..models.repository import TaskRepository
 from ..models.task import Task
 from ..models.task_status import TaskStatus
 from ..utils.signal_bus import get_signal_bus
+
+_log = logging.getLogger("runlog")
 
 _RECUR_PATTERN = re.compile(r"^\+?(\d+)([dwmy])$")
 
@@ -59,6 +62,7 @@ class TaskRecurrence:
             updated_at=datetime.now(),
         )
         self._repository.insert(new_task)
+        _log.info("Recurrence clone: '%s' (id=%s) -> new task id=%s", task.title, task.id, new_task.id)
         self._signal_bus.task_created.emit(new_task)
 
     # ------------------------------------------------------------------

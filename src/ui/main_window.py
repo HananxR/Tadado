@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 import datetime as dt
 import json
+import logging
 from ctypes import wintypes
 from datetime import date
 
@@ -41,6 +42,9 @@ from ..services.update_checker import UpdateChecker
 from ..utils.icon_loader import load_icon
 from ..utils.signal_bus import get_signal_bus
 from ..utils.widget_utils import combo_width
+
+_log = logging.getLogger("runlog")
+
 from .calendar_heatmap.activity_content_view import ActivityContentView
 from .calendar_heatmap.calendar_heatmap_widget import CalendarHeatmapWidget
 from .calendar_heatmap.collapse_panel import HeatmapCollapsePanel
@@ -1559,6 +1563,7 @@ class MainWindow(QMainWindow):
             ids = [t.id for t in done_tasks if not t.archived]
             if ids:
                 self._repository.archive_batch(ids)
+                _log.info("Manual archive: %s tasks", len(ids))
             self._batch_page = 0
             self._refresh_batch_page()
             self._on_data_changed()
@@ -2003,6 +2008,7 @@ class MainWindow(QMainWindow):
     def _switch_view(self, view: str) -> None:
         if view == self._current_view:
             return
+        _log.info("View switched: %s", view)
         self._current_view = view
         # Cancel any pending deferred loads
         if hasattr(self, '_deferred_timer') and self._deferred_timer.isActive():
@@ -2325,9 +2331,11 @@ class MainWindow(QMainWindow):
         try:
             from ..services.md_importer import MarkdownImporter
             count = MarkdownImporter(self._repository).import_file(path)
+            _log.info("Import: %s -> %s tasks", path, count)
             self._on_data_changed()
             self._flash_status(f"已导入 {count} 个任务")
         except Exception as e:
+            _log.error("Import failed: %s", e)
             QMessageBox.warning(self, "导入失败", str(e))
 
     def _on_export(self) -> None:
@@ -2340,8 +2348,10 @@ class MainWindow(QMainWindow):
             from ..services.md_exporter import MarkdownExporter
             tasks = self._repository.get_all()
             MarkdownExporter.export_to_file(tasks, path)
+            _log.info("Export: %s -> %s tasks", path, len(tasks))
             self._flash_status(f"已导出到 {path}")
         except Exception as e:
+            _log.error("Export failed: %s", e)
             QMessageBox.warning(self, "导出失败", str(e))
 
     def _on_settings(self) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import uuid
 from datetime import date, datetime
@@ -12,6 +13,8 @@ from .migrations import compute_activity_counts, migrate
 from .task import Task
 from .task_filter import SortCriterion, TaskFilter
 from .task_status import TaskStatus
+
+_log = logging.getLogger("runlog")
 
 _TASK_COLUMNS = [
     "id", "raw_md", "title", "status", "priority", "tags",
@@ -141,12 +144,14 @@ class TaskRepository:
         self._conn.row_factory = sqlite3.Row
         migrate(self._conn)
         self._conn.commit()
+        _log.info("Database opened: %s (migrations applied)", self._db_path)
 
     def close(self) -> None:
         """Close the database connection."""
         if self._conn:
             self._conn.close()
             self._conn = None
+            _log.info("Database closed")
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -174,6 +179,7 @@ class TaskRepository:
         self.conn.execute(sql, row)
         self._update_fts(task)
         self.conn.commit()
+        _log.info('Task created: id=%s title="%s"', task.id, task.title)
         return task
 
     def update(self, task: Task) -> Task:
@@ -186,6 +192,7 @@ class TaskRepository:
         self.conn.execute(sql, row + (task.id,))
         self._update_fts(task)
         self.conn.commit()
+        _log.info('Task updated: id=%s title="%s"', task.id, task.title)
         return task
 
     def _recalc_activity_counts(self, task: Task) -> None:
@@ -201,7 +208,9 @@ class TaskRepository:
         self.conn.execute("DELETE FROM tasks_fts WHERE rowid = (SELECT rowid FROM tasks WHERE id=?)", (task_id,))
         cursor = self.conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
         self.conn.commit()
-        return cursor.rowcount > 0
+        removed = cursor.rowcount > 0
+        _log.info("Task deleted: id=%s removed=%s", task_id, removed)
+        return removed
 
     def get_by_id(self, task_id: str) -> Optional[Task]:
         """Retrieve a single task by id."""
@@ -650,6 +659,8 @@ class TaskRepository:
             (password, partition_id),
         )
         self.conn.commit()
+        _log.info("Partition password %s: id=%s",
+                  "set" if password else "cleared", partition_id)
 
     def update_partition_archive_days(self, partition_id: str, days: int) -> None:
         """Set the archive-after-completion days for a partition."""
@@ -658,6 +669,7 @@ class TaskRepository:
             (days, partition_id),
         )
         self.conn.commit()
+        _log.info("Partition archive days: id=%s days=%s", partition_id, days)
 
     def update_partition_archive_enabled(self, partition_id: str, enabled: int) -> None:
         """Set whether auto-archive is enabled for a partition."""
@@ -666,6 +678,7 @@ class TaskRepository:
             (enabled, partition_id),
         )
         self.conn.commit()
+        _log.info("Partition archive enabled: id=%s=%s", partition_id, enabled)
 
     def update_partition_auto_lock(self, partition_id: str, minutes: int) -> None:
         """Set the auto-lock timeout (minutes) for a partition."""
@@ -704,6 +717,7 @@ class TaskRepository:
                 (partition_id, name, sort_order, datetime.now().isoformat()),
             )
         self.conn.commit()
+        _log.info("Partition created/renamed: %s id=%s", name, partition_id)
         return {"id": partition_id, "name": name, "sort_order": sort_order}
 
     def delete_partition(self, partition_id: str) -> bool:
@@ -714,6 +728,7 @@ class TaskRepository:
         )
         self.conn.execute("DELETE FROM partitions WHERE id = ?", (partition_id,))
         self.conn.commit()
+        _log.info("Partition deleted: id=%s", partition_id)
         return True
 
     def get_all_tags(self, partition_id: str | None = None) -> list[str]:
@@ -861,6 +876,7 @@ class TaskRepository:
             count += 1
 
         self.conn.commit()
+        _log.info("Batch status update: %s tasks -> %s", count, new_status.value)
         return count
 
     def batch_update_urgency(self, task_ids: list[str], urgency: int) -> int:
@@ -883,6 +899,7 @@ class TaskRepository:
             self._update_fts(task)
             count += 1
         self.conn.commit()
+        _log.info("Batch urgency update: %s tasks -> %s", count, urgency)
         return count
 
     def batch_delete(self, task_ids: list[str]) -> int:
@@ -896,6 +913,7 @@ class TaskRepository:
             f"DELETE FROM tasks WHERE id IN ({placeholders})", task_ids
         )
         self.conn.commit()
+        _log.info("Batch delete: %s tasks", cursor.rowcount)
         return cursor.rowcount
 
     def batch_suspend(self, task_ids: list[str]) -> int:
@@ -926,6 +944,7 @@ class TaskRepository:
             )
             count += 1
         self.conn.commit()
+        _log.info("Batch suspend: %s tasks", count)
         return count
 
     def batch_restart(self, task_ids: list[str]) -> int:
@@ -956,6 +975,7 @@ class TaskRepository:
             )
             count += 1
         self.conn.commit()
+        _log.info("Batch restart: %s tasks", count)
         return count
 
     def batch_postpone(self, task_ids: list[str], days: int) -> int:
@@ -1010,6 +1030,7 @@ class TaskRepository:
         self.conn.commit()
         # Refresh overdue status after postponing deadlines
         self.refresh_overdue_status()
+        _log.info("Batch postpone: %s tasks +%sd", count, days)
         return count
 
     def batch_move_partition(self, task_ids: list[str], to_partition_id: str) -> int:
@@ -1040,6 +1061,7 @@ class TaskRepository:
             count += 1
 
         self.conn.commit()
+        _log.info("Batch move: %s tasks to partition %s", count, to_name)
         return count
 
     def count_by_status(self, task_ids: list[str]) -> dict[str, int]:
@@ -1141,6 +1163,7 @@ class TaskRepository:
             "AND (deadline_date >= ? OR deadline_date IS NULL)",
             (today_iso,),
         ).fetchall()
+        reverted = 0
         for row in rows:
             task = _row_to_task(tuple(row))
             old_status = task.status
@@ -1148,7 +1171,11 @@ class TaskRepository:
             task.raw_md = formatter.format(task)
             self.update(task)
             changed.append((task, old_status))
+            reverted += 1
 
+        promoted = len(changed) - reverted
+        if changed:
+            _log.info("Overdue refresh: %s promoted, %s reverted", promoted, reverted)
         return changed
 
     # ------------------------------------------------------------------
@@ -1178,6 +1205,7 @@ class TaskRepository:
             [now] + task_ids,
         )
         self.conn.commit()
+        _log.info("Archive batch: %s tasks", cursor.rowcount)
         return cursor.rowcount
 
     def get_last_archive_time(self) -> datetime | None:

@@ -23,6 +23,7 @@ from .ui.main_window import MainWindow
 from .ui.system_tray import SystemTrayManager
 from .utils.design_tokens import init_tokens, refresh_tokens
 from .utils.icon_loader import get_icon_loader
+from .utils.log_manager import setup_logging
 from .utils.signal_bus import get_signal_bus
 
 
@@ -289,6 +290,14 @@ class TadadoApp(QApplication):
 
     def __init__(self, argv: list[str], local_server: QLocalServer) -> None:
         super().__init__(argv)
+
+        # ── Logging — MUST be first, before any other initialization ──────
+        self._log = setup_logging()
+        from .version import get_version
+
+        self._log.info("=== Tadado v%s startup ===", get_version())
+        # ───────────────────────────────────────────────────────────────────
+
         self._local_server = local_server
         self._local_server.setParent(self)
         self._local_server.newConnection.connect(self._on_wake_request)
@@ -311,8 +320,8 @@ class TadadoApp(QApplication):
                 with open(_cfg_path, "r", encoding="utf-8") as _f:
                     _raw = json.load(_f)
                 _shield_dark = _raw.get("display", {}).get("theme") == "dark"
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log.warning("Failed to read config for shield theme: %s", exc)
 
         self._shield: StartupShield | None = StartupShield(is_dark=_shield_dark)
         self._shield.match_main_window_geometry()
@@ -327,6 +336,7 @@ class TadadoApp(QApplication):
 
         # ── Config + theme ──
         self._config = AppConfig()
+        self._log.info("Config loaded: theme=%s", self._config.theme)
         init_tokens(self._config)
         self._load_theme()  # set global QSS & QPalette BEFORE any widget is shown
 
@@ -334,6 +344,7 @@ class TadadoApp(QApplication):
         self._repository = TaskRepository(self._config.db_path())
         self._repository.completed_last = self._config.sort_completed_last
         self._repository.open()
+        self._log.info("Database opened: %s", self._config.db_path())
 
         # Ensure demo partition exists on first launch (skipped in frozen mode
         # — the package DB already contains pre-seeded data in 演示空间)
@@ -359,9 +370,12 @@ class TadadoApp(QApplication):
         self._notifier = TaskNotifier(self._tray, self._config, self._repository)
         self._archiver = TaskArchiver(self._repository, self._config)
         self._recurrence = TaskRecurrence(self._repository)
+        self._log.info("Services initialized: scheduler, notifier, archiver, recurrence")
 
         self._scheduler.start()
+        self._log.info("Scheduler started (overdue refresh every 60s)")
         self._archiver.start()
+        self._log.info("Archiver started (midnight cron)")
 
         # Sync auto-start registry with config on launch
         from .utils.win32_autostart import set_autostart
@@ -400,6 +414,7 @@ class TadadoApp(QApplication):
             self._shield = None
         self.restoreOverrideCursor()  # restore cursor after init
         self._tray.show()
+        self._log.info("Startup complete — main window visible")
         QTimer.singleShot(200, self._refresh_overdue_on_startup)
 
     def _on_wake_request(self) -> None:
@@ -500,9 +515,13 @@ class TadadoApp(QApplication):
     # ------------------------------------------------------------------
 
     def _on_quit(self) -> None:
+        self._log.info("Shutdown: stopping scheduler")
         self._scheduler.stop()
+        self._log.info("Shutdown: stopping archiver")
         self._archiver.stop()
+        self._log.info("Shutdown: closing database")
         self._repository.close()
+        self._log.info("=== Tadado shutdown complete ===")
         self.quit()
 
     def _load_icons(self) -> None:
@@ -510,6 +529,7 @@ class TadadoApp(QApplication):
         self.setWindowIcon(loader.app_icon())
 
     def _on_config_changed(self) -> None:
+        self._log.info("Config changed: theme=%s", self._config.theme)
         self._load_theme()
         refresh_tokens()
         get_icon_loader().clear_cache()

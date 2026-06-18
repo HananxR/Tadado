@@ -76,6 +76,35 @@
 
 **文件**：[src/utils/signal_bus.py](src/utils/signal_bus.py)
 
+### 1.5 日志系统
+
+**文件**：[src/utils/log_manager.py](src/utils/log_manager.py)
+
+Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
+
+| 属性 | 值 |
+|------|-----|
+| Logger 名称 | `runlog` |
+| 日志文件 | `resources/loginfo/tadado.log` |
+| 轮转策略 | `TimedRotatingFileHandler`，每日午夜切割，保留 3 天 |
+| 格式 | `%(asctime)s [%(levelname)s] %(name)s - %(message)s` |
+| 初始化时机 | `TadadoApp.__init__()` 首行，早于任何业务初始化 |
+
+**日志级别规范**：
+
+| 级别 | 使用场景 |
+|------|---------|
+| `ERROR` | 数据库异常、文件 I/O 错误、网络 API 错误、配置加载失败 |
+| `WARNING` | JSON 解析失败、版本解析失败、更新检测超时/回退、定时任务配置异常 |
+| `INFO` | 任务 CRUD、批量操作、分区操作、标签操作、应用启动/关闭阶段、配置变更 |
+| `DEBUG` | 查询语句构造（当前未使用，预留给未来诊断） |
+
+**性能约束**：
+- 不在 `search()`、`search_with_total()`、`count()`、热力图聚合等高频路径中记录日志
+- 不在 1s 时钟、5s 轮播、30s 空闲检测等定时回调中记录日志
+- 不在循环内部逐条记录，仅在操作边界记录一次汇总结果
+- `logging` 模块内置线程锁（`threading.RLock`），与 APScheduler 后台线程兼容
+
 ---
 
 ## 2. 功能模块设计

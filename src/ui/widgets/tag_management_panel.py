@@ -18,10 +18,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import logging
+
 from ...config import AppConfig
 from ...models.repository import TaskRepository
 from ...services.md_formatter import MarkdownTaskFormatter
 from ...utils.design_tokens import get_tokens
+
+_log = logging.getLogger("runlog")
 
 
 class TagManagementPanel(QWidget):
@@ -294,6 +298,7 @@ class TagManagementPanel(QWidget):
 
         self.tag_changed.emit()
         self.refresh()
+        _log.info('Tag renamed: "%s" -> "%s" (%s tasks affected)', old_tag, new_tag, count)
         QMessageBox.information(
             self, "重命名完成",
             f"已将标签 \"{old_tag}\" 重命名为 \"{new_tag}\"，更新了 {count} 个任务。",
@@ -384,6 +389,7 @@ class TagManagementPanel(QWidget):
 
         self.tag_changed.emit()
         self.refresh()
+        _log.info('Tag merged: %s sources -> "%s" (%s tasks affected)', len(source_tags), target_tag, count)
         QMessageBox.information(
             self, "合并完成",
             f"已将 {len(source_tags)} 个标签合并到 \"{target_tag}\"，更新了 {count} 个任务。",

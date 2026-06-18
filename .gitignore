@@ -18,6 +18,9 @@ data/
 resources/tadado.data
 resources/config.json
 
+# Log files
+resources/loginfo/
+
 # Claude (local only)
 .claude/settings.local.json
 

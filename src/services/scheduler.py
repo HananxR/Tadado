@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from apscheduler.schedulers.qt import QtScheduler
 
 from ..models.repository import TaskRepository
 from ..utils.signal_bus import get_signal_bus
+
+_log = logging.getLogger("runlog")
 
 
 class TaskScheduler:
@@ -38,13 +42,15 @@ class TaskScheduler:
                 id="daily_digest",
                 replace_existing=True,
             )
-        except (ValueError, AttributeError):
-            pass
+        except (ValueError, AttributeError) as exc:
+            _log.warning("Failed to parse digest time '%s': %s", digest_time, exc)
         self._scheduler.start()
+        _log.info("Scheduler started: overdue refresh every 60s, digest at %s", digest_time)
 
     def stop(self) -> None:
         if self._scheduler.running:
             self._scheduler.shutdown(wait=False)
+            _log.info("Scheduler stopped")
 
     # ------------------------------------------------------------------
     # Jobs
@@ -53,6 +59,8 @@ class TaskScheduler:
     def _check_due_tasks(self) -> None:
         """Auto-set/revert OVERDUE status for all tasks."""
         changed = self._repository.refresh_overdue_status()
+        if changed:
+            _log.info("Overdue check: %s tasks changed", len(changed))
         for task, old_status in changed:
             self._signal_bus.task_status_changed.emit(task, old_status)
 

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+_log = logging.getLogger("runlog")
+
 
 def export_markdown(report_data: dict, filepath: str) -> None:
     """Generate a compact Markdown work report.
@@ -35,8 +39,13 @@ def export_markdown(report_data: dict, filepath: str) -> None:
                 lines.append(f"  - {title} ({start_p}%→{end_p}%)")
         lines.append("")
 
-    with open(filepath, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        _log.info("Report exported (markdown): %s", filepath)
+    except OSError as exc:
+        _log.error("Failed to export markdown report: %s", exc)
+        raise
 
 
 def export_excel(report_data: dict, filepath: str) -> None:
@@ -88,4 +97,9 @@ def export_excel(report_data: dict, filepath: str) -> None:
     ws.column_dimensions["E"].width = 16
     ws.column_dimensions["F"].width = 50
 
-    wb.save(filepath)
+    try:
+        wb.save(filepath)
+        _log.info("Report exported (excel): %s", filepath)
+    except OSError as exc:
+        _log.error("Failed to export excel report: %s", exc)
+        raise

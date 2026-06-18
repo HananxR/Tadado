@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 
 from apscheduler.schedulers.qt import QtScheduler
@@ -9,6 +10,8 @@ from apscheduler.schedulers.qt import QtScheduler
 from ..config import AppConfig
 from ..models.repository import TaskRepository
 from ..utils.signal_bus import get_signal_bus
+
+_log = logging.getLogger("runlog")
 
 
 class TaskArchiver:
@@ -30,10 +33,12 @@ class TaskArchiver:
             replace_existing=True,
         )
         self._scheduler.start()
+        _log.info("Archiver started (midnight cron)")
 
     def stop(self) -> None:
         if self._scheduler.running:
             self._scheduler.shutdown(wait=False)
+            _log.info("Archiver stopped")
 
     def _run_archive(self) -> None:
         today = date.today()
@@ -50,7 +55,10 @@ class TaskArchiver:
             tasks = self._repository.get_tasks_for_archive(cutoff, p["id"])
             if tasks:
                 ids = [t.id for t in tasks]
-                total_archived += self._repository.archive_batch(ids)
+                count = self._repository.archive_batch(ids)
+                total_archived += count
+                _log.info("  Partition %s: %s archived", p["name"], count)
 
         if total_archived:
+            _log.info("Archive run complete: %s tasks across %s partitions", total_archived, len(partitions))
             self._signal_bus.archive_completed.emit(total_archived)

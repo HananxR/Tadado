@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import logging
+
 from PySide6.QtCore import QObject, Signal
 
 DEFAULT_CONFIG: dict = {
@@ -71,6 +73,7 @@ class AppConfig(QObject):
         super().__init__()
         self._data_dir = data_dir or _default_data_dir()
         self._data: dict = {}
+        self._log = logging.getLogger("runlog")
         self._load()
 
     # ------------------------------------------------------------------
@@ -85,17 +88,27 @@ class AppConfig(QObject):
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     self._data = json.load(f)
-            except (json.JSONDecodeError, OSError):
+            except json.JSONDecodeError:
+                self._log.warning("Config JSON decode error at %s, using defaults", config_path)
+                self._data = {}
+            except OSError as exc:
+                self._log.warning("Config read error at %s: %s", config_path, exc)
                 self._data = {}
         # Merge with defaults for any missing keys
         self._data = _deep_merge(DEFAULT_CONFIG, self._data)
+        self._log.info("Config loaded from %s", config_path)
         _migrate_old_database(self._data_dir)
 
     def save(self) -> None:
         """Persist current config to disk."""
         self._data_dir.mkdir(parents=True, exist_ok=True)
-        with open(self._config_path(), "w", encoding="utf-8") as f:
-            json.dump(self._data, f, ensure_ascii=False, indent=2)
+        try:
+            with open(self._config_path(), "w", encoding="utf-8") as f:
+                json.dump(self._data, f, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            self._log.error("Failed to save config: %s", exc)
+            return
+        self._log.info("Config saved to %s", self._config_path())
         self.config_changed.emit()
 
     # ------------------------------------------------------------------

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import sys
 from datetime import date, datetime
@@ -49,6 +50,8 @@ from ...utils.design_tokens import get_tokens
 from ...utils.signal_bus import get_signal_bus
 from ..widgets.deadline_calculator import DeadlineIntervalCalculator
 from ..widgets.dropdown import DropdownWidget
+
+_log = logging.getLogger("runlog")
 
 
 def _welcome_bg_path() -> str:
@@ -1348,8 +1351,10 @@ class TaskEditPanel(QWidget):
                 "progress": 0,
             })
             self._repository.insert(task)
+            _log.info('Task saved (new): id=%s title="%s"', task.id, task.title)
         else:
             self._repository.update(task)
+            _log.info('Task saved (update): id=%s title="%s"', task.id, task.title)
         self._original_md = task.raw_md
         self._save_btn.setEnabled(False)
         # Update editor with canonical Markdown
@@ -1464,6 +1469,7 @@ class TaskEditPanel(QWidget):
             )
         self.clear()
         if created > 0:
+            _log.info("Multi-task creation: %s created, %s errors", created, len(errors))
             self._signal_bus.tasks_bulk_created.emit(created, batch_ids)
 
     def _on_delete(self) -> None:
@@ -1476,6 +1482,7 @@ class TaskEditPanel(QWidget):
         )
         if result == QMessageBox.StandardButton.Yes:
             self._repository.delete(task.id)
+            _log.info('Task deleted via editor: id=%s title="%s"', task.id, task.title)
             self._signal_bus.task_deleted.emit(task.id)
             self.clear()
 

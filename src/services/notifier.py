@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from ..config import AppConfig
 from ..models.repository import TaskRepository
 from ..utils.signal_bus import get_signal_bus
+
+_log = logging.getLogger("runlog")
 
 
 class TaskNotifier:
@@ -55,6 +58,7 @@ class TaskNotifier:
         if total > 3:
             msg += f"\n…等 {total} 项"
 
+        _log.info("Daily digest: %s tasks (%s overdue, %s due today)", total, len(overdue), len(due_today))
         self._tray.show_message(title, msg)
 
     # ------------------------------------------------------------------
@@ -67,7 +71,8 @@ class TaskNotifier:
             end_str = self._config.get("reminders", "quiet_hours_end") or "08:00"
             start_h, start_m = map(int, start_str.split(":"))
             end_h, end_m = map(int, end_str.split(":"))
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError) as exc:
+            _log.warning("Failed to parse quiet hours: %s", exc)
             return False
 
         now = datetime.now().time()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -11,6 +12,8 @@ from PySide6.QtCore import QObject, QProcess, QTimer, QUrl, Signal
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from ..version import __version__, parse_version
+
+_log = logging.getLogger("runlog")
 
 _GITHUB_API = "https://api.github.com/repos/HananxR/Tadado/releases/latest"
 
@@ -57,6 +60,7 @@ class UpdateChecker(QObject):
 
         20-second timeout: if no result arrives, silently treat as no-update.
         """
+        _log.info("Update check started")
         self._stop_timeout()
         if self._reply is not None and self._reply.isRunning():
             self._reply.abort()
@@ -81,6 +85,7 @@ class UpdateChecker(QObject):
 
     def _on_timeout(self) -> None:
         """20 seconds elapsed — silently treat as no update."""
+        _log.warning("Update check timed out after 20s")
         if self._reply is not None and self._reply.isRunning():
             self._reply.abort()
         if self._aliyun_process is not None:
@@ -111,6 +116,7 @@ class UpdateChecker(QObject):
         err = reply.error()
         if err != QNetworkReply.NetworkError.NoError:
             # GitHub unreachable — Aliyun was already tried first, give up
+            _log.warning("GitHub API unreachable (error=%s)", err)
             self.check_finished.emit(None)
             return
 
@@ -118,12 +124,14 @@ class UpdateChecker(QObject):
         body = bytes(reply.readAll()).decode("utf-8", errors="replace")
 
         if status == 403 and "rate limit" in body.lower():
+            _log.warning("GitHub API rate limited")
             self.check_error.emit("GitHub API 请求频率限制，请稍后再试")
             return
         if status == 404:
             self.check_finished.emit(None)  # no GitHub releases yet — not an error
             return
         if status != 200:
+            _log.warning("GitHub API returned status %s", status)
             self.check_error.emit(f"GitHub API 返回异常状态码: {status}")
             return
 
@@ -134,8 +142,10 @@ class UpdateChecker(QObject):
                 self.check_finished.emit(None)
             else:
                 info["source"] = "github"
+                _log.info("GitHub check: new version %s", info["latest_version"])
                 self.check_finished.emit(info)
         except (json.JSONDecodeError, KeyError) as exc:
+            _log.warning("GitHub API parse error: %s", exc)
             self.check_error.emit(f"GitHub API 返回数据解析失败: {exc}")
 
     # ------------------------------------------------------------------
@@ -147,6 +157,7 @@ class UpdateChecker(QObject):
         Falls back to GitHub if the CLI is unavailable or fails."""
         cli_path = self._find_aliyunpan()
         if cli_path is None:
+            _log.warning("aliyunpan CLI not found, falling back to GitHub")
             self._try_github_check()  # fallback
             return
 
@@ -168,12 +179,14 @@ class UpdateChecker(QObject):
         self._aliyun_process = None
 
         if process.exitStatus() != QProcess.ExitStatus.NormalExit or process.exitCode() != 0:
+            _log.warning("aliyunpan failed (exit=%s), falling back to GitHub", process.exitCode())
             self._try_github_check()  # fallback
             return
 
         output = bytes(process.readAllStandardOutput()).decode("utf-8", errors="replace")
         latest_version = self._parse_aliyun_ls(output)
         if latest_version is None:
+            _log.warning("aliyunpan output parse failed, falling back to GitHub")
             self._try_github_check()  # fallback
             return
 
@@ -188,6 +201,7 @@ class UpdateChecker(QObject):
         if latest_tuple <= current_tuple:
             self.check_finished.emit(None)  # already latest
         else:
+            _log.info("Aliyun check: latest=%s", latest_version)
             self.check_finished.emit({
                 "latest_version": f"v{latest_version}",
                 "current_version": f"v{current}",
