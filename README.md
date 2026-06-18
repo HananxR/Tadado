@@ -247,7 +247,7 @@ uv run python main.py
 |------|------|
 | 语言 | Python 3.10+ |
 | GUI | PySide6 ≥ 6.5 |
-| 数据库 | SQLite 3 + 全文索引 |
+| 数据库 | SQLite 3 + FTS5 全文索引 + PRAGMA user_version 线性链迁移 |
 | 定时 | APScheduler ≥ 3.10 |
 | 打包 | PyInstaller + Inno Setup |
 
@@ -320,6 +320,8 @@ uv run python main.py
 - **本文档即完整使用手册** — 涵盖全部功能说明和常见问题
 - 技术设计文档 → [DESIGN.md](DESIGN.md)
 - 贡献指南 → [CONTRIBUTING.md](CONTRIBUTING.md)
+- 数据库版本迁移方案 → [docs/database-migration-technique.md](docs/database-migration-technique.md) — Tadado 自用的 SQLite PRAGMA user_version 线性链方案详解
+- FastAPI + Alembic 迁移指南 → [docs/fastapi-alembic-guide.md](docs/fastapi-alembic-guide.md) — 对比学习业界成熟方案的完整案例
 
 ## 🙏 致谢
 
