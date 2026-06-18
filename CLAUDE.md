@@ -38,32 +38,6 @@ Tadado — Windows 桌面任务管理工具，Python 3.10 + PySide6，Markdown �
 
 ---
 
-## 发布流程
-
-每次发版按以下步骤执行：
-
-```bash
-# 1. 更新版本号
-#    编辑 src/version.py，修改 __version__ 为新版本号
-
-# 2. 更新 changelog
-#    编辑 CHANGELOG.md，在顶部新增版本条目（Added / Changed / Fixed / Removed）
-
-# 3. 提交版本变更
-git add src/version.py CHANGELOG.md
-git commit -m "release: vX.Y.Z.W"
-
-# 4. 执行发布脚本（编译 + 打包 + tag + push）
-powershell -File release.ps1 v0.1.2.3
-
-# 5. 在浏览器打开的 GitHub Release 页面拖入 dist/ 下的文件，点击 Publish
-```
-
-注意事项：
-- **installer.iss 必须 UTF-8 with BOM** — `release.ps1` 已通过 .NET `UTF8Encoding($true)` 保证，手动编辑后需确认编码
-- `release.ps1` 会强制更新 tag 到 HEAD、push main + tag，无需手动 git push
-- 如果 GitHub Release 对比为空，检查 tag 是否指向最新 commit：`git rev-list -1 vX.Y.Z.W`
-
 ## 常用命令
 
 ```bash
@@ -79,8 +53,6 @@ uv run pytest -k "round_trip"                      # 关键字匹配
 
 # 代码质量
 uv run black src/ tests/ && uv run ruff check src/ tests/
-
-# 打包：执行 build.bat（PyInstaller standalone），安装版额外用 Inno Setup 编译 installer.iss
 ```
 
 ## 架构摘要

@@ -17,7 +17,7 @@
 | 定时任务 | APScheduler ≥ 3.10 (QtScheduler) |
 | 日期计算 | python-dateutil ≥ 2.8 |
 | Excel 导出 | openpyxl ≥ 3.1 |
-| 打包 | Nuitka --standalone + Inno Setup |
+| 打包 | PyInstaller + Inno Setup |
 | 开发工具 | pytest, black, ruff |
 
 ### 1.2 四层架构
@@ -124,7 +124,7 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 - 编辑面板活动时间线进度行新增"优先级"下拉（DropdownWidget 90px，与状态下拉同样式）
 - 批操作栏新增"更改优先级"按钮（QPushButton+QMenu，4 级子菜单）
 - 右键菜单新增"更改优先级"子菜单
-- 排序：`CASE WHEN status='DONE' THEN 1 ELSE 0 END ASC → urgency ASC → deadline_date ASC（NULL 最后）→ created_at ASC → completed_at DESC`。已完成任务始终排在最底部，组内按完成时间倒序（最近完成的排前面），通过设置 → 任务列表 → "已完成任务排在末尾"复选框可关闭
+- 排序：`CASE WHEN status='DONE' THEN 1 ELSE 0 END ASC → urgency ASC → deadline_date ASC（NULL 最后）→ created_at ASC → completed_at DESC`。已完成任务始终排在最底部，组内按完成时间倒序（最近完成的排前面），通过设置 → 任务列表 → "已完成置底"复选框可关闭
 - 排序刷新：`_build_filter_with_sort()` 以筛选栏为基底，叠加分区/速览范围
 - 自定义绘制：圆形复选框(绿色实心勾)、状态圆角徽章、整行优先级背景
 - 暂停任务渲染透明度 45%
@@ -655,9 +655,9 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 | 区块 | 配置项 | 控件 |
 |------|--------|------|
 | 外观 | 主题、最小化到托盘、开机自动启动 | 下拉(120px) / 复选框 / 复选框 |
-| 任务列表 | 每页条数、默认排序、已完成任务排在末尾 | 下拉(120px) / 下拉(120px) / 复选框，同列显示 |
+| 任务列表 | 每页条数、默认排序、已完成置底 | 下拉(120px) / 下拉(120px) / 复选框，同列显示 |
 | 提醒 | 每日摘要开关、推送时间、安静时段 | 复选框 / HH:MM 输入框 / HH:MM 输入框，同行显示 |
-| 归档 | 分区设定表格 | 含 `_section_header` 标题；7列均水平垂直居中（名称/阈值/锁定列为 QLabel+AlignCenter，复选框/密码按钮用 stretch-sandwich 布局 `_CenterHost` 居中）；工具栏"+ 新增""− 删除"始终可见；表格最大高度 300px，超出行数自动滚动，表头固定可见 |
+| 归档 / 分区管理 | 分区设定表格 | 含 `_section_header` 标题；7列均水平垂直居中（名称/阈值/锁定列为 QLabel+AlignCenter，复选框/密码按钮用 stretch-sandwich 布局 `_CenterHost` 居中）；工具栏"+ 新增""− 删除"始终可见；表格最大高度 300px，超出行数自动滚动，表头固定可见 |
 | 活动热力图 | 起始年份、配色方案 | 下拉(当前年份±5) / 下拉(4组方案)，同行显示 |
 | 激励语 | 4条激励语 | QLineEdit，标签统一右对齐 |
 
@@ -1117,10 +1117,10 @@ CREATE INDEX idx_tasks_suspended ON tasks(suspended);
 
 **演示空间任务覆盖**：TODO(7) / DOING(4) / DONE(2) / OVERDUE(2) / SUSPENDED(1)，4 级紧急度全覆盖，含循环规则 +1w、活动时间线、多标签。
 
-**构建流程**：[build.bat](build.bat) 在 Nuitka 编译前：
+**构建流程**：[pack_scripts/build.bat](pack_scripts/build.bat) 在 PyInstaller 编译前：
 1. 备份 dev DB → 删除 dev DB
 2. 运行 `uv run python scripts/create_package_db.py` 生成 package DB
-3. Nuitka 编译（`--include-data-dir=resources=resources` 自动包含 package DB）
+3. PyInstaller 编译（`--add-data="resources;resources"` 自动包含 package DB）
 4. 删除 package DB → 恢复 dev DB
 
 **运行时隔离**：
@@ -1164,7 +1164,7 @@ CREATE INDEX idx_tasks_suspended ON tasks(suspended);
 | pytest | ≥ 7.4.0 | 测试框架(开发) |
 | pytest-qt | ≥ 4.2.0 | Qt 测试支持(开发) |
 | pytest-mock | ≥ 3.11.0 | Mock 支持(开发) |
-| Nuitka | ≥ 2.0 | standalone 打包(开发) |
+| PyInstaller | ≥ 6.0.0 | standalone 打包(开发) |
 | black | — | 代码格式化(开发) |
 | ruff | — | Linting(开发) |
 
