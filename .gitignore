@@ -22,7 +22,8 @@ resources/config.json
 resources/loginfo/
 
 # Claude (local only)
-.claude/settings.local.json
+.claude/
+.agents/
 
 # Local docs (not for public repo)
 RELEASE.md

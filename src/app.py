@@ -438,8 +438,8 @@ class TadadoApp(QApplication):
         """Load bundled CJK + Emoji fonts on Linux (Windows has these system-wide)."""
         if sys.platform == "win32":
             return
-        # CJK fallback: WenQuanYi Micro Hei (OFL)
-        cjk = self._resource_path("fonts", "WenQuanYiMicroHei.ttc")
+        # CJK fallback: Noto Sans CJK SC (OFL)
+        cjk = self._resource_path("fonts", "NotoSansCJKsc-Regular.otf")
         if cjk and cjk.exists():
             QFontDatabase.addApplicationFont(str(cjk))
         # Emoji fallback: Noto Color Emoji (OFL)
