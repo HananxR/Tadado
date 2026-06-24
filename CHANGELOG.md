@@ -4,6 +4,14 @@ Tadado 版本更新日志。格式参考 [Keep a Changelog](https://keepachangel
 
 ---
 
+## [0.2.3] — 2026-06-24
+
+### Changed
+- **CJK 字体替换**：Linux 版本回退字体优化
+
+
+---
+
 ## [0.2.2] — 2026-06-18
 
 ### Added
