@@ -135,7 +135,10 @@ class StatusStatsBar(QWidget):
                 end = today.replace(month=12, day=31)
 
         for status, color, label in self._STATUSES:
-            f = TaskFilter(statuses={status}, date_from=start, date_to=end)
+            f = TaskFilter(
+                statuses={status}, date_from=start, date_to=end,
+                show_archived=True,
+            )
             if self._active_partition_id:
                 f.partition_id = self._active_partition_id
             if overdue_only:
@@ -173,7 +176,7 @@ class StatusStatsBar(QWidget):
             start = today.replace(month=1, day=1)
             end = today.replace(month=12, day=31)
 
-        f = TaskFilter(date_from=start, date_to=end)
+        f = TaskFilter(date_from=start, date_to=end, show_archived=True)
         if self._active_status is not None:
             f.statuses = {self._active_status}
         if self._active_partition_id:

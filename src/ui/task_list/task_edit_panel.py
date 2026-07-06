@@ -246,12 +246,16 @@ class _BannerWidget(QWidget):
 class TaskEditPanel(QWidget):
     """Right-side panel: raw_md editor, preview, save/delete, and card-style activity timeline."""
 
-    def __init__(self, repository: TaskRepository, task_model=None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, repository: TaskRepository, task_model=None,
+        task_service=None, parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._repository = repository
+        self._task_service = task_service
         self._task_model = task_model  # for in-place row updates
-        self._parser = MarkdownTaskParser()
-        self._formatter = MarkdownTaskFormatter()
+        self._parser = task_service._parser if task_service else MarkdownTaskParser()
+        self._formatter = task_service._formatter if task_service else MarkdownTaskFormatter()
         self._signal_bus = get_signal_bus()
         self._current_task: Task | None = None
         self._original_md: str = ""
@@ -750,7 +754,7 @@ class TaskEditPanel(QWidget):
             statuses={TaskStatus.TODO, TaskStatus.DOING, TaskStatus.OVERDUE},
             limit=1,
         )
-        results = self._repository.search(filter_)
+        results = self._task_service.search(filter_)
         return len(results) > 0
 
     def _current_banner_html(self, is_draft: bool = False) -> str:
@@ -1350,11 +1354,19 @@ class TaskEditPanel(QWidget):
                 "status": task.status.value,
                 "progress": 0,
             })
-            self._repository.insert(task)
-            _log.info('Task saved (new): id=%s title="%s"', task.id, task.title)
+            if self._task_service:
+                self._task_service._repo.insert(task)
+                _log.info('Task saved (new): id=%s title="%s"', task.id, task.title)
+            else:
+                self._repository.insert(task)
+                _log.info('Task saved (new): id=%s title="%s"', task.id, task.title)
         else:
-            self._repository.update(task)
-            _log.info('Task saved (update): id=%s title="%s"', task.id, task.title)
+            if self._task_service:
+                self._task_service._repo.update(task)
+                _log.info('Task saved (update): id=%s title="%s"', task.id, task.title)
+            else:
+                self._repository.update(task)
+                _log.info('Task saved (update): id=%s title="%s"', task.id, task.title)
         self._original_md = task.raw_md
         self._save_btn.setEnabled(False)
         # Update editor with canonical Markdown
@@ -1363,11 +1375,20 @@ class TaskEditPanel(QWidget):
         self._md_edit.blockSignals(False)
         self._update_preview()
         if is_draft:
-            self._signal_bus.task_created.emit(task)
+            if self._task_service:
+                self._task_service._bus.task_created.emit(task)
+            else:
+                self._signal_bus.task_created.emit(task)
         elif task.status != old_status:
-            self._signal_bus.task_status_changed.emit(task, old_status)
+            if self._task_service:
+                self._task_service._bus.task_status_changed.emit(task, old_status)
+            else:
+                self._signal_bus.task_status_changed.emit(task, old_status)
         else:
-            self._signal_bus.task_updated.emit(task)
+            if self._task_service:
+                self._task_service._bus.task_updated.emit(task)
+            else:
+                self._signal_bus.task_updated.emit(task)
         self._refresh_timeline()
         # Re-evaluate overdue status after save
         self._reevaluate_overdue()
@@ -1456,7 +1477,10 @@ class TaskEditPanel(QWidget):
             )
             # Apply formatter for canonical raw_md
             task.raw_md = self._formatter.format(task)
-            self._repository.insert(task)
+            if self._task_service:
+                self._task_service._repo.insert(task)
+            else:
+                self._repository.insert(task)
             if first_task is None:
                 first_task = task
             batch_ids.append(task.id)
@@ -1470,7 +1494,10 @@ class TaskEditPanel(QWidget):
         self.clear()
         if created > 0:
             _log.info("Multi-task creation: %s created, %s errors", created, len(errors))
-            self._signal_bus.tasks_bulk_created.emit(created, batch_ids)
+            if self._task_service:
+                self._task_service._bus.tasks_bulk_created.emit(created, batch_ids)
+            else:
+                self._signal_bus.tasks_bulk_created.emit(created, batch_ids)
 
     def _on_delete(self) -> None:
         if not self._current_task:
@@ -1481,9 +1508,13 @@ class TaskEditPanel(QWidget):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if result == QMessageBox.StandardButton.Yes:
-            self._repository.delete(task.id)
+            if self._task_service:
+                self._task_service._repo.delete(task.id)
+                self._task_service._bus.task_deleted.emit(task.id)
+            else:
+                self._repository.delete(task.id)
+                self._signal_bus.task_deleted.emit(task.id)
             _log.info('Task deleted via editor: id=%s title="%s"', task.id, task.title)
-            self._signal_bus.task_deleted.emit(task.id)
             self.clear()
 
     # ------------------------------------------------------------------
@@ -1514,9 +1545,15 @@ class TaskEditPanel(QWidget):
                     "content": f"调整截至时间由{old_dl}->{new_dl}，状态由逾期->进行中",
                     "status": task.status.value,
                 })
-                self._repository.update(task)
+                if self._task_service:
+                    self._task_service._repo.update(task)
+                else:
+                    self._repository.update(task)
                 self._original_md = task.raw_md
-                self._signal_bus.task_status_changed.emit(task, TaskStatus.OVERDUE)
+                if self._task_service:
+                    self._task_service._bus.task_status_changed.emit(task, TaskStatus.OVERDUE)
+                else:
+                    self._signal_bus.task_status_changed.emit(task, TaskStatus.OVERDUE)
                 # Repopulate combo back to DOING/DONE
                 self._status_combo.blockSignals(True)
                 self._status_combo.clear()
@@ -1538,9 +1575,15 @@ class TaskEditPanel(QWidget):
                 "content": f"超过截至时间({now_str}),当前项目已逾期",
                 "status": task.status.value,
             })
-            self._repository.update(task)
+            if self._task_service:
+                self._task_service._repo.update(task)
+            else:
+                self._repository.update(task)
             self._original_md = task.raw_md
-            self._signal_bus.task_status_changed.emit(task, old_status)
+            if self._task_service:
+                self._task_service._bus.task_status_changed.emit(task, old_status)
+            else:
+                self._signal_bus.task_status_changed.emit(task, old_status)
             # Populate combo with only OVERDUE (locked)
             self._status_combo.blockSignals(True)
             self._status_combo.clear()
@@ -1795,8 +1838,10 @@ class TaskEditPanel(QWidget):
             self._original_md = task.raw_md
             if self._task_model:
                 self._task_model.update_task(task)
-            self._signal_bus.task_updated.emit(task)
-            self._log_edit.clear()
+            if self._task_service:
+                self._task_service._bus.task_updated.emit(task)
+            else:
+                self._signal_bus.task_updated.emit(task)
             self._md_edit.setText(task.raw_md)  # sync Markdown editor
             self._update_preview()
             self._refresh_timeline()
@@ -1849,14 +1894,23 @@ class TaskEditPanel(QWidget):
             "urgency": task.urgency,
         })
         task.updated_at = datetime.now()
-        self._repository.update(task)
+        if self._task_service:
+            self._task_service._repo.update(task)
+        else:
+            self._repository.update(task)
         self._original_md = task.raw_md
         if self._task_model:
             self._task_model.update_task(task)
         if task.status != old_status:
-            self._signal_bus.task_status_changed.emit(task, old_status)
+            if self._task_service:
+                self._task_service._bus.task_status_changed.emit(task, old_status)
+            else:
+                self._signal_bus.task_status_changed.emit(task, old_status)
         else:
-            self._signal_bus.task_updated.emit(task)
+            if self._task_service:
+                self._task_service._bus.task_updated.emit(task)
+            else:
+                self._signal_bus.task_updated.emit(task)
         self._log_edit.clear()
         self._md_edit.setText(task.raw_md)  # sync Markdown editor
         self._update_preview()

@@ -25,6 +25,7 @@ from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...services.md_formatter import MarkdownTaskFormatter
 from ...services.md_parser import MarkdownTaskParser
+from ...services.task_service import TaskService
 from ..widgets.deadline_calculator import DeadlineIntervalCalculator
 
 
@@ -38,14 +39,16 @@ class MultiTaskDialog(QDialog):
         repository: TaskRepository,
         partition_id: str,
         config: AppConfig | None = None,
+        task_service=None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._repository = repository
+        self._task_service = task_service
         self._partition_id = partition_id
         self._config = config
-        self._parser = MarkdownTaskParser()
-        self._formatter = MarkdownTaskFormatter()
+        self._parser = task_service._parser if task_service else MarkdownTaskParser()
+        self._formatter = task_service._formatter if task_service else MarkdownTaskFormatter()
         self._setup_ui()
         self.setWindowTitle("多任务创建")
         self.setMinimumSize(520, 420)
@@ -222,9 +225,16 @@ class MultiTaskDialog(QDialog):
             )
 
         if tasks_to_insert:
-            for task in tasks_to_insert:
-                self._repository.insert(task)
-            self.tasks_created.emit(len(tasks_to_insert))
+            if self._task_service:
+                for task in tasks_to_insert:
+                    self._task_service._repo.insert(task)
+                self._task_service._bus.tasks_bulk_created.emit(
+                    len(tasks_to_insert), [t.id for t in tasks_to_insert]
+                )
+            else:
+                for task in tasks_to_insert:
+                    self._repository.insert(task)
+                self.tasks_created.emit(len(tasks_to_insert))
             self.accept()
         elif errors:
             return

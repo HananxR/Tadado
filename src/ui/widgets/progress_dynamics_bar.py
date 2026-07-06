@@ -155,7 +155,9 @@ class ProgressDynamicsBar(QWidget):
         """Re-query repository and update display based on current mode."""
         if not self._active_period:
             return
-        filter_ = TaskFilter(partition_id=self._partition_id)
+        filter_ = TaskFilter(
+            partition_id=self._partition_id, show_archived=True,
+        )
         tasks = self._repository.search(filter_)
         self.set_items(tasks)
 
@@ -193,10 +195,25 @@ class ProgressDynamicsBar(QWidget):
 
     def build_filter(self) -> TaskFilter:
         """Build TaskFilter for the active period, sorted by urgency."""
-        return TaskFilter(
+        _ACTIVITY_FIELDS = {
+            "yesterday": "activity_yesterday",
+            "today": "activity_today",
+            "last_week": "activity_last_week",
+            "week": "activity_week",
+            "last_month": "activity_last_month",
+            "month": "activity_month",
+        }
+        f = TaskFilter(
             partition_id=self._partition_id,
             sort_by=[SortCriterion("urgency", ascending=True)],
+            show_archived=True,
         )
+        if self._active_period:
+            field = _ACTIVITY_FIELDS.get(self._active_period)
+            if field:
+                f.activity_field = field
+                f.activity_min = 1
+        return f
 
     def filter_tasks_by_activity(self, tasks: list[Task]) -> list[Task]:
         """Return tasks that have activity_log entries in the active period."""
@@ -389,6 +406,7 @@ class ProgressDynamicsBar(QWidget):
             self.progress_filter_activated.emit(TaskFilter(
                 partition_id=self._partition_id,
                 sort_by=[SortCriterion("urgency", ascending=True)],
+                show_archived=True,
             ))
             return
         # Toggle on: enter carousel mode

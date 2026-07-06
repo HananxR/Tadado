@@ -26,10 +26,12 @@
 ┌──────────────────────────────────────────┐
 │  UI 层 (src/ui/)                          │
 │  MainWindow, TaskListView, Heatmap, ...  │
+│  controllers/ (Partition, Batch, Filter) │
 ├──────────────────────────────────────────┤
 │  服务层 (src/services/)                   │
-│  Parser, Formatter, Scheduler, Notifier, │
-│  Archiver, Recurrence, UpdateChecker     │
+│  TaskService, Parser, Formatter,         │
+│  Scheduler, Notifier, Archiver,          │
+│  Recurrence, UpdateChecker               │
 ├──────────────────────────────────────────┤
 │  模型层 (src/models/)                     │
 │  Task, TaskStatus, TaskFilter,           │
@@ -41,14 +43,28 @@
 └──────────────────────────────────────────┘
 
 模块间通信：SignalBus (Qt 信号，单例)
+数据门面：TaskService（UI 层与数据层唯一接缝）
 配置中心：AppConfig (JSON 持久化，热加载)
 主题系统：DesignTokens (20+ 语义色角色)
 ```
 
-### 1.3 核心设计决策
+### 1.3 UI 控制器
 
-1. **raw_md 是规范数据源** — 结构化字段从 Markdown 解析派生，始终可重新生成。`MarkdownTaskFormatter` 保证往返稳定（解析→格式化→解析 一致）。
-2. **SignalBus 解耦** — 所有模块通过 Qt 信号通信，无直接跨层调用。
+MainWindow 拆分为 3 个可独立测试的控制器（`src/ui/controllers/`）：
+
+| 控制器 | 文件 | 职责 |
+|--------|------|------|
+| PartitionController | `partition_controller.py` | 分区生命周期、密码缓存、空闲锁定、状态栏分区按钮和菜单 |
+| BatchController | `batch_controller.py` | 任务管理页面构建、批量操作、手动归档/清除、批量导出 |
+| FilterCoordinator | `filter_coordinator.py` | 编辑视图数据刷新、过滤器合并、分页状态、任务选择和高亮 |
+
+控制器通过构造函数注入依赖，不直接访问数据库。
+
+### 1.4 核心设计决策
+
+1. **TaskService 单门面** — UI 层所有数据操作通过 `TaskService`，不再直接调用 `TaskRepository`。TaskService 持有 Parser/Formatter/SignalBus，在写操作后统一发射信号、重建 raw_md。
+2. **raw_md 是规范数据源** — 结构化字段从 Markdown 解析派生，始终可重新生成。`MarkdownTaskFormatter` 保证往返稳定。
+3. **SignalBus 解耦** — 所有模块通过 Qt 信号通信，无直接跨层调用。
 3. **生产/开发环境隔离** — `sys.frozen` 判断，打包版使用预制 package DB（4 分区 + 演示空间预设数据），开发版使用 dev DB（含测试分区 + 功能演示分区）；构建时通过 `scripts/create_package_db.py` 生成 package DB，frozen 模式跳过自动 seeding。
 4. **Design Tokens 语义化配色** — 所有颜色通过 `design_tokens.py` 的语义角色引用，亮/暗主题全局切换。
 
@@ -444,7 +460,7 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 |---|---|---|
 | 触发 | 每日 02:07 Cron | 用户点击按钮 |
 | 范围 | 受分区 `archive_days` 阈值限制 | 当前分区**全部**已完成任务 |
-| 依赖 | `archive_enabled` 开关 | 不依赖配置，随时可用 |
+| 依赖 | 仅 `archive_days` 控制（0=即时，9999=永不） | 不依赖配置，随时可用 |
 | 定位 | 日常自动维护 | 用户主动即时清理 |
 
 两者互补：自动归档负责日常按规则静默维护，手动归档给用户随时清理的自由。
@@ -608,11 +624,11 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 - 密码保护：设置/清除密码，解锁后内存中保留；**切换分区立即恢复锁定**（2026-06-04 修复：此前解锁后切换分区不会重新锁定，为严重安全漏洞）；**状态栏分区按钮/菜单显示 🔒（锁定）/🔓（已解锁）双态**，与 ✓ 选中标记互不冲突
 - 自动锁定：按分区独立设置（默认 3 分钟），空闲超过 `auto_lock_minutes/2` 时自动锁定；仅对有密码的分区生效；**使用 DB 直接查询密码状态，解锁后仍可正常触发重新锁定**（2026-06-04 修复：此前解锁后 `_partition_passwords[pid]=""` 导致锁定条件永远为 False）
 - 分区切换：QToolButton 下拉菜单，切换后刷新任务列表
-- 归档天数：每分区独立配置
+- 归档天数：每分区独立配置，默认值 0。0=完成任务后即时归档，1~9998=完成后N天午夜归档，9999=永不归档
 
 #### 实现方案
 
-- SQLite `partitions` 表：id, name, sort_order, password, archive_days, archive_enabled, auto_lock_minutes, created_at
+- SQLite `partitions` 表：id, name, sort_order, password, archive_days, auto_lock_minutes, created_at
 - `_partition_passwords: dict[str, str]` — 主窗口内存管理(空字符串=已解锁)，`_load_partitions()` 从 DB 同步
 - `_partition_auto_lock: dict[str, int]` — 按分区独立自动锁定分钟数(默认 3)，`_check_idle_lock()` 读取
 - `_partition_mask` (QStackedLayout index 1) — 密码蒙版覆盖 QSplitter，含提示标签+解锁按钮
@@ -650,18 +666,16 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 
 #### 需求
 
-单页布局，7 个功能区块，QGridLayout 双列统一对齐：
+单页布局，4 个功能区块，QGridLayout 双列统一对齐：
 
 | 区块 | 配置项 | 控件 |
 |------|--------|------|
 | 外观 | 主题、最小化到托盘、开机自动启动 | 下拉(120px) / 复选框 / 复选框 |
 | 任务列表 | 每页条数、默认排序、已完成置底 | 下拉(120px) / 下拉(120px) / 复选框，同列显示 |
-| 提醒 | 每日摘要开关、推送时间、安静时段 | 复选框 / HH:MM 输入框 / HH:MM 输入框，同行显示 |
-| 归档 / 分区管理 | 分区设定表格 | 含 `_section_header` 标题；7列均水平垂直居中（名称/阈值/锁定列为 QLabel+AlignCenter，复选框/密码按钮用 stretch-sandwich 布局 `_CenterHost` 居中）；工具栏"+ 新增""− 删除"始终可见；表格最大高度 300px，超出行数自动滚动，表头固定可见 |
 | 活动热力图 | 起始年份、配色方案 | 下拉(当前年份±5) / 下拉(4组方案)，同行显示 |
-| 激励语 | 4条激励语 | QLineEdit，标签统一右对齐 |
+| 归档 / 分区管理 | 分区设定表格 | 5列：名称、默认分区、归档阈值(天)、自动锁定(分)、密码；工具栏"+ 新增""− 删除"；表格最大高度 300px，表头固定 |
 
-归档阈值 >= 0，0=任务完成后即时归档，9999=不归档。自动归档每日 00:00 执行，按分区独立开关+阈值控制。
+归档阈值 >= 0，默认 0。0=完成任务后即时归档，1~9998=完成后N天午夜归档，9999=永不归档。双击单元格编辑数值。复选框改用标准 QCheckBox（无动画）。
 
 #### 实现方案
 
@@ -759,7 +773,14 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 
 **需求**：每日 02:07(Cron) 运行，按分区 `archive_days` 阈值归档已完成任务。
 
-**实现方案**：APScheduler CronTrigger(hour=2, minute=7)。遍历分区 → `get_tasks_for_archive(cutoff)` → `archive_batch(task_ids)` → 发射 `archive_completed(count)`。
+**归档规则**：
+- `archive_days = 0`：任务标记 DONE 时即时归档（通过监听 `task_status_changed` 信号触发，覆盖单任务、批量操作、新建即 DONE 三条路径）
+- `archive_days = 1~9998`：完成后 N 天，午夜自动归档。筛选条件：`completed_at ≤ today - archive_days`
+- `archive_days ≥ 9999`：永不归档
+- 切换分区或设置中改阈值为 0 时，追溯归档该分区所有已有 DONE 任务
+- 归档任务从 DONE 改为其他状态时，自动取消归档（`archived=1 → archived=0`）
+
+**实现方案**：APScheduler CronTrigger(hour=2, minute=7)。遍历分区 → `get_tasks_for_archive(cutoff)` → `archive_batch(task_ids)` → 发射 `archive_completed(count)`。即时归档和取消归档由 TaskService 监听 SignalBus 信号处理。
 
 #### 2.10.4 TaskRecurrence — 循环任务
 
@@ -1080,7 +1101,8 @@ CREATE TABLE partitions (
     name TEXT NOT NULL,
     sort_order INTEGER DEFAULT 0,
     password TEXT DEFAULT '',
-    archive_days INTEGER DEFAULT 9999,
+    archive_days INTEGER NOT NULL DEFAULT 0,
+    auto_lock_minutes INTEGER NOT NULL DEFAULT 3,
     created_at TEXT DEFAULT (datetime('now'))
 );
 

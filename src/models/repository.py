@@ -549,7 +549,7 @@ class TaskRepository:
         end = f"{year}-12-31"
         query = """SELECT COALESCE(deadline_date, scheduled_date, created_at) as d, COUNT(*)
                    FROM tasks
-                   WHERE d BETWEEN ? AND ? AND archived = 0"""
+                   WHERE d BETWEEN ? AND ?"""
         params: list = [start, end]
         if tags:
             tag_clauses = " AND ".join("tags LIKE ?" for _ in tags)
@@ -569,7 +569,7 @@ class TaskRepository:
 
     def get_heatmap_activity_data(self, year: int, tags: list[str] | None = None, partition_id: str | None = None) -> tuple[dict[date, int], dict[date, int]]:
         """Return (entry_counts, task_counts) per date, based on activity_log timestamps."""
-        query = """SELECT id, activity_log FROM tasks WHERE archived = 0"""
+        query = """SELECT id, activity_log FROM tasks WHERE 1=1"""
         params: list = []
         if tags:
             tag_clauses = " AND ".join("tags LIKE ?" for _ in tags)
@@ -733,7 +733,7 @@ class TaskRepository:
 
     def get_all_tags(self, partition_id: str | None = None) -> list[str]:
         """Return all unique tags from non-archived tasks, optionally filtered by partition."""
-        query = "SELECT DISTINCT tags FROM tasks WHERE archived = 0"
+        query = "SELECT DISTINCT tags FROM tasks WHERE 1=1"
         params: list = []
         if partition_id:
             query += " AND partition_id = ?"
@@ -752,7 +752,7 @@ class TaskRepository:
         Sorted by count descending, then by tag name (case-insensitive) ascending.
         Optionally filtered by partition.
         """
-        query = "SELECT tags FROM tasks WHERE archived = 0 AND tags != '[]'"
+        query = "SELECT tags FROM tasks WHERE tags != '[]'"
         params: list = []
         if partition_id:
             query += " AND partition_id = ?"
@@ -805,8 +805,8 @@ class TaskRepository:
         self, partition_id: str | None = None,
         date_from: date | None = None, date_to: date | None = None,
     ) -> dict[TaskStatus, int]:
-        """Return counts grouped by task status, excluding suspended and archived."""
-        clauses = ["archived=0", "suspended=0"]
+        """Return counts grouped by task status, excluding suspended."""
+        clauses = ["suspended=0"]
         params: list = []
         if partition_id:
             clauses.append("partition_id=?")
@@ -827,11 +827,13 @@ class TaskRepository:
     # Batch operations
     # ------------------------------------------------------------------
 
-    def batch_update_status(self, task_ids: list[str], new_status: TaskStatus) -> int:
-        """Bulk update status for multiple tasks, recording activity_log entries."""
-        from ..services.md_formatter import MarkdownTaskFormatter
+    def batch_update_status(
+        self, task_ids: list[str], new_status: TaskStatus, formatter=None,
+    ) -> int:
+        """Bulk update status for multiple tasks, recording activity_log entries.
 
-        formatter = MarkdownTaskFormatter()
+        If *formatter* is provided, ``raw_md`` is regenerated and FTS re-indexed.
+        """
         now = datetime.now().isoformat()
         status_value = new_status.value
         count = 0
@@ -858,16 +860,16 @@ class TaskRepository:
                  task.completed_at.isoformat() if task.completed_at else None,
                  task_id),
             )
-            # Update task for FTS and raw_md sync
             task.status = new_status
             task.activity_log = log
             task.updated_at = _parse_datetime(now)
-            task.raw_md = formatter.format(task)
-            self.conn.execute(
-                "UPDATE tasks SET raw_md=? WHERE id=?",
-                (task.raw_md, task_id),
-            )
-            self._update_fts(task)
+            if formatter is not None:
+                task.raw_md = formatter.format(task)
+                self.conn.execute(
+                    "UPDATE tasks SET raw_md=? WHERE id=?",
+                    (task.raw_md, task_id),
+                )
+                self._update_fts(task)
             self._recalc_activity_counts(task)
             self.conn.execute(
                 "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
@@ -879,10 +881,13 @@ class TaskRepository:
         _log.info("Batch status update: %s tasks -> %s", count, new_status.value)
         return count
 
-    def batch_update_urgency(self, task_ids: list[str], urgency: int) -> int:
-        """Bulk update urgency for multiple tasks, regenerating raw_md."""
-        from ..services.md_formatter import MarkdownTaskFormatter
-        formatter = MarkdownTaskFormatter()
+    def batch_update_urgency(
+        self, task_ids: list[str], urgency: int, formatter=None,
+    ) -> int:
+        """Bulk update urgency for multiple tasks.
+
+        If *formatter* is provided, ``raw_md`` is regenerated and FTS re-indexed.
+        """
         now = datetime.now().isoformat()
         count = 0
         for task_id in task_ids:
@@ -890,13 +895,19 @@ class TaskRepository:
             if task is None:
                 continue
             task.urgency = urgency
-            task.raw_md = formatter.format(task)
             task.updated_at = _parse_datetime(now)
-            self.conn.execute(
-                "UPDATE tasks SET urgency=?, raw_md=?, updated_at=? WHERE id=?",
-                (urgency, task.raw_md, now, task_id),
-            )
-            self._update_fts(task)
+            if formatter is not None:
+                task.raw_md = formatter.format(task)
+                self.conn.execute(
+                    "UPDATE tasks SET urgency=?, raw_md=?, updated_at=? WHERE id=?",
+                    (urgency, task.raw_md, now, task_id),
+                )
+                self._update_fts(task)
+            else:
+                self.conn.execute(
+                    "UPDATE tasks SET urgency=?, updated_at=? WHERE id=?",
+                    (urgency, now, task_id),
+                )
             count += 1
         self.conn.commit()
         _log.info("Batch urgency update: %s tasks -> %s", count, urgency)
@@ -978,13 +989,15 @@ class TaskRepository:
         _log.info("Batch restart: %s tasks", count)
         return count
 
-    def batch_postpone(self, task_ids: list[str], days: int) -> int:
-        """Postpone deadline for multiple tasks by N days, recording activity_log."""
+    def batch_postpone(
+        self, task_ids: list[str], days: int, formatter=None,
+    ) -> int:
+        """Postpone deadline for multiple tasks by N days, recording activity_log.
+
+        If *formatter* is provided, ``raw_md`` is regenerated and FTS re-indexed.
+        """
         from datetime import timedelta
 
-        from ..services.md_formatter import MarkdownTaskFormatter
-
-        formatter = MarkdownTaskFormatter()
         now = datetime.now().isoformat()
         count = 0
 
@@ -1015,11 +1028,12 @@ class TaskRepository:
             task.deadline_date = new_date
             task.activity_log = log
             task.updated_at = _parse_datetime(now)
-            task.raw_md = formatter.format(task)
-            self.conn.execute(
-                "UPDATE tasks SET raw_md=? WHERE id=?", (task.raw_md, task_id)
-            )
-            self._update_fts(task)
+            if formatter is not None:
+                task.raw_md = formatter.format(task)
+                self.conn.execute(
+                    "UPDATE tasks SET raw_md=? WHERE id=?", (task.raw_md, task_id)
+                )
+                self._update_fts(task)
             self._recalc_activity_counts(task)
             self.conn.execute(
                 "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
@@ -1029,7 +1043,7 @@ class TaskRepository:
 
         self.conn.commit()
         # Refresh overdue status after postponing deadlines
-        self.refresh_overdue_status()
+        self.refresh_overdue_status(formatter=formatter)
         _log.info("Batch postpone: %s tasks +%sd", count, days)
         return count
 
@@ -1129,15 +1143,14 @@ class TaskRepository:
     # Overdue status refresh
     # ------------------------------------------------------------------
 
-    def refresh_overdue_status(self) -> list[tuple[Task, TaskStatus]]:
+    def refresh_overdue_status(self, formatter=None) -> list[tuple[Task, TaskStatus]]:
         """Scan all tasks and auto-set or revert OVERDUE status.
 
         Returns a list of (task, old_status) for each changed task
         so callers can emit ``task_status_changed`` signals.
-        """
-        from ..services.md_formatter import MarkdownTaskFormatter
 
-        formatter = MarkdownTaskFormatter()
+        If *formatter* is provided, ``raw_md`` is regenerated.
+        """
         changed: list[tuple[Task, TaskStatus]] = []
         today_iso = date.today().isoformat()
         cols = ", ".join(_TASK_COLUMNS)
@@ -1153,7 +1166,8 @@ class TaskRepository:
             task = _row_to_task(tuple(row))
             old_status = task.status
             task.status = TaskStatus.OVERDUE
-            task.raw_md = formatter.format(task)
+            if formatter is not None:
+                task.raw_md = formatter.format(task)
             self.update(task)
             changed.append((task, old_status))
 
@@ -1168,7 +1182,8 @@ class TaskRepository:
             task = _row_to_task(tuple(row))
             old_status = task.status
             task.status = TaskStatus.DOING
-            task.raw_md = formatter.format(task)
+            if formatter is not None:
+                task.raw_md = formatter.format(task)
             self.update(task)
             changed.append((task, old_status))
             reverted += 1

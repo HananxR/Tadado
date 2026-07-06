@@ -20,7 +20,7 @@ from ...models.task import Task
 from ...models.task_status import TaskStatus
 from ...services.md_formatter import MarkdownTaskFormatter
 from ...services.md_parser import MarkdownTaskParser
-from ...utils.signal_bus import get_signal_bus
+from ...services.task_service import TaskService
 
 
 class TaskDialog(QDialog):
@@ -30,14 +30,15 @@ class TaskDialog(QDialog):
         self,
         repository: TaskRepository,
         task: Task | None = None,
+        task_service: TaskService | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._repository = repository
+        self._task_service = task_service
         self._task = task
-        self._parser = MarkdownTaskParser()
-        self._formatter = MarkdownTaskFormatter()
-        self._signal_bus = get_signal_bus()
+        self._parser = task_service._parser if task_service else MarkdownTaskParser()
+        self._formatter = task_service._formatter if task_service else MarkdownTaskFormatter()
         self._editing = task is not None
 
         self.setWindowTitle("编辑任务" if self._editing else "新建任务")
@@ -188,11 +189,19 @@ class TaskDialog(QDialog):
                     return
             # Normalize to canonical Markdown (mirrors TaskEditPanel._on_save)
             self._task.raw_md = self._formatter.format(self._task)
-            self._repository.update(self._task)
-            if self._task.status != old_status:
-                self._signal_bus.task_status_changed.emit(self._task, old_status)
+            if self._task_service:
+                if self._task.status != old_status:
+                    self._task_service.change_task_status(self._task, self._task.status)
+                else:
+                    self._task_service.update_task(self._task)
             else:
-                self._signal_bus.task_updated.emit(self._task)
+                self._repository.update(self._task)
+                if self._task.status != old_status:
+                    from ...utils.signal_bus import get_signal_bus
+                    get_signal_bus().task_status_changed.emit(self._task, old_status)
+                else:
+                    from ...utils.signal_bus import get_signal_bus
+                    get_signal_bus().task_updated.emit(self._task)
         else:
             now = datetime.now()
             task = Task(
@@ -216,7 +225,13 @@ class TaskDialog(QDialog):
             )
             # Normalize to canonical Markdown
             task.raw_md = self._formatter.format(task)
-            self._repository.insert(task)
+            if self._task_service:
+                self._task_service._repo.insert(task)
+                self._task_service._bus.task_created.emit(task)
+            else:
+                self._repository.insert(task)
+                from ...utils.signal_bus import get_signal_bus
+                get_signal_bus().task_created.emit(task)
             self._signal_bus.task_created.emit(task)
 
         self.accept()

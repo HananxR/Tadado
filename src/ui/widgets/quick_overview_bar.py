@@ -312,11 +312,13 @@ class QuickOverviewBar(QWidget):
         """Build a TaskFilter matching the active preset, sorted by urgency.
 
         Filters by created_at ≤ time boundary.
-        Archived-DONE tasks are excluded by repository's default archived=0 clause.
+        Includes archived tasks so completed history is always visible.
         """
         today = date.today()
         sort = [SortCriterion("urgency", ascending=True)]
-        filter_ = TaskFilter(partition_id=self._partition_id, sort_by=sort)
+        filter_ = TaskFilter(
+            partition_id=self._partition_id, sort_by=sort, show_archived=True,
+        )
 
         if self._active_preset == "yesterday":
             filter_.created_to = today - timedelta(days=1)

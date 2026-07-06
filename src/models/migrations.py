@@ -80,7 +80,7 @@ def _migrate_0_to_1(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL,
             sort_order INTEGER NOT NULL DEFAULT 0,
             password TEXT DEFAULT '',
-            archive_days INTEGER NOT NULL DEFAULT 9999,
+            archive_days INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         );
     """)
@@ -262,6 +262,13 @@ def _migrate_6_to_7(conn: sqlite3.Connection) -> None:
         pass
 
 
+def _migrate_7_to_8(conn: sqlite3.Connection) -> None:
+    """Set archive_days default to 0 (was 9999)."""
+    conn.execute(
+        "UPDATE partitions SET archive_days = 0 WHERE archive_days = 9999"
+    )
+
+
 MIGRATIONS: list[tuple[int, int, MigrationStep]] = [
     (0, 1, _migrate_0_to_1),
     (1, 2, _migrate_1_to_2),
@@ -270,4 +277,5 @@ MIGRATIONS: list[tuple[int, int, MigrationStep]] = [
     (4, 5, _migrate_4_to_5),
     (5, 6, _migrate_5_to_6),
     (6, 7, _migrate_6_to_7),
+    (7, 8, _migrate_7_to_8),
 ]

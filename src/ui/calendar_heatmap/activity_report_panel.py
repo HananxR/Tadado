@@ -172,7 +172,7 @@ class ActivityReportPanel(QWidget):
     ) -> dict:
         from ...models.task_filter import TaskFilter
 
-        f = TaskFilter(partition_id=partition_id)
+        f = TaskFilter(partition_id=partition_id, show_archived=True)
         tasks = self._repository.search(f)
 
         tags: dict[str, list[dict]] = {}

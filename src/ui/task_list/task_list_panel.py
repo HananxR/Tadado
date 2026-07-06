@@ -22,9 +22,15 @@ class TaskListPanel(QWidget):
 
     date_filter_applied = Signal(date)
 
-    def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        repository: TaskRepository,
+        task_service=None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._repository = repository
+        self._task_service = task_service
         self._signal_bus = get_signal_bus()
         self._current_filter = TaskFilter()
 
@@ -35,7 +41,9 @@ class TaskListPanel(QWidget):
         layout.setSpacing(6)
 
         # Input
-        self._input = TaskInputWidget(repository)
+        self._input = TaskInputWidget(
+            task_service if task_service else repository
+        )
         self._input.setFixedHeight(36)
         layout.addWidget(self._input)
 
@@ -45,7 +53,7 @@ class TaskListPanel(QWidget):
 
         # View
         self._model = TaskListModel()
-        self._view = TaskListView(repository)
+        self._view = TaskListView(repository, task_service=task_service)
         self._view.set_model(self._model)
         layout.addWidget(self._view, 1)
 
@@ -65,7 +73,7 @@ class TaskListPanel(QWidget):
     # ------------------------------------------------------------------
 
     def refresh(self) -> None:
-        tasks = self._repository.search(self._current_filter)
+        tasks = self._task_service.search(self._current_filter)
         self._model.load_tasks(tasks)
 
     def apply_preset_filter(self, preset: str) -> None:

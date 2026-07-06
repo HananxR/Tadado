@@ -37,12 +37,6 @@ DEFAULT_CONFIG: dict = {
     "archive": {
         "enabled": False,
     },
-    "motd": {
-        "today": "今日无事，宜放松身心 🌿",
-        "week": "本周清风徐来，按自己的节奏前行 🚶",
-        "overdue": "无挂碍事，一身轻松，快乐生活 ✨",
-        "all": "一张白纸，正好画你想要的生活 🎨",
-    },
 }
 
 

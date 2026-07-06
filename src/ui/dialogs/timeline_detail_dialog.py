@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
 from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...services.md_formatter import MarkdownTaskFormatter
+from ...services.task_service import TaskService
 from ...utils.design_tokens import get_tokens
-from ...utils.signal_bus import get_signal_bus
 
 
 def _fmt_ts(ts, short: bool = False) -> str:
@@ -40,11 +40,19 @@ def _fmt_ts(ts, short: bool = False) -> str:
 class TimelineDetailDialog(QDialog):
     """Shows activity timeline for a task, with Copy MD and tag editing."""
 
-    def __init__(self, task: Task, repository: TaskRepository, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, task: Task, repository: TaskRepository,
+        task_service: TaskService | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._task = task
         self._repository = repository
-        self._formatter = MarkdownTaskFormatter()
+        self._task_service = task_service
+        self._formatter = (
+            task_service._formatter if task_service
+            else MarkdownTaskFormatter()
+        )
 
         self.setWindowTitle(f"详情 — {task.title}")
         self.setObjectName("timelineDetailDialog")
@@ -143,8 +151,12 @@ class TimelineDetailDialog(QDialog):
         # Regenerate raw_md with new tags
         self._task.raw_md = self._formatter.format(self._task)
         self._task.updated_at = datetime.now()
-        self._repository.update(self._task)
-        get_signal_bus().task_updated.emit(self._task)
+        if self._task_service:
+            self._task_service.update_task(self._task)
+        else:
+            self._repository.update(self._task)
+            from ...utils.signal_bus import get_signal_bus
+            get_signal_bus().task_updated.emit(self._task)
         QMessageBox.information(self, "保存成功", f"标签已更新：{' '.join(f'#{t}' for t in tags)}")
 
     def _on_copy_md(self) -> None:

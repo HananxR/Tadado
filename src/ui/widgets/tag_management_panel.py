@@ -37,12 +37,19 @@ class TagManagementPanel(QWidget):
 
     tag_changed = Signal()
 
-    def __init__(self, repository: TaskRepository, config: AppConfig | None = None, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, repository: TaskRepository, config: AppConfig | None = None,
+        task_service=None, parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._repository = repository
+        self._task_service = task_service
         self._config = config
         self._partition_id: str | None = None
-        self._formatter = MarkdownTaskFormatter()
+        self._formatter = (
+            task_service._formatter if task_service
+            else MarkdownTaskFormatter()
+        )
         self._all_tags: list[tuple[str, int]] = []  # full list before search filter
         self._tag_page = 0
         self._tag_page_size = config.get("general", "page_size", default=20) if config else 20
@@ -151,7 +158,7 @@ class TagManagementPanel(QWidget):
     def refresh(self) -> None:
         """Reload tag list from repository (respects current partition)."""
         self._tag_page = 0
-        self._all_tags = self._repository.get_all_tags_with_counts(self._partition_id)
+        self._all_tags = self._task_service.get_all_tags_with_counts(self._partition_id)
         self._apply_search()
 
     def refresh_theme(self) -> None:
@@ -278,7 +285,7 @@ class TagManagementPanel(QWidget):
 
     def _execute_rename(self, old_tag: str, new_tag: str) -> None:
         """Replace old_tag with new_tag in all tasks that contain it."""
-        tasks = self._repository.get_tasks_by_tag(old_tag, self._partition_id)
+        tasks = self._task_service.get_tasks_by_tag(old_tag, self._partition_id)
         if not tasks:
             QMessageBox.information(self, "提示", f"没有任务使用标签 \"{old_tag}\"。")
             return
@@ -293,7 +300,10 @@ class TagManagementPanel(QWidget):
                 # Deduplicate (case-insensitive)
                 task.tags = self._dedup_tags(task.tags)
                 task.raw_md = self._formatter.format(task)
-                self._repository.update(task)
+                if self._task_service:
+                    self._task_service._repo.update(task)
+                else:
+                    self._repository.update(task)
                 count += 1
 
         self.tag_changed.emit()
@@ -366,7 +376,7 @@ class TagManagementPanel(QWidget):
 
     def _execute_merge(self, source_tags: set[str], target_tag: str) -> None:
         """Replace all source_tags with target_tag in all affected tasks."""
-        tasks = self._repository.get_tasks_by_tags(source_tags, self._partition_id)
+        tasks = self._task_service.get_tasks_by_tags(source_tags, self._partition_id)
         if not tasks:
             QMessageBox.information(self, "提示", "没有任务使用选中的标签。")
             return
@@ -384,7 +394,10 @@ class TagManagementPanel(QWidget):
             task.tags = self._dedup_tags(new_tags)
             if task.tags != original:
                 task.raw_md = self._formatter.format(task)
-                self._repository.update(task)
+                if self._task_service:
+                    self._task_service._repo.update(task)
+                else:
+                    self._repository.update(task)
                 count += 1
 
         self.tag_changed.emit()

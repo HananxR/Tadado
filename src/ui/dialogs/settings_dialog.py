@@ -32,7 +32,6 @@ from ...utils.design_tokens import get_surface_color, get_tokens, is_dark
 from ...utils.signal_bus import get_signal_bus
 from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 from ..widgets.dropdown import DropdownWidget
-from ..widgets.toggle_switch import ToggleSwitch
 
 _log = logging.getLogger("runlog")
 
@@ -80,11 +79,13 @@ class SettingsDialog(QDialog):
     """Settings dialog — single scrollable page."""
 
     def __init__(
-        self, config: AppConfig, repository: TaskRepository, parent: QWidget | None = None
+        self, config: AppConfig, repository: TaskRepository,
+        task_service=None, parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._config = config
         self._repository = repository
+        self._task_service = task_service
         self._original_theme = config.theme
 
         self.setWindowTitle("设置")
@@ -150,9 +151,9 @@ class SettingsDialog(QDialog):
             if self._theme_combo.itemData(i) == self._config.theme:
                 self._theme_combo.setCurrentIndex(i)
                 break
-        self._minimize_cb = ToggleSwitch()
+        self._minimize_cb = QCheckBox()
         self._minimize_cb.setChecked(self._config.minimize_to_tray)
-        self._auto_start_cb = ToggleSwitch()
+        self._auto_start_cb = QCheckBox()
         self._auto_start_cb.setChecked(self._config.auto_start)
         _row("主题:", self._theme_combo)
         _row("最小化到托盘:", self._minimize_cb)
@@ -180,33 +181,39 @@ class SettingsDialog(QDialog):
         idx = self._default_sort_combo.findData(cur_sort)
         if idx >= 0:
             self._default_sort_combo.setCurrentIndex(idx)
-        self._completed_last_cb = ToggleSwitch()
+        self._completed_last_cb = QCheckBox()
         self._completed_last_cb.setChecked(self._config.sort_completed_last)
         _row("每页条数:", self._page_size_combo)
         _row("默认排序:", self._default_sort_combo)
         _row("已完成置底:", self._completed_last_cb)
 
         # ================================================================
-        # 提醒
+        # 活动热力图
         # ================================================================
-        grid.addWidget(_section_header("提醒"), r, 0, 1, 2); r += 1
-        self._reminders_cb = ToggleSwitch()
-        self._reminders_cb.setChecked(self._config.reminders_enabled)
-        digest_time = self._config.get("reminders", "daily_digest_time", default="09:00") or "09:00"
-        self._digest_time_edit = QLineEdit(digest_time)
-        self._digest_time_edit.setFixedWidth(72)
-        self._digest_time_edit.setPlaceholderText("HH:MM")
-        qs = self._config.get("reminders", "quiet_hours_start", default="22:00")
-        qe = self._config.get("reminders", "quiet_hours_end", default="08:00")
-        self._quiet_start_edit = QLineEdit(qs)
-        self._quiet_start_edit.setFixedWidth(72)
-        self._quiet_start_edit.setPlaceholderText("HH:MM")
-        self._quiet_end_edit = QLineEdit(qe)
-        self._quiet_end_edit.setFixedWidth(72)
-        self._quiet_end_edit.setPlaceholderText("HH:MM")
-        _row("每日摘要:", self._reminders_cb)
-        _row("推送时间:", self._digest_time_edit)
-        _row("安静时段:", self._quiet_start_edit, QLabel("—"), self._quiet_end_edit)
+        grid.addWidget(_section_header("活动热力图"), r, 0, 1, 2); r += 1
+        self._heatmap_year_combo = DropdownWidget()
+        self._heatmap_year_combo.setFixedWidth(_DROP_W)
+        cur_year = date.today().year
+        for y in range(cur_year - 5, cur_year + 1):
+            self._heatmap_year_combo.addItem(str(y), y)
+        saved_year = self._config.get("display", "heatmap_start_year", default=cur_year)
+        idx = self._heatmap_year_combo.findData(saved_year)
+        if idx < 0:
+            self._heatmap_year_combo.insertItem(0, str(saved_year), saved_year)
+            self._heatmap_year_combo.setCurrentIndex(0)
+        else:
+            self._heatmap_year_combo.setCurrentIndex(idx)
+        self._color_scheme_combo = DropdownWidget()
+        self._color_scheme_combo.setFixedWidth(_DROP_W)
+        for key, label in [("sunbeam", "☀️ 暖阳"), ("sprout", "🌱 新绿"),
+                           ("ocean", "🌊 海洋"), ("sakura", "🌸 樱花")]:
+            self._color_scheme_combo.addItem(label, key)
+        cur_scheme = self._config.get("display", "heatmap_color_scheme", default="sunbeam")
+        idx = self._color_scheme_combo.findData(cur_scheme)
+        if idx >= 0:
+            self._color_scheme_combo.setCurrentIndex(idx)
+        _row("起始年份:", self._heatmap_year_combo)
+        _row("配色方案:", self._color_scheme_combo)
 
         # ================================================================
         # 归档 / 分区管理
@@ -250,19 +257,17 @@ class SettingsDialog(QDialog):
         grid.addWidget(toolbar, r, 0, 1, 2); r += 1
 
 
-        self._partition_table = QTableWidget(0, 7)
+        self._partition_table = QTableWidget(0, 5)
         self._partition_table.setHorizontalHeaderLabels(
-            ["名称", "默认分区", "可见", "自动归档", "归档阈值(天)", "自动锁定(分)", "密码"]
+            ["名称", "默认分区", "归档阈值(天)", "自动锁定(分)", "密码"]
         )
         hh = self._partition_table.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         hh.resizeSection(1, 80)
-        hh.resizeSection(2, 60)
-        hh.resizeSection(3, 80)
-        hh.resizeSection(4, 100)
-        hh.resizeSection(5, 100)
-        hh.resizeSection(6, 60)
-        for c in (1, 2, 3, 4, 5, 6):
+        hh.resizeSection(2, 100)
+        hh.resizeSection(3, 100)
+        hh.resizeSection(4, 60)
+        for c in (1, 2, 3, 4):
             hh.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
         self._partition_table.verticalHeader().hide()
         self._partition_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -297,48 +302,6 @@ class SettingsDialog(QDialog):
         self._partition_table.setStyleSheet(table_qss)
         grid.addWidget(self._partition_table, r, 0, 1, 2); r += 1
 
-        # ================================================================
-        # 活动热力图
-        # ================================================================
-        grid.addWidget(_section_header("活动热力图"), r, 0, 1, 2); r += 1
-        self._heatmap_year_combo = DropdownWidget()
-        self._heatmap_year_combo.setFixedWidth(_DROP_W)
-        cur_year = date.today().year
-        for y in range(cur_year - 5, cur_year + 1):
-            self._heatmap_year_combo.addItem(str(y), y)
-        saved_year = self._config.get("display", "heatmap_start_year", default=cur_year)
-        idx = self._heatmap_year_combo.findData(saved_year)
-        if idx < 0:
-            self._heatmap_year_combo.insertItem(0, str(saved_year), saved_year)
-            self._heatmap_year_combo.setCurrentIndex(0)
-        else:
-            self._heatmap_year_combo.setCurrentIndex(idx)
-        self._color_scheme_combo = DropdownWidget()
-        self._color_scheme_combo.setFixedWidth(_DROP_W)
-        for key, label in [("sunbeam", "☀️ 暖阳"), ("sprout", "🌱 新绿"),
-                           ("ocean", "🌊 海洋"), ("sakura", "🌸 樱花")]:
-            self._color_scheme_combo.addItem(label, key)
-        cur_scheme = self._config.get("display", "heatmap_color_scheme", default="sunbeam")
-        idx = self._color_scheme_combo.findData(cur_scheme)
-        if idx >= 0:
-            self._color_scheme_combo.setCurrentIndex(idx)
-        _row("起始年份:", self._heatmap_year_combo)
-        _row("配色方案:", self._color_scheme_combo)
-
-        # ================================================================
-        # 激励语
-        # ================================================================
-        grid.addWidget(_section_header("激励语"), r, 0, 1, 2); r += 1
-        motd = self._config.get("motd", default={})
-        self._motd_edits: dict[str, QLineEdit] = {}
-        for key, label_text in [("today", "今日无事时"), ("week", "本周无事时"),
-                                 ("overdue", "无逾期时"), ("all", "全部为空时")]:
-            edit = QLineEdit()
-            edit.setText(motd.get(key, ""))
-            edit.setPlaceholderText("输入激励语…")
-            self._motd_edits[key] = edit
-            _row(label_text + ":", edit)
-
         content_layout.addLayout(grid)
         content_layout.addStretch()
         self._scroll.setWidget(content)
@@ -360,15 +323,8 @@ class SettingsDialog(QDialog):
         self._page_size_combo.currentIndexChanged.connect(self._save_tasklist)
         self._default_sort_combo.currentIndexChanged.connect(self._save_tasklist)
         self._completed_last_cb.toggled.connect(self._save_tasklist)
-        self._reminders_cb.toggled.connect(self._save_reminders)
-        self._digest_time_edit.editingFinished.connect(self._save_reminders)
-        self._quiet_start_edit.editingFinished.connect(self._save_reminders)
-        self._quiet_end_edit.editingFinished.connect(self._save_reminders)
         self._heatmap_year_combo.currentIndexChanged.connect(self._save_display)
         self._color_scheme_combo.currentIndexChanged.connect(self._save_display)
-        for edit in self._motd_edits.values():
-            edit.editingFinished.connect(self._save_motd)
-
         self._populated = False
 
     # ------------------------------------------------------------------
@@ -508,8 +464,7 @@ class SettingsDialog(QDialog):
 
     def _populate_partition_table(self) -> None:
         self._partition_table.blockSignals(True)
-        self._partitions_data = self._repository.get_all_partitions()
-        hidden = set(self._config.get("general", "hidden_partitions", default=[]))
+        self._partitions_data = self._task_service.get_all_partitions() if self._task_service else self._repository.get_all_partitions()
         default_id = self._config.get("general", "default_partition", default="")
 
         self._partition_table.setRowCount(0)
@@ -532,29 +487,18 @@ class SettingsDialog(QDialog):
             def_cb.toggled.connect(lambda checked, r=row: self._on_default_toggled(r, checked))
             self._partition_table.setCellWidget(row, 1, _wrap_center(def_cb))
 
-            # 2: 可见 — QCheckBox
-            vis_cb = QCheckBox()
-            vis_cb.setStyleSheet("spacing: 0px;")
-            vis_cb.setChecked(pid not in hidden)
-            self._partition_table.setCellWidget(row, 2, _wrap_center(vis_cb))
-
-            # 3: 自动归档 — QCheckBox
-            auto_cb = QCheckBox()
-            auto_cb.setStyleSheet("spacing: 0px;")
-            auto_cb.setChecked(p.get("archive_enabled", 0) == 1)
-            self._partition_table.setCellWidget(row, 3, _wrap_center(auto_cb))
-
-            # 4: 归档阈值(天) — QLabel (double-click to edit)
+            # 2: 归档阈值(天) — QLabel (double-click to edit)
+            #     0=即时归档, 1-9998=N天后午夜归档, 9999=永不归档
             self._partition_table.setCellWidget(
-                row, 4, self._make_table_label(str(p.get("archive_days", 9999)), 4, pid)
+                row, 2, self._make_table_label(str(p.get("archive_days", 0)), 2, pid)
             )
 
-            # 5: 自动锁定(分) — QLabel (double-click to edit)
+            # 3: 自动锁定(分) — QLabel (double-click to edit)
             self._partition_table.setCellWidget(
-                row, 5, self._make_table_label(str(p.get("auto_lock_minutes", 3)), 5, pid)
+                row, 3, self._make_table_label(str(p.get("auto_lock_minutes", 3)), 3, pid)
             )
 
-            # 6: 密码 — button
+            # 4: 密码 — button
             tokens = get_tokens()
             has_pwd = bool(p.get("password", ""))
             pwd_btn = QPushButton("🔒" if has_pwd else "🔓")
@@ -568,7 +512,7 @@ class SettingsDialog(QDialog):
             pwd_btn.clicked.connect(
                 lambda checked=False, pid=pid: self._on_set_partition_password(pid)
             )
-            self._partition_table.setCellWidget(row, 6, _wrap_center(pwd_btn))
+            self._partition_table.setCellWidget(row, 4, _wrap_center(pwd_btn))
 
         self._partition_table.verticalHeader().setDefaultSectionSize(40)
         self._update_table_height()

@@ -188,7 +188,7 @@ class TaskTreePanel(QWidget):
         self._last_date_range = (date_from, date_to)
         self._last_partition_id = partition_id
 
-        f = TaskFilter(partition_id=partition_id)
+        f = TaskFilter(partition_id=partition_id, show_archived=True)
         tasks = self._repository.search(f)
 
         tag_data: dict[str, tuple[int, list[Task]]] = {}

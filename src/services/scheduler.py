@@ -15,11 +15,15 @@ _log = logging.getLogger("runlog")
 class TaskScheduler:
     """Periodically refreshes overdue status, plus an optional daily digest."""
 
-    def __init__(self, repository: TaskRepository, config) -> None:
+    def __init__(
+        self, repository: TaskRepository, config,
+        task_service=None, scheduler=None, signal_bus=None,
+    ) -> None:
         self._repository = repository
+        self._task_service = task_service
         self._config = config
-        self._signal_bus = get_signal_bus()
-        self._scheduler = QtScheduler()
+        self._signal_bus = signal_bus or get_signal_bus()
+        self._scheduler = scheduler or QtScheduler()
 
     def start(self) -> None:
         # Overdue refresh: every minute
@@ -58,11 +62,16 @@ class TaskScheduler:
 
     def _check_due_tasks(self) -> None:
         """Auto-set/revert OVERDUE status for all tasks."""
-        changed = self._repository.refresh_overdue_status()
+        if self._task_service:
+            changed = self._task_service.refresh_overdue_status()
+        else:
+            changed = self._repository.refresh_overdue_status()
+            if changed:
+                for task, old_status in changed:
+                    self._signal_bus.task_status_changed.emit(task, old_status)
+            return
         if changed:
             _log.info("Overdue check: %s tasks changed", len(changed))
-        for task, old_status in changed:
-            self._signal_bus.task_status_changed.emit(task, old_status)
 
     def _emit_daily_digest(self) -> None:
         """Emit daily digest signal (notifier handles the rest)."""

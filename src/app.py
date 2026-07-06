@@ -66,7 +66,7 @@ def _seed_optimization_tasks(repo: TaskRepository, pid: str) -> None:
     # Get existing task titles for dedup
     existing_titles: set[str] = set()
     from .models.task_filter import TaskFilter
-    existing = repo.search(TaskFilter(partition_id=pid))
+    existing = repo.search(TaskFilter(partition_id=pid, show_archived=True))
     for t in existing:
         existing_titles.add(t.title)
 
@@ -180,7 +180,9 @@ def _ensure_demo_partition(repo: TaskRepository) -> None:
     partitions = repo.get_all_partitions()
     demo_p = next((p for p in partitions if p["name"] == "功能演示"), None)
     if demo_p is not None:
-        existing = repo.search(TaskFilter(partition_id=demo_p["id"], limit=1))
+        existing = repo.search(
+            TaskFilter(partition_id=demo_p["id"], limit=1, show_archived=True)
+        )
         if existing:
             return  # already seeded
         pid = demo_p["id"]
@@ -361,12 +363,22 @@ class TadadoApp(QApplication):
         self._signal_bus.application_quit.connect(self._on_quit)
         self._signal_bus.config_changed.connect(self._on_config_changed)
 
+        # ── TaskService — single seam for UI → data (Phase 1: created, not yet used by UI) ──
+        from .services.task_service import TaskService
+
+        self._task_service = TaskService(self._repository, self._signal_bus)
+        self._log.info("TaskService initialized")
+
         # UI
-        self._main_window = MainWindow(self._config, self._repository)
+        self._main_window = MainWindow(
+            self._config, self._repository, task_service=self._task_service,
+        )
         self._tray = SystemTrayManager(self._main_window, self._config)
 
         # Background services
-        self._scheduler = TaskScheduler(self._repository, self._config)
+        self._scheduler = TaskScheduler(
+            self._repository, self._config, task_service=self._task_service,
+        )
         self._notifier = TaskNotifier(self._tray, self._config, self._repository)
         self._archiver = TaskArchiver(self._repository, self._config)
         self._recurrence = TaskRecurrence(self._repository)
@@ -389,9 +401,7 @@ class TadadoApp(QApplication):
 
     def _refresh_overdue_on_startup(self) -> None:
         """Scan all tasks and auto-set/revert OVERDUE status after startup."""
-        changed = self._repository.refresh_overdue_status()
-        for task, old_status in changed:
-            self._signal_bus.task_status_changed.emit(task, old_status)
+        changed = self._task_service.refresh_overdue_status()
 
     def _finish_startup(self) -> None:
         """Uncloak main window so DWM composites it for the first time.

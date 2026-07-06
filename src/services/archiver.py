@@ -17,11 +17,14 @@ _log = logging.getLogger("runlog")
 class TaskArchiver:
     """Periodically archives completed tasks after the configured number of days."""
 
-    def __init__(self, repository: TaskRepository, config: AppConfig) -> None:
+    def __init__(
+        self, repository: TaskRepository, config: AppConfig,
+        scheduler=None, signal_bus=None,
+    ) -> None:
         self._repository = repository
         self._config = config
-        self._signal_bus = get_signal_bus()
-        self._scheduler = QtScheduler()
+        self._signal_bus = signal_bus or get_signal_bus()
+        self._scheduler = scheduler or QtScheduler()
 
     def start(self) -> None:
         self._scheduler.add_job(
@@ -46,11 +49,9 @@ class TaskArchiver:
         total_archived = 0
 
         for p in partitions:
-            if not p.get("archive_enabled", 0):
-                continue
-            archive_days = p.get("archive_days", 9999)
-            if archive_days >= 9999:
-                continue  # never archive
+            archive_days = p.get("archive_days", 0)
+            if archive_days >= 9999 or archive_days <= 0:
+                continue  # 9999=never, 0=immediate (handled by TaskService)
             cutoff = today - timedelta(days=archive_days)
             tasks = self._repository.get_tasks_for_archive(cutoff, p["id"])
             if tasks:

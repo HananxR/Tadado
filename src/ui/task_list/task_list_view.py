@@ -36,11 +36,19 @@ class TaskListView(QTableView):
     batch_postpone = Signal(list, int)          # list[task_id], days
     batch_move_partition = Signal(list)         # list[task_id]
 
-    def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, repository: TaskRepository,
+        task_service=None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._repository = repository
+        self._task_service = task_service
         self._signal_bus = get_signal_bus()
-        self._formatter = MarkdownTaskFormatter()
+        self._formatter = (
+            task_service._formatter if task_service
+            else MarkdownTaskFormatter()
+        )
 
         self.setObjectName("taskListView")
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -246,6 +254,9 @@ class TaskListView(QTableView):
             self._on_edit_task(task)
 
     def _on_edit_task(self, task: Task) -> None:
-        dialog = TaskDialog(self._repository, task=task, parent=self)
+        dialog = TaskDialog(
+            self._repository, task=task,
+            task_service=self._task_service, parent=self,
+        )
         if dialog.exec() == TaskDialog.DialogCode.Accepted:
             pass

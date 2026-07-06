@@ -40,10 +40,10 @@ class HeatmapStatsPanel(QWidget):
         layout.setContentsMargins(4, 2, 4, 2)
         layout.setSpacing(8)
 
-        self._total_card = _StatCard("总任务")
-        self._active_card = _StatCard("活跃天数")
-        self._streak_card = _StatCard("最长连续")
-        self._avg_card = _StatCard("日均")
+        self._total_card = _StatCard("总任务", parent=self)
+        self._active_card = _StatCard("活跃天数", parent=self)
+        self._streak_card = _StatCard("最长连续", parent=self)
+        self._avg_card = _StatCard("日均", parent=self)
 
         layout.addWidget(self._total_card)
         layout.addWidget(self._active_card)

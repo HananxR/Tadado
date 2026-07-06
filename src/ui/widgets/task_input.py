@@ -2,27 +2,19 @@
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime
-
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QWidget
 
-from ...models.repository import TaskRepository
 from ...models.task import Task
-from ...services.md_formatter import MarkdownTaskFormatter
-from ...services.md_parser import MarkdownTaskParser
-from ...utils.signal_bus import get_signal_bus
+from ...services.task_service import TaskService
 
 
 class TaskInputWidget(QWidget):
     """A QLineEdit that creates a Task when Enter is pressed."""
 
-    def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
+    def __init__(self, task_service: TaskService, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._repository = repository
-        self._signal_bus = get_signal_bus()
-        self._parser = MarkdownTaskParser()
-        self._formatter = MarkdownTaskFormatter()
+        self._task_service = task_service
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -43,33 +35,11 @@ class TaskInputWidget(QWidget):
             return
 
         try:
-            parsed = self._parser.parse(text)
+            self._task_service.create_task(text)
         except ValueError:
             self._flash_error()
             return
 
-        now = datetime.now()
-        task = Task(
-            id=str(uuid.uuid4()),
-            raw_md=text,
-            title=parsed.clean_title,
-            status=parsed.status,
-            tags=parsed.tags,
-            scheduled_date=parsed.scheduled_date,
-            deadline_date=parsed.deadline_date,
-            created_at=now,
-            updated_at=now,
-            activity_log=[{
-                "ts": now.isoformat(),
-                "content": "创建任务",
-                "status": parsed.status.value,
-                "progress": 100 if parsed.status == TaskStatus.DONE else 0,
-            }],
-        )
-        # Normalize raw_md through the formatter
-        task.raw_md = self._formatter.format(task)
-        self._repository.insert(task)
-        self._signal_bus.task_created.emit(task)
         self._input.clear()
 
     def focus_input(self) -> None:
@@ -83,6 +53,4 @@ class TaskInputWidget(QWidget):
         self._input.setStyleSheet(
             f"QLineEdit {{ border: 1px solid {t.danger}; background: {t.danger_bg}; }}"
         )
-        from PySide6.QtCore import QTimer
-
         QTimer.singleShot(800, lambda: self._input.setStyleSheet(""))
