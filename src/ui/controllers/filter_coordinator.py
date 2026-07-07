@@ -101,8 +101,6 @@ class FilterCoordinator(QObject):
             if self._carousel_filter.activity_field:
                 f.activity_field = self._carousel_filter.activity_field
                 f.activity_min = self._carousel_filter.activity_min
-            if self._carousel_filter.show_archived:
-                f.show_archived = True
         f.partition_id = (
             self._carousel_filter.partition_id
             if self._carousel_filter
