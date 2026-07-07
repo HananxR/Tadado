@@ -265,7 +265,8 @@ class FilterCoordinator(QObject):
             self._on_task_selected(self._task_model.tasks[0])
 
     def _on_progress_filter(self, filter_: TaskFilter) -> None:
-        self._progress_active = True
+        # Toggle-on has activity_field, toggle-off doesn't
+        self._progress_active = bool(filter_.activity_field)
         self._carousel_filter = filter_
         self._refresh_all_views()
         self._update_page_label()
