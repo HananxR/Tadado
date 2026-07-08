@@ -63,7 +63,8 @@ class FilterCoordinator(QObject):
         self._setting_sort_internally = False
         self._selection_guard = False
         self._partition_id: str | None = None
-        self._progress_active = False  # True when progress bar button is clicked
+        self._progress_active = False
+        self._last_recalc: date | None = None  # last date activity counts were recalculated
 
         # Wire widget signals
         self._filter_bar.filter_changed.connect(self._on_filter_changed)
@@ -265,10 +266,19 @@ class FilterCoordinator(QObject):
             self._on_task_selected(self._task_model.tasks[0])
 
     def _on_progress_filter(self, filter_: TaskFilter) -> None:
+        # Ensure activity counts are fresh before querying
+        self._ensure_activity_counts_fresh()
         # Toggle-on has activity_field, toggle-off doesn't
         self._progress_active = bool(filter_.activity_field)
         self._carousel_filter = filter_
         self._refresh_all_views()
+
+    def _ensure_activity_counts_fresh(self) -> None:
+        """Recalculate activity_* columns once per day when progress bar is activated."""
+        today = _date.today()
+        if self._last_recalc != today:
+            self._svc._repo.recalc_all_activity_counts()
+            self._last_recalc = today
         self._update_page_label()
         if self._task_model.rowCount() > 0:
             self._on_task_selected(self._task_model.tasks[0])

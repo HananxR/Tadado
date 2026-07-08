@@ -203,6 +203,28 @@ class TaskRepository:
          task.activity_last_week,
          task.activity_last_month) = compute_activity_counts(log_json)
 
+    def recalc_all_activity_counts(self) -> int:
+        """Recalculate activity counts for all tasks. Returns number of tasks updated."""
+        cols = ", ".join(_TASK_COLUMNS)
+        rows = self.conn.execute(
+            f"SELECT {cols} FROM tasks"
+        ).fetchall()
+        count = 0
+        for row in rows:
+            task = _row_to_task(tuple(row))
+            log_json = json.dumps(task.activity_log, ensure_ascii=False) if task.activity_log else "[]"
+            (ay, at, aw, am, alw, alm) = compute_activity_counts(log_json)
+            self.conn.execute(
+                "UPDATE tasks SET activity_yesterday=?, activity_today=?, "
+                "activity_last_week=?, activity_week=?, "
+                "activity_last_month=?, activity_month=? WHERE id=?",
+                (ay, at, alw, aw, alm, am, task.id),
+            )
+            count += 1
+        self.conn.commit()
+        _log.info("Recalculated activity counts for %s tasks", count)
+        return count
+
     def delete(self, task_id: str) -> bool:
         """Delete a task by id. Returns True if a row was removed."""
         self.conn.execute("DELETE FROM tasks_fts WHERE rowid = (SELECT rowid FROM tasks WHERE id=?)", (task_id,))
