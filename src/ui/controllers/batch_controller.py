@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import date as _date, datetime as _datetime
 
-from PySide6.QtCore import QObject, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -28,7 +28,7 @@ from ...models.task import Task
 from ...models.task_filter import TaskFilter
 from ...models.task_status import TaskStatus
 from ...services.task_service import TaskService
-from ...utils.icon_loader import load_icon
+
 from ...utils.signal_bus import get_signal_bus
 from ...utils.widget_utils import combo_width
 
@@ -233,17 +233,6 @@ class BatchController(QObject):
         sidebar_layout.addWidget(self._clear_archived_btn)
         sidebar_layout.addStretch()
 
-        back_btn2 = QPushButton()
-        back_btn2.setIcon(load_icon("home"))
-        back_btn2.setIconSize(QSize(16, 16))
-        back_btn2.setFixedSize(24, 24)
-        back_btn2.setFlat(True)
-        back_btn2.setToolTip("返回主界面")
-        back_btn2.setCursor(Qt.CursorShape.PointingHandCursor)
-        back_btn2.setObjectName("sidebarHomeBtn")
-        back_btn2.setStyleSheet("QPushButton { border: none; background: transparent; padding: 0; }")
-        back_btn2.clicked.connect(lambda: self._emit_view_switch("edit"))
-        sidebar_layout.addWidget(back_btn2, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         # -- Main content area --
         batch_main = QWidget()
