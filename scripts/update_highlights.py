@@ -11,7 +11,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG = PROJECT_ROOT / "CHANGELOG.md"
-VERSION_PY = PROJECT_ROOT / "src" / "version.py"
+VERSION_PY = PROJECT_ROOT / "src" / "_version_data.py"
 
 CAT_MAP = {"Added": "新增", "Changed": "优化", "Fixed": "修复"}
 
@@ -93,7 +93,7 @@ def main() -> None:
         version = sys.argv[1].lstrip("v")
     else:
         sys.path.insert(0, str(PROJECT_ROOT))
-        from src.version import __version__
+        from src._version_data import __version__
 
         version = __version__
 
