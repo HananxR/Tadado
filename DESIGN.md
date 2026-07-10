@@ -530,7 +530,7 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 - 空态显示 "暂无标签"
 - 重命名流程：`QInputDialog.getText()` → 校验(# 字符/冲突检测) → `_execute_rename()` 逐任务替换并 `MarkdownTaskFormatter.format()` 再生 raw_md → 发射信号
 - 合并流程：自定义 QDialog(QComboBox 选目标) → `_execute_merge()` 逐任务替换源标签 → 去重 → 再生 raw_md → 发射信号
-- 分区感知：`set_partition_id()` 限定标签范围，`refresh()` 调用 `repository.get_all_tags_with_counts(partition_id)`
+- 分区感知：`set_partition_id()` 限定标签范围，`refresh()` 调用 `repository.get_all_tags_with_counts(partition_id)`；分区激活时 `BatchController.set_active_partition()` 传播，视图切换时同步
 - 仓库新增方法：`get_all_tags_with_counts()`、`get_tasks_by_tag()`、`get_tasks_by_tags()`、`count()` 标签过滤补全
 
 **最终更新预览**：
