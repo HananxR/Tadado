@@ -1600,6 +1600,7 @@ class MainWindow(QMainWindow):
         self._filter_coordinator.set_partition(pid)
         self._filter_coordinator.refresh()
         self._batch_ctrl.refresh_page()
+        self._batch_ctrl.set_active_partition(pid or None)
         self._heatmap_widget.force_refresh()
         if self._current_view == "dashboard":
             self._refresh_analysis(pid)
@@ -1650,6 +1651,7 @@ class MainWindow(QMainWindow):
             self._top_bar.hide()
             self._apply_batch_splitter_sizes()
             self._batch_ctrl.refresh_page()
+            self._batch_ctrl.set_active_partition(self._partition_ctrl.active_id or None)
 
         # Reset filter bar sort to config default on view switch
         self._new_task_sort_active = False
@@ -2016,8 +2018,9 @@ class MainWindow(QMainWindow):
         if theme_changed:
             if hasattr(self, '_status_badge'):
                 self._status_badge.refresh_theme()
-            if hasattr(self, '_batch_tag_panel'):
-                self._batch_tag_panel.refresh_theme()
+            tag_panel = self._batch_ctrl.tag_panel
+            if tag_panel is not None:
+                tag_panel.refresh_theme()
             self._last_applied_theme = self._config.theme
 
         # Re-read page_size from config and sync all pagination controls
@@ -2034,8 +2037,9 @@ class MainWindow(QMainWindow):
             data_changed = True
             if hasattr(self, '_batch_page_size_combo'):
                 self._batch_page_size_combo.setCurrentText(str(new_page_size))
-        if hasattr(self, '_batch_tag_panel'):
-            self._batch_tag_panel.set_page_size(new_page_size)
+        tag_panel = self._batch_ctrl.tag_panel
+        if tag_panel is not None:
+            tag_panel.set_page_size(new_page_size)
 
         # Heatmap: repaint on colour-scheme change (refresh_tokens already called by app.py)
         if hasattr(self, '_heatmap_widget'):

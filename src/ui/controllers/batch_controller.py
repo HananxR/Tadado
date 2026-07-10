@@ -334,6 +334,9 @@ class BatchController(QObject):
             self._repo, config=self._config, task_service=self._svc,
         )
         self._batch_splitter.addWidget(self._batch_tag_panel)
+        # Sync the tag panel to the currently active partition
+        pid = self._part.active_id or None
+        self._batch_tag_panel.set_partition_id(pid)
         self._batch_splitter.setStretchFactor(0, 1)
         self._batch_splitter.setStretchFactor(1, 0)
 
@@ -411,8 +414,9 @@ class BatchController(QObject):
         self._update_pagination()
 
     def set_active_partition(self, pid: str) -> None:
-        """Set partition context for filtering."""
-        pass  # handled via partition_ctrl in refresh_page
+        """Set partition context for filtering and propagate to the tag panel."""
+        if self._built and self._batch_tag_panel is not None:
+            self._batch_tag_panel.set_partition_id(pid)
 
     def batch_status_change(self, ids: list[str], status) -> None:
         """Handle batch status change (edit view → confirm dialog; batch view → confirm bar)."""
