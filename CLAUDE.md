@@ -22,9 +22,9 @@ Tadado — Windows 桌面任务管理工具，Python 3.10 + PySide6，Markdown �
 
 ### version.py 动态修改判定
 
-[src/version.py](src/version.py) 包含两类内容：
-- **数据**：`__version__` 值、`_RELEASE_HIGHLIGHTS` 字典内容
-- **逻辑**：`get_version()`、`parse_version()`、`get_release_highlights()` 等函数
+[src/version.py](src/version.py) 是公开 API，数据已拆到 [src/_version_data.py](src/_version_data.py)：
+- **数据文件** `_version_data.py`：`__version__` 值、`_RELEASE_HIGHLIGHTS` 字典 — 发版时由 `generate_db.bat` 更新
+- **逻辑文件** `version.py`：`get_version()`、`parse_version()`、`get_release_highlights()` 等函数 — 不再因发版而被修改
 
 **规则**：
 - 仅数据变更（如改版本号、增删 highlights 条目）→ **不自动 commit**，留给发版流程统一提交

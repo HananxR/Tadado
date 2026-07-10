@@ -737,7 +737,7 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 #### 需求
 
 帮助 → 关于对话框提供版本追溯和更新检测：
-- 显示当前版本号（统一来源 `src/version.py`）
+- 显示当前版本号（统一来源 `src/_version_data.py`，通过 `src/version.py` 公开 API 访问）
 - [检查更新] 按钮：先查 GitHub Release API，不可达则自动回退到阿里云盘（通过本地 `aliyunpan` CLI 查询文件夹内安装包文件名解析最新版本）
 - 20 秒超时，超时按"无更新"处理
 - 检测到新版本时，下载渠道区标注 ⭐ 推荐
