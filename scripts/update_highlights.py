@@ -54,34 +54,25 @@ def parse_changelog(version: str) -> dict[str, tuple[str, ...]] | None:
 
 
 def write_highlights(version: str, highlights: dict[str, tuple[str, ...]]) -> None:
-    """Insert/replace highlights entry in version.py."""
+    """Rewrite _RELEASE_HIGHLIGHTS in the data file with only *version*."""
     content = read_file(VERSION_PY)
-    # Build the Python dict literal for this version
+    # Build the Python dict literal — the only entry
     lines = [f'    "{version}": {{']
     for cat in ("新增", "优化", "修复"):
         if cat in highlights:
             items = ",\n            ".join(f'"{item}"' for item in highlights[cat])
             lines.append(f'        "{cat}": (\n            {items},\n        ),')
     lines.append("    },")
-    new_entry = "\n".join(lines)
+    new_block = "\n".join(lines)
 
-    # Try to replace existing entry
-    escaped = re.escape(f'"{version}":')
-    if re.search(escaped, content):
-        # Replace existing entry
-        content = re.sub(
-            rf'    "{re.escape(version)}":\s*\{{[^}}]*\}},?\n',
-            new_entry + "\n",
-            content,
-        )
-    else:
-        # Insert after the opening brace of _RELEASE_HIGHLIGHTS
-        m = re.search(r"(_RELEASE_HIGHLIGHTS[^=]*=\s*\{)", content)
-        if not m:
-            print("ERROR: _RELEASE_HIGHLIGHTS not found in version.py")
-            sys.exit(1)
-        insert_pos = m.end()
-        content = content[:insert_pos] + "\n" + new_entry + "\n" + content[insert_pos:]
+    # Replace everything from _RELEASE_HIGHLIGHTS to end-of-file
+    m = re.search(r"^_RELEASE_HIGHLIGHTS\s*:.*", content, re.MULTILINE)
+    if not m:
+        print("ERROR: _RELEASE_HIGHLIGHTS not found")
+        sys.exit(1)
+
+    header = "_RELEASE_HIGHLIGHTS: dict[str, dict[str, tuple[str, ...]]] = {"
+    content = content[: m.start()] + header + "\n" + new_block + "\n}\n"
 
     VERSION_PY.write_text(content, encoding="utf-8")
     print(f"Updated _RELEASE_HIGHLIGHTS for {version}")
