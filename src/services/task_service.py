@@ -374,11 +374,11 @@ class TaskService:
         return self._repo.get_all_tags_with_counts(partition_id)
 
     def get_tasks_by_tag(self, tag: str, partition_id: str | None = None) -> list[Task]:
-        """Return non-archived tasks containing the given tag."""
+        """Return all tasks (including archived) containing the given tag."""
         return self._repo.get_tasks_by_tag(tag, partition_id)
 
     def get_tasks_by_tags(self, tags: set[str], partition_id: str | None = None) -> list[Task]:
-        """Return non-archived tasks containing ANY of the given tags."""
+        """Return all tasks (including archived) containing ANY of the given tags."""
         return self._repo.get_tasks_by_tags(tags, partition_id)
 
     # ------------------------------------------------------------------

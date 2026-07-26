@@ -788,10 +788,10 @@ class TaskRepository:
         return sorted(counts.items(), key=lambda x: (-x[1], x[0].lower()))
 
     def get_tasks_by_tag(self, tag: str, partition_id: str | None = None) -> list[Task]:
-        """Return all non-archived tasks containing the given tag."""
+        """Return all tasks (including archived) containing the given tag."""
         query = (
             f"SELECT {', '.join(_TASK_COLUMNS)} FROM tasks "
-            "WHERE archived = 0 AND tags LIKE ?"
+            "WHERE tags LIKE ?"
         )
         params = [f'%"{tag}"%']
         if partition_id:
@@ -801,13 +801,13 @@ class TaskRepository:
         return [_row_to_task(tuple(r)) for r in rows]
 
     def get_tasks_by_tags(self, tags: set[str], partition_id: str | None = None) -> list[Task]:
-        """Return all non-archived tasks containing ANY of the given tags."""
+        """Return all tasks (including archived) containing ANY of the given tags."""
         if not tags:
             return []
         like_clauses = " OR ".join("tags LIKE ?" for _ in tags)
         query = (
             f"SELECT {', '.join(_TASK_COLUMNS)} FROM tasks "
-            f"WHERE archived = 0 AND ({like_clauses})"
+            f"WHERE ({like_clauses})"
         )
         params = [f'%"{t}"%' for t in tags]
         if partition_id:

@@ -336,6 +336,7 @@ class BatchController(QObject):
         self._bus.task_created.connect(lambda *_: self._batch_tag_panel.refresh())
         self._bus.task_updated.connect(lambda *_: self._batch_tag_panel.refresh())
         self._bus.task_deleted.connect(lambda *_: self._batch_tag_panel.refresh())
+        self._bus.tag_changed.connect(lambda *_: self.refresh_page())
 
         self._page_widget = batch_page
         return batch_page
