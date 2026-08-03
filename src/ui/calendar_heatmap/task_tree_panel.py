@@ -221,25 +221,29 @@ class TaskTreePanel(QWidget):
                 continue
             if len(display) > 8:
                 display = display[:8] + "…"
+            should_check = count > 0
             label = f"#{display}({count})"
             btn = QPushButton(label)
             btn.setCheckable(True)
-            btn.setChecked(True)
+            btn.setChecked(should_check)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(self._chip_style(checked=True))
+            btn.setStyleSheet(self._chip_style(checked=should_check))
             btn.clicked.connect(lambda checked, t=tag, b=btn: self._on_chip_clicked(t, checked, b))
             btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             self._tag_buttons[tag] = btn
             self._tag_task_map[tag] = task_list
-            self._checked_tags.add(tag)
+            if should_check:
+                self._checked_tags.add(tag)
             self._chip_order.append(tag)
             self._chip_layout.addWidget(btn)
 
-        self._all_checked = True
-        self._toggle_btn.setText("全")
+        self._all_checked = all(
+            self._tag_buttons[t].isChecked() for t in self._chip_order
+        )
+        self._toggle_btn.setText("全" if self._all_checked else "⊘")
 
-        if self._chip_order:
-            first_tag = self._chip_order[0]
+        if self._checked_tags:
+            first_tag = next(iter(self._checked_tags))
             self._active_tag = first_tag
             self.tag_selected.emit(first_tag)
         else:
