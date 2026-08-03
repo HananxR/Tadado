@@ -234,7 +234,7 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 - 双模式：首页(无选中任务时显示欢迎横幅) / 编辑模式(选中任务后显示详情)
 - Markdown 源编辑区(QTextEdit) + 实时 HTML 预览(QLabel rich text)
 - 折叠/展开切换：折叠时显示任务摘要，展开时直接进入编辑模式（Markdown 编辑器同步可见）
-- 截止日期选择(CalendarPopup) + 时间选择(TimePopup) + 快速计算器(DeadlineIntervalCalculator)
+- 截止日期选择(CalendarPopup) + 时间选择(TimePopup) + 快速计算器(DeadlineIntervalCalculator, 6 选项平铺: 今天/明天/本周日/一周后/本月末/下月今天)
 - 草稿模式：新建任务时预填当天日期和标签模板，未保存提示横幅
 - 多任务创建：`create_draft_multi()` 生成 3 行模板
 - 活动时间线：_TimelineBrowser + 状态下拉 + 优先级下拉 + 进度输入 + 追加进展按钮
@@ -245,6 +245,7 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 
 - **TaskEditPanel** (QWidget) — 外层 QVBoxLayout：`_editor_header_widget`(固定顶部标签+折叠按钮) → QScrollArea(内部含 `_draft_banner`、`_editor_collapsible`、`_task_summary`、`_timeline_card`)
 - `_editor_collapsible` 包含：`_source_edit`(QTextEdit, Markdown 源) → `_preview_label`(QLabel, 实时 HTML 渲染) → 时间行(`_deadline_date_edit`+`_deadline_time_edit`+快速计算按钮) → 操作按钮(编辑/保存/删除)
+- **DeadlineIntervalCalculator** (QDialog) — 快速计算弹窗，6 个截止时间选项平铺展示：今天 / 明天(+1天) / 本周日 / 一周后(+7天) / 本月末 / 下月今天(+1个月)，选中后预览"标签 (日期 时间)"，点击应用填入日期时间选择器
 - `_timeline_card` 包含：状态+进度输入 → `_timeline_browser`(QTextBrowser 检测锚点点击) → `_new_log_input`(QTextEdit)
 - 内部类：`_TimelineEntryWidget`(时间线卡片, 图标+时间戳+内容, 48px)、`_TimelineBrowser`(QTextBrowser 子类)、`_BannerWidget`(背景图→半透明遮罩→HTML 文本三层渲染，遮罩 150/160 alpha 确保文字可读)
 - Banner 动态切换：`_partition_has_tasks()` 查询当前分区是否有活跃任务，有任务时显示日历日期（`_build_date_html`，📅 + 日期 + 忌拖延·宜行动），无任务时显示欢迎语（`_build_welcome_html`/`_build_draft_html`，🎉/✍️ + 今日无事）
@@ -956,7 +957,7 @@ AppConfig 主题变更
 #### 需求
 
 - 全选/取消全选按钮
-- 5 个操作按钮：更改状态(进行中/已完成)、删除、中止、重启、延后处理(+1/+2/+5/+7/+10天)
+- 5 个操作按钮：更改状态(进行中/已完成)、删除、中止、重启、延后处理(+1/+5/+7/+10/+20/+30天)
 - 延后处理：调整选中任务的 deadline_date，无截止时间的任务以今天为基准；执行后自动刷新逾期状态；活动日志格式 `[批量操作] 延后处理: 截止时间 {旧} -> {新}（+{N}天）`
 - 选中计数标签："已选 N 项"（纯显示，无交互，位于操作按钮之后）
 - 无选中时 hover 显示 Toast 提示
