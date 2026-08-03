@@ -184,7 +184,7 @@ class TaskListView(QTableView):
             )
 
         postpone_menu = menu.addMenu("延后处理")
-        for days in [1, 2, 5, 7, 10]:
+        for days in [1, 5, 7, 10, 20, 30]:
             postpone_menu.addAction(
                 f"+{days}天", lambda d=days, t=task: self._emit_batch_postpone(t, d)
             )

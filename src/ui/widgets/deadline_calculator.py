@@ -17,8 +17,6 @@ from PySide6.QtWidgets import (
 )
 
 from ...utils.design_tokens import get_tokens
-from ...utils.widget_utils import combo_width
-from .dropdown import DropdownWidget
 
 
 class DeadlineIntervalCalculator(QDialog):
@@ -45,30 +43,16 @@ class DeadlineIntervalCalculator(QDialog):
         layout.setSpacing(8)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        # Task type dropdown
-        type_row = QHBoxLayout()
-        type_label = QLabel("时间粒度:")
-        type_label.setStyleSheet(f"font-weight: bold; color: {t.text_primary};")
-        type_row.addWidget(type_label)
-        self._type_combo = DropdownWidget()
-        self._type_combo.setObjectName("calcTypeCombo")
-        self._type_combo.addItems(["天", "周", "月"])
-        self._type_combo.setFixedWidth(combo_width(2))
-        self._type_combo.currentIndexChanged.connect(self._on_type_changed)
-        type_row.addWidget(self._type_combo)
-        type_row.addStretch()
-        layout.addLayout(type_row)
+        # All 6 options, flat / tiled
+        self._rb_today = QRadioButton("今天")
+        self._rb_tomorrow = QRadioButton("明天 (+1天)")
+        self._rb_weekend = QRadioButton("本周日")
+        self._rb_week_later = QRadioButton("一周后 (+7天)")
+        self._rb_month_end = QRadioButton("本月末")
+        self._rb_month_later = QRadioButton("下月今天 (+1个月)")
 
-        # Radio buttons — all added, visibility controlled
-        self._rb_temp1 = QRadioButton("今天 23:59:59")
-        self._rb_temp2 = QRadioButton("当前 +1 天")
-        self._rb_week1 = QRadioButton("本周星期日 23:59:59")
-        self._rb_week2 = QRadioButton("今天 +7 天")
-        self._rb_month1 = QRadioButton("本月末 23:59:59")
-        self._rb_month2 = QRadioButton("今天 +1 个自然月")
-
-        for rb in (self._rb_temp1, self._rb_temp2, self._rb_week1, self._rb_week2,
-                    self._rb_month1, self._rb_month2):
+        for rb in (self._rb_today, self._rb_tomorrow, self._rb_weekend,
+                    self._rb_week_later, self._rb_month_end, self._rb_month_later):
             rb.clicked.connect(self._apply)
             layout.addWidget(rb)
 
@@ -92,54 +76,35 @@ class DeadlineIntervalCalculator(QDialog):
         btn_row.addWidget(apply_btn)
         layout.addLayout(btn_row)
 
-        # Show initial state
-        self._on_type_changed()
-
-    def _on_type_changed(self) -> None:
-        """Combo change: show/hide options and auto-check first one."""
-        idx = self._type_combo.currentIndex()
-        self._rb_temp1.setVisible(idx == 0)
-        self._rb_temp2.setVisible(idx == 0)
-        self._rb_week1.setVisible(idx == 1)
-        self._rb_week2.setVisible(idx == 1)
-        self._rb_month1.setVisible(idx == 2)
-        self._rb_month2.setVisible(idx == 2)
-        # Auto-check first visible
-        for rb, vis in [(self._rb_temp1, idx == 0), (self._rb_week1, idx == 1), (self._rb_month1, idx == 2)]:
-            if vis:
-                rb.blockSignals(True)
-                rb.setChecked(True)
-                rb.blockSignals(False)
-                break
-        self._apply()
+        # Default: select "今天"
+        self._rb_today.setChecked(True)
 
     def _calc(self) -> tuple:
-        idx = self._type_combo.currentIndex()
         today = date.today()
 
-        if idx == 0:  # temp
-            if self._rb_temp1.isChecked():
-                return QDate(today), QTime(23, 59, 59), "今天 23:59"
+        if self._rb_today.isChecked():
+            return QDate(today), QTime(23, 59, 59), "今天"
+        elif self._rb_tomorrow.isChecked():
             d = today + timedelta(days=1)
             return QDate(d), QTime(23, 59, 59), "明天"
-        elif idx == 1:  # week
-            if self._rb_week1.isChecked():
-                d = today + timedelta(days=(7 - today.isoweekday()))
-                return QDate(d), QTime(23, 59, 59), "本周日"
+        elif self._rb_weekend.isChecked():
+            d = today + timedelta(days=(7 - today.isoweekday()))
+            return QDate(d), QTime(23, 59, 59), "本周日"
+        elif self._rb_week_later.isChecked():
             d = today + timedelta(days=7)
-            return QDate(d), QTime(23, 59, 59), "今天+7天"
-        else:  # month
-            if self._rb_month1.isChecked():
-                _, last = calendar.monthrange(today.year, today.month)
-                d = today.replace(day=last)
-                if d < today:
-                    if today.month < 12:
-                        d = date(today.year, today.month + 1, 1)
-                    else:
-                        d = date(today.year + 1, 1, 1)
-                    _, last = calendar.monthrange(d.year, d.month)
-                    d = d.replace(day=last)
-                return QDate(d), QTime(23, 59, 59), "本月末"
+            return QDate(d), QTime(23, 59, 59), "一周后"
+        elif self._rb_month_end.isChecked():
+            _, last = calendar.monthrange(today.year, today.month)
+            d = today.replace(day=last)
+            if d < today:
+                if today.month < 12:
+                    d = date(today.year, today.month + 1, 1)
+                else:
+                    d = date(today.year + 1, 1, 1)
+                _, last = calendar.monthrange(d.year, d.month)
+                d = d.replace(day=last)
+            return QDate(d), QTime(23, 59, 59), "本月末"
+        else:  # _rb_month_later
             if today.month == 12:
                 try:
                     d = date(today.year + 1, 1, today.day)
@@ -155,6 +120,6 @@ class DeadlineIntervalCalculator(QDialog):
     def _apply(self) -> None:
         d, t, desc = self._calc()
         self._preview.setText(
-            f"{d.toString('yyyy-MM-dd')} {t.toString('HH:mm')} ({desc})"
+            f"{desc} ({d.toString('yyyy-MM-dd')} {t.toString('HH:mm')})"
         )
         self.deadline_suggested.emit(d, t)
