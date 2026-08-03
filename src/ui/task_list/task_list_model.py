@@ -179,6 +179,7 @@ class TaskListModel(QAbstractTableModel):
     def load_tasks(self, tasks: list[Task]) -> None:
         self.beginResetModel()
         self._tasks = tasks
+        self._checked_ids.clear()
         self.endResetModel()
 
     def insert_task(self, task: Task) -> None:
