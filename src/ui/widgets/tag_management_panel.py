@@ -36,6 +36,7 @@ class TagManagementPanel(QWidget):
     """
 
     tag_changed = Signal()
+    tag_clicked = Signal(str)  # emitted with tag name when a tag item is clicked
 
     def __init__(
         self, repository: TaskRepository, config: AppConfig | None = None,
@@ -51,6 +52,7 @@ class TagManagementPanel(QWidget):
             else MarkdownTaskFormatter()
         )
         self._all_tags: list[tuple[str, int]] = []  # full list before search filter
+        self._highlighted_tags: set[str] = set()  # tag names to bold-emphasize
         self._tag_page = 0
         self._tag_page_size = config.get("general", "page_size", default=20) if config else 20
         self._tag_total = 0
@@ -95,6 +97,11 @@ class TagManagementPanel(QWidget):
         self._tag_list.setObjectName("tagList")
         self._tag_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._tag_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        # Fix white-on-white selection: use accent semi-transparent background
+        t = get_tokens()
+        self._tag_list.setStyleSheet(
+            f"QListWidget::item:selected {{ background: {t.accent}40; color: {t.text_primary}; }}"
+        )
         self._tag_list.customContextMenuRequested.connect(self._on_context_menu)
         container_layout.addWidget(self._tag_list, 1)
 
@@ -150,6 +157,7 @@ class TagManagementPanel(QWidget):
 
     def _connect_signals(self) -> None:
         self._tag_list.itemSelectionChanged.connect(self._update_button_states)
+        self._tag_list.itemClicked.connect(self._on_tag_item_clicked)
 
     # ------------------------------------------------------------------
     # Public API
@@ -177,6 +185,16 @@ class TagManagementPanel(QWidget):
         self._partition_id = pid or None
         self.refresh()
 
+    def highlight_tags(self, tags: set[str]) -> None:
+        """Sort matching tags to front + bold-emphasize.
+        Pass an empty set to clear all emphasis and restore default sort."""
+        self._highlighted_tags = set(tags)
+        self._apply_search()  # re-sorts (highlighted first) then re-applies emphasis
+
+    def clear_selection(self) -> None:
+        """Clear all item selections (avoids confusion with task-tag emphasis)."""
+        self._tag_list.clearSelection()
+
     # ------------------------------------------------------------------
     # Internal: tag list display
     # ------------------------------------------------------------------
@@ -187,6 +205,11 @@ class TagManagementPanel(QWidget):
         filtered = self._all_tags
         if search:
             filtered = [(tag, cnt) for tag, cnt in self._all_tags if search in tag.lower()]
+
+        # Bring highlighted tags to the front (stable sort)
+        if self._highlighted_tags:
+            lowered = {x.lower() for x in self._highlighted_tags}
+            filtered.sort(key=lambda x: 0 if x[0].lower() in lowered else 1)
 
         self._tag_total = len(filtered)
         total_pages = max(1, (self._tag_total + self._tag_page_size - 1) // self._tag_page_size)
@@ -209,6 +232,7 @@ class TagManagementPanel(QWidget):
         self._tag_prev_btn.setEnabled(self._tag_page > 0)
         self._tag_next_btn.setEnabled(self._tag_page < total_pages - 1)
         self._update_button_states()
+        self._apply_tag_emphasis()
 
     def _selected_tags(self) -> list[str]:
         """Return tag names of all selected items."""
@@ -223,6 +247,33 @@ class TagManagementPanel(QWidget):
         selected = self._selected_tags()
         self._rename_btn.setEnabled(len(selected) == 1)
         self._merge_btn.setEnabled(len(selected) >= 2)
+
+    def _apply_tag_emphasis(self) -> None:
+        """Apply bold+accent styling to tag items that match _highlighted_tags."""
+        t = get_tokens()
+        lowered = {x.lower() for x in self._highlighted_tags}
+        accent_bg = QColor(t.accent)
+        accent_bg.setAlpha(30)  # semi-transparent accent background for emphasis
+        for i in range(self._tag_list.count()):
+            item = self._tag_list.item(i)
+            tag = item.data(Qt.ItemDataRole.UserRole)
+            match = bool(tag) and tag.lower() in lowered
+            font = item.font()
+            font.setBold(match)
+            item.setFont(font)
+            item.setForeground(QColor(t.accent if match else t.text_primary))
+            item.setBackground(accent_bg if match else QColor(Qt.GlobalColor.transparent))
+
+    def _on_tag_item_clicked(self, item: QListWidgetItem) -> None:
+        """Emit tag_clicked when a tag item is clicked (skip multi-select)."""
+        from PySide6.QtWidgets import QApplication
+
+        mods = QApplication.keyboardModifiers()
+        if mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
+            return  # multi-select for rename/merge — don't trigger tag filtering
+        tag = item.data(Qt.ItemDataRole.UserRole)
+        if tag:
+            self.tag_clicked.emit(tag)
 
     # ------------------------------------------------------------------
     # Search

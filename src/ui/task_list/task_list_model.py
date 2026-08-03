@@ -105,6 +105,8 @@ class TaskListModel(QAbstractTableModel):
                 return task.raw_md
             if col == COL_CREATED and task.created_at:
                 return task.created_at.strftime("%Y-%m-%d %H:%M")
+            if col == COL_TAGS and task.tags:
+                return " ".join(f"#{t}" for t in task.tags)
 
         return None
 

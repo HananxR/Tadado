@@ -533,6 +533,8 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 - 合并流程：自定义 QDialog(QComboBox 选目标) → `_execute_merge()` 逐任务替换源标签 → 去重 → 再生 raw_md → 发射信号
 - 分区感知：`set_partition_id()` 限定标签范围，`refresh()` 调用 `repository.get_all_tags_with_counts(partition_id)`；分区激活时 `BatchController.set_active_partition()` 传播，视图切换时同步
 - 仓库新增方法：`get_all_tags_with_counts()`、`get_tasks_by_tag()`、`get_tasks_by_tags()` — 均不做 `archived` 过滤，确保标签操作全局生效
+- 任务-标签双向联动：点击任务行 → 标签面板中该任务关联的标签加粗+accent 色高亮；点击标签项 → 任务列表中含该标签的任务前置（再次点击同一标签取消前置）；鼠标悬停标签列显示全部标签信息
+- 信号：`tag_clicked(str)` (QListWidget itemClicked → emit tag_clicked) + `highlight_tags(set[str])` (字体加粗+accent色)；`TaskListView.selection_cleared()` 清空选中时取消高亮
 
 **最终更新预览**：
 

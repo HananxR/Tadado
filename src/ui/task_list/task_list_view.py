@@ -25,6 +25,7 @@ class TaskListView(QTableView):
     """Table view of tasks with right-click context menu. No inline checkbox."""
 
     task_selected = Signal(Task)
+    selection_cleared = Signal()
     detail_requested = Signal(Task)
 
     # Batch operation signals (emitted from right-click menu)
@@ -247,6 +248,8 @@ class TaskListView(QTableView):
             task = self.selected_task()
             if task:
                 self.task_selected.emit(task)
+        elif not ids:
+            self.selection_cleared.emit()
 
     def _on_double_clicked(self, index: QModelIndex) -> None:
         task: Task | None = index.data(Qt.ItemDataRole.UserRole)

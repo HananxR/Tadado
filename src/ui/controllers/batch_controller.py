@@ -68,6 +68,7 @@ class BatchController(QObject):
         self._page_size = config.get("general", "page_size", default=20)
         self._total_count = 0
         self._pending_action: dict | None = None
+        self._tag_sort: str | None = None  # tag whose tasks are brought to front
 
         # Widgets (populated by build_page)
         self._batch_task_model = None
@@ -338,6 +339,10 @@ class BatchController(QObject):
         self._bus.task_deleted.connect(lambda *_: self._batch_tag_panel.refresh())
         self._bus.tag_changed.connect(lambda *_: self.refresh_page())
 
+        # Bidirectional task list <-> tag panel interaction
+        self._batch_task_view.selection_cleared.connect(self._on_batch_selection_cleared)
+        self._batch_tag_panel.tag_clicked.connect(self._on_tag_panel_clicked)
+
         self._page_widget = batch_page
         return batch_page
 
@@ -400,6 +405,8 @@ class BatchController(QObject):
         f.offset = self._page * self._page_size
 
         tasks, self._total_count = self._svc.search_with_total(f)
+        # Apply tag-based priority sort if a tag was clicked
+        tasks = self._apply_tag_priority(tasks)
         self._batch_task_model.load_tasks(tasks)
         self._update_pagination()
 
@@ -615,6 +622,34 @@ class BatchController(QObject):
     def _on_batch_task_selected(self, task: Task) -> None:
         if self._batch_task_model:
             self._batch_task_model.set_highlighted_task(task.id)
+        # Notify tag panel to bold the selected task's tags
+        if self._batch_tag_panel:
+            self._batch_tag_panel.clear_selection()
+            self._batch_tag_panel.highlight_tags(set(task.tags))
+
+    def _on_batch_selection_cleared(self) -> None:
+        """Clear tag emphasis when task selection is cleared."""
+        if self._batch_tag_panel:
+            self._batch_tag_panel.clear_selection()
+            self._batch_tag_panel.highlight_tags(set())
+
+    def _on_tag_panel_clicked(self, tag: str) -> None:
+        """Reorder task list so tasks carrying `tag` appear first.
+        Clicking the same tag again toggles off the reorder.
+        Tag panel selection is preserved for rename/merge operations."""
+        self._tag_sort = None if self._tag_sort == tag else tag
+        self.refresh_page()
+
+    def _apply_tag_priority(self, tasks: list[Task]) -> list[Task]:
+        """Stable reorder: tasks carrying the active tag move to the front.
+        All tasks remain visible — this is a reorder, not a filter."""
+        tag = self._tag_sort
+        if not tag:
+            return tasks
+        return sorted(
+            tasks,
+            key=lambda t: 0 if tag.lower() in {x.lower() for x in (t.tags or [])} else 1,
+        )
 
     def _on_batch_model_data_changed(self) -> None:
         if self._batch_toolbar2:
