@@ -36,6 +36,21 @@ _CAT_LABELS = {"Added": "新增", "Changed": "优化", "Fixed": "修复"}
 _CAT_ICONS = {"新增": "✨", "优化": "🔧", "修复": "🐛"}
 
 
+def _md_to_html(text: str, t) -> str:
+    """CHANGELOG Markdown 片段 → 富文本（加粗/行内代码/链接）."""
+    safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # 兼容历史条目里写死的 <code> 标签
+    safe = safe.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
+    safe = re.sub(r"`([^`]+)`", r"<code>\1</code>", safe)
+    safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe)
+    safe = re.sub(
+        r"\[([^\]]+)\]\(([^)]+)\)",
+        rf'<a href="\2" style="color:{t.accent}; text-decoration:none;">\1</a>',
+        safe,
+    )
+    return safe
+
+
 def _parse_changelog_md() -> list[dict]:
     """Parse CHANGELOG.md into [{version, date, categories:[(label, [items])]}].
 
@@ -145,6 +160,54 @@ class _HeaderBar(QWidget):
         layout.addWidget(_close_button(close_callback))
 
 
+class ChannelsDialog(QDialog):
+    """下载渠道子页 — 「下载渠道」菜单行的下级页面."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("下载渠道")
+        self.setObjectName("channelsDialog")
+        self.setFixedSize(380, 200)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(_HeaderBar("下载渠道", self.reject))
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(24, 8, 24, 16)
+        layout.setSpacing(0)
+
+        github_row = _MenuRow("GitHub Releases")
+        github_row.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(_GITHUB_RELEASES))
+        )
+        layout.addWidget(github_row)
+
+        aliyun_row = _MenuRow("阿里云盘（仅 .exe）")
+        aliyun_row.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL))
+        )
+        layout.addWidget(aliyun_row)
+
+        layout.addSpacing(14)
+
+        t = get_tokens()
+        note = QLabel("两个渠道发布的安装包内容一致，任选其一即可。")
+        note.setWordWrap(True)
+        note.setStyleSheet(f"font-size: 11px; color: {t.text_secondary};")
+        layout.addWidget(note)
+        layout.addStretch()
+
+        outer.addWidget(content, 1)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        if is_dark_mode_supported() and is_dark():
+            set_window_dark_mode(self, True, caption_color=get_surface_color())
+
+
 class VersionHistoryDialog(QDialog):
     """独立滚动页：全版本更新记录（CHANGELOG.md 解析，缺省回退当前版本 highlights）."""
 
@@ -180,9 +243,11 @@ class VersionHistoryDialog(QDialog):
                 "categories": [(cat, list(items)) for cat, items in highlights.items() if items],
             }]
 
+        cat_colors = {"新增": t.success, "优化": t.warning, "修复": t.danger}
+
         for vi, ver in enumerate(versions):
             if vi:
-                layout.addSpacing(18)
+                layout.addSpacing(16)
                 sep = QFrame()
                 sep.setFrameShape(QFrame.Shape.HLine)
                 sep.setStyleSheet(f"QFrame {{ color: {t.border_primary}; }}")
@@ -190,35 +255,46 @@ class VersionHistoryDialog(QDialog):
                 layout.addWidget(sep)
                 layout.addSpacing(14)
 
-            title_text = f"v{ver['version']}"
-            if ver.get("date"):
-                title_text += f"  <span style='font-size:11px;color:{t.text_secondary};font-weight:400;'>{ver['date']}</span>"
-            title = QLabel(title_text)
-            title.setStyleSheet(
+            # 版本标题行：版本号 + 日期右对齐，正式版式
+            header_row = QWidget()
+            header_layout = QHBoxLayout(header_row)
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            version_label = QLabel(f"v{ver['version']}")
+            version_label.setStyleSheet(
                 f"font-size: 15px; font-weight: 700; color: {t.text_primary};"
             )
-            title.setTextFormat(Qt.TextFormat.RichText)
-            layout.addWidget(title)
-            layout.addSpacing(6)
+            header_layout.addWidget(version_label)
+            header_layout.addStretch()
+            if ver.get("date"):
+                date_label = QLabel(ver["date"])
+                date_label.setStyleSheet(
+                    f"font-size: 11px; color: {t.text_secondary};"
+                )
+                header_layout.addWidget(date_label)
+            layout.addWidget(header_row)
+            layout.addSpacing(8)
 
             for cat, items in ver["categories"]:
                 if not items:
                     continue
+                color = cat_colors.get(cat, t.text_primary)
                 icon = _CAT_ICONS.get(cat, "•")
-                cat_label = QLabel(f"{icon} {cat}")
+                cat_label = QLabel(
+                    f'<span style="color:{color};">{icon} {cat}</span>'
+                )
                 cat_label.setStyleSheet(
-                    f"font-size: 11px; font-weight: 600; color: {t.accent};"
+                    f"font-size: 11px; font-weight: 700;"
                 )
                 layout.addWidget(cat_label)
                 layout.addSpacing(2)
                 for item in items:
-                    safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                    safe = safe.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
-                    entry = QLabel(f"· {safe}")
+                    entry = QLabel(f"· {_md_to_html(item, t)}")
                     entry.setWordWrap(True)
                     entry.setTextFormat(Qt.TextFormat.RichText)
+                    entry.setOpenExternalLinks(True)
                     entry.setStyleSheet(
-                        f"font-size: 12px; color: {t.text_secondary}; line-height: 1.8;"
+                        f"font-size: 12px; color: {t.text_secondary};"
+                        f" padding-left: 12px;"
                     )
                     layout.addWidget(entry)
 
@@ -303,7 +379,7 @@ class AboutDialog(QDialog):
         layout.addWidget(tagline)
         layout.addSpacing(22)
 
-        # ── Menu rows ──
+        # ── Menu rows（分组：服务 / 下载 / 反馈） ──
         self._check_row = _MenuRow("检查更新")
         self._check_row.clicked.connect(self._on_check_updates)
         layout.addWidget(self._check_row)
@@ -312,17 +388,13 @@ class AboutDialog(QDialog):
         history_row.clicked.connect(self._open_history)
         layout.addWidget(history_row)
 
-        github_row = _MenuRow("下载渠道 · GitHub Releases")
-        github_row.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(_GITHUB_RELEASES))
-        )
-        layout.addWidget(github_row)
+        layout.addSpacing(14)
 
-        aliyun_row = _MenuRow("下载渠道 · 阿里云盘")
-        aliyun_row.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL))
-        )
-        layout.addWidget(aliyun_row)
+        channels_row = _MenuRow("下载渠道")
+        channels_row.clicked.connect(self._open_channels)
+        layout.addWidget(channels_row)
+
+        layout.addSpacing(14)
 
         email_row = _MenuRow("意见反馈", "hanxy8413@gmail.com")
         email_row.clicked.connect(
@@ -333,26 +405,28 @@ class AboutDialog(QDialog):
         wechat_row = _MenuRow("微信公众号", "Pyvan")
         layout.addWidget(wechat_row)
 
-        repo_row = _MenuRow("GitHub 仓库")
-        repo_row.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(_GITHUB_REPO))
-        )
-        layout.addWidget(repo_row)
-
         layout.addStretch()
 
-        # ── Copyright ──
+        # ── Copyright（GitHub 以超链接呈现） ──
         copyright_label = QLabel(
-            f"Copyright © {datetime.now().year} HananxR · MIT License"
+            f'Copyright © {datetime.now().year} HananxR · MIT License · '
+            f'<a href="{_GITHUB_REPO}" style="color:{t.accent}; text-decoration:none;">GitHub</a>'
         )
         copyright_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        copyright_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary};")
+        copyright_label.setOpenExternalLinks(True)
+        copyright_label.setTextFormat(Qt.TextFormat.RichText)
+        copyright_label.setStyleSheet(
+            f"font-size: 10px; color: {t.text_secondary};"
+        )
         layout.addWidget(copyright_label)
 
         outer.addWidget(content, 1)
 
     def _open_history(self) -> None:
         VersionHistoryDialog(self).exec()
+
+    def _open_channels(self) -> None:
+        ChannelsDialog(self).exec()
 
     # ── Update check slots ────────────────────────────────────────
 
