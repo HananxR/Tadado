@@ -302,6 +302,21 @@ class SettingsDialog(QDialog):
         self._partition_table.setStyleSheet(table_qss)
         grid.addWidget(self._partition_table, r, 0, 1, 2); r += 1
 
+        # ================================================================
+        # AI 助手
+        # ================================================================
+        grid.addWidget(_section_header("AI 助手"), r, 0, 1, 2); r += 1
+        self._ai_provider_combo = DropdownWidget()
+        self._ai_provider_combo.setFixedWidth(_DROP_W)
+        self._ai_provider_combo.addItem("自动检测（优先 Claude）", "")
+        self._ai_provider_combo.addItem("Claude", "claude")
+        self._ai_provider_combo.addItem("Codex", "codex")
+        cur_provider = self._config.get("ai_assistant", "provider") or ""
+        idx = self._ai_provider_combo.findData(cur_provider)
+        self._ai_provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._ai_provider_combo.currentIndexChanged.connect(self._save_ai_assistant)
+        _row("AI 助手:", self._ai_provider_combo)
+
         content_layout.addLayout(grid)
         content_layout.addStretch()
         self._scroll.setWidget(content)
@@ -850,6 +865,11 @@ class SettingsDialog(QDialog):
             self._config.set("reminders", "quiet_hours_start", value=qs)
         if self._validate_time(qe):
             self._config.set("reminders", "quiet_hours_end", value=qe)
+
+    def _save_ai_assistant(self) -> None:
+        self._config.set(
+            "ai_assistant", "provider", value=self._ai_provider_combo.currentData()
+        )
 
     def _save_display(self) -> None:
         self._config.set("display", "heatmap_start_year", value=self._heatmap_year_combo.currentData())
