@@ -181,6 +181,49 @@ def _cmd_list(args, svc, config) -> dict:
     }
 
 
+def _cmd_activity(args, svc, config) -> dict:
+    """Activity timeline for one day (default today)."""
+    target = _parse_date(args.date) if args.date else date.today()
+    pid = _resolve_partition_id(svc, args.partition) if args.partition else None
+    tags = set(args.tag) if getattr(args, "tag", None) else None
+    name_map = svc.get_partition_name_map()
+    entries: list[dict] = []
+    created = done = 0
+    for t in svc.get_all():
+        if pid and t.partition_id != pid:
+            continue
+        if tags and not tags.issubset(set(t.tags)):
+            continue
+        for e in t.activity_log or []:
+            ts = str(e.get("ts", ""))
+            if ts[:10] != target.isoformat():
+                continue
+            content = str(e.get("content", ""))
+            if content == "创建任务":
+                created += 1
+            if e.get("status") == "DONE":
+                done += 1
+            entries.append({
+                "ts": ts,
+                "task_id": t.id,
+                "task_title": t.title,
+                "content": content,
+                "status": e.get("status", ""),
+                "progress": e.get("progress", 0),
+                "partition_name": name_map.get(t.partition_id or "", ""),
+            })
+    entries.sort(key=lambda e: e["ts"], reverse=True)
+    return {
+        "type": "activity",
+        "date": target.isoformat(),
+        "entry_count": len(entries),
+        "task_count": len({e["task_id"] for e in entries}),
+        "created": created,
+        "done": done,
+        "entries": entries,
+    }
+
+
 def _cmd_today(args, svc, config) -> dict:
     today = date.today()
     horizon = today + timedelta(days=args.days)
@@ -473,6 +516,7 @@ def _cmd_export(args, svc, config) -> dict:
 _HANDLERS = {
     "list": _cmd_list,
     "today": _cmd_today,
+    "activity": _cmd_activity,
     "add": _cmd_add,
     "edit": _cmd_edit,
     "done": _cmd_done,

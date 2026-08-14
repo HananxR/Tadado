@@ -298,6 +298,33 @@ def test_render_json_and_human(parser, service):
     assert "渲染任务" in human and "#工作" in human
 
 
+def test_activity_timeline(parser, service):
+    """activity 返回指定日期的活动时间线（默认今天）."""
+    from datetime import datetime
+
+    today = date.today()
+    now = datetime.now()
+    execute("add", _args(parser, "add", "活动任务A"), service)
+    task = execute("list", _args(parser, "list"), service)["tasks"][0]
+    # 追加一条今日活动记录（模拟 GUI 追加进展）
+    stored = service.get_task(task["id"])
+    stored.activity_log.append({
+        "ts": now.isoformat(), "content": "完成初稿", "status": "DOING", "progress": 50,
+    })
+    service.update_task(stored)
+    r = execute("activity", _args(parser, "activity"), service)
+    assert r["date"] == today.isoformat()
+    assert r["entry_count"] == 2  # 创建 + 追加
+    assert r["created"] == 1
+    contents = [e["content"] for e in r["entries"]]
+    assert "完成初稿" in contents and "创建任务" in contents
+    human = render(r, "human")
+    assert "活动任务A" in human and "完成初稿" in human
+    # 指定日期无活动
+    r2 = execute("activity", _args(parser, "activity", "--date", "2020-01-01"), service)
+    assert r2["entry_count"] == 0
+
+
 def test_render_countdown(parser, service):
     """human 输出带倒计数：今天到期 / 剩 N 天 / 已逾期 N 天."""
     from datetime import date as _date

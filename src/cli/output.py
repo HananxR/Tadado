@@ -55,6 +55,18 @@ def _render_human(result: dict) -> str:
         lines = [f"任务列表（{result['count']} / 共 {result['total']}）:"]
         lines.extend(_task_lines(result["tasks"]))
         return "\n".join(lines)
+    if rtype == "activity":
+        lines = [
+            f"活动记录（{result['date']}，共 {result['entry_count']} 条 / "
+            f"{result['task_count']} 个任务，新增 {result['created']}，完成 {result['done']}）:"
+        ]
+        for e in result["entries"]:
+            ts = e["ts"][11:19] if len(e["ts"]) >= 19 else e["ts"]
+            lines.append(
+                f"  {ts} [{e['task_id'][:8]}] {e['task_title']} — {e['content']}"
+                f"（{e['status']} {e['progress']}%）「{e['partition_name']}」"
+            )
+        return "\n".join(lines)
     if rtype == "today":
         lines = [f"今日摘要（{result['date']}，近 {result['days']} 天）:"]
         for group, label in (("overdue", "逾期"), ("due_today", "今日到期"),

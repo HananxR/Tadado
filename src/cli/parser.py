@@ -38,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_today = sub.add_parser("today", help="今日摘要（逾期/今日到期/临近/进行中）")
     p_today.add_argument("--days", type=int, default=2, help="临近窗口天数（默认 2）")
 
+    # activity
+    p_act = sub.add_parser("activity", help="指定日期的活动记录时间线")
+    p_act.add_argument("--date", dest="date", help="日期 YYYY-MM-DD（默认今天）")
+    p_act.add_argument("--partition", help="分区 ID/名称")
+    p_act.add_argument("--tag", action="append", help="标签过滤（可多次）")
+
     # add
     p_add = sub.add_parser("add", help="新建任务（Markdown 行为主）")
     p_add.add_argument("markdown", nargs="?", help="Markdown 任务行，如 '- [*] TODO<2026-08-20> 买咖啡 #工作'")
