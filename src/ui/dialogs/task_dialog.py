@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -22,7 +21,7 @@ from ...models.task_status import TaskStatus
 from ...services.md_formatter import MarkdownTaskFormatter
 from ...services.md_parser import MarkdownTaskParser
 from ...services.task_service import TaskService
-from ...utils.design_tokens import get_tokens
+from ..widgets.timeline_view import TimelineView
 
 
 class TaskDialog(QDialog):
@@ -45,8 +44,8 @@ class TaskDialog(QDialog):
 
         self.setWindowTitle("编辑任务" if self._editing else "新建任务")
         self.setObjectName("taskDialog")
-        self.resize(520, 300)
-        self.setMinimumSize(420, 240)
+        self.resize(560, 320)
+        self.setMinimumSize(460, 260)
 
         self._build_ui()
         if self._editing and self._task:
@@ -94,22 +93,14 @@ class TaskDialog(QDialog):
         self._created_label.setVisible(False)
         root.addWidget(self._created_label)
 
-        # 活动时间线（只读展示；无活动记录时整个区域隐藏）
+        # 活动时间线：与主界面时间线同款样式，仅只读；无记录时整个区域隐藏
         self._timeline_header = QLabel("活动时间线")
         self._timeline_header.setObjectName("timelineHeader")
         self._timeline_header.setVisible(False)
         root.addWidget(self._timeline_header)
-        self._timeline_container = QWidget()
-        self._timeline_layout = QVBoxLayout(self._timeline_container)
-        self._timeline_layout.setContentsMargins(0, 0, 0, 0)
-        self._timeline_layout.setSpacing(4)
-        self._timeline_scroll = QScrollArea()
-        self._timeline_scroll.setWidgetResizable(True)
-        self._timeline_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        self._timeline_scroll.setWidget(self._timeline_container)
-        self._timeline_scroll.setMaximumHeight(150)
-        self._timeline_scroll.setVisible(False)
-        root.addWidget(self._timeline_scroll)
+        self._timeline_view = TimelineView()
+        self._timeline_view.setVisible(False)
+        root.addWidget(self._timeline_view, 1)  # 随内容与窗口一起放大
 
         # Buttons
         buttons = QDialogButtonBox(
@@ -126,34 +117,14 @@ class TaskDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _populate_timeline(self) -> None:
-        """只读展示任务活动时间线（新→旧）；无记录时隐藏整个区域."""
-        logs = (self._task.activity_log or []) if self._task else []
-        if not logs:
-            self._timeline_header.setVisible(False)
-            self._timeline_scroll.setVisible(False)
-            return
-        self._timeline_header.setVisible(True)
-        self._timeline_scroll.setVisible(True)
-        t = get_tokens()
-        # 清空旧条目
-        while self._timeline_layout.count():
-            item = self._timeline_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        for entry in reversed(logs):
-            ts = str(entry.get("ts", ""))
-            display_ts = ts[5:16].replace("T", " ") if len(ts) >= 16 else ts
-            content = str(entry.get("content", "")).strip() or "（无内容）"
-            status = str(entry.get("status", ""))
-            progress = entry.get("progress", 0)
-            line = QLabel(f"{display_ts}  {content}（{status} {progress}%）")
-            line.setWordWrap(True)
-            line.setStyleSheet(
-                f"QLabel {{ color: {t.text_secondary}; font-size: 12px;"
-                f" padding: 2px 6px; border-left: 2px solid {t.border_primary}; }}"
-            )
-            self._timeline_layout.addWidget(line)
-        self._timeline_layout.addStretch()
+        """只读展示任务活动时间线（与主界面同款样式）；无记录时隐藏整个区域."""
+        self._timeline_view.set_task(self._task)
+        has_log = bool(self._task and self._task.activity_log)
+        self._timeline_header.setVisible(has_log)
+        self._timeline_view.setVisible(has_log)
+        if has_log:
+            # 有活动记录时给时间线留足展示空间
+            self._timeline_view.setMinimumHeight(140)
 
     def _update_preview(self) -> None:
         text = self._md_edit.text().strip()
