@@ -71,13 +71,13 @@ def _statuses_from(values: list[str] | None) -> set[TaskStatus] | None:
     return {TaskStatus.from_string(v) for v in values}
 
 
-def _build_filter(args) -> TaskFilter:
+def _build_filter(args, svc) -> TaskFilter:
     """Map list-command args onto a TaskFilter."""
     return TaskFilter(
         search_text=args.keyword or "",
         statuses=_statuses_from(getattr(args, "status", None)),
         tags=set(args.tag) if getattr(args, "tag", None) else None,
-        partition_id=args.partition or None,
+        partition_id=_resolve_partition_id(svc, args.partition) if args.partition else None,
         date_from=_parse_date(args.date_from) if args.date_from else None,
         date_to=_parse_date(args.date_to) if args.date_to else None,
         overdue_only=bool(getattr(args, "overdue", False)),
@@ -89,8 +89,34 @@ def _build_filter(args) -> TaskFilter:
     )
 
 
+def _resolve_id_prefix(value: str, ids: list[str], kind: str) -> str | None:
+    """Exact match wins; otherwise a unique prefix (>=8 chars) resolves.
+
+    Raises CliError when a prefix is ambiguous.
+    """
+    if value in ids:
+        return value
+    matches = [i for i in ids if i.startswith(value)] if len(value) >= 8 else []
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise CliError(f"{kind} ID 前缀 {value!r} 匹配到多个，请提供更长的 ID")
+    return None
+
+
+def _resolve_partition_id(svc, value: str) -> str:
+    """Resolve a partition id or unique prefix; raise on absence/ambiguity."""
+    resolved = _resolve_id_prefix(value, list(svc.get_partition_name_map()), "分区")
+    if resolved is None:
+        raise CliError(f"分区不存在: {value!r}（用 partitions 查看分区 ID）")
+    return resolved
+
+
 def _resolve_ids(args, svc) -> list[str]:
-    """Resolve positional ids + --match into a verified task-id list."""
+    """Resolve positional ids + --match into a verified task-id list.
+
+    Task ids may be full UUIDs or unique prefixes (>=8 chars).
+    """
     ids = list(getattr(args, "ids", None) or [])
     match = getattr(args, "match", None)
     if match:
@@ -103,10 +129,12 @@ def _resolve_ids(args, svc) -> list[str]:
         ids.append(candidates[0].id)
     if not ids:
         raise CliError("需要任务 ID 或 --match 关键词")
+    all_ids = [t.id for t in svc.get_all()]
     verified: list[str] = []
-    for task_id in ids:
-        if svc.get_task(task_id) is None:
-            raise CliError(f"任务不存在: {task_id}")
+    for value in ids:
+        task_id = _resolve_id_prefix(value, all_ids, "任务")
+        if task_id is None:
+            raise CliError(f"任务不存在: {value}")
         if task_id not in verified:
             verified.append(task_id)
     return verified
@@ -136,7 +164,7 @@ def _md_with_status(status: TaskStatus, md_line: str) -> str:
 # ------------------------------------------------------------------
 
 def _cmd_list(args, svc, config) -> dict:
-    f = _build_filter(args)
+    f = _build_filter(args, svc)
     total = svc.count(f)
     tasks = svc.search(f)
     return {
@@ -225,7 +253,7 @@ def _cmd_add(args, svc, config) -> dict:
     )
     md_line = _md_with_status(status, md_line)
 
-    partition_id = args.partition or svc.ensure_default_partition()
+    partition_id = _resolve_partition_id(svc, args.partition) if args.partition else svc.ensure_default_partition()
     task = svc.create_task(md_line, partition_id)
     if args.notes is not None or args.recur is not None:
         if args.notes is not None:
@@ -270,7 +298,7 @@ def _cmd_edit(args, svc, config) -> dict:
         task.recurrence_rule = args.recur or None
         field_changed = True
     if args.partition is not None:
-        task.partition_id = args.partition
+        task.partition_id = _resolve_partition_id(svc, args.partition)
         field_changed = True
 
     new_md = svc.format_task(task)
@@ -327,7 +355,7 @@ def _cmd_rm(args, svc, config) -> dict:
 # ------------------------------------------------------------------
 
 def _cmd_tags(args, svc, config) -> dict:
-    pid = args.partition or None
+    pid = _resolve_partition_id(svc, args.partition) if args.partition else None
     if args.counts:
         entries = [{"tag": t, "count": c} for t, c in svc.get_all_tags_with_counts(pid)]
         return {"type": "tags", "tags": entries}
@@ -352,15 +380,13 @@ def _cmd_partitions(args, svc, config) -> dict:
         return {"type": "partition", "partition": _partition_dict(p, svc)}
     if args.rename:
         pid, name = args.rename
-        if svc.get_partition_name_map().get(pid) is None:
-            raise CliError(f"分区不存在: {pid}")
+        pid = _resolve_partition_id(svc, pid)
         p = svc.upsert_partition(name, partition_id=pid)
         return {"type": "partition", "partition": _partition_dict(p, svc)}
     if args.rm:
-        if svc.get_partition_name_map().get(args.rm) is None:
-            raise CliError(f"分区不存在: {args.rm}")
-        svc.delete_partition(args.rm)
-        return {"type": "partition_deleted", "id": args.rm}
+        pid = _resolve_partition_id(svc, args.rm)
+        svc.delete_partition(pid)
+        return {"type": "partition_deleted", "id": pid}
     parts = [_partition_dict(p, svc) for p in svc.get_all_partitions()]
     return {"type": "partition_list", "partitions": parts}
 
@@ -423,7 +449,8 @@ def _cmd_reminder(args, svc, config) -> dict:
 
 
 def _cmd_export(args, svc, config) -> dict:
-    f = TaskFilter(partition_id=args.partition or None, show_archived=True)
+    pid = _resolve_partition_id(svc, args.partition) if args.partition else None
+    f = TaskFilter(partition_id=pid, show_archived=True)
     tasks = svc.search(f)
     fmt = args.fmt or "md"
     out = Path(args.out) if args.out else Path(f"tadado_tasks.{fmt}")

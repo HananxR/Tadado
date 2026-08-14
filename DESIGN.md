@@ -162,7 +162,8 @@ tadado-cli <command> [args]
 1. **单一写者** — GUI 运行时 CLI 一律转发，绝不双进程写库；GUI 未运行时才 headless 直写。
 2. **raw_md 不被绕过** — `add` 用 formatter 构造规范 Markdown 行再走 `TaskService.create_task`；
    `edit` 走 `update_task` 重建 raw_md。
-3. **LLM 输入防御** — `add` 归一化 `TODO<日期>`（缺空格）→ `TODO <日期>`，与 GUI 语法一致。
+3. **LLM 输入防御** — `add` 归一化 `TODO<日期>`（缺空格）→ `TODO <日期>`，与 GUI 语法一致；
+   任务/分区 ID 支持 ≥8 位唯一前缀解析（人类输出截断的 8 位 ID 可直接复用）。
 4. **管道可靠性**（Windows 命名管道经验）— 服务端写完响应后 `waitForDisconnected` 再关闭
    （立即 close 会丢弃未读数据）；客户端写完请求立即读响应（`waitForBytesWritten` 会空转超时）；
    `read_raw` 收到首个 chunk 即返回（防双方互相等待死锁）。

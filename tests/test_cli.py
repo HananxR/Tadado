@@ -164,6 +164,29 @@ def test_edit_ambiguous_match_errors(parser, service):
         execute("edit", _args(parser, "edit", "--match", "报告", "--title", "x"), service)
 
 
+def test_id_prefix_resolution(parser, service):
+    """>=8 位唯一 ID 前缀可解析为完整 ID（任务与分区同理）."""
+    r = execute("add", _args(parser, "add", "前缀解析任务"), service)
+    prefix = r["task"]["id"][:8]
+    edited = execute("edit", _args(parser, "edit", prefix, "--title", "改过标题"), service)
+    assert edited["task"]["title"] == "改过标题"
+
+    p = execute("partitions", _args(parser, "partitions"), service)["partitions"][0]
+    added = execute("add", _args(
+        parser, "add", "- [ ] TODO <2026-08-20> 前缀分区任务", "--partition", p["id"][:8],
+    ), service)
+    assert added["task"]["partition_id"] == p["id"]
+    listing = execute("list", _args(parser, "list", "--partition", p["id"][:8]), service)
+    assert listing["count"] >= 1
+
+
+def test_id_prefix_too_short_or_unknown(parser, service):
+    with pytest.raises(CliError, match="任务不存在"):
+        execute("edit", _args(parser, "edit", "abc", "--title", "x"), service)
+    with pytest.raises(CliError, match="分区不存在"):
+        execute("partitions", _args(parser, "partitions", "--rm", "0"), service)
+
+
 def test_done_and_recurrence_clone(parser, service, repository):
     from src.services.recurrence import TaskRecurrence
 
