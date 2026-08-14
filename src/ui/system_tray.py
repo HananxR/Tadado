@@ -24,8 +24,9 @@ class SystemTrayManager:
         self._tray.activated.connect(self._on_activated)
 
         # 上下文用量巡检：超 80% 提醒 /compact（每个会话只提醒一次）
+        # 注意：SystemTrayManager 不是 QObject，QTimer 需挂到托盘图标上。
         self._alerted_session: str | None = None
-        self._ctx_timer = QTimer(self)
+        self._ctx_timer = QTimer(self._tray)
         self._ctx_timer.setInterval(60_000)
         self._ctx_timer.timeout.connect(self._check_context_usage)
         # show() 延迟到主窗口显示后调用，避免 QSystemTrayIcon 内部 HWND
