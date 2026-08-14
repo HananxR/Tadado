@@ -316,6 +316,13 @@ class SettingsDialog(QDialog):
         self._ai_provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._ai_provider_combo.currentIndexChanged.connect(self._save_ai_assistant)
         _row("AI 助手:", self._ai_provider_combo)
+        # 选择后即时校验可用性，不等托盘菜单才暴露不可用
+        self._ai_status_label = QLabel("")
+        self._ai_status_label.setWordWrap(True)
+        self._ai_status_label.setStyleSheet(f"QLabel {{ font-size: 11px; }}")
+        self._ai_provider_combo.currentIndexChanged.connect(self._refresh_ai_status)
+        grid.addWidget(self._ai_status_label, r, 0, 1, 2); r += 1
+        self._refresh_ai_status()
 
         content_layout.addLayout(grid)
         content_layout.addStretch()
@@ -870,6 +877,49 @@ class SettingsDialog(QDialog):
         self._config.set(
             "ai_assistant", "provider", value=self._ai_provider_combo.currentData()
         )
+
+    def _refresh_ai_status(self) -> None:
+        """选择变更后即时校验所选 AI 助手的可用性."""
+        from ...services.ai_assistant import _resolve_cmd
+
+        t = get_tokens()
+        provider = self._ai_provider_combo.currentData()
+        if provider:
+            cmd = self._config.get("ai_assistant", f"{provider}_cmd") or provider
+            path = _resolve_cmd(cmd)
+            if path:
+                self._ai_status_label.setStyleSheet(
+                    f"QLabel {{ font-size: 11px; color: {t.success}; }}"
+                )
+                self._ai_status_label.setText(f"✓ 已检测到 {provider.capitalize()}：{path}")
+            else:
+                self._ai_status_label.setStyleSheet(
+                    f"QLabel {{ font-size: 11px; color: {t.danger}; }}"
+                )
+                self._ai_status_label.setText(
+                    f"✗ 未检测到 {provider.capitalize()}，AI 助手将不可用。"
+                    f"请先安装或调整命令（config: ai_assistant.{provider}_cmd）"
+                )
+        else:  # 自动检测
+            from ...services.ai_assistant import _resolve_cmd as _rc
+            from ...services.ai_assistant import detect_provider
+
+            detected = detect_provider(self._config)
+            if detected:
+                path = _rc(self._config.get("ai_assistant", f"{detected}_cmd") or detected)
+                self._ai_status_label.setStyleSheet(
+                    f"QLabel {{ font-size: 11px; color: {t.success}; }}"
+                )
+                self._ai_status_label.setText(
+                    f"✓ 自动检测到 {detected.capitalize()}：{path}"
+                )
+            else:
+                self._ai_status_label.setStyleSheet(
+                    f"QLabel {{ font-size: 11px; color: {t.danger}; }}"
+                )
+                self._ai_status_label.setText(
+                    "✗ 未检测到 Claude Code 或 Codex，AI 助手不可用"
+                )
 
     def _save_display(self) -> None:
         self._config.set("display", "heatmap_start_year", value=self._heatmap_year_combo.currentData())
