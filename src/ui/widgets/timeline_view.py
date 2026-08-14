@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTextBrowser
 
 from ...models.task import Task
@@ -40,6 +41,9 @@ class TimelineView(QTextBrowser):
         self.setReadOnly(True)
         self.setOpenExternalLinks(False)
         self.setMinimumHeight(120)
+        # 上限内随内容伸展；超出上限启用内部滚动条，避免撑爆窗口裁掉内容
+        self.setMaximumHeight(320)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setStyleSheet("QTextBrowser { font-size: 12px; padding: 4px; }")
 
     def set_task(self, task: Task | None) -> None:
