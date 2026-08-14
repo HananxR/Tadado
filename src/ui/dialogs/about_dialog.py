@@ -1,12 +1,15 @@
-"""About dialog — WeChat-style minimal about page.
+"""About dialog — WeChat-style about page + dedicated version-history page.
 
-Layout (mirrors 微信 → 设置 → 关于微信):
-    centred app icon + name + version + tagline,
-    hairline menu rows (检查更新 / 下载渠道 / 交流反馈) with right chevrons,
-    minimal changelog section, and a subtle close button.
+Main page (fixed height, fully controlled layout):
+    brand block (icon / name / version / tagline) + hairline menu rows.
+Version history lives in its own scrollable dialog, opened from a menu row
+— the main page never grows unpredictably.
 """
 
 from __future__ import annotations
+
+import re
+from datetime import datetime
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QPixmap, QShowEvent
@@ -28,6 +31,51 @@ from ...version import get_release_highlights, get_version_display
 
 _GITHUB_REPO = "https://github.com/HananxR/Tadado"
 _GITHUB_RELEASES = f"{_GITHUB_REPO}/releases"
+
+_CAT_LABELS = {"Added": "新增", "Changed": "优化", "Fixed": "修复"}
+_CAT_ICONS = {"新增": "✨", "优化": "🔧", "修复": "🐛"}
+
+
+def _parse_changelog_md() -> list[dict]:
+    """Parse CHANGELOG.md into [{version, date, categories:[(label, [items])]}].
+
+    Returns [] when the file is unavailable (frozen builds) — callers fall
+    back to the current version's release highlights.
+    """
+    import sys
+    from pathlib import Path
+
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
+    path = base / "CHANGELOG.md"
+    if not path.exists():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    versions: list[dict] = []
+    current: dict | None = None
+    current_cat: str | None = None
+    for line in text.splitlines():
+        m = re.match(r"^##\s+\[([\d.]+)\]\s*[—\-]\s*(.+)$", line.strip())
+        if m:
+            current = {"version": m.group(1), "date": m.group(2).strip(),
+                       "categories": []}
+            versions.append(current)
+            current_cat = None
+            continue
+        m = re.match(r"^###\s+(Added|Changed|Fixed)", line.strip())
+        if m and current is not None:
+            current_cat = _CAT_LABELS[m.group(1)]
+            current["categories"].append((current_cat, []))
+            continue
+        m = re.match(r"^[-*]\s+(.+)", line.strip())
+        if m and current is not None and current_cat is not None:
+            item = m.group(1).strip().lstrip("*").strip()
+            if item:
+                current["categories"][-1][1].append(item)
+    return versions
 
 
 class _MenuRow(QPushButton):
@@ -64,8 +112,128 @@ class _MenuRow(QPushButton):
         self._detail.setText(text)
 
 
+def _close_button(clicked) -> QPushButton:
+    t = get_tokens()
+    btn = QPushButton("✕")
+    btn.setFixedSize(28, 28)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{"
+        f"  border: none; border-radius: 4px; background: transparent;"
+        f"  color: {t.text_secondary}; font-size: 13px;"
+        f"}}"
+        f"QPushButton:hover {{ background: {t.bg_tertiary}; color: {t.text_primary}; }}"
+    )
+    btn.clicked.connect(clicked)
+    return btn
+
+
+class _HeaderBar(QWidget):
+    """Title + ✕ close — shared by both pages."""
+
+    def __init__(self, title: str, close_callback, parent=None) -> None:
+        super().__init__(parent)
+        t = get_tokens()
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 10, 10, 6)
+        title_label = QLabel(title)
+        title_label.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {t.text_primary};"
+        )
+        layout.addWidget(title_label)
+        layout.addStretch()
+        layout.addWidget(_close_button(close_callback))
+
+
+class VersionHistoryDialog(QDialog):
+    """独立滚动页：全版本更新记录（CHANGELOG.md 解析，缺省回退当前版本 highlights）."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("版本更新记录")
+        self.setObjectName("versionHistoryDialog")
+        self.resize(460, 600)
+        self.setMinimumSize(380, 480)
+
+        t = get_tokens()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(_HeaderBar("版本更新记录", self.reject))
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(28, 8, 28, 24)
+        layout.setSpacing(0)
+
+        versions = _parse_changelog_md()
+        if not versions:
+            highlights = get_release_highlights()
+            versions = [{
+                "version": get_version_display(),
+                "date": "",
+                "categories": [(cat, list(items)) for cat, items in highlights.items() if items],
+            }]
+
+        for vi, ver in enumerate(versions):
+            if vi:
+                layout.addSpacing(18)
+                sep = QFrame()
+                sep.setFrameShape(QFrame.Shape.HLine)
+                sep.setStyleSheet(f"QFrame {{ color: {t.border_primary}; }}")
+                sep.setFixedHeight(1)
+                layout.addWidget(sep)
+                layout.addSpacing(14)
+
+            title_text = f"v{ver['version']}"
+            if ver.get("date"):
+                title_text += f"  <span style='font-size:11px;color:{t.text_secondary};font-weight:400;'>{ver['date']}</span>"
+            title = QLabel(title_text)
+            title.setStyleSheet(
+                f"font-size: 15px; font-weight: 700; color: {t.text_primary};"
+            )
+            title.setTextFormat(Qt.TextFormat.RichText)
+            layout.addWidget(title)
+            layout.addSpacing(6)
+
+            for cat, items in ver["categories"]:
+                if not items:
+                    continue
+                icon = _CAT_ICONS.get(cat, "•")
+                cat_label = QLabel(f"{icon} {cat}")
+                cat_label.setStyleSheet(
+                    f"font-size: 11px; font-weight: 600; color: {t.accent};"
+                )
+                layout.addWidget(cat_label)
+                layout.addSpacing(2)
+                for item in items:
+                    safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                    safe = safe.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
+                    entry = QLabel(f"· {safe}")
+                    entry.setWordWrap(True)
+                    entry.setTextFormat(Qt.TextFormat.RichText)
+                    entry.setStyleSheet(
+                        f"font-size: 12px; color: {t.text_secondary}; line-height: 1.8;"
+                    )
+                    layout.addWidget(entry)
+
+        layout.addStretch()
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        if is_dark_mode_supported() and is_dark():
+            set_window_dark_mode(self, True, caption_color=get_surface_color())
+
+
 class AboutDialog(QDialog):
-    """App information — minimal WeChat-style about page."""
+    """App information — WeChat-style fixed-height about page."""
 
     def __init__(
         self,
@@ -78,8 +246,7 @@ class AboutDialog(QDialog):
 
         self.setWindowTitle("关于 Tadado")
         self.setObjectName("aboutDialog")
-        self.resize(420, 560)
-        self.setMinimumSize(360, 460)
+        self.setFixedSize(420, 540)
 
         self._build_ui()
 
@@ -93,42 +260,14 @@ class AboutDialog(QDialog):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-
-        # ── Top bar: title + close (subtle ✕, WeChat-style) ──
-        top = QWidget()
-        top_layout = QHBoxLayout(top)
-        top_layout.setContentsMargins(16, 10, 10, 6)
-        title_label = QLabel("关于 Tadado")
-        title_label.setStyleSheet(
-            f"font-size: 13px; font-weight: 600; color: {t.text_primary};"
-        )
-        top_layout.addWidget(title_label)
-        top_layout.addStretch()
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(28, 28)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  border: none; border-radius: 4px; background: transparent;"
-            f"  color: {t.text_secondary}; font-size: 13px;"
-            f"}}"
-            f"QPushButton:hover {{ background: {t.bg_tertiary}; color: {t.text_primary}; }}"
-        )
-        close_btn.clicked.connect(self.reject)
-        top_layout.addWidget(close_btn)
-        outer.addWidget(top)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(_HeaderBar("关于 Tadado", self.reject))
 
         content = QWidget()
         layout = QVBoxLayout(content)
         layout.setContentsMargins(32, 8, 32, 20)
         layout.setSpacing(0)
 
-        # ── Brand block (centred, generous whitespace) ──
+        # ── Brand block ──
         logo = QLabel()
         logo_path = self._find_icon("app_icon.svg")
         pix = QPixmap(logo_path) if logo_path else QPixmap()
@@ -144,7 +283,7 @@ class AboutDialog(QDialog):
             logo.setStyleSheet(f"font-size: 44px; color: {t.accent};")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(logo)
-        layout.addSpacing(14)
+        layout.addSpacing(12)
 
         name = QLabel("Tadado")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -162,33 +301,36 @@ class AboutDialog(QDialog):
         tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         tagline.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
         layout.addWidget(tagline)
-        layout.addSpacing(24)
+        layout.addSpacing(22)
 
         # ── Menu rows ──
-        self._check_row = _MenuRow("检查更新", "检查中" if self._update_checker is None else "›")
+        self._check_row = _MenuRow("检查更新")
         self._check_row.clicked.connect(self._on_check_updates)
         layout.addWidget(self._check_row)
 
-        self._github_row = _MenuRow("下载渠道 · GitHub Releases")
-        self._github_row.clicked.connect(
+        history_row = _MenuRow("版本更新记录")
+        history_row.clicked.connect(self._open_history)
+        layout.addWidget(history_row)
+
+        github_row = _MenuRow("下载渠道 · GitHub Releases")
+        github_row.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(_GITHUB_RELEASES))
         )
-        layout.addWidget(self._github_row)
+        layout.addWidget(github_row)
 
-        self._aliyun_row = _MenuRow("下载渠道 · 阿里云盘")
-        self._aliyun_row.clicked.connect(
+        aliyun_row = _MenuRow("下载渠道 · 阿里云盘")
+        aliyun_row.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL))
         )
-        layout.addWidget(self._aliyun_row)
+        layout.addWidget(aliyun_row)
 
-        email_row = _MenuRow("意见反馈 · 邮箱", "hanxy8413@gmail.com")
+        email_row = _MenuRow("意见反馈", "hanxy8413@gmail.com")
         email_row.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl("mailto:hanxy8413@gmail.com"))
         )
         layout.addWidget(email_row)
 
         wechat_row = _MenuRow("微信公众号", "Pyvan")
-        wechat_row.set_detail("Pyvan")
         layout.addWidget(wechat_row)
 
         repo_row = _MenuRow("GitHub 仓库")
@@ -197,52 +339,20 @@ class AboutDialog(QDialog):
         )
         layout.addWidget(repo_row)
 
-        layout.addSpacing(20)
-
-        # ── Changelog (minimal, no card) ──
-        highlights = get_release_highlights()
-        if highlights:
-            _CAT_ICONS = {"新增": "✨", "优化": "🔧", "修复": "🐛"}
-            hl_parts = [
-                f'<p style="margin:0 0 6px 0;font-size:12px;font-weight:700;'
-                f'color:{t.text_primary};">版本更新记录</p>'
-            ]
-            for cat, items in highlights.items():
-                if not items:
-                    continue
-                icon = _CAT_ICONS.get(cat, "•")
-                hl_parts.append(
-                    f'<p style="margin:8px 0 2px 0;font-size:11px;font-weight:600;'
-                    f'color:{t.text_primary};">{icon} {cat}</p>'
-                )
-                for item in items:
-                    safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                    safe = safe.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
-                    hl_parts.append(
-                        f'<p style="margin:2px 0 2px 8px;font-size:11px;'
-                        f'line-height:1.7;color:{t.text_secondary};">· {safe}</p>'
-                    )
-            hl_label = QLabel("".join(hl_parts))
-            hl_label.setTextFormat(Qt.TextFormat.RichText)
-        else:
-            hl_label = QLabel(
-                f'<p style="margin:6px 0 2px 0;font-size:11px;color:{t.text_secondary};">'
-                f'暂无当前版本更新记录</p>'
-            )
-            hl_label.setTextFormat(Qt.TextFormat.RichText)
-        hl_label.setWordWrap(True)
-        layout.addWidget(hl_label)
-
         layout.addStretch()
 
         # ── Copyright ──
-        copyright_label = QLabel("Copyright © 2026 HananxR · MIT License")
+        copyright_label = QLabel(
+            f"Copyright © {datetime.now().year} HananxR · MIT License"
+        )
         copyright_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         copyright_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary};")
         layout.addWidget(copyright_label)
 
-        scroll.setWidget(content)
-        outer.addWidget(scroll, 1)
+        outer.addWidget(content, 1)
+
+    def _open_history(self) -> None:
+        VersionHistoryDialog(self).exec()
 
     # ── Update check slots ────────────────────────────────────────
 
@@ -265,7 +375,7 @@ class AboutDialog(QDialog):
         t = get_tokens()
         self._check_row.setEnabled(True)
         if update_info is None:
-            self._check_row.set_detail(f"✓ 已是最新版本")
+            self._check_row.set_detail("✓ 已是最新版本")
             self._check_row._detail.setStyleSheet(
                 f"font-size: 12px; color: {t.success};"
             )
