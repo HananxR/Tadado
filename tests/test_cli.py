@@ -307,10 +307,11 @@ def test_render_json_and_human(parser, service):
 
 
 def test_report_week(parser, service, repository):
-    """report 聚合本周工作内容与下周计划，按标签分组并剔除噪声条目."""
+    """report 锚定单一分区聚合本周工作内容与下周计划，剔除噪声条目."""
     from datetime import datetime
 
-    repository.update_partition_archive_days(service.ensure_default_partition(), 30)
+    pid = service.ensure_default_partition()
+    repository.update_partition_archive_days(pid, 30)
     # 本周已动过的任务：带要点与噪声条目
     r = execute("add", _args(parser, "add", "- [x] DONE <2026-08-20> 报告任务A #工作"), service)
     task = service.get_task(r["task"]["id"])
@@ -325,6 +326,7 @@ def test_report_week(parser, service, repository):
 
     report = execute("report", _args(parser, "report"), service)
     assert report["type"] == "report" and report["period"] == "week"
+    assert report["partition_id"] == pid  # 分区优先：锚定单一分区
     group = report["groups"][0]
     assert group["tag"] == "工作"
     worked = [i for i in group["worked"] if i["title"] == "报告任务A"][0]

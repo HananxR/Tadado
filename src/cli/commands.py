@@ -530,7 +530,11 @@ def _cmd_reminder(args, svc, config) -> dict:
 
 
 def _cmd_report(args, svc, config) -> dict:
-    """Weekly/monthly report summary straight from the database."""
+    """Weekly/monthly report summary — single-partition, tag-grouped.
+
+    Mirrors the GUI 活动分析 export semantics: one partition at a time,
+    ``#xx`` sections are task tags, all activity tags exported by default.
+    """
     today = date.today()
     period = args.period or "week"
     if args.date_from:
@@ -544,7 +548,12 @@ def _cmd_report(args, svc, config) -> dict:
         d_from = monday + timedelta(weeks=(args.offset or 0))
     d_to = _parse_date(args.date_to) if args.date_to else today
 
-    pid = _resolve_partition_id(svc, args.partition) if args.partition else None
+    # 分区优先：未指定时取默认分区（与活动分析按单一分区触发一致）
+    if args.partition:
+        pid = _resolve_partition_id(svc, args.partition)
+    else:
+        pid = svc.ensure_default_partition()
+    name_map = svc.get_partition_name_map()
     tags_filter = set(args.tag) if getattr(args, "tag", None) else None
     from_iso, to_iso = d_from.isoformat(), d_to.isoformat()
 
@@ -576,7 +585,7 @@ def _cmd_report(args, svc, config) -> dict:
         return None
 
     for t in svc.get_all():
-        if pid and t.partition_id != pid:
+        if t.partition_id != pid:
             continue
         if tags_filter and not tags_filter.issubset(set(t.tags)):
             continue
@@ -626,6 +635,8 @@ def _cmd_report(args, svc, config) -> dict:
     return {
         "type": "report",
         "period": period,
+        "partition_id": pid,
+        "partition_name": name_map.get(pid, ""),
         "from": from_iso,
         "to": to_iso,
         "stats": stats,

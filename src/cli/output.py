@@ -130,7 +130,8 @@ def _render_human(result: dict) -> str:
         return f"周期任务 {result['task_id'][:8]}: {rule or '（无周期规则）'}"
     if rtype == "report":
         is_week = result.get("period") == "week"
-        title = f"{'周报' if is_week else '月报'}摘要（{result['from']} ~ {result['to']}）"
+        pname = result.get("partition_name") or ""
+        title = f"{'周报' if is_week else '月报'}摘要（{pname}分区 · {result['from']} ~ {result['to']}）"
         cur = "本周" if is_week else "本月"
         nxt = "下周" if is_week else "下月"
         lines = [title, ""]
