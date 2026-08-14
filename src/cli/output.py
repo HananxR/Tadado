@@ -145,8 +145,8 @@ def _render_human(result: dict) -> str:
                 lines.append(f"#{g['tag']}")
                 lines.append("")
                 for i, item in enumerate(items, 1):
-                    if section == "worked":
-                        suffix = ("；".join(item["points"]) + "；") if item["points"] else ""
+                    if section == "worked" and item["points"]:
+                        suffix = "；".join(item["points"]) + "；"
                         lines.append(f"{i}. {item['title']}：{suffix}")
                     else:
                         lines.append(f"{i}. {item['title']}；")

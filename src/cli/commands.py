@@ -595,12 +595,12 @@ def _cmd_report(args, svc, config) -> dict:
         created_in = bool(t.created_at) and from_iso <= str(t.created_at)[:10] <= to_iso
         completed_at = _to_date(t.completed_at)
         completed_in = bool(completed_at) and d_from <= completed_at <= d_to
-        # 「动过」= 期内有实质进展或期内完成；仅创建/批量操作/状态变更不算实质进展
+        # 「本周工作内容」= 期内完成 / 期内有实质进展 / 期内创建（创建本身即本周工作）
         substantive = [
             e for e in in_range
             if str(e.get("content", "")).strip() and not _noise(str(e.get("content", "")).strip())
         ]
-        if substantive or completed_in:
+        if substantive or completed_in or created_in:
             stats["touched_tasks"] += 1
             stats["entries"] += len(in_range)
             stats["created"] += 1 if created_in else 0

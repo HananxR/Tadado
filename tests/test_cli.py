@@ -308,7 +308,7 @@ def test_render_json_and_human(parser, service):
 
 def test_report_week(parser, service, repository):
     """report 锚定单一分区聚合本周工作内容与下周计划，剔除噪声条目."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     pid = service.ensure_default_partition()
     repository.update_partition_archive_days(pid, 30)
@@ -321,8 +321,17 @@ def test_report_week(parser, service, repository):
          "status": "DONE", "progress": 100},
     ]
     service.update_task(task)
-    # 未来未动的任务 → 下周计划
-    execute("add", _args(parser, "add", "- [ ] TODO <2026-08-21> 计划任务B #工作"), service)
+    # 期内创建的任务 → 本周工作内容（创建本身即本周工作）
+    r_b = execute("add", _args(parser, "add", "- [ ] TODO <2026-08-21> 新建任务B #工作"), service)
+    assert r_b["task"]["title"] == "新建任务B"
+    # 期前遗留的未完成任务 → 下周计划（回拨 created_at 与活动时间戳）
+    r_c = execute("add", _args(parser, "add", "- [ ] TODO <2026-08-21> 遗留任务C #工作"), service)
+    task_c = service.get_task(r_c["task"]["id"])
+    old = (datetime.now() - timedelta(days=10)).isoformat()
+    task_c.created_at = datetime.fromisoformat(old)
+    task_c.updated_at = datetime.fromisoformat(old)
+    task_c.activity_log = [{"ts": old, "content": "创建任务", "status": "TODO", "progress": 0}]
+    service.update_task(task_c)
 
     report = execute("report", _args(parser, "report"), service)
     assert report["type"] == "report" and report["period"] == "week"
@@ -331,9 +340,11 @@ def test_report_week(parser, service, repository):
     assert group["tag"] == "工作"
     worked = [i for i in group["worked"] if i["title"] == "报告任务A"][0]
     assert worked["points"] == ["完成初稿"]  # 批量操作/创建任务 已剔除
+    worked_titles = [i["title"] for i in group["worked"]]
+    assert "新建任务B" in worked_titles  # 期内创建 → 本周工作内容
     planned_titles = [i["title"] for i in group["planned"]]
-    assert "计划任务B" in planned_titles
-    assert "报告任务A" not in planned_titles  # 已动过的不进下周计划
+    assert "遗留任务C" in planned_titles  # 期前遗留 → 下周计划
+    assert "报告任务A" not in planned_titles and "新建任务B" not in planned_titles
     human = render(report, "human")
     assert "本周工作内容" in human and "下周工作计划" in human and "#工作" in human
 
