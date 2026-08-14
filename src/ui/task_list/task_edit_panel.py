@@ -443,6 +443,9 @@ class TaskEditPanel(QWidget):
         # Editor card (bordered wrapper, collapse button in top-right corner)
         self._editor_card = QWidget()
         self._editor_card.setObjectName("editorCard")
+        from ...utils.design_tokens import apply_card_shadow
+
+        apply_card_shadow(self._editor_card)
         card_layout = QVBoxLayout(self._editor_card)
         card_layout.setContentsMargins(6, 2, 6, 4)
         card_layout.setSpacing(4)

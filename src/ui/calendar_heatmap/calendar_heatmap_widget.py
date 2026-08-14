@@ -362,6 +362,9 @@ class CalendarHeatmapWidget(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("calendarHeatmap")
+        from ...utils.design_tokens import apply_card_shadow
+
+        apply_card_shadow(self)
 
         self._model = HeatmapModel(repository)
         self._config = config
