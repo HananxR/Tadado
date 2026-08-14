@@ -486,10 +486,12 @@ class TaskRepository:
         if not filter_.show_archived:
             where_clauses.append("archived = 0")
         if filter_.search_text:
+            text = filter_.search_text
             where_clauses.append(
-                "id IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH ?)"
+                "(rowid IN (SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH ?)"
+                " OR raw_md LIKE ? OR title LIKE ?)"
             )
-            params.append(filter_.search_text)
+            params.extend([text, f"%{text}%", f"%{text}%"])
         if filter_.statuses is not None:
             status_values = [s.value for s in filter_.statuses]
             placeholders = ", ".join("?" for _ in status_values)

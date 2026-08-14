@@ -13,6 +13,12 @@ _SERVER_NAME = "Tadado_Instance"
 
 
 def main() -> None:
+    # CLI mode: route to the headless command gateway (no GUI window)
+    if "--cli" in sys.argv:
+        from src.cli.headless import run_cli
+
+        sys.exit(run_cli([a for a in sys.argv[1:] if a != "--cli"]))
+
     # Step 1: Try connecting to an existing instance first
     sock = QLocalSocket()
     sock.connectToServer(_SERVER_NAME)

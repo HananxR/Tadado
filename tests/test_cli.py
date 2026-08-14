@@ -1,0 +1,371 @@
+"""CLI 层测试 — parser、命令执行、管道协议、e2e."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import threading
+from datetime import date, timedelta
+from pathlib import Path
+
+import pytest
+from PySide6.QtCore import QCoreApplication
+from PySide6.QtNetwork import QLocalServer
+
+from src.cli.commands import CliError, execute
+from src.cli.forward import try_forward
+from src.cli.headless import _extract_format
+from src.cli.output import render
+from src.cli.parser import build_parser
+from src.cli.protocol import PROTO_HEADER, SERVER_NAME, read_message, write_message
+from src.config import AppConfig
+from src.services.task_service import TaskService
+
+
+@pytest.fixture(scope="module")
+def qapp() -> QCoreApplication:
+    """One QCoreApplication for the module (protocol tests need it)."""
+    app = QCoreApplication.instance() or QCoreApplication(["pytest"])
+    return app
+
+
+@pytest.fixture
+def parser() -> argparse.ArgumentParser:
+    return build_parser()
+
+
+@pytest.fixture
+def service(repository) -> TaskService:
+    return TaskService(repository)
+
+
+def _args(parser, *argv: str) -> argparse.Namespace:
+    return parser.parse_args(list(argv))
+
+
+# ------------------------------------------------------------------
+# parser / headless helpers
+# ------------------------------------------------------------------
+
+def test_parser_all_commands(parser):
+    """Each command parses with minimal args."""
+    _args(parser, "list")
+    _args(parser, "today")
+    _args(parser, "add", "买咖啡")
+    _args(parser, "edit", "--match", "咖啡", "--title", "x")
+    _args(parser, "done", "abc")
+    _args(parser, "rm", "--match", "x")
+    _args(parser, "tags")
+    _args(parser, "partitions")
+    _args(parser, "archive", "--all")
+    _args(parser, "recurrence", "--match", "x")
+    _args(parser, "reminder")
+    _args(parser, "export", "--fmt", "xlsx", "--out", "a.xlsx")
+
+
+def test_extract_format_anywhere():
+    argv, fmt = _extract_format(["--format", "human", "list", "--status", "TODO"])
+    assert fmt == "human" and argv == ["list", "--status", "TODO"]
+    argv, fmt = _extract_format(["list", "--format=human"])
+    assert fmt == "human" and argv == ["list"]
+    argv, fmt = _extract_format(["list"])
+    assert fmt == "json" and argv == ["list"]
+
+
+# ------------------------------------------------------------------
+# list / today
+# ------------------------------------------------------------------
+
+def test_list_round_trip_and_count(parser, service):
+    """list 返回 JSON schema，关键词搜索的 total 与 count 一致（count() 回归）."""
+    a = _args(parser, "add", "- [*] TODO <2026-08-20> 买咖啡 #工作")
+    execute("add", a, service)
+    r = execute("list", _args(parser, "list", "--keyword", "咖啡"), service)
+    assert r["total"] == 1 and r["count"] == 1
+    t = r["tasks"][0]
+    assert t["title"] == "买咖啡" and t["status"] == "TODO"
+    assert t["urgency"] == 2 and t["tags"] == ["工作"]
+    assert t["deadline_date"] == "2026-08-20"
+
+
+def test_list_filters(parser, service, repository):
+    # archive_days=0 会让 DONE 立即归档，先模拟正常配置
+    repository.update_partition_archive_days(service.ensure_default_partition(), 30)
+    execute("add", _args(parser, "add", "- [ ] TODO <2026-08-20> 任务A #工作"), service)
+    execute("add", _args(parser, "add", "- [x] DONE <2026-08-15> 任务B #学习"), service)
+    r = execute("list", _args(parser, "list", "--status", "DONE"), service)
+    assert r["count"] == 1 and r["tasks"][0]["title"] == "任务B"
+    r = execute("list", _args(parser, "list", "--tag", "学习"), service)
+    assert r["count"] == 1
+    r = execute("list", _args(parser, "list"), service)
+    assert r["count"] == 2
+
+
+def test_today_groups(parser, service):
+    today = date.today()
+    execute("add", _args(parser, "add", f"- [ ] TODO <{today - timedelta(days=1)}> 已逾期"), service)
+    execute("add", _args(parser, "add", f"- [ ] TODO <{today}> 今日到期"), service)
+    execute("add", _args(parser, "add", f"- [ ] TODO <{today + timedelta(days=1)}> 临近"), service)
+    execute("add", _args(parser, "add", "- [ ] DOING 进行中无截止"), service)
+    r = execute("today", _args(parser, "today"), service)
+    assert [t["title"] for t in r["overdue"]] == ["已逾期"]
+    assert [t["title"] for t in r["due_today"]] == ["今日到期"]
+    assert [t["title"] for t in r["due_soon"]] == ["临近"]
+    assert [t["title"] for t in r["doing"]] == ["进行中无截止"]
+
+
+# ------------------------------------------------------------------
+# add
+# ------------------------------------------------------------------
+
+def test_add_normalizes_missing_space(parser, service):
+    """TODO<date> 无空格形式也能正确解析（LLM 常见写法）."""
+    r = execute("add", _args(parser, "add", "- [ ] TODO<2026-08-20> 无空格日期"), service)
+    assert r["task"]["title"] == "无空格日期"
+    assert r["task"]["deadline_date"] == "2026-08-20"
+
+
+def test_add_flags_only(parser, service):
+    r = execute("add", _args(
+        parser, "add", "--title", "纯flags任务", "--due", "2026-08-22 09:30",
+        "--tags", "工作,生活", "--urgency", "0", "--notes", "备注内容", "--recur", "+1d",
+    ), service)
+    t = r["task"]
+    assert t["title"] == "纯flags任务"
+    assert t["deadline_date"] == "2026-08-22" and t["deadline_time"] == "09:30"
+    assert t["tags"] == ["工作", "生活"] and t["urgency"] == 0
+    assert t["notes"] == "备注内容" and t["recurrence_rule"] == "+1d"
+
+
+def test_add_missing_title_errors(parser, service):
+    with pytest.raises(CliError):
+        execute("add", _args(parser, "add", "--due", "2026-08-22"), service)
+
+
+# ------------------------------------------------------------------
+# edit / done / rm / archive
+# ------------------------------------------------------------------
+
+def test_edit_and_dry_run(parser, service):
+    execute("add", _args(parser, "add", "- [ ] TODO <2026-08-20> 编辑我"), service)
+    dry = execute("edit", _args(parser, "edit", "--match", "编辑我", "--due", "2026-08-25", "--dry-run"), service)
+    assert dry["type"] == "dry_run" and "2026-08-25" in dry["after"]
+    r = execute("edit", _args(parser, "edit", "--match", "编辑我", "--due", "2026-08-25", "--urgency", "1"), service)
+    assert r["task"]["deadline_date"] == "2026-08-25" and r["task"]["urgency"] == 1
+
+
+def test_edit_ambiguous_match_errors(parser, service):
+    execute("add", _args(parser, "add", "报告A"), service)
+    execute("add", _args(parser, "add", "报告B"), service)
+    with pytest.raises(CliError, match="匹配到多个任务"):
+        execute("edit", _args(parser, "edit", "--match", "报告", "--title", "x"), service)
+
+
+def test_done_and_recurrence_clone(parser, service, repository):
+    from src.services.recurrence import TaskRecurrence
+
+    repository.update_partition_archive_days(service.ensure_default_partition(), 30)
+    recurrence = TaskRecurrence(repository)  # mirrors app.py wiring
+    execute("add", _args(
+        parser, "add", "- [ ] TODO <2026-08-20> 周期任务", "--recur", "+1w",
+    ), service)
+    r = execute("done", _args(parser, "done", "--match", "周期任务"), service)
+    assert r["count"] == 1 and r["status"] == "DONE"
+    clones = [t for t in service.get_all() if t.title == "周期任务" and t.status.value == "TODO"]
+    assert len(clones) == 1  # recurrence cloned next instance
+    assert clones[0].deadline_date == date(2026, 8, 27)
+
+
+def test_rm_with_dry_run(parser, service):
+    execute("add", _args(parser, "add", "要删除的任务"), service)
+    dry = execute("rm", _args(parser, "rm", "--match", "要删除", "--dry-run"), service)
+    assert dry["type"] == "dry_run"
+    r = execute("rm", _args(parser, "rm", "--match", "要删除"), service)
+    assert r["count"] == 1 and len(service.get_all()) == 0
+
+
+def test_archive_all(parser, service, repository):
+    from src.models.task_filter import TaskFilter
+    from src.models.task_status import TaskStatus
+
+    repository.update_partition_archive_days(service.ensure_default_partition(), 30)
+    execute("add", _args(parser, "add", "- [ ] TODO 未完成"), service)
+    execute("add", _args(parser, "add", "- [x] DONE 已完成"), service)
+    r = execute("archive", _args(parser, "archive", "--all"), service)
+    assert r["count"] >= 1
+    done = service.search(TaskFilter(statuses={TaskStatus.DONE}))
+    assert all(t.archived for t in done)
+
+
+# ------------------------------------------------------------------
+# tags / partitions / recurrence / reminder / export
+# ------------------------------------------------------------------
+
+def test_tags_counts(parser, service):
+    execute("add", _args(parser, "add", "任务一 #工作 #工作"), service)
+    execute("add", _args(parser, "add", "任务二 #工作 #学习"), service)
+    r = execute("tags", _args(parser, "tags", "--counts"), service)
+    counts = {e["tag"]: e["count"] for e in r["tags"]}
+    assert counts["工作"] == 2 and counts["学习"] == 1
+
+
+def test_partitions_crud(parser, service):
+    r = execute("partitions", _args(parser, "partitions", "--add", "读书"), service)
+    pid = r["partition"]["id"]
+    execute("partitions", _args(parser, "partitions", "--rename", pid, "阅读"), service)
+    names = [p["name"] for p in execute("partitions", _args(parser, "partitions"), service)["partitions"]]
+    assert "阅读" in names
+    execute("partitions", _args(parser, "partitions", "--rm", pid), service)
+    names = [p["name"] for p in execute("partitions", _args(parser, "partitions"), service)["partitions"]]
+    assert "阅读" not in names
+
+
+def test_recurrence_get_set(parser, service):
+    execute("add", _args(parser, "add", "健身"), service)
+    execute("recurrence", _args(parser, "recurrence", "--match", "健身", "--rule", "+1m"), service)
+    r = execute("recurrence", _args(parser, "recurrence", "--match", "健身"), service)
+    assert r["rule"] == "+1m"
+
+
+def test_reminder_config(tmp_path: Path, parser, service):
+    config = AppConfig(tmp_path)
+    r = execute("reminder", _args(parser, "reminder"), service, config)
+    assert r["type"] == "reminder"
+    r = execute("reminder", _args(
+        parser, "reminder", "--enable", "--digest-time", "08:30",
+    ), service, config)
+    assert r["enabled"] and r["daily_digest_time"] == "08:30"
+    saved = AppConfig(tmp_path)
+    assert saved.reminders_enabled and saved.reminder_daily_digest_time == "08:30"
+
+
+def test_export_md_and_xlsx(tmp_path: Path, parser, service):
+    execute("add", _args(parser, "add", "导出任务 #工作"), service)
+    md_path = tmp_path / "out.md"
+    r = execute("export", _args(parser, "export", "--fmt", "md", "--out", str(md_path)), service)
+    assert r["count"] == 1 and md_path.exists() and "导出任务" in md_path.read_text(encoding="utf-8")
+    xl_path = tmp_path / "out.xlsx"
+    r = execute("export", _args(parser, "export", "--fmt", "xlsx", "--out", str(xl_path)), service)
+    assert r["count"] == 1 and xl_path.exists() and xl_path.stat().st_size > 0
+
+
+# ------------------------------------------------------------------
+# output rendering
+# ------------------------------------------------------------------
+
+def test_render_json_and_human(parser, service):
+    execute("add", _args(parser, "add", "渲染任务 #工作"), service)
+    r = execute("list", _args(parser, "list"), service)
+    assert json.loads(render(r, "json"))["count"] == 1
+    human = render(r, "human")
+    assert "渲染任务" in human and "#工作" in human
+
+
+# ------------------------------------------------------------------
+# pipe protocol + forwarding
+# ------------------------------------------------------------------
+
+def _fake_gui_server(name: str, respond: bool, ready: threading.Event) -> None:
+    """Worker thread: accept one connection, optionally answer a CLI request.
+
+    The server side needs its own event loop — QLocalServer does not accept
+    pending connections under blocking waits alone on Windows.
+    """
+
+    def _run() -> None:
+        from PySide6.QtCore import QEventLoop
+
+        from src.cli.protocol import read_raw
+
+        server = QLocalServer()
+        server.removeServer(name)
+        if not server.listen(name):
+            ready.set()
+            return
+        ready.set()
+        loop = QEventLoop()
+        server.newConnection.connect(loop.quit)
+        loop.exec()  # wait until the client connects
+        conn = server.nextPendingConnection()
+        if conn is None:
+            return
+        data = read_raw(conn, 3000)
+        if respond and data.startswith(PROTO_HEADER):
+            payload = json.loads(data[len(PROTO_HEADER):].decode("utf-8"))
+            # Responses are bare JSON — only requests carry the magic header.
+            conn.write(json.dumps(
+                {"ok": True, "result": {"type": "echo", "command": payload.get("command")}},
+                ensure_ascii=False,
+            ).encode("utf-8"))
+        conn.flush()
+        if conn.state() != QLocalSocket.LocalSocketState.UnconnectedState:
+            conn.waitForDisconnected(2000)  # client closes after reading
+        conn.close()
+        server.close()
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def test_try_forward_round_trip(qapp, monkeypatch):
+    name = "tadado_cli_test_1"
+    monkeypatch.setattr("src.cli.forward.SERVER_NAME", name)
+    ready = threading.Event()
+    _fake_gui_server(name, respond=True, ready=ready)
+    assert ready.wait(5)
+    connected, response = try_forward({"v": 1, "command": "list", "args": {}})
+    assert connected and response is not None
+    assert response["ok"] and response["result"]["command"] == "list"
+
+
+def test_try_forward_legacy_gui_no_response(qapp, monkeypatch):
+    """Legacy GUI (pre-protocol) consumes the request without answering."""
+    name = "tadado_cli_test_2"
+    monkeypatch.setattr("src.cli.forward.SERVER_NAME", name)
+    ready = threading.Event()
+    _fake_gui_server(name, respond=False, ready=ready)
+    assert ready.wait(5)
+    connected, response = try_forward({"v": 1, "command": "list", "args": {}})
+    assert connected and response is None
+
+
+def test_try_forward_no_server(qapp, monkeypatch):
+    monkeypatch.setattr("src.cli.forward.SERVER_NAME", "tadado_cli_test_missing")
+    connected, response = try_forward({"v": 1, "command": "list", "args": {}})
+    assert not connected and response is None
+
+
+# ------------------------------------------------------------------
+# e2e subprocess
+# ------------------------------------------------------------------
+
+def _run_cli(*argv: str, data_dir: Path) -> subprocess.CompletedProcess:
+    env = dict(os.environ)
+    env["TADADO_DATA_DIR"] = str(data_dir)
+    env["TADADO_NO_FORWARD"] = "1"
+    return subprocess.run(
+        [sys.executable, "main.py", "--cli", *argv],
+        capture_output=True, text=True, encoding="utf-8", env=env, timeout=60,
+    )
+
+
+def test_e2e_add_list_round_trip(tmp_path: Path):
+    add = _run_cli("add", "- [*] TODO <2026-08-20> e2e任务 #工作", data_dir=tmp_path)
+    assert add.returncode == 0, add.stderr
+    task = json.loads(add.stdout)["task"]
+    listing = _run_cli("list", "--keyword", "e2e", data_dir=tmp_path)
+    assert listing.returncode == 0, listing.stderr
+    result = json.loads(listing.stdout)
+    assert result["total"] == 1
+    assert result["tasks"][0]["id"] == task["id"]
+    done = _run_cli("done", task["id"], data_dir=tmp_path)
+    assert done.returncode == 0
+    assert json.loads(done.stdout)["status"] == "DONE"
+
+
+def test_e2e_error_exit_code(tmp_path: Path):
+    bad = _run_cli("done", "--match", "不存在的任务xyz", data_dir=tmp_path)
+    assert bad.returncode == 1
+    assert "error" in bad.stderr

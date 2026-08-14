@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 import sys
 import uuid
 from datetime import date, datetime, timedelta
@@ -428,17 +430,70 @@ class TadadoApp(QApplication):
         QTimer.singleShot(200, self._refresh_overdue_on_startup)
 
     def _on_wake_request(self) -> None:
-        """Another instance tried to start — bring existing window to front."""
+        """Handle a new local-pipe connection: CLI request or legacy wake."""
+        from .cli.protocol import PROTO_HEADER, read_raw
+
         while self._local_server.hasPendingConnections():
             conn = self._local_server.nextPendingConnection()
-            if conn and conn.waitForReadyRead(500):
-                conn.readAll()
+            if conn is None:
+                continue
+            data = read_raw(conn, 2000)
+            if data.startswith(PROTO_HEADER):
+                self._handle_cli_request(conn, data)
+            else:
+                self._handle_legacy_wake()
             conn.close()
+
+    def _handle_legacy_wake(self) -> None:
+        """Another GUI instance tried to start — bring window to front."""
         w = self._main_window
         w.show()
         w.setWindowState(w.windowState() & ~Qt.WindowState.WindowMinimized)
         w.raise_()
         w.activateWindow()
+
+    def _handle_cli_request(self, conn, data: bytes) -> None:
+        """Execute a CLI request against the running instance's service seam."""
+        from .cli.commands import CliError, execute
+        from .cli.protocol import PROTO_HEADER
+
+        try:
+            request = json.loads(data[len(PROTO_HEADER):].decode("utf-8"))
+        except (ValueError, UnicodeDecodeError) as exc:
+            self._write_cli_response(
+                conn, {"ok": False, "error": f"协议解析失败: {exc}", "code": 1}
+            )
+            return
+        if request.get("v") != 1:
+            self._write_cli_response(
+                conn, {"ok": False, "error": f"不支持的协议版本: {request.get('v')!r}", "code": 1}
+            )
+            return
+        command = request.get("command")
+        args = argparse.Namespace(**(request.get("args") or {}))
+        try:
+            result = execute(command, args, self._task_service, self._config)
+            self._write_cli_response(conn, {"ok": True, "result": result})
+        except CliError as exc:
+            self._write_cli_response(
+                conn, {"ok": False, "error": str(exc), "code": exc.code}
+            )
+        except Exception as exc:
+            self._log.exception("CLI request failed: %s", command)
+            self._write_cli_response(
+                conn, {"ok": False, "error": f"内部错误: {exc}", "code": 1}
+            )
+
+    @staticmethod
+    def _write_cli_response(conn, payload: dict) -> None:
+        """Write a JSON response and wait for the client to receive it."""
+        conn.write(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+        conn.flush()
+        conn.waitForBytesWritten(3000)
+        # Let the client finish reading before we close — on Windows named
+        # pipes, closing discards unread buffered data. The client closes the
+        # connection right after it has parsed the response.
+        conn.waitForDisconnected(1500)
 
     # ------------------------------------------------------------------
     # Fonts

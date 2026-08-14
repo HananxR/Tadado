@@ -674,26 +674,13 @@ class BatchController(QObject):
                 self.status_message.emit(f"已导出: {path}")
         elif fmt == "xlsx":
             try:
-                import openpyxl
-                from openpyxl.styles import Font
+                from ...services.task_exporter import export_xlsx
                 path, _ = QFileDialog.getSaveFileName(
                     self._page_widget, "导出 Excel", f"{pname}.xlsx",
                     "Excel (*.xlsx)",
                 )
                 if path:
-                    wb = openpyxl.Workbook()
-                    ws = wb.active
-                    ws.title = "任务列表"
-                    for col, h in enumerate(["ID", "标题", "状态", "标签", "截止日", "进度"], 1):
-                        ws.cell(row=1, column=col, value=h).font = Font(bold=True)
-                    for r, task in enumerate(tasks, 2):
-                        ws.cell(row=r, column=1, value=task.id)
-                        ws.cell(row=r, column=2, value=task.title)
-                        ws.cell(row=r, column=3, value=task.status.display_name)
-                        ws.cell(row=r, column=4, value=", ".join(task.tags))
-                        ws.cell(row=r, column=5, value=task.deadline_date.isoformat() if task.deadline_date else "")
-                        ws.cell(row=r, column=6, value=task.progress)
-                    wb.save(path)
+                    export_xlsx(tasks, path)
                     self.status_message.emit(f"已导出: {path}")
             except ImportError:
                 QMessageBox.warning(self._page_widget, "错误", "需要安装 openpyxl 库")
