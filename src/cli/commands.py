@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import re as _re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from ..models.task import Task
@@ -372,6 +372,38 @@ def _cmd_edit(args, svc, config) -> dict:
     return {"type": "task", "task": task_to_dict(task, name_map.get(task.partition_id or "", ""))}
 
 
+def _cmd_log(args, svc, config) -> dict:
+    """Append one activity-log entry — mirrors the GUI's 追加进展."""
+    ids = _resolve_ids(args, svc)
+    if len(ids) > 1:
+        raise CliError("log 一次只能追加到一个任务")
+    task = svc.get_task(ids[0])
+    entry_status = TaskStatus.from_string(args.status) if args.status else task.status
+    if args.status and args.status.upper() not in _STATUS_VALUES:
+        raise CliError(f"无效状态: {args.status!r}")
+    progress = args.progress if args.progress is not None else task.progress
+    entry = {
+        "ts": datetime.now().isoformat(),
+        "content": args.content,
+        "status": entry_status.value,
+        "progress": progress,
+    }
+    if args.dry_run:
+        return {"type": "dry_run", "command": "log",
+                "changes": [f"追加活动记录: {args.content}（{entry_status.value} {progress}%）"]}
+    task.activity_log = list(task.activity_log or []) + [entry]
+    if args.progress is not None:
+        task.progress = args.progress
+    task = svc.update_task(task)
+    if entry_status == TaskStatus.DONE and task.status != TaskStatus.DONE:
+        task = svc.change_task_status(task, TaskStatus.DONE)
+    return {
+        "type": "activity_entry", "task_id": task.id, "task_title": task.title,
+        "ts": entry["ts"], "content": entry["content"],
+        "status": entry["status"], "progress": entry["progress"],
+    }
+
+
 def _cmd_done(args, svc, config) -> dict:
     ids = _resolve_ids(args, svc)
     target = TaskStatus.from_string(args.status) if args.status else TaskStatus.DONE
@@ -520,6 +552,7 @@ _HANDLERS = {
     "add": _cmd_add,
     "edit": _cmd_edit,
     "done": _cmd_done,
+    "log": _cmd_log,
     "rm": _cmd_rm,
     "tags": _cmd_tags,
     "partitions": _cmd_partitions,

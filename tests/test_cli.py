@@ -325,6 +325,24 @@ def test_activity_timeline(parser, service):
     assert r2["entry_count"] == 0
 
 
+def test_log_command(parser, service, repository):
+    """log 追加活动进展；--status DONE 同时完成任务."""
+    repository.update_partition_archive_days(service.ensure_default_partition(), 30)
+    execute("add", _args(parser, "add", "日志任务"), service)
+    r = execute("log", _args(parser, "log", "--match", "日志任务",
+                             "--content", "完成初稿", "--status", "DOING", "--progress", "50"), service)
+    assert r["type"] == "activity_entry" and r["content"] == "完成初稿"
+    task = service.get_task(r["task_id"])
+    assert task.progress == 50 and any(e["content"] == "完成初稿" for e in task.activity_log)
+    dry = execute("log", _args(parser, "log", "--match", "日志任务",
+                               "--content", "终稿", "--dry-run"), service)
+    assert dry["type"] == "dry_run"
+    execute("log", _args(parser, "log", "--match", "日志任务",
+                         "--content", "终稿", "--status", "DONE"), service)
+    task = service.get_task(r["task_id"])
+    assert task.status.value == "DONE"
+
+
 def test_render_countdown(parser, service):
     """human 输出带倒计数：今天到期 / 剩 N 天 / 已逾期 N 天."""
     from datetime import date as _date

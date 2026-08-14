@@ -74,6 +74,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_edit.add_argument("--partition", help="移动到分区 ID")
     p_edit.add_argument("--dry-run", action="store_true", help="只预览不执行")
 
+    # log
+    p_log = sub.add_parser("log", help="追加活动进展记录（对应 GUI 追加进展）")
+    p_log.add_argument("ids", nargs="*", help="任务 ID")
+    p_log.add_argument("--match", help="按关键词定位（唯一匹配才生效）")
+    p_log.add_argument("--content", required=True, help="进展内容")
+    p_log.add_argument("--status", choices=_STATUS_CHOICES,
+                       help="状态（默认任务当前状态；选 DONE 同时完成任务）")
+    p_log.add_argument("--progress", type=int, help="进度 0-100")
+    p_log.add_argument("--dry-run", action="store_true", help="只预览不执行")
+
     # done
     p_done = sub.add_parser("done", help="变更任务状态（默认完成）")
     p_done.add_argument("ids", nargs="*", help="任务 ID")

@@ -55,6 +55,12 @@ def _render_human(result: dict) -> str:
         lines = [f"任务列表（{result['count']} / 共 {result['total']}）:"]
         lines.extend(_task_lines(result["tasks"]))
         return "\n".join(lines)
+    if rtype == "activity_entry":
+        e = result
+        return (
+            f"已追加活动记录: {e['task_title']} — {e['content']}"
+            f"（{e['status']} {e['progress']}%）"
+        )
     if rtype == "activity":
         lines = [
             f"活动记录（{result['date']}，共 {result['entry_count']} 条 / "
