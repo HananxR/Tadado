@@ -177,6 +177,11 @@ tadado-cli <command> [args]
 6. **安全** — `rm`/`archive`/`edit` 提供 `--dry-run`；SKILL.md 规定破坏性操作先展示确认。
 7. **环境隔离** — dev 用 `uv run python main.py --cli`（dev DB），发布版用安装的
    `tadado-cli.exe`（用户 DB）；`TADADO_DATA_DIR` 可覆盖数据目录。
+8. **AI 助手托盘入口**（`src/services/ai_assistant.py`）— 托盘「AI 助手」一键启动专属
+   Claude Code / Codex 会话：单一 provider（配置 `ai_assistant.provider` 指定，未配置
+   自动检测 claude 优先）；专用工作区 `ai_workspace/` + 首条指令 `/tadado` 保证
+   skill 唯一加载；未安装助手时菜单置灰。启动时注入 `TADADO_EXE` 指向同版本
+   `tadado-cli.exe`。
 
 **关联修复**：`repository.count()` 的 FTS 分支修正为 `rowid IN` + LIKE 兜底
 （原实现 `id IN` 恒假且缺中文 LIKE，导致关键词搜索时 total 恒为 0）；

@@ -45,9 +45,23 @@ class SystemTrayManager:
 
         menu.addSeparator()
 
+        ai_action = menu.addAction("AI 助手")
+        provider = self._detect_ai_provider()
+        if provider is None:
+            ai_action.setEnabled(False)
+            ai_action.setText("AI 助手（未检测到 Claude/Codex）")
+            ai_action.setToolTip("安装 Claude Code 或 Codex 后可用，或检查配置 ai_assistant.provider")
+        else:
+            ai_action.setText(f"AI 助手（{provider.capitalize()}）")
+            ai_action.setToolTip(f"启动专属 {provider} 会话，自动加载 Tadado skill")
+            ai_action.triggered.connect(self._launch_ai_assistant)
+
+        menu.addSeparator()
+
         quit_action = menu.addAction("退出")
         quit_action.triggered.connect(self._main_window._on_quit)
 
+        menu.aboutToShow.connect(self._build_menu)  # 每次展开重新检测
         self._tray.setContextMenu(menu)
 
     def show(self) -> None:
@@ -61,6 +75,27 @@ class SystemTrayManager:
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self._toggle_window()
+
+    def _detect_ai_provider(self) -> str | None:
+        """Single-provider detection: claude/codex — None when unavailable."""
+        try:
+            from ..services.ai_assistant import detect_provider
+
+            return detect_provider(self._config)
+        except Exception as exc:
+            from ..utils.log_manager import setup_logging
+
+            setup_logging().warning("AI assistant detection failed: %s", exc)
+            return None
+
+    def _launch_ai_assistant(self) -> None:
+        from ..services.ai_assistant import launch_session
+
+        ok, message = launch_session(self._config)
+        if ok:
+            self.show_message("AI 助手", f"{message}\n首条指令已自动加载 Tadado skill")
+        else:
+            self.show_message("AI 助手", message)
 
     def _toggle_window(self) -> None:
         win = self._main_window

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import sys
@@ -36,6 +37,13 @@ DEFAULT_CONFIG: dict = {
     },
     "archive": {
         "enabled": False,
+    },
+    "ai_assistant": {
+        "provider": "",  # "" = 自动检测（claude 优先）；显式 "claude" / "codex"
+        "claude_cmd": "claude",
+        "codex_cmd": "codex",
+        "initial_prompt": "/tadado 你好，我正在使用 Tadado AI 助手，请等待我的指令",
+        "workspace": "",  # 空 = 数据目录下 ai_workspace/
     },
 }
 
@@ -194,11 +202,15 @@ class AppConfig(QObject):
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
-    """Recursively merge override into base. Returns a new dict."""
+    """Recursively merge override into base. Returns a new dict.
+
+    Values are deep-copied so instances never share (or mutate) the
+    process-global DEFAULT_CONFIG nested dicts.
+    """
     result = base.copy()
     for k, v in override.items():
         if k in result and isinstance(result[k], dict) and isinstance(v, dict):
             result[k] = _deep_merge(result[k], v)
         else:
-            result[k] = v
+            result[k] = copy.deepcopy(v)
     return result
