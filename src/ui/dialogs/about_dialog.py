@@ -160,54 +160,6 @@ class _HeaderBar(QWidget):
         layout.addWidget(_close_button(close_callback))
 
 
-class ChannelsDialog(QDialog):
-    """下载渠道子页 — 「下载渠道」菜单行的下级页面."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("下载渠道")
-        self.setObjectName("channelsDialog")
-        self.setFixedSize(380, 200)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-        outer.addWidget(_HeaderBar("下载渠道", self.reject))
-
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(24, 8, 24, 16)
-        layout.setSpacing(0)
-
-        github_row = _MenuRow("GitHub Releases")
-        github_row.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(_GITHUB_RELEASES))
-        )
-        layout.addWidget(github_row)
-
-        aliyun_row = _MenuRow("阿里云盘（仅 .exe）")
-        aliyun_row.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL))
-        )
-        layout.addWidget(aliyun_row)
-
-        layout.addSpacing(14)
-
-        t = get_tokens()
-        note = QLabel("两个渠道发布的安装包内容一致，任选其一即可。")
-        note.setWordWrap(True)
-        note.setStyleSheet(f"font-size: 11px; color: {t.text_secondary};")
-        layout.addWidget(note)
-        layout.addStretch()
-
-        outer.addWidget(content, 1)
-
-    def showEvent(self, event: QShowEvent) -> None:
-        super().showEvent(event)
-        if is_dark_mode_supported() and is_dark():
-            set_window_dark_mode(self, True, caption_color=get_surface_color())
-
-
 class VersionHistoryDialog(QDialog):
     """独立滚动页：全版本更新记录（CHANGELOG.md 解析，缺省回退当前版本 highlights）."""
 
@@ -245,58 +197,46 @@ class VersionHistoryDialog(QDialog):
 
         cat_colors = {"新增": t.success, "优化": t.warning, "修复": t.danger}
 
+        cat_colors = {"新增": t.success, "优化": t.warning, "修复": t.danger}
+
         for vi, ver in enumerate(versions):
             if vi:
-                layout.addSpacing(16)
                 sep = QFrame()
                 sep.setFrameShape(QFrame.Shape.HLine)
                 sep.setStyleSheet(f"QFrame {{ color: {t.border_primary}; }}")
                 sep.setFixedHeight(1)
                 layout.addWidget(sep)
-                layout.addSpacing(14)
 
-            # 版本标题行：版本号 + 日期右对齐，正式版式
-            header_row = QWidget()
-            header_layout = QHBoxLayout(header_row)
-            header_layout.setContentsMargins(0, 0, 0, 0)
-            version_label = QLabel(f"v{ver['version']}")
-            version_label.setStyleSheet(
-                f"font-size: 15px; font-weight: 700; color: {t.text_primary};"
+            # 每个版本一个 QLabel，用 HTML <p> 段落统一控制行距与缩进
+            # （QLabel 不支持 CSS line-height，逐条 QLabel 会导致行距不齐）
+            parts = []
+            date_html = (
+                f"&nbsp;<span style='font-size:11px;font-weight:400;"
+                f"color:{t.text_secondary};'>{ver['date']}</span>"
+                if ver.get("date") else ""
             )
-            header_layout.addWidget(version_label)
-            header_layout.addStretch()
-            if ver.get("date"):
-                date_label = QLabel(ver["date"])
-                date_label.setStyleSheet(
-                    f"font-size: 11px; color: {t.text_secondary};"
-                )
-                header_layout.addWidget(date_label)
-            layout.addWidget(header_row)
-            layout.addSpacing(8)
-
+            parts.append(
+                f'<p style="margin:14px 0 2px 0;font-size:15px;font-weight:700;'
+                f'color:{t.text_primary};">v{ver["version"]}{date_html}</p>'
+            )
             for cat, items in ver["categories"]:
                 if not items:
                     continue
                 color = cat_colors.get(cat, t.text_primary)
-                icon = _CAT_ICONS.get(cat, "•")
-                cat_label = QLabel(
-                    f'<span style="color:{color};">{icon} {cat}</span>'
+                parts.append(
+                    f'<p style="margin:8px 0 2px 0;font-size:11px;font-weight:700;'
+                    f'color:{color};">● {cat}</p>'
                 )
-                cat_label.setStyleSheet(
-                    f"font-size: 11px; font-weight: 700;"
-                )
-                layout.addWidget(cat_label)
-                layout.addSpacing(2)
                 for item in items:
-                    entry = QLabel(f"· {_md_to_html(item, t)}")
-                    entry.setWordWrap(True)
-                    entry.setTextFormat(Qt.TextFormat.RichText)
-                    entry.setOpenExternalLinks(True)
-                    entry.setStyleSheet(
-                        f"font-size: 12px; color: {t.text_secondary};"
-                        f" padding-left: 12px;"
+                    parts.append(
+                        f'<p style="margin:3px 0 3px 12px;font-size:12px;'
+                        f'color:{t.text_secondary};">· {_md_to_html(item, t)}</p>'
                     )
-                    layout.addWidget(entry)
+            section = QLabel("".join(parts))
+            section.setWordWrap(True)
+            section.setTextFormat(Qt.TextFormat.RichText)
+            section.setOpenExternalLinks(True)
+            layout.addWidget(section)
 
         layout.addStretch()
         scroll.setWidget(content)
@@ -322,7 +262,10 @@ class AboutDialog(QDialog):
 
         self.setWindowTitle("关于 Tadado")
         self.setObjectName("aboutDialog")
-        self.setFixedSize(420, 540)
+        self.setFixedWidth(420)
+        self.resize(420, 540)
+        self.setMinimumHeight(500)
+        self._channels_expanded = False
 
         self._build_ui()
 
@@ -390,9 +333,24 @@ class AboutDialog(QDialog):
 
         layout.addSpacing(14)
 
-        channels_row = _MenuRow("下载渠道")
-        channels_row.clicked.connect(self._open_channels)
-        layout.addWidget(channels_row)
+        # 下载渠道：行内展开（不弹二级窗口）
+        self._channels_row = _MenuRow("下载渠道", "▾")
+        self._channels_row.clicked.connect(self._toggle_channels)
+        layout.addWidget(self._channels_row)
+
+        self._ch_github_row = _MenuRow("　GitHub Releases")
+        self._ch_github_row.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(_GITHUB_RELEASES))
+        )
+        self._ch_github_row.setVisible(False)
+        layout.addWidget(self._ch_github_row)
+
+        self._ch_aliyun_row = _MenuRow("　阿里云盘（仅 .exe）")
+        self._ch_aliyun_row.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL))
+        )
+        self._ch_aliyun_row.setVisible(False)
+        layout.addWidget(self._ch_aliyun_row)
 
         layout.addSpacing(14)
 
@@ -425,8 +383,13 @@ class AboutDialog(QDialog):
     def _open_history(self) -> None:
         VersionHistoryDialog(self).exec()
 
-    def _open_channels(self) -> None:
-        ChannelsDialog(self).exec()
+    def _toggle_channels(self) -> None:
+        """行内展开/收起下载渠道，窗口高度随内容自适应."""
+        self._channels_expanded = not self._channels_expanded
+        self._ch_github_row.setVisible(self._channels_expanded)
+        self._ch_aliyun_row.setVisible(self._channels_expanded)
+        self._channels_row.set_detail("▴" if self._channels_expanded else "▾")
+        self.adjustSize()
 
     # ── Update check slots ────────────────────────────────────────
 
