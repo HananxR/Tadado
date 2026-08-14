@@ -1,4 +1,4 @@
-"""Application settings dialog — single scrollable page."""
+"""Application settings dialog — tabbed pages."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QTableWidget,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -76,7 +77,7 @@ def _section_header(text: str) -> QLabel:
 
 
 class SettingsDialog(QDialog):
-    """Settings dialog — single scrollable page."""
+    """Settings dialog — tabbed pages."""
 
     def __init__(
         self, config: AppConfig, repository: TaskRepository,
@@ -90,8 +91,8 @@ class SettingsDialog(QDialog):
 
         self.setWindowTitle("设置")
         self.setObjectName("settingsDialog")
-        self.resize(720, 520)
-        self.setMinimumSize(620, 420)
+        self.resize(640, 480)
+        self.setMinimumSize(560, 400)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(4, 4, 4, 4)
@@ -134,10 +135,12 @@ class SettingsDialog(QDialog):
             g.setVerticalSpacing(6)
             return g
 
-        # 紧凑双栏：左侧 外观/任务列表，右侧 活动热力图/AI 助手；
-        # 归档/分区管理独占底部整行（表格占空间最大）。
-        left_grid, right_grid, bottom_grid = _new_grid(), _new_grid(), _new_grid()
-        rl, rr, rb = [0], [0], [0]
+        # 页签布局：每个分区一个页签，彻底消除多区块并排的对齐问题。
+        self._tabs = QTabWidget()
+        general_grid, heatmap_grid, ai_grid, partition_grid = (
+            _new_grid(), _new_grid(), _new_grid(), _new_grid()
+        )
+        rg, rh, ra, rp = [0], [0], [0], [0]
 
         def _row(grid_, counter, label_text: str, *widgets: QWidget) -> None:
             grid_.addWidget(_label(label_text), counter[0], 0)
@@ -149,9 +152,9 @@ class SettingsDialog(QDialog):
             counter[0] += 1
 
         # ================================================================
-        # 外观（左栏）
+        # 常规页签：外观
         # ================================================================
-        _header(left_grid, rl, "外观")
+        _header(general_grid, rg, "外观")
         self._theme_combo = DropdownWidget()
         self._theme_combo.setFixedWidth(_DROP_W)
         self._theme_combo.addItem("浅色", "light")
@@ -164,14 +167,14 @@ class SettingsDialog(QDialog):
         self._minimize_cb.setChecked(self._config.minimize_to_tray)
         self._auto_start_cb = QCheckBox()
         self._auto_start_cb.setChecked(self._config.auto_start)
-        _row(left_grid, rl, "主题:", self._theme_combo)
-        _row(left_grid, rl, "最小化到托盘:", self._minimize_cb)
-        _row(left_grid, rl, "开机自动启动:", self._auto_start_cb)
+        _row(general_grid, rg, "主题:", self._theme_combo)
+        _row(general_grid, rg, "最小化到托盘:", self._minimize_cb)
+        _row(general_grid, rg, "开机自动启动:", self._auto_start_cb)
 
         # ================================================================
-        # 任务列表（左栏）
+        # 任务列表（常规页签）
         # ================================================================
-        _header(left_grid, rl, "任务列表")
+        _header(general_grid, rg, "任务列表")
         self._page_size_combo = DropdownWidget()
         self._page_size_combo.setFixedWidth(_DROP_W)
         for n in (20, 50, 100):
@@ -192,14 +195,14 @@ class SettingsDialog(QDialog):
             self._default_sort_combo.setCurrentIndex(idx)
         self._completed_last_cb = QCheckBox()
         self._completed_last_cb.setChecked(self._config.sort_completed_last)
-        _row(left_grid, rl, "每页条数:", self._page_size_combo)
-        _row(left_grid, rl, "默认排序:", self._default_sort_combo)
-        _row(left_grid, rl, "已完成置底:", self._completed_last_cb)
+        _row(general_grid, rg, "每页条数:", self._page_size_combo)
+        _row(general_grid, rg, "默认排序:", self._default_sort_combo)
+        _row(general_grid, rg, "已完成置底:", self._completed_last_cb)
 
         # ================================================================
-        # 活动热力图（右栏）
+        # 活动热力图（独立页签）
         # ================================================================
-        _header(right_grid, rr, "活动热力图")
+        _header(heatmap_grid, rh, "活动热力图")
         self._heatmap_year_combo = DropdownWidget()
         self._heatmap_year_combo.setFixedWidth(_DROP_W)
         cur_year = date.today().year
@@ -221,13 +224,13 @@ class SettingsDialog(QDialog):
         idx = self._color_scheme_combo.findData(cur_scheme)
         if idx >= 0:
             self._color_scheme_combo.setCurrentIndex(idx)
-        _row(right_grid, rr, "起始年份:", self._heatmap_year_combo)
-        _row(right_grid, rr, "配色方案:", self._color_scheme_combo)
+        _row(heatmap_grid, rh, "起始年份:", self._heatmap_year_combo)
+        _row(heatmap_grid, rh, "配色方案:", self._color_scheme_combo)
 
         # ================================================================
-        # 归档 / 分区管理（底部整行）
+        # 归档 / 分区管理（独立页签）
         # ================================================================
-        _header(bottom_grid, rb, "归档 / 分区管理")
+        _header(partition_grid, rp, "归档 / 分区管理")
 
         btn_style = (
             f"QPushButton {{"
@@ -263,7 +266,7 @@ class SettingsDialog(QDialog):
         )
         tl.addWidget(self._selection_label)
         tl.addStretch()
-        bottom_grid.addWidget(toolbar, rb[0], 0, 1, 2); rb[0] += 1
+        partition_grid.addWidget(toolbar, rp[0], 0, 1, 2); rp[0] += 1
 
 
         self._partition_table = QTableWidget(0, 5)
@@ -309,12 +312,12 @@ class SettingsDialog(QDialog):
             f"}}"
         )
         self._partition_table.setStyleSheet(table_qss)
-        bottom_grid.addWidget(self._partition_table, rb[0], 0, 1, 2); rb[0] += 1
+        partition_grid.addWidget(self._partition_table, rp[0], 0, 1, 2); rp[0] += 1
 
         # ================================================================
         # AI 助手（右栏）
         # ================================================================
-        _header(right_grid, rr, "AI 助手")
+        _header(ai_grid, ra, "AI 助手")
         self._ai_provider_combo = DropdownWidget()
         self._ai_provider_combo.setFixedWidth(_DROP_W)
         self._ai_provider_combo.addItem("自动检测（优先 Claude）", "")
@@ -324,30 +327,30 @@ class SettingsDialog(QDialog):
         idx = self._ai_provider_combo.findData(cur_provider)
         self._ai_provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._ai_provider_combo.currentIndexChanged.connect(self._save_ai_assistant)
-        _row(right_grid, rr, "AI 助手:", self._ai_provider_combo)
+        _row(ai_grid, ra, "AI 助手:", self._ai_provider_combo)
         # 选择后即时校验可用性，不等托盘菜单才暴露不可用
         self._ai_status_label = QLabel("")
         self._ai_status_label.setWordWrap(True)
         self._ai_status_label.setStyleSheet(f"QLabel {{ font-size: 11px; }}")
         self._ai_provider_combo.currentIndexChanged.connect(self._refresh_ai_status)
-        right_grid.addWidget(self._ai_status_label, rr[0], 0, 1, 2); rr[0] += 1
+        ai_grid.addWidget(self._ai_status_label, ra[0], 0, 1, 2); ra[0] += 1
         self._refresh_ai_status()
 
-        # 顶部双栏 + 底部整行表格
-        top_columns = QHBoxLayout()
-        top_columns.setSpacing(16)
-        left_col = QVBoxLayout()
-        left_col.addLayout(left_grid)
-        left_col.addStretch()
-        right_col = QVBoxLayout()
-        right_col.addLayout(right_grid)
-        right_col.addStretch()
-        top_columns.addLayout(left_col, 1)
-        top_columns.addLayout(right_col, 1)
-        content_layout.addLayout(top_columns)
-        content_layout.addSpacing(4)
-        content_layout.addLayout(bottom_grid)
-        content_layout.addStretch()
+        # 页签装配：常规 / 活动热力图 / AI 助手 / 归档与分区
+        for grid_, title in (
+            (general_grid, "常规"),
+            (heatmap_grid, "活动热力图"),
+            (ai_grid, "AI 助手"),
+            (partition_grid, "归档与分区"),
+        ):
+            page = QWidget()
+            layout = QVBoxLayout(page)
+            layout.setContentsMargins(12, 8, 12, 8)
+            layout.addLayout(grid_)
+            layout.addStretch()
+            self._tabs.addTab(page, title)
+
+        content_layout.addWidget(self._tabs)
         self._scroll.setWidget(content)
         outer.addWidget(self._scroll)
 
