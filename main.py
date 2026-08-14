@@ -2,6 +2,7 @@
 
 import os
 import sys
+from pathlib import Path
 
 os.environ["QT_LOGGING_RULES"] = "qt.network.ssl.warning=false"
 
@@ -12,9 +13,16 @@ from src.app import TadadoApp
 _SERVER_NAME = "Tadado_Instance"
 
 
+def _is_cli_invocation() -> bool:
+    """True when invoked via --cli or as the tadado-cli.exe console build."""
+    if "--cli" in sys.argv:
+        return True
+    return Path(sys.argv[0]).name.lower() == "tadado-cli.exe"
+
+
 def main() -> None:
     # CLI mode: route to the headless command gateway (no GUI window)
-    if "--cli" in sys.argv:
+    if _is_cli_invocation():
         from src.cli.headless import run_cli
 
         sys.exit(run_cli([a for a in sys.argv[1:] if a != "--cli"]))
