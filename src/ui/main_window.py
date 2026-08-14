@@ -635,6 +635,10 @@ class MainWindow(QMainWindow):
         stats_layout.addStretch()
         self._analysis_stats = HeatmapStatsPanel()
         self._analysis_stats.setFixedHeight(28)
+        # 面板只占内容宽度，左侧 stretch 将其推到行尾（右对齐）
+        self._analysis_stats.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+        )
         stats_layout.addWidget(self._analysis_stats)
         layout.addWidget(stats_row)
 
