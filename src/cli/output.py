@@ -120,7 +120,9 @@ def _task_lines(tasks: list[dict]) -> list[str]:
     for t in tasks:
         when = t.get("deadline_date") or t.get("scheduled_date") or ""
         tags = " ".join(f"#{tag}" for tag in t.get("tags") or [])
+        partition = f"「{t['partition_name']}」" if t.get("partition_name") else ""
         lines.append(
-            f"  [{t['id'][:8]}] {t['status_display']:<4} {when:<12} {t['title']} {tags}".rstrip()
+            f"  [{t['id'][:8]}] {t['status_display']:<4} {when:<12} "
+            f"{t['title']} {tags} {partition}".rstrip()
         )
     return lines
