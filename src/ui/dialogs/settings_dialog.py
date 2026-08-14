@@ -76,6 +76,38 @@ def _section_header(text: str) -> QLabel:
     return label
 
 
+def _tab_qss(t) -> str:
+    """页签样式：选中页签强调色填充，未选中为浅色卡片，双主题适配."""
+    return (
+        f"QTabWidget#settingsTabs::pane {{"
+        f"  border: 1px solid {t.border_primary};"
+        f"  border-radius: 4px;"
+        f"  background: {t.bg_primary};"
+        f"  top: -1px;"
+        f"}}"
+        f"QTabWidget#settingsTabs QTabBar::tab {{"
+        f"  background: {t.bg_tertiary};"
+        f"  color: {t.text_secondary};"
+        f"  padding: 6px 18px;"
+        f"  margin-right: 2px;"
+        f"  border: 1px solid {t.border_primary};"
+        f"  border-bottom: none;"
+        f"  border-top-left-radius: 4px;"
+        f"  border-top-right-radius: 4px;"
+        f"  font-size: 13px;"
+        f"}}"
+        f"QTabWidget#settingsTabs QTabBar::tab:hover:!selected {{"
+        f"  background: {t.bg_secondary};"
+        f"  color: {t.text_primary};"
+        f"}}"
+        f"QTabWidget#settingsTabs QTabBar::tab:selected {{"
+        f"  background: {t.accent};"
+        f"  color: {t.text_on_accent};"
+        f"  font-weight: bold;"
+        f"}}"
+    )
+
+
 class SettingsDialog(QDialog):
     """Settings dialog — tabbed pages."""
 
@@ -137,6 +169,8 @@ class SettingsDialog(QDialog):
 
         # 页签布局：每个分区一个页签，彻底消除多区块并排的对齐问题。
         self._tabs = QTabWidget()
+        self._tabs.setObjectName("settingsTabs")
+        self._tabs.setStyleSheet(_tab_qss(t))
         general_grid, heatmap_grid, ai_grid, partition_grid = (
             _new_grid(), _new_grid(), _new_grid(), _new_grid()
         )
