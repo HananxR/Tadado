@@ -45,15 +45,24 @@ Tadado — Windows 桌面任务管理工具，Python 3.10 + PySide6，Markdown �
 uv venv --python 3.10 .venv && uv sync --dev
 
 # 运行
-uv run python main.py
+uv run python main.py                              # GUI
+uv run python main.py --cli list                   # CLI（详见 src/cli/ 与 .claude/skills/tadado/SKILL.md）
 
 # 测试
-uv run pytest                                      # 全部 57 用例
+uv run pytest                                      # 全部用例（当前 131+）
 uv run pytest -k "round_trip"                      # 关键字匹配
 
 # 代码质量
 uv run black src/ tests/ && uv run ruff check src/ tests/
 ```
+
+### CLI 通道（v0.2.7+）
+
+- `tadado-cli.exe`（打包版）/ `uv run python main.py --cli`（开发版）提供 12 个命令：
+  `list / today / add / edit / done / rm / tags / partitions / archive / recurrence / reminder / export`
+- GUI 运行时 CLI 经本地管道转发（单一写者），未运行时 headless 直写
+- Claude Code skill 位于 `.claude/skills/tadado/SKILL.md`，是 CLI 的 AI 操作手册
+- `src/cli/commands.py` 是命令执行核心，GUI 管道处理（`src/app.py`）与 headless 共用
 
 ## 架构摘要
 

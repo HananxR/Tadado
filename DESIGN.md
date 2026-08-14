@@ -121,6 +121,62 @@ Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
 - 不在循环内部逐条记录，仅在操作边界记录一次汇总结果
 - `logging` 模块内置线程锁（`threading.RLock`），与 APScheduler 后台线程兼容
 
+### 1.6 CLI 与 Claude Code Skill 通道
+
+Tadado 提供命令行通道，供 Claude Code skill（`.claude/skills/tadado/SKILL.md`）
+与终端用户操作任务，与 GUI 共享同一份 SQLite 数据与同一套 TaskService 逻辑。
+
+**模块结构**（`src/cli/`）：
+
+| 文件 | 职责 |
+|------|------|
+| `parser.py` | argparse 子命令定义（12 命令） |
+| `commands.py` | 命令执行核心：接收 TaskService + AppConfig，返回 JSON 结果；headless 与 GUI 转发共用；错误抛 `CliError` |
+| `output.py` | 稳定 JSON schema（任务对象字段与 Task 模型对齐）+ `--format human` 渲染 |
+| `headless.py` | `run_cli()` 入口：UTF-8 stdio、`--format` 提取、转发或 headless 执行、`TADADO_DATA_DIR` 数据目录覆盖 |
+| `forward.py` | 转发客户端：QLocalSocket 连接运行中 GUI（单写者原则） |
+| `protocol.py` | 管道协议：请求帧 `TADADO_CLI/1\n` + JSON，响应为裸 JSON；旧版 GUI 无响应 → 退出码 10 |
+
+**执行流程**：
+
+```
+tadado-cli <command> [args]
+        │
+        ├─ 连接 QLocalServer("Tadado_Instance") 成功 → 请求帧转发给 GUI
+        │     GUI 线程内执行 commands.execute()（用其 TaskService/AppConfig）
+        │     → 裸 JSON 响应回传，CLI 渲染输出；UI 信号触发实时刷新
+        │     └─ 旧版 GUI（无协议处理）→ 报错退出码 10，绝不回退直写 DB
+        └─ 连接失败（GUI 未运行）→ headless 模式
+              QCoreApplication + AppConfig + TaskRepository + TaskService
+              → 同栈执行 → JSON 输出
+```
+
+**命令集**（12 个）：`list`（筛选/排序/分页）、`today`（今日摘要分组）、`add`
+（Markdown 行为主 + flags 覆盖）、`edit`（字段修改 + `--dry-run` diff）、`done`
+（状态变更，触发周期克隆与即时归档）、`rm`、`tags`、`partitions`（增删改）、
+`archive`（`--all` 归档全部已完成）、`recurrence`（`+1d/+1w/+1m/+1y`）、
+`reminder`（全局提醒配置）、`export`（md/xlsx，复用 `MarkdownExporter`/`task_exporter`）。
+
+**关键设计**：
+
+1. **单一写者** — GUI 运行时 CLI 一律转发，绝不双进程写库；GUI 未运行时才 headless 直写。
+2. **raw_md 不被绕过** — `add` 用 formatter 构造规范 Markdown 行再走 `TaskService.create_task`；
+   `edit` 走 `update_task` 重建 raw_md。
+3. **LLM 输入防御** — `add` 归一化 `TODO<日期>`（缺空格）→ `TODO <日期>`，与 GUI 语法一致。
+4. **管道可靠性**（Windows 命名管道经验）— 服务端写完响应后 `waitForDisconnected` 再关闭
+   （立即 close 会丢弃未读数据）；客户端写完请求立即读响应（`waitForBytesWritten` 会空转超时）；
+   `read_raw` 收到首个 chunk 即返回（防双方互相等待死锁）。
+5. **打包** — `Tadado.spec` 单 Analysis 双入口：`Tadado.exe`（windowed GUI）+
+   `tadado-cli.exe`（console CLI）共用同一 `_internal` 包；`build.bat` 改由 spec 驱动。
+6. **安全** — `rm`/`archive`/`edit` 提供 `--dry-run`；SKILL.md 规定破坏性操作先展示确认。
+7. **环境隔离** — dev 用 `uv run python main.py --cli`（dev DB），发布版用安装的
+   `tadado-cli.exe`（用户 DB）；`TADADO_DATA_DIR` 可覆盖数据目录。
+
+**关联修复**：`repository.count()` 的 FTS 分支修正为 `rowid IN` + LIKE 兜底
+（原实现 `id IN` 恒假且缺中文 LIKE，导致关键词搜索时 total 恒为 0）；
+补齐缺失的 `md_exporter.py`/`md_importer.py` 服务模块（修复 GUI 导入/导出
+点击即 ImportError 的潜伏 bug）；批量导出 Excel 逻辑下沉到 `task_exporter.py`。
+
 ---
 
 ## 2. 功能模块设计
