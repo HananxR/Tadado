@@ -19,11 +19,16 @@ from ...models.task import Task
 from ...utils.design_tokens import get_tokens
 from .report_exporter import export_excel, export_markdown
 
+def _status_color(value: str) -> str:
+    from ...utils.design_tokens import status_color
+    return status_color(value)
+
+
 _STATUS_COLORS = {
-    "TODO": "#5b8def",
-    "DOING": "#f39c12",
-    "DONE": "#2ecc71",
-    "OVERDUE": "#e74c3c",
+    "TODO": _status_color("TODO"),
+    "DOING": _status_color("DOING"),
+    "DONE": _status_color("DONE"),
+    "OVERDUE": _status_color("OVERDUE"),
 }
 _STATUS_LABELS = {
     "TODO": "待办",

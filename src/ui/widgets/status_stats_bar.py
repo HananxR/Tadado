@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 from ...models.repository import TaskRepository
 from ...models.task_filter import SortCriterion, TaskFilter
 from ...models.task_status import TaskStatus
-from ...utils.design_tokens import get_tokens
+from ...utils.design_tokens import get_tokens, status_color
 
 
 class _StatBadge(QLabel):
@@ -52,10 +52,10 @@ class StatusStatsBar(QWidget):
     filter_changed = Signal(TaskFilter)
 
     _STATUSES = [
-        (TaskStatus.OVERDUE, "#c0392b", "逾期"),
-        (TaskStatus.TODO, "#5b8def", "待办"),
-        (TaskStatus.DOING, "#f39c12", "进行中"),
-        (TaskStatus.DONE, "#27ae60", "已完成"),
+        (TaskStatus.OVERDUE, status_color("OVERDUE"), "逾期"),
+        (TaskStatus.TODO, status_color("TODO"), "待办"),
+        (TaskStatus.DOING, status_color("DOING"), "进行中"),
+        (TaskStatus.DONE, status_color("DONE"), "已完成"),
     ]
     _PERIODS = [("日", "day"), ("周", "week"), ("月", "month"), ("年", "year")]
 

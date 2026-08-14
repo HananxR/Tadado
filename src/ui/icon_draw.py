@@ -1,7 +1,7 @@
 """App icon drawing functions — filled PRIMARY-blue style matching the app logo.
 
 All icons (except app/tray) use:
-  - Fill: PRIMARY #5b8def (brand blue, consistent with app logo)
+  - Fill: PRIMARY #4d57c3 (brand blue, consistent with app logo)
   - Details: white #ffffff
   - Rounded shapes, consistent padding
 
@@ -18,7 +18,7 @@ from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 
 from ..utils.design_tokens import get_tokens as _get_tk
 
-PRIMARY = QColor("#5b8def")
+PRIMARY = QColor("#4d57c3")
 PRIMARY_LIGHT = QColor("#7ba8f5")
 WHITE = QColor("#ffffff")
 
@@ -164,7 +164,7 @@ def draw_heatmap(p: QPainter, r: QRectF, color: QColor) -> None:
         QColor("#d4d4d4"),  # empty
         QColor("#a8d0ff"),  # light
         QColor("#7ab5f5"),
-        QColor("#5b8def"),  # PRIMARY
+        QColor("#4d57c3"),  # PRIMARY
         QColor("#3d6fc7"),  # dark
     ]
     p.setPen(Qt.PenStyle.NoPen)

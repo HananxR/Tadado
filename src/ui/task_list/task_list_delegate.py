@@ -191,7 +191,7 @@ class TaskListDelegate(QStyledItemDelegate):
         else:
             text = "未归档"
             t = get_tokens()
-            color = QColor("#e67e22")  # orange
+            color = QColor(get_tokens().warning)  # orange
 
         painter.save()
         painter.setPen(color)

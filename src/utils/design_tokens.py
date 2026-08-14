@@ -22,6 +22,7 @@ class DesignTokens:
     bg_secondary: str         # card / input field background
     bg_tertiary: str          # hover / pressed background
     bg_welcome_fallback: str  # welcome banner when no bg image
+    surface_raised: str       # elevated card surface (layering above bg_primary)
 
     # ── Text ──────────────────────────────────────────────────────
     text_primary: str         # body / heading text
@@ -225,65 +226,67 @@ def _compute_heatmap_gradient(
 # ── Light palette ──────────────────────────────────────────────────────────
 
 LIGHT_TOKENS = DesignTokens(
-    bg_primary="#f5f4f0",
-    bg_secondary="#fafaf8",
-    bg_tertiary="#f0eee8",
-    bg_welcome_fallback="#fffdf7",
-    text_primary="#2c2c2c",
-    text_secondary="#888",
-    text_disabled="#ccc",
+    bg_primary="#f6f4ef",
+    bg_secondary="#fcfbf7",
+    bg_tertiary="#efece3",
+    bg_welcome_fallback="#fdf9ef",
+    surface_raised="#fdfcf8",
+    text_primary="#3a3832",
+    text_secondary="#6f6a5f",
+    text_disabled="#b8b3a6",
     text_welcome_accent="#c0392b",
     text_welcome_sub="#eee",
     text_on_accent="#ffffff",
-    border_primary="#ddd9d0",
-    border_focus="#5b8def",
-    accent="#5b8def",
-    accent_hover="#4a7de0",
-    danger="#c0392b",
-    danger_hover="#e07070",
-    danger_bg="#fdf0ef",
-    success="#27ae60",
-    warning="#e67e22",
-    heatmap_empty="#dad6cc",
-    separator="#e0ddd6",
-    timeline_dot="#f39c12",
-    timeline_done="#27ae60",
-    urgency_urgent="#c0392b",
-    urgency_high="#e67e22",
-    urgency_medium="#27ae60",
-    urgency_normal="#aed6f1",
+    border_primary="#e3dfd4",
+    border_focus="#4d57c3",
+    accent="#4d57c3",
+    accent_hover="#3f48b0",
+    danger="#c4453c",
+    danger_hover="#b03a32",
+    danger_bg="#f9efed",
+    success="#2f9e63",
+    warning="#d97f26",
+    heatmap_empty="#e4dfd3",
+    separator="#ece8de",
+    timeline_dot="#d97f26",
+    timeline_done="#2f9e63",
+    urgency_urgent="#c4453c",
+    urgency_high="#d97f26",
+    urgency_medium="#2f9e63",
+    urgency_normal="#8ba0c0",
 )
 
 # ── Dark palette ───────────────────────────────────────────────────────────
 
 DARK_TOKENS = DesignTokens(
-    bg_primary="#1a1b26",
-    bg_secondary="#1e1f2e",
-    bg_tertiary="#2f3040",
-    bg_welcome_fallback="#1a1b26",
-    text_primary="#c9d1d9",
-    text_secondary="#8b949e",
-    text_disabled="#7a7c94",
+    bg_primary="#1b1c26",
+    bg_secondary="#232430",
+    bg_tertiary="#2d2e3c",
+    bg_welcome_fallback="#1b1c26",
+    surface_raised="#272835",
+    text_primary="#d8d5c9",
+    text_secondary="#9d988b",
+    text_disabled="#6e6a60",
     text_welcome_accent="#ff7675",
     text_welcome_sub="#a0a4b0",
-    text_on_accent="#1a1b26",
-    border_primary="#3d3f52",
-    border_focus="#7aa2f7",
-    accent="#7aa2f7",
-    accent_hover="#5b8def",
-    danger="#e07070",
-    danger_hover="#c05050",
-    danger_bg="#362430",
-    success="#27ae60",
-    warning="#f0a060",
-    heatmap_empty="#35374a",
-    separator="#2f3040",
-    timeline_dot="#f39c12",
-    timeline_done="#27ae60",
-    urgency_urgent="#e07070",
-    urgency_high="#f0a060",
-    urgency_medium="#2ecc71",
-    urgency_normal="#5b8cbd",
+    text_on_accent="#eceaf4",
+    border_primary="#32333f",
+    border_focus="#7c83ea",
+    accent="#7c83ea",
+    accent_hover="#8a90f0",
+    danger="#e06c63",
+    danger_hover="#ec8078",
+    danger_bg="#3a252a",
+    success="#3fae7c",
+    warning="#e0963f",
+    heatmap_empty="#2c2d3a",
+    separator="#2c2d3a",
+    timeline_dot="#e0963f",
+    timeline_done="#3fae7c",
+    urgency_urgent="#e06c63",
+    urgency_high="#e0963f",
+    urgency_medium="#3fae7c",
+    urgency_normal="#5d7399",
 )
 
 # ── Singleton access ───────────────────────────────────────────────────────
@@ -314,6 +317,7 @@ def expand_qss(template: str) -> str:
         "bg_primary": t.bg_primary,
         "bg_secondary": t.bg_secondary,
         "bg_tertiary": t.bg_tertiary,
+        "surface_raised": t.surface_raised,
         "text_primary": t.text_primary,
         "text_secondary": t.text_secondary,
         "text_disabled": t.text_disabled,
@@ -323,40 +327,64 @@ def expand_qss(template: str) -> str:
         "accent_hover": t.accent_hover,
         "danger": t.danger,
         "danger_light": t.danger_hover,
-        "danger_hover": "#c05050" if dark else "#e07070",
+        "danger_hover": "#ec8078" if dark else "#b03a32",
         "success": t.success,
         "white": "#ffffff",
         # Surface / structural
-        "surface_raised": "#24253a" if dark else "#ffffff",
-        "surface_alt": "#212236" if dark else "#fafaf8",
-        "surface_dark": "#2a2b3a" if dark else "#f0eee8",
-        "surface_hover": "#252638" if dark else "#f8f7f4",
-        "selection_bg": "#2f3648" if dark else "#edf2fb",
-        "selection_alt": "#2f4360" if dark else "#c5d8f8",
-        "report_header": "#252636" if dark else "#fafaf8",
-        "entry_hover": "#2a2b3c" if dark else "#f8f7f4",
-        "entry_selected": "#253045" if dark else "#edf2fb",
+        "surface_raised": "#272835" if dark else "#fdfcf8",
+        "surface_alt": "#232430" if dark else "#fcfbf7",
+        "surface_dark": "#2d2e3c" if dark else "#efece3",
+        "surface_hover": "#272835" if dark else "#f3f1ea",
+        "selection_bg": "#33364a" if dark else "#e8ebf7",
+        "selection_alt": "#38405f" if dark else "#c2c9ef",
+        "report_header": "#232430" if dark else "#fcfbf7",
+        "entry_hover": "#2d2e3c" if dark else "#f3f1ea",
+        "entry_selected": "#2f3349" if dark else "#e8ebf7",
         # Interactive states
-        "hover_strong": "#44455a" if dark else "#e8e6e0",
-        "hover_bg": "#383a50" if dark else "#e8e4dc",
-        "pressed_bg": "#363850" if dark else "#e0ddd6",
-        "text_muted": "#555770" if dark else "#aaa",
-        "nav_secondary": "#8b8da0" if dark else "#999",
-        "disabled_text": "#555" if dark else "#aaa",
+        "hover_strong": "#3a3c4e" if dark else "#e9e5da",
+        "hover_bg": "#33354a" if dark else "#ece8dd",
+        "pressed_bg": "#31334a" if dark else "#e2ddd1",
+        "text_muted": "#6e6a60" if dark else "#8a857a",
+        "nav_secondary": "#9d988b" if dark else "#8a857a",
+        "disabled_text": "#6e6a60" if dark else "#b8b3a6",
         # Danger / destructive
-        "danger_border": "#5c3038" if dark else "#e8c8c8",
-        "danger_bg_dark": "#362430" if dark else "#fdf0ef",
+        "danger_border": "#57323a" if dark else "#ecc9c6",
+        "danger_bg_dark": "#3a252a" if dark else "#f9efed",
         # Overlay / alpha
         "overlay_8": "rgba(128,128,128,0.08)",
         "overlay_35": "rgba(128,128,128,0.35)",
-        "accent_alpha_13": "rgba(122,162,247,0.13)" if dark else "rgba(91,139,239,0.13)",
-        "bg_primary_alpha_235": "rgba(26,27,38,235)" if dark else "rgba(245,244,240,235)",
-        "border_alpha_25": "rgba(61,63,82,0.25)" if dark else "rgba(221,217,208,0.25)",
+        "accent_alpha_13": "rgba(124,131,234,0.14)" if dark else "rgba(77,87,195,0.13)",
+        "bg_primary_alpha_235": "rgba(27,28,38,235)" if dark else "rgba(246,244,239,235)",
+        "border_alpha_25": "rgba(50,51,63,0.3)" if dark else "rgba(227,223,212,0.3)",
     }
     result = template
     for name, value in expansions.items():
         result = result.replace(f"{{{{{name}}}}}", value)
     return result
+
+
+def status_color(status_value: str) -> str:
+    """Token-based display color for a task status value (UI 展示用)."""
+    t = get_tokens()
+    mapping = {
+        "TODO": t.accent,
+        "DOING": t.warning,
+        "DONE": t.success,
+        "OVERDUE": t.danger,
+    }
+    return mapping.get(str(status_value).upper(), t.text_secondary)
+
+
+def apply_card_shadow(widget) -> None:
+    """Soft elevation shadow for card containers (theme-aware)."""
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QGraphicsDropShadowEffect
+
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(12)
+    effect.setOffset(0, 1)
+    effect.setColor(QColor(0, 0, 0, 45 if is_dark() else 28))
+    widget.setGraphicsEffect(effect)
 
 
 def is_dark() -> bool:
@@ -370,7 +398,7 @@ def get_surface_color() -> str:
     This is the background used by the custom title bar / menu bar area,
     useful for matching native window decorations.
     """
-    return "#24253a" if is_dark() else "#ffffff"
+    return "#272835" if is_dark() else "#fdfcf8"
 
 
 def init_tokens(config: object) -> None:

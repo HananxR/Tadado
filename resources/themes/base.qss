@@ -6,7 +6,7 @@
     font-family: "Microsoft YaHei", "Segoe UI", "Noto Sans SC", sans-serif;
 }
 QMainWindow {
-    background-color: {{text_on_accent}};
+    background-color: {{bg_primary}};
 }
 QSplitter::handle {
     background-color: {{bg_tertiary}};
@@ -92,18 +92,18 @@ QToolBar {
 }
 QToolBar QToolButton {
     border: 1px solid {{border_primary}};
-    border-radius: 5px;
+    border-radius: 4px;
     padding: 4px 10px;
     font-size: 12px;
     color: {{text_primary}};
-    background-color: {{text_muted}};
+    background-color: {{bg_tertiary}};
 }
 QToolBar QToolButton#partitionBtn {
     color: {{accent}};
     font-weight: bold;
 }
 QToolBar QToolButton:hover {
-    background-color: #6a6d8e;
+    background-color: {{hover_bg}};
     border-color: {{accent}};
 }
 QToolBar QToolButton:pressed {
@@ -128,7 +128,7 @@ QStatusBar QLabel {
 QPushButton {
     background-color: {{bg_tertiary}};
     border: 1px solid {{border_primary}};
-    border-radius: 5px;
+    border-radius: 4px;
     padding: 5px 10px;
     font-size: 12px;
     color: {{text_primary}};
@@ -190,12 +190,13 @@ QTabBar::tab {
     font-size: 12px;
 }
 QTabBar::tab:selected {
-    background-color: {{bg_secondary}};
-    color: {{text_primary}};
-    border-bottom: 2px solid {{accent}};
+    background-color: {{accent}};
+    color: {{text_on_accent}};
+    font-weight: bold;
+    border-bottom: none;
 }
-QTabBar::tab:hover {
-    background-color: {{pressed_bg}};
+QTabBar::tab:hover:!selected {
+    background-color: {{hover_bg}};
     color: {{text_primary}};
 }
 
@@ -211,7 +212,6 @@ QLineEdit {
 }
 QLineEdit:focus {
     border-color: {{accent}};
-    background-color: {{text_on_accent}};
 }
 QLineEdit#taskInput {
     font-family: "Consolas", "Cascadia Code", "Courier New", monospace;
@@ -229,7 +229,7 @@ QLineEdit#searchInput {
 QComboBox {
     background-color: {{bg_secondary}};
     border: 1px solid {{border_primary}};
-    border-radius: 5px;
+    border-radius: 6px;
     padding: 4px 8px;
     font-size: 12px;
     color: {{text_primary}};
@@ -278,7 +278,6 @@ QTextEdit {
 }
 QTextEdit:focus {
     border-color: {{accent}};
-    background-color: {{text_on_accent}};
 }
 QTextEdit#mdEditor {
     font-family: "Consolas", "Cascadia Code", "Courier New", monospace;
@@ -347,9 +346,9 @@ QDialog QScrollArea {
 
 /* ── Calendar Heatmap ────────────────────────────────────────── */
 QWidget#calendarHeatmap {
-    background-color: {{bg_secondary}};
-    border: 1px solid {{bg_tertiary}};
-    border-radius: 6px;
+    background-color: {{surface_raised}};
+    border: 1px solid {{border_primary}};
+    border-radius: 8px;
 }
 
 QComboBox#heatmapTagCombo {
@@ -446,7 +445,6 @@ QDateEdit, QTimeEdit, QDateTimeEdit {
 }
 QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
     border-color: {{accent}};
-    background-color: {{text_on_accent}};
 }
 
 
@@ -501,7 +499,7 @@ QWidget#partitionMask {
 /* ── Quick-access zone (carousel + preset buttons) ───────────── */
 QWidget#quickZone {
     background-color: {{surface_raised}};
-    border: 1px solid {{bg_tertiary}};
+    border: 1px solid {{border_primary}};
     border-radius: 8px;
 }
 QWidget#carouselBanner {
@@ -510,8 +508,8 @@ QWidget#carouselBanner {
 
 /* ── Editor Card ─────────────────────────────────────────────── */
 QWidget#editorCard[bordered="true"] {
-    background-color: {{bg_secondary}};
-    border: 1px solid {{bg_tertiary}};
+    background-color: {{surface_raised}};
+    border: 1px solid {{border_primary}};
     border-radius: 8px;
 }
 
@@ -625,7 +623,7 @@ QSpinBox:focus, QDoubleSpinBox:focus { border-color: {{accent}}; }
 /* ── Checkbox Indicator ──────────────────────────────────────── */
 QCheckBox::indicator {
     width: 16px; height: 16px;
-    border: 2px solid {{text_secondary}}; border-radius: 3px;
+    border: 1px solid {{border_primary}}; border-radius: 3px;
     background: {{bg_secondary}};
 }
 QCheckBox::indicator:checked {
@@ -654,7 +652,7 @@ QLineEdit#tagSearchInput {
 }
 QLineEdit#tagSearchInput:focus { border-color: {{accent}}; }
 QListWidget#tagList {
-    font-size: 10px; border: 1px solid {{border_primary}};
+    font-size: 11px; border: 1px solid {{border_primary}};
     border-radius: 4px; background: {{bg_primary}};
     color: {{text_primary}}; outline: none;
 }
@@ -678,7 +676,7 @@ QLabel#carouselLabel {
 
 /* ── Period Button (ProgressDynamicsBar) ─────────────────────── */
 QPushButton#periodBtn {
-    font-size: 10px; padding: 2px 5px;
+    font-size: 11px; padding: 2px 6px;
     color: {{text_secondary}}; background: transparent;
     border: 1px solid {{border_primary}};
 }
@@ -694,7 +692,7 @@ QPushButton#periodBtn:hover:!checked {
 
 /* ── Overview Preset Buttons ─────────────────────────────────── */
 QPushButton#overviewPresetBtn {
-    font-size: 10px; padding: 2px 5px;
+    font-size: 11px; padding: 2px 6px;
     color: {{text_secondary}}; background: transparent;
     border: 1px solid {{border_primary}};
 }

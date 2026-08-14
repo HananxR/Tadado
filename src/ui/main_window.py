@@ -223,7 +223,7 @@ class MainWindow(QMainWindow):
         """Re-apply inline QSS on the status-bar partition button after theme switch."""
         from ..utils.design_tokens import get_tokens as _gt
         t = _gt()
-        accent = t.accent if t else "#5b8def"
+        accent = t.accent if t else "#4d57c3"
         r, g, b = int(accent[1:3], 16), int(accent[3:5], 16), int(accent[5:7], 16)
         self._status_partition_btn.setStyleSheet(
             f"QPushButton {{ border: none; border-left: 3px solid {accent}; "

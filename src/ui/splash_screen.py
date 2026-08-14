@@ -125,13 +125,13 @@ class StartupShield(QWidget):
         if is_dark:
             self._bg = QColor("#24253a")
             self._fg = QColor("#c9d1d9")
-            self._accent = QColor("#7aa2f7")
+            self._accent = QColor("#7c83ea")
             self._sub = QColor("#8b949e")
             self._overlay_alpha = 140  # ~55%
         else:
             self._bg = QColor("#ffffff")
             self._fg = QColor("#2c2c2c")
-            self._accent = QColor("#5b8def")
+            self._accent = QColor("#4d57c3")
             self._sub = QColor("#999999")
             self._overlay_alpha = 170  # ~67%
 
