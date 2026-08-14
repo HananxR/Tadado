@@ -423,6 +423,38 @@ class CalendarHeatmapWidget(QWidget):
         self._back_btn.setToolTip("返回主界面")
         self._back_btn.clicked.connect(self.back_requested.emit)
         top_row.addWidget(self._back_btn)
+        top_row.addSpacing(6)
+
+        # ── 显示设置（仅影响热力图展示，就地调整，不再塞进设置对话框） ──
+        self._scheme_combo = DropdownWidget()
+        self._scheme_combo.setObjectName("heatmapSchemeCombo")
+        self._scheme_combo.setToolTip("热力图配色方案")
+        for key, label in (("sunbeam", "☀️"), ("sprout", "🌱"),
+                           ("ocean", "🌊"), ("sakura", "🌸")):
+            self._scheme_combo.addItem(label, key)
+        cur_scheme = self._config.get("display", "heatmap_color_scheme", default="sunbeam")
+        idx = self._scheme_combo.findData(cur_scheme)
+        self._scheme_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._scheme_combo.currentIndexChanged.connect(self._on_scheme_changed)
+        self._scheme_combo.setFixedWidth(52)
+        top_row.addWidget(self._scheme_combo)
+
+        self._start_year_combo = DropdownWidget()
+        self._start_year_combo.setObjectName("heatmapStartYearCombo")
+        self._start_year_combo.setToolTip("热力图起始年份")
+        cur_year = date.today().year
+        for y in range(cur_year - 5, cur_year + 1):
+            self._start_year_combo.addItem(str(y), y)
+        saved_year = self._config.get("display", "heatmap_start_year", default=cur_year)
+        idx = self._start_year_combo.findData(saved_year)
+        if idx < 0:
+            self._start_year_combo.insertItem(0, str(saved_year), saved_year)
+            self._start_year_combo.setCurrentIndex(0)
+        else:
+            self._start_year_combo.setCurrentIndex(idx)
+        self._start_year_combo.currentIndexChanged.connect(self._on_start_year_changed)
+        self._start_year_combo.setFixedWidth(80)
+        top_row.addWidget(self._start_year_combo)
 
         # ── Grid ──
         self._main_grid = _HeatmapGrid(self._model)
@@ -489,6 +521,27 @@ class CalendarHeatmapWidget(QWidget):
             self.set_year(today.year)
         self._main_grid._hovered_date = today
         self._main_grid.update()
+
+    def _on_scheme_changed(self) -> None:
+        """配色方案变更：写入配置并热刷新（config_changed → 令牌/渐变重载）."""
+        scheme = self._scheme_combo.currentData()
+        if not scheme or scheme == self._config.get("display", "heatmap_color_scheme", default="sunbeam"):
+            return
+        self._config.set("display", "heatmap_color_scheme", value=scheme)
+        self._config.save()
+        self.refresh()
+
+    def _on_start_year_changed(self) -> None:
+        """起始年份变更：写入配置，若当前浏览年份早于新起点则跳回."""
+        year = self._start_year_combo.currentData()
+        if year is None:
+            return
+        self._config.set("display", "heatmap_start_year", value=int(year))
+        self._config.save()
+        if self._model.current_year() < int(year):
+            self.set_year(int(year))
+        else:
+            self.refresh()
 
     # ------------------------------------------------------------------
     # Tag filter

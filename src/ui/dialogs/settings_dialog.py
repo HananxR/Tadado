@@ -171,10 +171,8 @@ class SettingsDialog(QDialog):
         self._tabs = QTabWidget()
         self._tabs.setObjectName("settingsTabs")
         self._tabs.setStyleSheet(_tab_qss(t))
-        general_grid, heatmap_grid, ai_grid, partition_grid = (
-            _new_grid(), _new_grid(), _new_grid(), _new_grid()
-        )
-        rg, rh, ra, rp = [0], [0], [0], [0]
+        general_grid, ai_grid, partition_grid = _new_grid(), _new_grid(), _new_grid()
+        rg, ra, rp = [0], [0], [0]
 
         def _row(grid_, counter, label_text: str, *widgets: QWidget) -> None:
             grid_.addWidget(_label(label_text), counter[0], 0)
@@ -233,33 +231,8 @@ class SettingsDialog(QDialog):
         _row(general_grid, rg, "默认排序:", self._default_sort_combo)
         _row(general_grid, rg, "已完成置底:", self._completed_last_cb)
 
-        # ================================================================
-        # 活动热力图（独立页签）
-        # ================================================================
-        _header(heatmap_grid, rh, "活动热力图")
-        self._heatmap_year_combo = DropdownWidget()
-        self._heatmap_year_combo.setFixedWidth(_DROP_W)
-        cur_year = date.today().year
-        for y in range(cur_year - 5, cur_year + 1):
-            self._heatmap_year_combo.addItem(str(y), y)
-        saved_year = self._config.get("display", "heatmap_start_year", default=cur_year)
-        idx = self._heatmap_year_combo.findData(saved_year)
-        if idx < 0:
-            self._heatmap_year_combo.insertItem(0, str(saved_year), saved_year)
-            self._heatmap_year_combo.setCurrentIndex(0)
-        else:
-            self._heatmap_year_combo.setCurrentIndex(idx)
-        self._color_scheme_combo = DropdownWidget()
-        self._color_scheme_combo.setFixedWidth(_DROP_W)
-        for key, label in [("sunbeam", "☀️ 暖阳"), ("sprout", "🌱 新绿"),
-                           ("ocean", "🌊 海洋"), ("sakura", "🌸 樱花")]:
-            self._color_scheme_combo.addItem(label, key)
-        cur_scheme = self._config.get("display", "heatmap_color_scheme", default="sunbeam")
-        idx = self._color_scheme_combo.findData(cur_scheme)
-        if idx >= 0:
-            self._color_scheme_combo.setCurrentIndex(idx)
-        _row(heatmap_grid, rh, "起始年份:", self._heatmap_year_combo)
-        _row(heatmap_grid, rh, "配色方案:", self._color_scheme_combo)
+        # 活动热力图的起始年份与配色方案已移至热力图导航栏（🏠 按钮后），
+        # 不再占用设置页签。
 
         # ================================================================
         # 归档 / 分区管理（独立页签）
@@ -370,10 +343,9 @@ class SettingsDialog(QDialog):
         ai_grid.addWidget(self._ai_status_label, ra[0], 0, 1, 2); ra[0] += 1
         self._refresh_ai_status()
 
-        # 页签装配：常规 / 活动热力图 / AI 助手 / 归档与分区
+        # 页签装配：常规 / AI 助手 / 归档与分区
         for grid_, title in (
             (general_grid, "常规"),
-            (heatmap_grid, "活动热力图"),
             (ai_grid, "AI 助手"),
             (partition_grid, "归档与分区"),
         ):
@@ -404,8 +376,6 @@ class SettingsDialog(QDialog):
         self._page_size_combo.currentIndexChanged.connect(self._save_tasklist)
         self._default_sort_combo.currentIndexChanged.connect(self._save_tasklist)
         self._completed_last_cb.toggled.connect(self._save_tasklist)
-        self._heatmap_year_combo.currentIndexChanged.connect(self._save_display)
-        self._color_scheme_combo.currentIndexChanged.connect(self._save_display)
         self._populated = False
 
     # ------------------------------------------------------------------
@@ -979,10 +949,6 @@ class SettingsDialog(QDialog):
                 self._ai_status_label.setText(
                     "✗ 未检测到 Claude Code 或 Codex，AI 助手不可用"
                 )
-
-    def _save_display(self) -> None:
-        self._config.set("display", "heatmap_start_year", value=self._heatmap_year_combo.currentData())
-        self._config.set("display", "heatmap_color_scheme", value=self._color_scheme_combo.currentData())
 
     def _save_motd(self) -> None:
         motd_cfg = {}
