@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from ..config import AppConfig
@@ -22,6 +22,12 @@ class SystemTrayManager:
 
         self._build_menu()
         self._tray.activated.connect(self._on_activated)
+
+        # 上下文用量巡检：超 80% 提醒 /compact（每个会话只提醒一次）
+        self._alerted_session: str | None = None
+        self._ctx_timer = QTimer(self)
+        self._ctx_timer.setInterval(60_000)
+        self._ctx_timer.timeout.connect(self._check_context_usage)
         # show() 延迟到主窗口显示后调用，避免 QSystemTrayIcon 内部 HWND
         # 在主窗口之前闪现为"小窗口残影"（Windows 已知行为）
 
@@ -48,8 +54,11 @@ class SystemTrayManager:
         # AI 助手入口：菜单构建一次，展开时原位刷新检测状态。
         # 注意：不可在 aboutToShow 里重建/替换整个菜单——Windows 上会
         # 取消正在弹出的菜单，表现为点击无反应。
-        self._ai_action = menu.addAction("AI 助手")
-        self._ai_action.triggered.connect(self._launch_ai_assistant)
+        ai_menu = menu.addMenu("AI 助手")
+        self._ai_resume_action = ai_menu.addAction("继续上次会话")
+        self._ai_new_action = ai_menu.addAction("新建会话")
+        self._ai_resume_action.triggered.connect(self._launch_ai_resume)
+        self._ai_new_action.triggered.connect(self._launch_ai_new)
         self._refresh_ai_action()
 
         menu.addSeparator()
@@ -61,22 +70,65 @@ class SystemTrayManager:
         self._tray.setContextMenu(menu)
 
     def _refresh_ai_action(self) -> None:
-        """In-place refresh of the AI action's availability label."""
+        """In-place refresh of the AI actions' availability labels."""
+        from ..services.ai_assistant import (
+            _workspace_dir,
+            latest_session_id,
+            session_usage_percent,
+        )
+
         provider = self._detect_ai_provider()
         if provider is None:
-            self._ai_action.setEnabled(False)
-            self._ai_action.setText("AI 助手（未检测到 Claude/Codex）")
-            self._ai_action.setToolTip(
-                "安装 Claude Code 或 Codex 后可用，或检查配置 ai_assistant.provider"
-            )
-        else:
-            self._ai_action.setEnabled(True)
-            self._ai_action.setText(f"AI 助手（{provider.capitalize()}）")
-            self._ai_action.setToolTip(f"启动专属 {provider} 会话，自动加载 Tadado skill")
+            for action in (self._ai_resume_action, self._ai_new_action):
+                action.setEnabled(False)
+            self._ai_resume_action.setText("继续上次会话（未检测到 Claude/Codex）")
+            return
+        self._ai_new_action.setEnabled(True)
+        self._ai_new_action.setText("新建会话")
+        workspace = str(_workspace_dir(self._config))
+        session_id = self._config.get("ai_assistant", "session_id") or latest_session_id(
+            provider, workspace
+        )
+        if not session_id:
+            self._ai_resume_action.setEnabled(False)
+            self._ai_resume_action.setText("继续上次会话（暂无会话记录）")
+            return
+        self._ai_resume_action.setEnabled(True)
+        pct = session_usage_percent(provider, workspace, session_id)
+        label = f"继续上次会话（{provider.capitalize()}）"
+        if pct is not None and pct >= 80:
+            label = f"继续上次会话（上下文 {pct:.0f}%，建议 /compact）"
+        self._ai_resume_action.setText(label)
 
     def show(self) -> None:
         """Show the tray icon (called after main window appears to avoid flash)."""
         self._tray.show()
+        self._ctx_timer.start()
+
+    def _check_context_usage(self) -> None:
+        """Periodic: remind the user to /compact when context exceeds 80%."""
+        from ..services.ai_assistant import (
+            _workspace_dir,
+            latest_session_id,
+            session_usage_percent,
+        )
+
+        provider = self._detect_ai_provider()
+        if provider is None:
+            return
+        workspace = str(_workspace_dir(self._config))
+        session_id = self._config.get("ai_assistant", "session_id") or latest_session_id(
+            provider, workspace
+        )
+        if not session_id:
+            return
+        pct = session_usage_percent(provider, workspace, session_id)
+        if pct is not None and pct >= 80 and session_id != self._alerted_session:
+            self._alerted_session = session_id
+            self.show_message(
+                "AI 助手",
+                f"会话上下文已使用 {pct:.0f}%，建议在会话中输入 /compact 压缩上下文",
+            )
 
     # ------------------------------------------------------------------
     # Slots
@@ -98,13 +150,23 @@ class SystemTrayManager:
             setup_logging().warning("AI assistant detection failed: %s", exc)
             return None
 
-    def _launch_ai_assistant(self) -> None:
-        from ..services.ai_assistant import launch_session
+    def _launch_ai_new(self) -> None:
+        from ..services.ai_assistant import start_session
 
         partition = self._main_window.active_partition_name()
-        ok, message = launch_session(self._config, partition_name=partition)
+        ok, message = start_session(self._config, partition_name=partition, resume=False)
         if ok:
             self.show_message("AI 助手", f"{message}\n首条指令已自动加载 Tadado skill")
+        else:
+            self.show_message("AI 助手", message)
+
+    def _launch_ai_resume(self) -> None:
+        from ..services.ai_assistant import start_session
+
+        partition = self._main_window.active_partition_name()
+        ok, message = start_session(self._config, partition_name=partition, resume=True)
+        if ok:
+            self.show_message("AI 助手", f"{message}\n已续接上次会话上下文")
         else:
             self.show_message("AI 助手", message)
 

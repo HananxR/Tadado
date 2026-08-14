@@ -44,6 +44,7 @@ DEFAULT_CONFIG: dict = {
         "codex_cmd": "codex",
         "initial_prompt": "/tadado 你好，我正在使用 Tadado AI 助手，请等待我的指令",
         "workspace": "",  # 空 = 数据目录下 ai_workspace/
+        "session_id": "",  # 上次会话 ID，托盘「继续上次会话」续接
     },
 }
 

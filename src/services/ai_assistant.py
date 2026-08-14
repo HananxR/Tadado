@@ -2,21 +2,30 @@
 
 单 provider 架构：配置显式指定 claude/codex 之一；未配置时自动检测
 （claude 优先）。两者都未安装 → AI 助手不可用。
+
+会话续接：新会话启动后后台捕获会话 ID 存入配置；下次托盘点击可
+`claude --resume <id>` / `codex resume <id>` 快速续接，不新开上下文。
+上下文用量从会话 jsonl 的最后一个 usage 字段估算，超 80% 提示 compact。
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 _log = logging.getLogger("runlog")
 
 _WORKSPACE_DIR = "ai_workspace"
 _DEFAULT_PROMPT = "/tadado 你好，我正在使用 Tadado AI 助手，请等待我的指令"
+_CONTEXT_WINDOW_DEFAULT = 200_000  # claude-*/codex 当前上下文窗口（token）
+_CONTEXT_ALERT_PERCENT = 80.0
 
 # Windows 常见安装位置（PATH 之外的兜底）
 _KNOWN_PATHS: dict[str, tuple[str, ...]] = {
@@ -81,6 +90,83 @@ def _tadado_cli_path() -> str | None:
     return None
 
 
+def _project_slug(path: str) -> str:
+    """Claude Code 项目目录命名规则：盘符冒号与路径分隔符替换为 '-'."""
+    return os.path.abspath(path).replace(":", "-").replace("\\", "-").replace("/", "-")
+
+
+def _sessions_dir(provider: str, workspace: str) -> Path:
+    """宿主会话存储目录."""
+    if provider == "codex":
+        return Path(os.path.expanduser("~")) / ".codex" / "sessions"
+    return Path(os.path.expanduser("~")) / ".claude" / "projects" / _project_slug(workspace)
+
+
+def latest_session_id(provider: str, workspace: str) -> str | None:
+    """最近的会话 ID（按 mtime），无会话返回 None."""
+    d = _sessions_dir(provider, workspace)
+    if not d.exists():
+        return None
+    files = sorted(d.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return files[0].stem if files else None
+
+
+def session_usage_percent(provider: str, workspace: str, session_id: str) -> float | None:
+    """估算会话上下文用量百分比（最后一个 usage 字段 vs 上下文窗口）."""
+    path = _sessions_dir(provider, workspace) / f"{session_id}.jsonl"
+    if not path.exists():
+        return None
+    last_usage: dict | None = None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                msg = d.get("message") if isinstance(d.get("message"), dict) else None
+                if msg and isinstance(msg.get("usage"), dict):
+                    last_usage = msg["usage"]
+    except OSError:
+        return None
+    if not last_usage:
+        return None
+    total = (
+        last_usage.get("input_tokens", 0)
+        + last_usage.get("cache_read_input_tokens", 0)
+        + last_usage.get("cache_creation_input_tokens", 0)
+        + last_usage.get("output_tokens", 0)
+    )
+    return total / _CONTEXT_WINDOW_DEFAULT * 100.0
+
+
+def capture_new_session(provider: str, workspace: str, before: float,
+                        timeout: float = 60.0) -> str | None:
+    """Poll for a session file newer than ``before`` (new session ID)."""
+    d = _sessions_dir(provider, workspace)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if d.exists():
+            for f in d.glob("*.jsonl"):
+                try:
+                    if f.stat().st_mtime > before:
+                        return f.stem
+                except OSError:
+                    continue
+        time.sleep(0.5)
+    return None
+
+
+def resume_command(provider: str, session_id: str) -> str:
+    """续接会话的启动命令."""
+    if provider == "codex":
+        return f"codex resume {session_id}"
+    return f"claude --resume {session_id}"
+
+
 def _launch_in_terminal(command: str, cwd: str) -> tuple[bool, str]:
     """Open a new terminal window running ``command`` in ``cwd``."""
     if shutil.which("wt"):  # Windows Terminal
@@ -95,8 +181,24 @@ def _launch_in_terminal(command: str, cwd: str) -> tuple[bool, str]:
     return False, "当前平台不支持从托盘启动终端"
 
 
-def launch_session(config, partition_name: str = "") -> tuple[bool, str]:
-    """Launch the dedicated AI-assistant session. Returns (ok, message).
+def _session_env(config, partition_name: str) -> dict:
+    """会话环境：注入同版本 tadado-cli.exe 与当前分区兜底."""
+    env = os.environ.copy()
+    cli_exe = _tadado_cli_path()
+    if cli_exe:
+        env["TADADO_EXE"] = cli_exe  # skill 定位同版本 tadado-cli.exe
+    if partition_name:
+        env["TADADO_PARTITION"] = partition_name
+    return env
+
+
+def start_session(config, partition_name: str = "", resume: bool = False) -> tuple[bool, str]:
+    """启动 AI 助手会话。Returns (ok, message).
+
+    - ``resume=False``：新会话（首条指令自动加载 Tadado skill），后台捕获
+      会话 ID 存入配置，供下次续接。
+    - ``resume=True``：`claude --resume <id>` / `codex resume <id>` 续接上次
+      会话；无会话记录时回退为新建。
 
     ``partition_name`` is the GUI's current partition — injected as
     TADADO_PARTITION so the session's CLI calls stay partition-scoped
@@ -105,17 +207,33 @@ def launch_session(config, partition_name: str = "") -> tuple[bool, str]:
     provider = detect_provider(config)
     if provider is None:
         return False, "未检测到 Claude Code 或 Codex，AI 助手不可用"
-    prompt = config.get("ai_assistant", "initial_prompt") or _DEFAULT_PROMPT
     workspace = _workspace_dir(config)
-    quoted = prompt.replace('"', '\\"')
-    command = f"{provider} \"{quoted}\""
+    env = _session_env(config, partition_name)
 
-    env = os.environ.copy()
-    cli_exe = _tadado_cli_path()
-    if cli_exe:
-        env["TADADO_EXE"] = cli_exe  # skill 定位同版本 tadado-cli.exe
-    if partition_name:
-        env["TADADO_PARTITION"] = partition_name
+    is_resume = resume
+    if is_resume:
+        session_id = config.get("ai_assistant", "session_id") or latest_session_id(
+            provider, str(workspace)
+        )
+        if session_id:
+            command = resume_command(provider, session_id)
+        else:
+            is_resume = False  # 无会话记录 → 新建
+
+    if not is_resume:
+        prompt = config.get("ai_assistant", "initial_prompt") or _DEFAULT_PROMPT
+        quoted = prompt.replace('"', '\\"')
+        command = f'{provider} "{quoted}"'
+        before = time.time()
+
+        def _capture() -> None:
+            sid = capture_new_session(provider, str(workspace), before)
+            if sid:
+                config.set("ai_assistant", "session_id", value=sid)
+                config.save()
+                _log.info("AI assistant session captured: %s", sid)
+
+        threading.Thread(target=_capture, daemon=True).start()
 
     old_env = os.environ
     os.environ = env
@@ -124,5 +242,5 @@ def launch_session(config, partition_name: str = "") -> tuple[bool, str]:
     finally:
         os.environ = old_env
     if ok:
-        _log.info("AI assistant launched: provider=%s workspace=%s", provider, workspace)
+        _log.info("AI assistant launched: provider=%s resume=%s", provider, is_resume)
     return ok, message
