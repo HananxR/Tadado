@@ -95,8 +95,13 @@ def _launch_in_terminal(command: str, cwd: str) -> tuple[bool, str]:
     return False, "当前平台不支持从托盘启动终端"
 
 
-def launch_session(config) -> tuple[bool, str]:
-    """Launch the dedicated AI-assistant session. Returns (ok, message)."""
+def launch_session(config, partition_name: str = "") -> tuple[bool, str]:
+    """Launch the dedicated AI-assistant session. Returns (ok, message).
+
+    ``partition_name`` is the GUI's current partition — injected as
+    TADADO_PARTITION so the session's CLI calls stay partition-scoped
+    even when the model forgets to pass --partition explicitly.
+    """
     provider = detect_provider(config)
     if provider is None:
         return False, "未检测到 Claude Code 或 Codex，AI 助手不可用"
@@ -109,6 +114,8 @@ def launch_session(config) -> tuple[bool, str]:
     cli_exe = _tadado_cli_path()
     if cli_exe:
         env["TADADO_EXE"] = cli_exe  # skill 定位同版本 tadado-cli.exe
+    if partition_name:
+        env["TADADO_PARTITION"] = partition_name
 
     old_env = os.environ
     os.environ = env

@@ -227,11 +227,14 @@ def _cmd_activity(args, svc, config) -> dict:
 def _cmd_today(args, svc, config) -> dict:
     today = date.today()
     horizon = today + timedelta(days=args.days)
+    pid = _resolve_partition_id(svc, args.partition) if args.partition else None
     name_map = svc.get_partition_name_map()
     groups: dict[str, list[dict]] = {
         "overdue": [], "due_today": [], "due_soon": [], "doing": [],
     }
     for t in svc.get_all():
+        if pid and t.partition_id != pid:
+            continue
         if t.archived or t.suspended or t.status == TaskStatus.DONE:
             continue
         d = task_to_dict(t, name_map.get(t.partition_id or "", ""))

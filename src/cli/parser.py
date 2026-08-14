@@ -37,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     # today
     p_today = sub.add_parser("today", help="今日摘要（逾期/今日到期/临近/进行中）")
     p_today.add_argument("--days", type=int, default=2, help="临近窗口天数（默认 2）")
+    p_today.add_argument("--partition", help="分区 ID/名称（缺省=全部/TADADO_PARTITION）")
 
     # activity
     p_act = sub.add_parser("activity", help="指定日期的活动记录时间线")

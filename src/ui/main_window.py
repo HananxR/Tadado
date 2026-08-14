@@ -214,6 +214,11 @@ class MainWindow(QMainWindow):
             f"QPushButton:hover {{ background: {t.accent}20; }}"
         )
 
+    def active_partition_name(self) -> str:
+        """当前激活分区的名称（供托盘 AI 助手注入 TADADO_PARTITION）."""
+        pid = self._partition_ctrl.active_id or ""
+        return self._repository.get_partition_name_map().get(pid, "")
+
     def _refresh_status_partition_style(self) -> None:
         """Re-apply inline QSS on the status-bar partition button after theme switch."""
         from ..utils.design_tokens import get_tokens as _gt

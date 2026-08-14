@@ -125,6 +125,18 @@ def test_today_groups(parser, service):
     assert [t["title"] for t in r["doing"]] == ["进行中无截止"]
 
 
+def test_today_partition_scoped(parser, service):
+    """today 支持 --partition，仅统计指定分区."""
+    today = date.today()
+    other = execute("partitions", _args(parser, "partitions", "--add", "其他"), service)["partition"]["id"]
+    execute("add", _args(parser, "add", f"- [ ] TODO <{today}> 本分区任务"), service)
+    execute("add", _args(parser, "add", f"- [ ] TODO <{today}> 其他分区任务", "--partition", other), service)
+    scoped = execute("today", _args(parser, "today", "--partition", other), service)
+    assert [t["title"] for t in scoped["due_today"]] == ["其他分区任务"]
+    all_r = execute("today", _args(parser, "today"), service)
+    assert {t["title"] for t in all_r["due_today"]} == {"本分区任务", "其他分区任务"}
+
+
 # ------------------------------------------------------------------
 # add
 # ------------------------------------------------------------------
@@ -575,3 +587,30 @@ def test_e2e_error_exit_code(tmp_path: Path):
     bad = _run_cli("done", "--match", "不存在的任务xyz", data_dir=tmp_path)
     assert bad.returncode == 1
     assert "error" in bad.stderr
+
+
+def test_e2e_tadado_partition_env_default(tmp_path: Path):
+    """TADADO_PARTITION 环境变量兜底：未显式 --partition 时按当前分区过滤."""
+    import json as _json
+
+    # 两个分区各建一个任务（第一个=默认分区）
+    _run_cli("add", "- [ ] TODO <2026-08-20> 默认分区任务", data_dir=tmp_path)
+    listing = _run_cli("partitions", data_dir=tmp_path)
+    parts = _json.loads(listing.stdout)["partitions"]
+    other = next(p for p in parts if p["name"] != "工作")
+    _run_cli("add", "- [ ] TODO <2026-08-20> 其他分区任务",
+             "--partition", other["name"], data_dir=tmp_path)
+
+    import os as _os
+
+    env = dict(_os.environ)
+    env["TADADO_DATA_DIR"] = str(tmp_path)
+    env["TADADO_NO_FORWARD"] = "1"
+    env["TADADO_PARTITION"] = other["name"]
+    result = subprocess.run(
+        [sys.executable, "main.py", "--cli", "list"],
+        capture_output=True, text=True, encoding="utf-8", env=env, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    tasks = _json.loads(result.stdout)["tasks"]
+    assert [t["title"] for t in tasks] == ["其他分区任务"]

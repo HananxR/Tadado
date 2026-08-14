@@ -101,7 +101,8 @@ class SystemTrayManager:
     def _launch_ai_assistant(self) -> None:
         from ..services.ai_assistant import launch_session
 
-        ok, message = launch_session(self._config)
+        partition = self._main_window.active_partition_name()
+        ok, message = launch_session(self._config, partition_name=partition)
         if ok:
             self.show_message("AI 助手", f"{message}\n首条指令已自动加载 Tadado skill")
         else:

@@ -56,6 +56,15 @@ def run_cli(argv: list[str]) -> int:
     except SystemExit as exc:  # argparse prints usage itself
         return int(exc.code or 0)
 
+    # 分区上下文兜底：托盘启动的会话注入 TADADO_PARTITION（当前分区名），
+    # 分区作用域命令未显式指定 --partition 时默认使用它，防止模型漏传导致查全局。
+    _env_partition = os.environ.get("TADADO_PARTITION")
+    if _env_partition and args.command in (
+        "list", "tags", "report", "export", "activity", "today", "add",
+    ):
+        if not getattr(args, "partition", None):
+            args.partition = _env_partition
+
     from PySide6.QtCore import QCoreApplication
 
     app = QCoreApplication(["tadado-cli"])  # noqa: F841 — signals need an event core
