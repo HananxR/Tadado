@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -91,8 +92,8 @@ def _tadado_cli_path() -> str | None:
 
 
 def _project_slug(path: str) -> str:
-    """Claude Code 项目目录命名规则：盘符冒号与路径分隔符替换为 '-'."""
-    return os.path.abspath(path).replace(":", "-").replace("\\", "-").replace("/", "-")
+    """Claude Code 项目目录命名规则：非字母数字字符全部替换为 '-'."""
+    return re.sub(r"[^0-9a-zA-Z]", "-", os.path.abspath(path))
 
 
 def _sessions_dir(provider: str, workspace: str) -> Path:
