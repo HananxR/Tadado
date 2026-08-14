@@ -128,6 +128,29 @@ def _render_human(result: dict) -> str:
     if rtype == "recurrence":
         rule = result.get("rule")
         return f"周期任务 {result['task_id'][:8]}: {rule or '（无周期规则）'}"
+    if rtype == "report":
+        is_week = result.get("period") == "week"
+        title = f"{'周报' if is_week else '月报'}摘要（{result['from']} ~ {result['to']}）"
+        cur = "本周" if is_week else "本月"
+        nxt = "下周" if is_week else "下月"
+        lines = [title, ""]
+        for section, label in (("worked", f"{cur}工作内容"), ("planned", f"{nxt}工作计划")):
+            lines.append(f"{label}：")
+            lines.append("")
+            for g in result["groups"]:
+                items = g[section]
+                if not items:
+                    continue
+                lines.append(f"#{g['tag']}")
+                lines.append("")
+                for i, item in enumerate(items, 1):
+                    if section == "worked":
+                        suffix = ("；".join(item["points"]) + "；") if item["points"] else ""
+                        lines.append(f"{i}. {item['title']}：{suffix}")
+                    else:
+                        lines.append(f"{i}. {item['title']}；")
+                lines.append("")
+        return "\n".join(lines).rstrip() + "\n"
     if rtype == "export":
         return f"已导出 {result['count']} 个任务 → {result['path']}"
     return json.dumps(result, ensure_ascii=False, indent=2)

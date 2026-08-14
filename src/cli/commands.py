@@ -529,6 +529,109 @@ def _cmd_reminder(args, svc, config) -> dict:
     }
 
 
+def _cmd_report(args, svc, config) -> dict:
+    """Weekly/monthly report summary straight from the database."""
+    today = date.today()
+    period = args.period or "week"
+    if args.date_from:
+        d_from = _parse_date(args.date_from)
+    elif period == "month":
+        shifted = today.month + (args.offset or 0)
+        year, month = today.year + (shifted - 1) // 12, (shifted - 1) % 12 + 1
+        d_from = date(year, month, 1)
+    else:
+        monday = today - timedelta(days=today.isoweekday() - 1)
+        d_from = monday + timedelta(weeks=(args.offset or 0))
+    d_to = _parse_date(args.date_to) if args.date_to else today
+
+    pid = _resolve_partition_id(svc, args.partition) if args.partition else None
+    tags_filter = set(args.tag) if getattr(args, "tag", None) else None
+    from_iso, to_iso = d_from.isoformat(), d_to.isoformat()
+
+    groups: dict[str, dict[str, list]] = {}
+    stats = {"entries": 0, "touched_tasks": 0, "completed": 0, "created": 0}
+
+    def _bucket(task: Task, key: str, item: dict) -> None:
+        for tag in task.tags or ["未分类"]:
+            groups.setdefault(tag, {"worked": [], "planned": []})[key].append(item)
+
+    def _noise(content: str) -> bool:
+        return (
+            content == "创建任务"
+            or content.startswith("[批量操作]")
+            or content.startswith("状态变更为")
+        )
+
+    def _to_date(value) -> date | None:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str) and value:
+            try:
+                return date.fromisoformat(value[:10])
+            except ValueError:
+                return None
+        return None
+
+    for t in svc.get_all():
+        if pid and t.partition_id != pid:
+            continue
+        if tags_filter and not tags_filter.issubset(set(t.tags)):
+            continue
+        logs = sorted(t.activity_log or [], key=lambda e: str(e.get("ts", "")))
+        in_range = [e for e in logs
+                    if from_iso <= str(e.get("ts", ""))[:10] <= to_iso]
+        created_in = bool(t.created_at) and from_iso <= str(t.created_at)[:10] <= to_iso
+        completed_at = _to_date(t.completed_at)
+        completed_in = bool(completed_at) and d_from <= completed_at <= d_to
+        # 「动过」= 期内有实质进展或期内完成；仅创建/批量操作/状态变更不算实质进展
+        substantive = [
+            e for e in in_range
+            if str(e.get("content", "")).strip() and not _noise(str(e.get("content", "")).strip())
+        ]
+        if substantive or completed_in:
+            stats["touched_tasks"] += 1
+            stats["entries"] += len(in_range)
+            stats["created"] += 1 if created_in else 0
+            stats["completed"] += 1 if completed_in else 0
+            points = [str(e.get("content", "")).strip() for e in substantive]
+            progress_from = in_range[0].get("progress") if in_range else None
+            progress_to = in_range[-1].get("progress") if in_range else None
+            _bucket(t, "worked", {
+                "task_id": t.id,
+                "title": t.title,
+                "status": t.status.value,
+                "completed_in_period": completed_in,
+                "points": points,
+                "progress_from": progress_from,
+                "progress_to": progress_to,
+            })
+        elif not t.archived and not t.suspended and t.status != TaskStatus.DONE:
+            _bucket(t, "planned", {
+                "task_id": t.id,
+                "title": t.title,
+                "status": t.status.value,
+                "deadline_date": t.deadline_date.isoformat() if t.deadline_date else None,
+                "urgency": t.urgency,
+                "countdown_days": (t.deadline_date - today).days if t.deadline_date else None,
+            })
+
+    for g in groups.values():
+        g["worked"].sort(key=lambda i: i["task_id"])
+        g["planned"].sort(
+            key=lambda i: (i.get("deadline_date") or "9999", i["urgency"])
+        )
+    return {
+        "type": "report",
+        "period": period,
+        "from": from_iso,
+        "to": to_iso,
+        "stats": stats,
+        "groups": [{"tag": tag, **g} for tag, g in sorted(groups.items())],
+    }
+
+
 def _cmd_export(args, svc, config) -> dict:
     pid = _resolve_partition_id(svc, args.partition) if args.partition else None
     f = TaskFilter(partition_id=pid, show_archived=True)
@@ -560,4 +663,5 @@ _HANDLERS = {
     "recurrence": _cmd_recurrence,
     "reminder": _cmd_reminder,
     "export": _cmd_export,
+    "report": _cmd_report,
 }

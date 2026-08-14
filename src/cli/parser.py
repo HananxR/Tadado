@@ -129,6 +129,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_rem.add_argument("--quiet-start", help="安静时段开始 HH:MM")
     p_rem.add_argument("--quiet-end", help="安静时段结束 HH:MM")
 
+    # report
+    p_rep = sub.add_parser("report", help="周报/月报摘要（直读数据库，区别于活动分析导出）")
+    p_rep.add_argument("--period", choices=["week", "month"], default="week",
+                       help="周期类型（默认 week）")
+    p_rep.add_argument("--offset", type=int, default=0,
+                       help="周期偏移（-1=上一周期）")
+    p_rep.add_argument("--from", dest="date_from", help="起始日 YYYY-MM-DD（覆盖周期计算）")
+    p_rep.add_argument("--to", dest="date_to", help="结束日 YYYY-MM-DD（默认今天）")
+    p_rep.add_argument("--partition", help="分区 ID/名称")
+    p_rep.add_argument("--tag", action="append", help="标签过滤（可多次）")
+
     # export
     p_exp = sub.add_parser("export", help="导出任务")
     p_exp.add_argument("--fmt", choices=["md", "xlsx"], default="md", help="格式（默认 md）")

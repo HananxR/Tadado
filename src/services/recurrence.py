@@ -22,9 +22,9 @@ _RECUR_PATTERN = re.compile(r"^\+?(\d+)([dwmy])$")
 class TaskRecurrence:
     """Listens for task completion and creates the next instance for recurring tasks."""
 
-    def __init__(self, repository: TaskRepository) -> None:
+    def __init__(self, repository: TaskRepository, signal_bus=None) -> None:
         self._repository = repository
-        self._signal_bus = get_signal_bus()
+        self._signal_bus = signal_bus or get_signal_bus()
         self._signal_bus.task_status_changed.connect(self._on_status_changed)
 
     # ------------------------------------------------------------------

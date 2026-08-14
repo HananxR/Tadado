@@ -38,8 +38,16 @@ def parser() -> argparse.ArgumentParser:
 
 
 @pytest.fixture
-def service(repository) -> TaskService:
-    return TaskService(repository)
+def test_bus():
+    """Per-test signal bus — isolates handlers from closed repositories."""
+    from src.utils.signal_bus import SignalBus
+
+    return SignalBus()
+
+
+@pytest.fixture
+def service(repository, test_bus) -> TaskService:
+    return TaskService(repository, signal_bus=test_bus)
 
 
 def _args(parser, *argv: str) -> argparse.Namespace:
@@ -198,11 +206,11 @@ def test_partition_by_name(parser, service):
     assert r["task"]["partition_name"] == name
 
 
-def test_done_and_recurrence_clone(parser, service, repository):
+def test_done_and_recurrence_clone(parser, service, repository, test_bus):
     from src.services.recurrence import TaskRecurrence
 
     repository.update_partition_archive_days(service.ensure_default_partition(), 30)
-    recurrence = TaskRecurrence(repository)  # mirrors app.py wiring
+    recurrence = TaskRecurrence(repository, signal_bus=test_bus)  # mirrors app.py wiring
     execute("add", _args(
         parser, "add", "- [ ] TODO <2026-08-20> 周期任务", "--recur", "+1w",
     ), service)
@@ -296,6 +304,55 @@ def test_render_json_and_human(parser, service):
     assert json.loads(render(r, "json"))["count"] == 1
     human = render(r, "human")
     assert "渲染任务" in human and "#工作" in human
+
+
+def test_report_week(parser, service, repository):
+    """report 聚合本周工作内容与下周计划，按标签分组并剔除噪声条目."""
+    from datetime import datetime
+
+    repository.update_partition_archive_days(service.ensure_default_partition(), 30)
+    # 本周已动过的任务：带要点与噪声条目
+    r = execute("add", _args(parser, "add", "- [x] DONE <2026-08-20> 报告任务A #工作"), service)
+    task = service.get_task(r["task"]["id"])
+    task.activity_log = list(task.activity_log or []) + [
+        {"ts": datetime.now().isoformat(), "content": "完成初稿", "status": "DONE", "progress": 100},
+        {"ts": datetime.now().isoformat(), "content": "[批量操作] 延后处理: 2026-08-20 -> 2026-08-21（+1天）",
+         "status": "DONE", "progress": 100},
+    ]
+    service.update_task(task)
+    # 未来未动的任务 → 下周计划
+    execute("add", _args(parser, "add", "- [ ] TODO <2026-08-21> 计划任务B #工作"), service)
+
+    report = execute("report", _args(parser, "report"), service)
+    assert report["type"] == "report" and report["period"] == "week"
+    group = report["groups"][0]
+    assert group["tag"] == "工作"
+    worked = [i for i in group["worked"] if i["title"] == "报告任务A"][0]
+    assert worked["points"] == ["完成初稿"]  # 批量操作/创建任务 已剔除
+    planned_titles = [i["title"] for i in group["planned"]]
+    assert "计划任务B" in planned_titles
+    assert "报告任务A" not in planned_titles  # 已动过的不进下周计划
+    human = render(report, "human")
+    assert "本周工作内容" in human and "下周工作计划" in human and "#工作" in human
+
+
+def test_report_offset_last_week(parser, service):
+    """--offset -1 覆盖上一周的活动."""
+    from datetime import datetime, timedelta
+
+    r = execute("add", _args(parser, "add", "上周任务"), service)
+    task = service.get_task(r["task"]["id"])
+    last_week = (datetime.now() - timedelta(days=7)).isoformat()
+    task.activity_log = list(task.activity_log or []) + [
+        {"ts": last_week, "content": "上周完成的工作", "status": "DOING", "progress": 40},
+    ]
+    service.update_task(task)
+    current = execute("report", _args(parser, "report"), service)
+    assert all("上周完成的工作" not in i["points"]
+               for g in current["groups"] for i in g["worked"])
+    previous = execute("report", _args(parser, "report", "--offset", "-1"), service)
+    assert any("上周完成的工作" in i["points"]
+               for g in previous["groups"] for i in g["worked"])
 
 
 def test_activity_timeline(parser, service):
