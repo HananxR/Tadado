@@ -93,38 +93,59 @@ def _parse_changelog_md() -> list[dict]:
     return versions
 
 
-class _MenuRow(QPushButton):
-    """WeChat-style menu row: left title + right detail/chevron, hairline hover."""
+class _GridTile(QPushButton):
+    """2×2 等宽网格卡片：图标 + 标题 + 可选状态行，对称布局无宽度差."""
 
-    def __init__(self, title: str, detail: str = "›", parent=None) -> None:
+    def __init__(self, icon: str, title: str, parent=None) -> None:
         super().__init__(parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setObjectName("aboutMenuRow")
+        self.setFixedHeight(72)
         t = get_tokens()
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 10, 12, 10)
-        layout.setSpacing(8)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(2)
+
+        icon_label = QLabel(icon)
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet("font-size: 20px; border: none; background: transparent;")
+        layout.addWidget(icon_label)
 
         title_label = QLabel(title)
-        title_label.setStyleSheet(f"font-size: 13px; color: {t.text_primary};")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet(
+            f"font-size: 12px; font-weight: 600; color: {t.text_primary};"
+            f"border: none; background: transparent;"
+        )
         layout.addWidget(title_label)
-        layout.addStretch()
 
-        self._detail = QLabel(detail)
-        self._detail.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
-        layout.addWidget(self._detail)
+        self._status_label = QLabel("")
+        self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status_label.setStyleSheet(
+            f"font-size: 10px; color: {t.text_secondary}; border: none;"
+            f"background: transparent;"
+        )
+        layout.addWidget(self._status_label)
 
         self.setStyleSheet(
-            f"QPushButton#aboutMenuRow {{"
-            f"  border: none; background: transparent; text-align: left;"
-            f"  border-bottom: 1px solid {t.border_primary};"
+            f"QPushButton {{"
+            f"  background: {t.surface_raised};"
+            f"  border: 1px solid {t.border_primary};"
+            f"  border-radius: 8px;"
             f"}}"
-            f"QPushButton#aboutMenuRow:hover {{ background: {t.bg_tertiary}; }}"
+            f"QPushButton:hover {{"
+            f"  background: {t.bg_tertiary};"
+            f"  border-color: {t.accent};"
+            f"}}"
         )
 
-    def set_detail(self, text: str) -> None:
-        self._detail.setText(text)
+    def set_status(self, text: str, color: str | None = None) -> None:
+        t = get_tokens()
+        self._status_label.setText(text)
+        self._status_label.setStyleSheet(
+            f"font-size: 10px; color: {color or t.text_secondary};"
+            f"border: none; background: transparent;"
+        )
 
 
 def _close_button(clicked) -> QPushButton:
@@ -263,9 +284,8 @@ class AboutDialog(QDialog):
         self.setWindowTitle("关于 Tadado")
         self.setObjectName("aboutDialog")
         self.setFixedWidth(420)
-        self.resize(420, 540)
-        self.setMinimumHeight(500)
-        self._channels_expanded = False
+        self.resize(420, 520)
+        self.setMinimumHeight(480)
 
         self._build_ui()
 
@@ -322,60 +342,59 @@ class AboutDialog(QDialog):
         layout.addWidget(tagline)
         layout.addSpacing(22)
 
-        # ── Menu rows（分组：服务 / 下载 / 反馈） ──
-        self._check_row = _MenuRow("检查更新")
-        self._check_row.clicked.connect(self._on_check_updates)
-        layout.addWidget(self._check_row)
+        # ── 2×2 等宽网格卡片：对称布局，无宽度差异 ──
+        from PySide6.QtWidgets import QGridLayout
 
-        history_row = _MenuRow("版本更新记录")
-        history_row.clicked.connect(self._open_history)
-        layout.addWidget(history_row)
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        grid.setColumnStretch(0, 1)
+        grid.setColumnStretch(1, 1)
 
-        layout.addSpacing(14)
+        self._check_tile = _GridTile("🔄", "检查更新")
+        self._check_tile.clicked.connect(self._on_check_updates)
+        grid.addWidget(self._check_tile, 0, 0)
 
-        # 下载渠道：行内展开（不弹二级窗口）
-        self._channels_row = _MenuRow("下载渠道", "▾")
-        self._channels_row.clicked.connect(self._toggle_channels)
-        layout.addWidget(self._channels_row)
+        history_tile = _GridTile("📜", "版本更新记录")
+        history_tile.clicked.connect(self._open_history)
+        grid.addWidget(history_tile, 0, 1)
 
-        self._ch_github_row = _MenuRow("　GitHub Releases")
-        self._ch_github_row.clicked.connect(
+        github_tile = _GridTile("🌐", "GitHub Releases")
+        github_tile.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(_GITHUB_RELEASES))
         )
-        self._ch_github_row.setVisible(False)
-        layout.addWidget(self._ch_github_row)
+        grid.addWidget(github_tile, 1, 0)
 
-        self._ch_aliyun_row = _MenuRow("　阿里云盘（仅 .exe）")
-        self._ch_aliyun_row.clicked.connect(
+        aliyun_tile = _GridTile("☁️", "阿里云盘")
+        aliyun_tile.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL))
         )
-        self._ch_aliyun_row.setVisible(False)
-        layout.addWidget(self._ch_aliyun_row)
+        grid.addWidget(aliyun_tile, 1, 1)
 
-        layout.addSpacing(14)
+        layout.addLayout(grid)
+        layout.addSpacing(18)
 
-        email_row = _MenuRow("意见反馈", "hanxy8413@gmail.com")
-        email_row.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl("mailto:hanxy8413@gmail.com"))
+        # ── 反馈行（小图标链接，居中） ──
+        feedback = QLabel(
+            f'<a href="mailto:hanxy8413@gmail.com" '
+            f'style="color:{t.text_secondary}; text-decoration:none;">✉ 邮箱</a>'
+            f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+            f'<span style="color:{t.text_secondary};">💬 Pyvan 公众号</span>'
+            f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+            f'<a href="{_GITHUB_REPO}" '
+            f'style="color:{t.text_secondary}; text-decoration:none;">GitHub</a>'
         )
-        layout.addWidget(email_row)
-
-        wechat_row = _MenuRow("微信公众号", "Pyvan")
-        layout.addWidget(wechat_row)
-
+        feedback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        feedback.setOpenExternalLinks(True)
+        feedback.setStyleSheet("font-size: 11px;")
+        layout.addWidget(feedback)
         layout.addStretch()
 
-        # ── Copyright（GitHub 以超链接呈现） ──
+        # ── Copyright ──
         copyright_label = QLabel(
-            f'Copyright © {datetime.now().year} HananxR · MIT License · '
-            f'<a href="{_GITHUB_REPO}" style="color:{t.accent}; text-decoration:none;">GitHub</a>'
+            f"Copyright © {datetime.now().year} HananxR · MIT License"
         )
         copyright_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        copyright_label.setOpenExternalLinks(True)
-        copyright_label.setTextFormat(Qt.TextFormat.RichText)
-        copyright_label.setStyleSheet(
-            f"font-size: 10px; color: {t.text_secondary};"
-        )
+        copyright_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary};")
         layout.addWidget(copyright_label)
 
         outer.addWidget(content, 1)
@@ -383,23 +402,15 @@ class AboutDialog(QDialog):
     def _open_history(self) -> None:
         VersionHistoryDialog(self).exec()
 
-    def _toggle_channels(self) -> None:
-        """行内展开/收起下载渠道，窗口高度随内容自适应."""
-        self._channels_expanded = not self._channels_expanded
-        self._ch_github_row.setVisible(self._channels_expanded)
-        self._ch_aliyun_row.setVisible(self._channels_expanded)
-        self._channels_row.set_detail("▴" if self._channels_expanded else "▾")
-        self.adjustSize()
-
     # ── Update check slots ────────────────────────────────────────
 
     def _on_check_updates(self) -> None:
         if self._update_checker is None:
-            self._check_row.set_detail("不可用")
+            self._check_tile.set_status("不可用")
             return
 
-        self._check_row.setEnabled(False)
-        self._check_row.set_detail("检查中…")
+        self._check_tile.setEnabled(False)
+        self._check_tile.set_status("检查中…")
         self._update_checker.check_finished.connect(
             self._on_check_finished, type=Qt.ConnectionType.SingleShotConnection
         )
@@ -410,27 +421,18 @@ class AboutDialog(QDialog):
 
     def _on_check_finished(self, update_info: dict | None) -> None:
         t = get_tokens()
-        self._check_row.setEnabled(True)
+        self._check_tile.setEnabled(True)
         if update_info is None:
-            self._check_row.set_detail("✓ 已是最新版本")
-            self._check_row._detail.setStyleSheet(
-                f"font-size: 12px; color: {t.success};"
-            )
+            self._check_tile.set_status("✓ 已是最新版本", t.success)
         else:
             self._update_info = update_info
             latest = update_info.get("latest_version", "")
-            self._check_row.set_detail(f"发现新版本 {latest}")
-            self._check_row._detail.setStyleSheet(
-                f"font-size: 12px; color: {t.accent}; font-weight: 600;"
-            )
+            self._check_tile.set_status(f"发现新版本 {latest}", t.accent)
 
     def _on_check_error(self, message: str) -> None:
         t = get_tokens()
-        self._check_row.setEnabled(True)
-        self._check_row.set_detail(message)
-        self._check_row._detail.setStyleSheet(
-            f"font-size: 12px; color: {t.danger};"
-        )
+        self._check_tile.setEnabled(True)
+        self._check_tile.set_status(message, t.danger)
 
     # ── helpers ─────────────────────────────────────────────────────
 
