@@ -123,16 +123,16 @@ class StartupShield(QWidget):
 
         # ── theme palette ──────────────────────────────────────────
         if is_dark:
-            self._bg = QColor("#24253a")
-            self._fg = QColor("#c9d1d9")
+            self._bg = QColor("#272835")
+            self._fg = QColor("#d8d5c9")
             self._accent = QColor("#7c83ea")
-            self._sub = QColor("#8b949e")
+            self._sub = QColor("#9d988b")
             self._overlay_alpha = 140  # ~55%
         else:
-            self._bg = QColor("#ffffff")
-            self._fg = QColor("#2c2c2c")
+            self._bg = QColor("#f6f4ef")
+            self._fg = QColor("#3a3832")
             self._accent = QColor("#4d57c3")
-            self._sub = QColor("#999999")
+            self._sub = QColor("#8a857a")
             self._overlay_alpha = 170  # ~67%
 
         # Logo gradient stops for Tadado title (theme-independent brand)
@@ -261,9 +261,9 @@ class StartupShield(QWidget):
         )
         date_label = QLabel(date_str)
         date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        date_label.setFont(QFont("Microsoft YaHei", 12))
+        date_label.setFont(QFont("Microsoft YaHei", 13, QFont.Weight.DemiBold))
         date_label.setStyleSheet(
-            f"color: {self._sub.name()}; background: transparent;"
+            f"color: {self._fg.name()}; background: transparent;"
         )
         layout.addWidget(date_label)
 
@@ -288,9 +288,9 @@ class StartupShield(QWidget):
         # loading text
         loading = QLabel("正在加载…")
         loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        loading.setFont(QFont("Microsoft YaHei", 10))
+        loading.setFont(QFont("Microsoft YaHei", 11, QFont.Weight.Bold))
         loading.setStyleSheet(
-            f"color: {self._sub.name()}; background: transparent;"
+            f"color: {self._accent.name()}; background: transparent;"
         )
         layout.addWidget(loading)
 
