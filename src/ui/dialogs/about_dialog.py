@@ -1,4 +1,10 @@
-"""About dialog — version info, update check, download channels, and contact."""
+"""About dialog — WeChat-style minimal about page.
+
+Layout (mirrors 微信 → 设置 → 关于微信):
+    centred app icon + name + version + tagline,
+    hairline menu rows (检查更新 / 下载渠道 / 交流反馈) with right chevrons,
+    minimal changelog section, and a subtle close button.
+"""
 
 from __future__ import annotations
 
@@ -20,35 +26,46 @@ from ...utils.design_tokens import get_surface_color, get_tokens, is_dark
 from ...utils.win32_theme import is_dark_mode_supported, set_window_dark_mode
 from ...version import get_release_highlights, get_version_display
 
-_FEATURES = [
-    ("📝 任务管理", "Markdown 语法一键配置优先级、截止日期与标签分类"),
-    ("📊 活动分析", "日历热力图、活动时间线、活动报告汇总与导出"),
-    ("🔧 批量操作", "全选、右键批量变更状态、延后、中止、删除"),
-    ("📦 智能归档", "即时/延迟/永不归档，追溯归档，状态变更自动解归档"),
-    ("🏷 标签管理", "重命名、合并，全局自动同步"),
-    ("🔒 分区管理", "多分区隔离，密码保护，自动锁定"),
-]
-
 _GITHUB_REPO = "https://github.com/HananxR/Tadado"
 _GITHUB_RELEASES = f"{_GITHUB_REPO}/releases"
 
 
-class AboutDialog(QDialog):
-    """App information, version, update check, download channels, and contact."""
+class _MenuRow(QPushButton):
+    """WeChat-style menu row: left title + right detail/chevron, hairline hover."""
 
-    @staticmethod
-    def _build_channels_html(github_star: bool = False, aliyun_star: bool = False) -> str:
-        """Build download channels HTML with optional ⭐ recommendation marker."""
-        gh = "⭐ 推荐 " if github_star else ""
-        ay = "⭐ 推荐 " if aliyun_star else ""
-        return (
-            '<p style="margin:2px 0 2px 12px;font-size:11px;">'
-            f'🌐 <a href="{_GITHUB_RELEASES}" style="color: palette(link);">{gh}GitHub Releases</a>'
-            '</p>'
-            '<p style="margin:2px 0 2px 12px;font-size:11px;">'
-            f'☁️ <a href="{ALIYUN_DRIVE_URL}" style="color: palette(link);">{ay}阿里云盘（仅提供 .exe）</a>'
-            '</p>'
+    def __init__(self, title: str, detail: str = "›", parent=None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setObjectName("aboutMenuRow")
+        t = get_tokens()
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 10, 12, 10)
+        layout.setSpacing(8)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet(f"font-size: 13px; color: {t.text_primary};")
+        layout.addWidget(title_label)
+        layout.addStretch()
+
+        self._detail = QLabel(detail)
+        self._detail.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
+        layout.addWidget(self._detail)
+
+        self.setStyleSheet(
+            f"QPushButton#aboutMenuRow {{"
+            f"  border: none; background: transparent; text-align: left;"
+            f"  border-bottom: 1px solid {t.border_primary};"
+            f"}}"
+            f"QPushButton#aboutMenuRow:hover {{ background: {t.bg_tertiary}; }}"
         )
+
+    def set_detail(self, text: str) -> None:
+        self._detail.setText(text)
+
+
+class AboutDialog(QDialog):
+    """App information — minimal WeChat-style about page."""
 
     def __init__(
         self,
@@ -61,14 +78,45 @@ class AboutDialog(QDialog):
 
         self.setWindowTitle("关于 Tadado")
         self.setObjectName("aboutDialog")
-        self.resize(440, 560)
-        self.setMinimumSize(380, 480)
+        self.resize(420, 560)
+        self.setMinimumSize(360, 460)
 
+        self._build_ui()
+
+    # ------------------------------------------------------------------
+    # UI
+    # ------------------------------------------------------------------
+
+    def _build_ui(self) -> None:
         t = get_tokens()
 
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 8)
+        outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
+
+        # ── Top bar: title + close (subtle ✕, WeChat-style) ──
+        top = QWidget()
+        top_layout = QHBoxLayout(top)
+        top_layout.setContentsMargins(16, 10, 10, 6)
+        title_label = QLabel("关于 Tadado")
+        title_label.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {t.text_primary};"
+        )
+        top_layout.addWidget(title_label)
+        top_layout.addStretch()
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(28, 28)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  border: none; border-radius: 4px; background: transparent;"
+            f"  color: {t.text_secondary}; font-size: 13px;"
+            f"}}"
+            f"QPushButton:hover {{ background: {t.bg_tertiary}; color: {t.text_primary}; }}"
+        )
+        close_btn.clicked.connect(self.reject)
+        top_layout.addWidget(close_btn)
+        outer.addWidget(top)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -77,97 +125,103 @@ class AboutDialog(QDialog):
 
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(32, 28, 32, 20)
+        layout.setContentsMargins(32, 8, 32, 20)
         layout.setSpacing(0)
 
-        # ── Logo ──
+        # ── Brand block (centred, generous whitespace) ──
         logo = QLabel()
         logo_path = self._find_icon("app_icon.svg")
         pix = QPixmap(logo_path) if logo_path else QPixmap()
         if not pix.isNull():
             pix = pix.scaled(
-                72, 72,
+                64, 64,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
             logo.setPixmap(pix)
         else:
             logo.setText("✦")
-            logo.setStyleSheet(f"font-size: 52px; color: {t.accent};")
+            logo.setStyleSheet(f"font-size: 44px; color: {t.accent};")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(logo)
         layout.addSpacing(14)
 
-        # ── Name + version ──
         name = QLabel("Tadado")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        name.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {t.text_primary};")
+        name.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {t.text_primary};")
         layout.addWidget(name)
-        layout.addSpacing(2)
+        layout.addSpacing(4)
 
-        ver = QLabel("Less noise. More done.")
+        ver = QLabel(f"Version {get_version_display()}")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ver.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
         layout.addWidget(ver)
-        layout.addSpacing(12)
+        layout.addSpacing(2)
 
-        # ── Separator ──
-        layout.addWidget(_h_line())
-        layout.addSpacing(14)
+        tagline = QLabel("Less Noise, More Done")
+        tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tagline.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
+        layout.addWidget(tagline)
+        layout.addSpacing(24)
 
-        # ── 特色功能说明 ──
-        feat_title = QLabel("特色功能说明")
-        feat_title.setStyleSheet(
-            f"font-size: 12px; font-weight: 700; color: {t.accent};"
+        # ── Menu rows ──
+        self._check_row = _MenuRow("检查更新", "检查中" if self._update_checker is None else "›")
+        self._check_row.clicked.connect(self._on_check_updates)
+        layout.addWidget(self._check_row)
+
+        self._github_row = _MenuRow("下载渠道 · GitHub Releases")
+        self._github_row.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(_GITHUB_RELEASES))
         )
-        layout.addWidget(feat_title)
-        layout.addSpacing(4)
+        layout.addWidget(self._github_row)
 
-        for title, desc in _FEATURES:
-            row = QLabel(
-                f'<span style="font-size:11px;font-weight:600;color:{t.text_primary};">{title}</span>'
-                f'<span style="font-size:11px;color:{t.text_secondary};">：{desc}</span>'
-            )
-            row.setWordWrap(True)
-            layout.addWidget(row)
-            layout.addSpacing(3)
+        self._aliyun_row = _MenuRow("下载渠道 · 阿里云盘")
+        self._aliyun_row.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL))
+        )
+        layout.addWidget(self._aliyun_row)
 
-        layout.addSpacing(4)
+        email_row = _MenuRow("意见反馈 · 邮箱", "hanxy8413@gmail.com")
+        email_row.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl("mailto:hanxy8413@gmail.com"))
+        )
+        layout.addWidget(email_row)
 
-        # ── Separator ──
-        layout.addWidget(_h_line())
-        layout.addSpacing(14)
+        wechat_row = _MenuRow("微信公众号", "Pyvan")
+        wechat_row.set_detail("Pyvan")
+        layout.addWidget(wechat_row)
 
-        # ══════════════════════════════════════════════════════════════
-        # 版本更新记录
-        # ══════════════════════════════════════════════════════════════
+        repo_row = _MenuRow("GitHub 仓库")
+        repo_row.clicked.connect(
+            lambda: QDesktopServices.openUrl(QUrl(_GITHUB_REPO))
+        )
+        layout.addWidget(repo_row)
+
+        layout.addSpacing(20)
+
+        # ── Changelog (minimal, no card) ──
         highlights = get_release_highlights()
         if highlights:
             _CAT_ICONS = {"新增": "✨", "优化": "🔧", "修复": "🐛"}
-            # 更新日志放入分层卡片，行高 1.7 防拥挤
             hl_parts = [
-                f'<div style="background:{t.surface_raised};'
-                f'border:1px solid {t.border_primary};border-radius:8px;'
-                f'padding:10px 14px 12px 14px;">'
-                f'<p style="margin:0 0 4px 0;font-size:12px;font-weight:700;'
-                f'color:{t.accent};">📋 版本更新记录 · {get_version_display()}</p>'
+                f'<p style="margin:0 0 6px 0;font-size:12px;font-weight:700;'
+                f'color:{t.text_primary};">版本更新记录</p>'
             ]
             for cat, items in highlights.items():
                 if not items:
                     continue
                 icon = _CAT_ICONS.get(cat, "•")
                 hl_parts.append(
-                    f'<p style="margin:8px 0 2px 0;font-size:11px;font-weight:700;'
+                    f'<p style="margin:8px 0 2px 0;font-size:11px;font-weight:600;'
                     f'color:{t.text_primary};">{icon} {cat}</p>'
                 )
                 for item in items:
                     safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                     safe = safe.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
                     hl_parts.append(
-                        f'<p style="margin:2px 0 2px 10px;font-size:11px;'
+                        f'<p style="margin:2px 0 2px 8px;font-size:11px;'
                         f'line-height:1.7;color:{t.text_secondary};">· {safe}</p>'
                     )
-            hl_parts.append("</div>")
             hl_label = QLabel("".join(hl_parts))
             hl_label.setTextFormat(Qt.TextFormat.RichText)
         else:
@@ -179,132 +233,26 @@ class AboutDialog(QDialog):
         hl_label.setWordWrap(True)
         layout.addWidget(hl_label)
 
-        # ── 下载渠道 ──
-        section_label2 = QLabel("下载渠道")
-        section_label2.setStyleSheet(
-            f"font-size: 12px; font-weight: 700; color: {t.accent};"
-        )
-        layout.addSpacing(10)
-        layout.addWidget(section_label2)
-        layout.addSpacing(4)
-
-        self._channels_label = QLabel(self._build_channels_html())
-        self._channels_label.setOpenExternalLinks(True)
-        self._channels_label.setStyleSheet("font-size: 11px;")
-        self._channels_label.setWordWrap(True)
-        layout.addWidget(self._channels_label)
-
-        # Update check (below channels, inline result avoids empty row)
-        check_row = QWidget()
-        check_row_layout = QHBoxLayout(check_row)
-        check_row_layout.setContentsMargins(0, 4, 0, 0)
-        check_row_layout.setSpacing(8)
-
-        self._check_btn = QPushButton("检查更新")
-        self._check_btn.setFixedHeight(26)
-        self._check_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._check_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size: 11px; padding: 2px 12px;"
-            f"  border: 1px solid {t.border_primary};"
-            f"  border-radius: 4px;"
-            f"  background: {t.bg_secondary};"
-            f"  color: {t.text_primary};"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  border-color: {t.accent};"
-            f"  color: {t.accent};"
-            f"}}"
-            f"QPushButton:disabled {{"
-            f"  color: {t.text_disabled};"
-            f"}}"
-        )
-        self._check_btn.clicked.connect(self._on_check_updates)
-        check_row_layout.addWidget(self._check_btn)
-
-        self._result_label = QLabel("")
-        self._result_label.setWordWrap(True)
-        self._result_label.setStyleSheet(
-            f"font-size: 11px; color: {t.text_secondary};"
-        )
-        check_row_layout.addWidget(self._result_label, 1)
-        layout.addWidget(check_row)
-
-        layout.addSpacing(14)
-
-        # ── Separator ──
-        layout.addWidget(_h_line())
-        layout.addSpacing(14)
-
-        # ══════════════════════════════════════════════════════════════
-        # 交流反馈
-        # ══════════════════════════════════════════════════════════════
-        contact_title = QLabel("交流反馈")
-        contact_title.setStyleSheet(
-            f"font-size: 12px; font-weight: 700; color: {t.accent};"
-        )
-        layout.addWidget(contact_title)
-        layout.addSpacing(4)
-
-        email = QLabel(
-            f'📧 <a href="mailto:hanxy8413@gmail.com" style="color: palette(link);">'
-            f'hanxy8413@gmail.com</a>'
-        )
-        email.setOpenExternalLinks(True)
-        email.setStyleSheet("font-size: 11px;")
-        layout.addWidget(email)
-
-        wechat = QLabel("💬 微信公众号：Pyvan")
-        wechat.setStyleSheet("font-size: 11px;")
-        layout.addWidget(wechat)
-
-        repo = QLabel(
-            f'🌐 <a href="{_GITHUB_REPO}" style="color: palette(link);">'
-            f'github.com/HananxR/Tadado</a>'
-        )
-        repo.setOpenExternalLinks(True)
-        repo.setStyleSheet("font-size: 11px;")
-        layout.addWidget(repo)
-
-        layout.addSpacing(12)
-
         layout.addStretch()
+
+        # ── Copyright ──
+        copyright_label = QLabel("Copyright © 2026 HananxR · MIT License")
+        copyright_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        copyright_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary};")
+        layout.addWidget(copyright_label)
 
         scroll.setWidget(content)
         outer.addWidget(scroll, 1)
-
-        close_btn = QPushButton("关闭")
-        close_btn.setFixedHeight(30)
-        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        close_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  font-size: 12px; font-weight: bold; padding: 2px 36px;"
-            f"  border: none; border-radius: 4px;"
-            f"  background: {t.accent}; color: {t.text_on_accent};"
-            f"}}"
-            f"QPushButton:hover {{ background: {t.accent_hover}; }}"
-        )
-        close_btn.clicked.connect(self.reject)
-        close_wrapper = QHBoxLayout()
-        close_wrapper.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        close_wrapper.addWidget(close_btn)
-        outer.addLayout(close_wrapper)
 
     # ── Update check slots ────────────────────────────────────────
 
     def _on_check_updates(self) -> None:
         if self._update_checker is None:
-            self._result_label.setText("⚠ 更新检测不可用")
-            self._result_label.setVisible(True)
+            self._check_row.set_detail("不可用")
             return
 
-        self._check_btn.setEnabled(False)
-        self._check_btn.setText("检查中...")
-        self._result_label.setText("···")
-        self._result_label.setVisible(True)
-        # Reset channels to default (remove any ⭐ from previous check)
-        self._channels_label.setText(self._build_channels_html())
-
+        self._check_row.setEnabled(False)
+        self._check_row.set_detail("检查中…")
         self._update_checker.check_finished.connect(
             self._on_check_finished, type=Qt.ConnectionType.SingleShotConnection
         )
@@ -315,41 +263,27 @@ class AboutDialog(QDialog):
 
     def _on_check_finished(self, update_info: dict | None) -> None:
         t = get_tokens()
-        self._check_btn.setEnabled(True)
-        self._check_btn.setText("检查更新")
-
+        self._check_row.setEnabled(True)
         if update_info is None:
-            self._result_label.setText(
-                f'<span style="color:{t.success};">✓ 已是最新版本</span>'
+            self._check_row.set_detail(f"✓ 已是最新版本")
+            self._check_row._detail.setStyleSheet(
+                f"font-size: 12px; color: {t.success};"
             )
         else:
             self._update_info = update_info
             latest = update_info.get("latest_version", "")
-            source = update_info.get("source", "github")
-            self._result_label.setText(
-                f'→ 发现新版本 <b>{latest}</b>'
-                f'  <span style="color:{t.accent};">🆕</span>'
+            self._check_row.set_detail(f"发现新版本 {latest}")
+            self._check_row._detail.setStyleSheet(
+                f"font-size: 12px; color: {t.accent}; font-weight: 600;"
             )
-            # Mark the recommended channel with ⭐
-            if source == "aliyunpan":
-                self._channels_label.setText(
-                    self._build_channels_html(aliyun_star=True)
-                )
-            else:
-                self._channels_label.setText(
-                    self._build_channels_html(github_star=True)
-                )
 
     def _on_check_error(self, message: str) -> None:
-        """Shown only for non-timeout errors (e.g. GitHub rate limit)."""
         t = get_tokens()
-        self._check_btn.setEnabled(True)
-        self._check_btn.setText("检查更新")
-        self._result_label.setText(f"⚡ {message}")
-        self._result_label.setStyleSheet(
-            f"font-size: 11px; padding-top: 4px; color: {t.danger};"
+        self._check_row.setEnabled(True)
+        self._check_row.set_detail(message)
+        self._check_row._detail.setStyleSheet(
+            f"font-size: 12px; color: {t.danger};"
         )
-        self._result_label.setVisible(True)
 
     # ── helpers ─────────────────────────────────────────────────────
 
@@ -366,15 +300,3 @@ class AboutDialog(QDialog):
         super().showEvent(event)
         if is_dark_mode_supported() and is_dark():
             set_window_dark_mode(self, True, caption_color=get_surface_color())
-
-
-# ── Private helpers ──────────────────────────────────────────────────
-
-
-def _h_line() -> QFrame:
-    t = get_tokens()
-    line = QFrame()
-    line.setFrameShape(QFrame.Shape.HLine)
-    line.setStyleSheet(f"QFrame {{ color: {t.border_primary}; }}")
-    line.setFixedHeight(1)
-    return line
