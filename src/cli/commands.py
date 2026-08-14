@@ -552,8 +552,9 @@ def _cmd_report(args, svc, config) -> dict:
     stats = {"entries": 0, "touched_tasks": 0, "completed": 0, "created": 0}
 
     def _bucket(task: Task, key: str, item: dict) -> None:
-        for tag in task.tags or ["未分类"]:
-            groups.setdefault(tag, {"worked": [], "planned": []})[key].append(item)
+        """每个任务只归入其主标签组（第一个标签），避免多标签重复出现."""
+        tag = task.tags[0] if task.tags else "未分类"
+        groups.setdefault(tag, {"worked": [], "planned": []})[key].append(item)
 
     def _noise(content: str) -> bool:
         return (
