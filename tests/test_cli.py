@@ -20,7 +20,7 @@ from src.cli.forward import try_forward
 from src.cli.headless import _extract_format
 from src.cli.output import render
 from src.cli.parser import build_parser
-from src.cli.protocol import PROTO_HEADER, SERVER_NAME, read_message, write_message
+from src.cli.protocol import PROTO_HEADER
 from src.config import AppConfig
 from src.services.task_service import TaskService
 
