@@ -342,11 +342,15 @@ def test_report_week(parser, service, repository):
     assert worked["points"] == ["完成初稿"]  # 批量操作/创建任务 已剔除
     worked_titles = [i["title"] for i in group["worked"]]
     assert "新建任务B" in worked_titles  # 期内创建 → 本周工作内容
+    worked_b = [i for i in group["worked"] if i["title"] == "新建任务B"][0]
+    assert worked_b["no_progress"] is True  # 仅创建无进展 → 标注
     planned_titles = [i["title"] for i in group["planned"]]
-    assert "遗留任务C" in planned_titles  # 期前遗留 → 下周计划
-    assert "报告任务A" not in planned_titles and "新建任务B" not in planned_titles
+    # 期内创建无进展 → 进入下周计划并优先排列（置顶于期前遗留之前）
+    assert planned_titles == ["新建任务B", "遗留任务C"]
+    assert "报告任务A" not in planned_titles
     human = render(report, "human")
     assert "本周工作内容" in human and "下周工作计划" in human and "#工作" in human
+    assert "（无进展）" in human
 
 
 def test_report_offset_last_week(parser, service):

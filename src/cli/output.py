@@ -148,6 +148,8 @@ def _render_human(result: dict) -> str:
                     if section == "worked" and item["points"]:
                         suffix = "；".join(item["points"]) + "；"
                         lines.append(f"{i}. {item['title']}：{suffix}")
+                    elif section == "worked" and item.get("no_progress"):
+                        lines.append(f"{i}. {item['title']}；（无进展）")
                     else:
                         lines.append(f"{i}. {item['title']}；")
                 lines.append("")

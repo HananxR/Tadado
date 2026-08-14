@@ -600,6 +600,9 @@ def _cmd_report(args, svc, config) -> dict:
             e for e in in_range
             if str(e.get("content", "")).strip() and not _noise(str(e.get("content", "")).strip())
         ]
+        active = not t.archived and not t.suspended and t.status != TaskStatus.DONE
+        # 仅创建、未补进展 → 标注无进展，且进入下周计划优先排列
+        no_progress = created_in and not substantive and not completed_in
         if substantive or completed_in or created_in:
             stats["touched_tasks"] += 1
             stats["entries"] += len(in_range)
@@ -613,11 +616,12 @@ def _cmd_report(args, svc, config) -> dict:
                 "title": t.title,
                 "status": t.status.value,
                 "completed_in_period": completed_in,
+                "no_progress": no_progress,
                 "points": points,
                 "progress_from": progress_from,
                 "progress_to": progress_to,
             })
-        elif not t.archived and not t.suspended and t.status != TaskStatus.DONE:
+        if active and (no_progress or not (substantive or completed_in)):
             _bucket(t, "planned", {
                 "task_id": t.id,
                 "title": t.title,
@@ -625,12 +629,18 @@ def _cmd_report(args, svc, config) -> dict:
                 "deadline_date": t.deadline_date.isoformat() if t.deadline_date else None,
                 "urgency": t.urgency,
                 "countdown_days": (t.deadline_date - today).days if t.deadline_date else None,
+                "created_in_period": created_in,
             })
 
     for g in groups.values():
         g["worked"].sort(key=lambda i: i["task_id"])
+        # 期内创建无进展的任务优先安排（置顶），其余按截止日/优先级
         g["planned"].sort(
-            key=lambda i: (i.get("deadline_date") or "9999", i["urgency"])
+            key=lambda i: (
+                0 if i.get("created_in_period") else 1,
+                i.get("deadline_date") or "9999",
+                i["urgency"],
+            )
         )
     return {
         "type": "report",
