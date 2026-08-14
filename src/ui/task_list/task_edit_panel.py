@@ -981,6 +981,12 @@ class TaskEditPanel(QWidget):
         # Refresh timeline display if a task is loaded
         if self._current_task is not None and self._current_task.id != "":
             self._refresh_timeline()
+        # Markdown 编辑器打开时重刷内联样式——否则深→浅切换后残留旧主题背景（黑底）
+        if self._md_editor_wrapper.isVisible():
+            self._md_edit.setStyleSheet(
+                f"QTextEdit#mdEditor {{ background: {t.bg_secondary}; color: {t.text_primary}; "
+                f"border: 1px solid {t.border_primary}; font-size: 13px; padding: 7px 12px; }}"
+            )
         # Re-apply progress input QSS with current theme tokens
         self._progress_edit.setStyleSheet(
             f"QLineEdit {{ color: {t.text_primary}; background: {t.bg_secondary}; "

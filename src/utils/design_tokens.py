@@ -86,31 +86,34 @@ class HeatmapScheme:
 
 
 HEATMAP_SCHEMES: dict[str, dict[str, HeatmapScheme]] = {
+    # 所有方案的空单元格统一为暖纸色（与 heatmap_empty 令牌一致），
+    # 渐变终点锚定语义令牌：暖阳→warning 琥珀、新绿→success 绿、
+    # 海洋→accent 品牌靛青、樱花→暖调玫瑰，确保与整体暖灰体系协调。
     "sunbeam": {
         "light": HeatmapScheme(
             "暖阳",
             [
-                (245, 240, 224),  # empty: warm cream
-                (252, 228, 184),  # pale gold
-                (252, 216, 139),  # golden straw
-                (252, 200, 96),   # amber
-                (249, 168, 37),   # warm amber
-                (245, 124, 0),    # orange
-                (230, 81, 0),     # deep orange
-                (191, 54, 12),    # burnt orange
+                (228, 223, 213),  # empty: 暖纸
+                (246, 232, 201),  # pale gold
+                (247, 216, 156),  # golden straw
+                (244, 194, 110),  # amber
+                (236, 164, 64),   # warm amber
+                (217, 127, 38),   # amber（对齐 warning）
+                (191, 96, 32),    # deep amber
+                (162, 78, 28),    # burnt amber
             ],
         ),
         "dark": HeatmapScheme(
             "暖阳",
             [
-                (58, 48, 40),     # empty: dark brown
-                (80, 60, 35),     # dark amber
-                (120, 85, 40),    # bronze
-                (170, 120, 45),   # golden brown
-                (220, 160, 50),   # gold
-                (245, 190, 30),   # bright gold
-                (255, 210, 20),   # vivid yellow-gold
-                (255, 230, 60),   # sun yellow
+                (44, 45, 58),     # empty: 暖夜
+                (70, 60, 44),     # dark amber
+                (102, 80, 52),    # bronze
+                (140, 105, 62),   # golden brown
+                (184, 140, 74),   # gold
+                (224, 170, 63),   # amber
+                (240, 190, 80),   # bright amber
+                (250, 214, 110),  # sun amber
             ],
         ),
     },
@@ -118,27 +121,27 @@ HEATMAP_SCHEMES: dict[str, dict[str, HeatmapScheme]] = {
         "light": HeatmapScheme(
             "新绿",
             [
-                (217, 232, 208),  # empty: pale sage
-                (210, 235, 195),  # very light green
-                (180, 222, 168),  # light green
-                (140, 204, 130),  # medium-light green
-                (102, 187, 106),  # medium green
-                (76, 175, 80),    # green
-                (56, 142, 60),    # dark green
-                (46, 125, 50),    # deep emerald
+                (228, 223, 213),  # empty: 暖纸
+                (214, 232, 208),  # pale sage
+                (190, 224, 178),  # light green
+                (158, 212, 146),  # medium-light green
+                (120, 196, 118),  # medium green
+                (84, 178, 102),   # green
+                (56, 150, 86),    # green（对齐 success）
+                (41, 124, 72),    # deep green
             ],
         ),
         "dark": HeatmapScheme(
             "新绿",
             [
-                (42, 53, 40),     # empty: dark olive
-                (55, 71, 48),     # dark forest
-                (76, 110, 60),    # medium-dark green
-                (102, 150, 75),   # medium green
-                (129, 185, 95),   # medium-light green
-                (156, 210, 110),  # bright green
-                (180, 230, 130),  # vivid green
-                (200, 245, 150),  # neon lime
+                (44, 45, 58),     # empty: 暖夜
+                (48, 66, 52),     # dark forest
+                (54, 86, 60),     # medium-dark green
+                (64, 112, 70),    # medium green
+                (80, 142, 88),    # green
+                (104, 172, 110),  # bright green
+                (140, 196, 132),  # light green
+                (190, 224, 170),  # pale green
             ],
         ),
     },
@@ -146,27 +149,27 @@ HEATMAP_SCHEMES: dict[str, dict[str, HeatmapScheme]] = {
         "light": HeatmapScheme(
             "海洋",
             [
-                (214, 221, 230),  # empty: pale blue-gray
-                (200, 215, 235),  # light steel blue
-                (170, 200, 230),  # soft blue
-                (130, 175, 220),  # medium blue
-                (90, 150, 210),   # blue
-                (60, 120, 190),   # deeper blue
-                (40, 90, 165),    # dark blue
-                (21, 65, 140),    # deep navy
+                (228, 223, 213),  # empty: 暖纸
+                (214, 217, 235),  # pale periwinkle
+                (190, 196, 228),  # light indigo
+                (160, 170, 220),  # medium indigo
+                (126, 138, 210),  # indigo
+                (94, 108, 200),   # indigo（对齐 accent）
+                (70, 82, 186),    # deep indigo
+                (54, 64, 160),    # deep brand indigo
             ],
         ),
         "dark": HeatmapScheme(
             "海洋",
             [
-                (37, 42, 56),     # empty: dark navy
-                (45, 55, 80),     # dark blue
-                (55, 75, 120),    # medium-dark blue
-                (70, 100, 160),   # medium blue
-                (90, 135, 200),   # light blue
-                (120, 170, 230),  # sky blue
-                (80, 210, 210),   # teal
-                (0, 230, 200),    # bright cyan
+                (44, 45, 58),     # empty: 暖夜
+                (52, 55, 86),     # dark indigo
+                (60, 66, 118),    # medium-dark indigo
+                (72, 80, 148),    # medium indigo
+                (92, 100, 178),   # indigo
+                (116, 124, 208),  # bright indigo
+                (142, 150, 228),  # light indigo（对齐 accent）
+                (176, 182, 244),  # pale indigo
             ],
         ),
     },
@@ -174,27 +177,27 @@ HEATMAP_SCHEMES: dict[str, dict[str, HeatmapScheme]] = {
         "light": HeatmapScheme(
             "樱花",
             [
-                (245, 232, 236),  # empty: pale pink
-                (248, 220, 228),  # very light pink
-                (245, 200, 212),  # light pink
-                (240, 170, 188),  # medium pink
-                (230, 140, 160),  # rose pink
-                (215, 100, 130),  # deep rose
-                (190, 60, 95),    # cherry
-                (173, 20, 87),    # deep cherry
+                (228, 223, 213),  # empty: 暖纸
+                (243, 224, 224),  # pale rose
+                (240, 204, 208),  # light rose
+                (234, 178, 188),  # medium rose
+                (224, 148, 164),  # rose
+                (210, 116, 140),  # deep rose
+                (192, 88, 116),   # cherry
+                (170, 64, 94),    # deep cherry
             ],
         ),
         "dark": HeatmapScheme(
             "樱花",
             [
-                (58, 40, 50),     # empty: dark mauve
-                (80, 48, 60),     # dark rose
-                (120, 60, 80),    # medium-dark rose
-                (160, 75, 100),   # medium rose
-                (195, 95, 125),   # rose pink
-                (220, 120, 150),  # soft pink
-                (240, 150, 175),  # light pink
-                (255, 175, 195),  # blossom pink
+                (44, 45, 58),     # empty: 暖夜
+                (66, 50, 58),     # dark rose
+                (92, 60, 70),     # medium-dark rose
+                (124, 72, 84),    # medium rose
+                (158, 88, 102),   # rose
+                (190, 108, 124),  # soft rose
+                (216, 134, 150),  # light rose
+                (238, 164, 178),  # blossom rose
             ],
         ),
     },

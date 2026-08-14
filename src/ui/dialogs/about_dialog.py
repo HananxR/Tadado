@@ -93,7 +93,7 @@ class AboutDialog(QDialog):
             logo.setPixmap(pix)
         else:
             logo.setText("✦")
-            logo.setStyleSheet("font-size: 52px; color: #6366F1;")
+            logo.setStyleSheet(f"font-size: 52px; color: {t.accent};")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(logo)
         layout.addSpacing(14)
@@ -101,13 +101,13 @@ class AboutDialog(QDialog):
         # ── Name + version ──
         name = QLabel("Tadado")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        name.setStyleSheet("font-size: 22px; font-weight: 700;")
+        name.setStyleSheet(f"font-size: 22px; font-weight: 700; color: {t.text_primary};")
         layout.addWidget(name)
         layout.addSpacing(2)
 
         ver = QLabel("Less noise. More done.")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ver.setStyleSheet("font-size: 12px; color: palette(mid);")
+        ver.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
         layout.addWidget(ver)
         layout.addSpacing(12)
 
@@ -117,17 +117,20 @@ class AboutDialog(QDialog):
 
         # ── 特色功能说明 ──
         feat_title = QLabel("特色功能说明")
-        feat_title.setStyleSheet("font-size: 12px; font-weight: 700;")
+        feat_title.setStyleSheet(
+            f"font-size: 12px; font-weight: 700; color: {t.accent};"
+        )
         layout.addWidget(feat_title)
         layout.addSpacing(4)
 
         for title, desc in _FEATURES:
             row = QLabel(
-                f'<span style="font-size:11px;">{title}: {desc}</span>'
+                f'<span style="font-size:11px;font-weight:600;color:{t.text_primary};">{title}</span>'
+                f'<span style="font-size:11px;color:{t.text_secondary};">：{desc}</span>'
             )
             row.setWordWrap(True)
             layout.addWidget(row)
-            layout.addSpacing(2)
+            layout.addSpacing(3)
 
         layout.addSpacing(4)
 
@@ -141,23 +144,32 @@ class AboutDialog(QDialog):
         highlights = get_release_highlights()
         if highlights:
             _CAT_ICONS = {"新增": "✨", "优化": "🔧", "修复": "🐛"}
-            hl_parts = [f'<p style="margin:0 0 2px 0;font-size:12px;font-weight:700;">版本更新记录 ({get_version_display()})</p>']
+            # 更新日志放入分层卡片，行高 1.7 防拥挤
+            hl_parts = [
+                f'<div style="background:{t.surface_raised};'
+                f'border:1px solid {t.border_primary};border-radius:8px;'
+                f'padding:10px 14px 12px 14px;">'
+                f'<p style="margin:0 0 4px 0;font-size:12px;font-weight:700;'
+                f'color:{t.accent};">📋 版本更新记录 · {get_version_display()}</p>'
+            ]
             for cat, items in highlights.items():
                 if not items:
                     continue
                 icon = _CAT_ICONS.get(cat, "•")
                 hl_parts.append(
-                    f'<p style="margin:4px 0 2px 12px;font-size:11px;font-weight:600;">{icon} {cat}</p>'
+                    f'<p style="margin:8px 0 2px 0;font-size:11px;font-weight:700;'
+                    f'color:{t.text_primary};">{icon} {cat}</p>'
                 )
                 for item in items:
                     safe = item.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                     safe = safe.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
                     hl_parts.append(
-                        f'<p style="margin:2px 0 2px 24px;font-size:11px;">· {safe}</p>'
+                        f'<p style="margin:2px 0 2px 10px;font-size:11px;'
+                        f'line-height:1.7;color:{t.text_secondary};">· {safe}</p>'
                     )
+            hl_parts.append("</div>")
             hl_label = QLabel("".join(hl_parts))
             hl_label.setTextFormat(Qt.TextFormat.RichText)
-            hl_label.setStyleSheet(f"QLabel {{ color: {t.text_primary}; }}")
         else:
             hl_label = QLabel(
                 f'<p style="margin:6px 0 2px 0;font-size:11px;color:{t.text_secondary};">'
@@ -169,7 +181,9 @@ class AboutDialog(QDialog):
 
         # ── 下载渠道 ──
         section_label2 = QLabel("下载渠道")
-        section_label2.setStyleSheet("font-size: 12px; font-weight: 700;")
+        section_label2.setStyleSheet(
+            f"font-size: 12px; font-weight: 700; color: {t.accent};"
+        )
         layout.addSpacing(10)
         layout.addWidget(section_label2)
         layout.addSpacing(4)
@@ -226,7 +240,9 @@ class AboutDialog(QDialog):
         # 交流反馈
         # ══════════════════════════════════════════════════════════════
         contact_title = QLabel("交流反馈")
-        contact_title.setStyleSheet("font-size: 12px; font-weight: 700;")
+        contact_title.setStyleSheet(
+            f"font-size: 12px; font-weight: 700; color: {t.accent};"
+        )
         layout.addWidget(contact_title)
         layout.addSpacing(4)
 
@@ -260,6 +276,14 @@ class AboutDialog(QDialog):
         close_btn = QPushButton("关闭")
         close_btn.setFixedHeight(30)
         close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size: 12px; font-weight: bold; padding: 2px 36px;"
+            f"  border: none; border-radius: 4px;"
+            f"  background: {t.accent}; color: {t.text_on_accent};"
+            f"}}"
+            f"QPushButton:hover {{ background: {t.accent_hover}; }}"
+        )
         close_btn.clicked.connect(self.reject)
         close_wrapper = QHBoxLayout()
         close_wrapper.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -348,8 +372,9 @@ class AboutDialog(QDialog):
 
 
 def _h_line() -> QFrame:
+    t = get_tokens()
     line = QFrame()
     line.setFrameShape(QFrame.Shape.HLine)
-    line.setStyleSheet("QFrame { color: palette(mid); }")
+    line.setStyleSheet(f"QFrame {{ color: {t.border_primary}; }}")
     line.setFixedHeight(1)
     return line
