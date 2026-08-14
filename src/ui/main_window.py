@@ -623,13 +623,20 @@ class MainWindow(QMainWindow):
         ht_layout.setContentsMargins(0, 0, 0, 0)
         ht_layout.addWidget(self._heatmap_widget.nav_bar)
         ht_layout.addStretch()
-        self._analysis_stats = HeatmapStatsPanel()
-        self._analysis_stats.setFixedHeight(28)
-        ht_layout.addWidget(self._analysis_stats)
         layout.addWidget(ht_row)
 
         collapsible = HeatmapCollapsePanel(self._heatmap_widget)
         layout.addWidget(collapsible, 0)
+
+        # 统计指标：热力图下方右侧（上方导航栏保持清爽）
+        stats_row = QWidget()
+        stats_layout = QHBoxLayout(stats_row)
+        stats_layout.setContentsMargins(0, 0, 4, 0)
+        stats_layout.addStretch()
+        self._analysis_stats = HeatmapStatsPanel()
+        self._analysis_stats.setFixedHeight(28)
+        stats_layout.addWidget(self._analysis_stats)
+        layout.addWidget(stats_row)
 
         report_label = QLabel("活动报告")
         report_label.setObjectName("analysisSectionLabel")
