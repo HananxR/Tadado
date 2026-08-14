@@ -362,11 +362,13 @@ def test_render_countdown(parser, service):
 # pipe protocol + forwarding
 # ------------------------------------------------------------------
 
-def _fake_gui_server(name: str, respond: bool, ready: threading.Event) -> None:
+def _fake_gui_server(name: str, respond: bool, ready: threading.Event,
+                     captured: dict | None = None) -> None:
     """Worker thread: accept one connection, optionally answer a CLI request.
 
     The server side needs its own event loop — QLocalServer does not accept
     pending connections under blocking waits alone on Windows.
+    ``captured`` receives the parsed request payload when provided.
     """
 
     def _run() -> None:
@@ -389,6 +391,8 @@ def _fake_gui_server(name: str, respond: bool, ready: threading.Event) -> None:
         data = read_raw(conn, 3000)
         if respond and data.startswith(PROTO_HEADER):
             payload = json.loads(data[len(PROTO_HEADER):].decode("utf-8"))
+            if captured is not None:
+                captured.update(payload)
             # Responses are bare JSON — only requests carry the magic header.
             conn.write(json.dumps(
                 {"ok": True, "result": {"type": "echo", "command": payload.get("command")}},
@@ -407,11 +411,31 @@ def test_try_forward_round_trip(qapp, monkeypatch):
     name = "tadado_cli_test_1"
     monkeypatch.setattr("src.cli.forward.SERVER_NAME", name)
     ready = threading.Event()
-    _fake_gui_server(name, respond=True, ready=ready)
+    captured: dict = {}
+    _fake_gui_server(name, respond=True, ready=ready, captured=captured)
     assert ready.wait(5)
-    connected, response = try_forward({"v": 1, "command": "list", "args": {}})
+    request = {"v": 1, "app": "0.2.7", "data_dir": "C:/x/resources",
+               "command": "list", "args": {}}
+    connected, response = try_forward(request)
     assert connected and response is not None
     assert response["ok"] and response["result"]["command"] == "list"
+    # 请求帧携带身份信息（版本 + 数据目录），GUI 侧据此校验同一实例
+    assert captured["app"] == "0.2.7"
+    assert captured["data_dir"] == "C:/x/resources"
+
+
+def test_validate_request_identity():
+    """同一实例校验：版本/数据目录不匹配时报错."""
+    from src.cli.protocol import validate_request
+
+    base = {"v": 1, "app": "0.2.7", "data_dir": "C:/data/resources"}
+    assert validate_request(base, "0.2.7", "C:/data/resources") is None
+    # Windows 大小写不敏感路径
+    assert validate_request(base, "0.2.7", "c:/DATA/RESOURCES") is None
+    err = validate_request(base, "0.2.7", "C:/other/resources")
+    assert "数据目录不一致" in err
+    err = validate_request(base, "0.2.6", "C:/data/resources")
+    assert "版本不一致" in err
 
 
 def test_try_forward_legacy_gui_no_response(qapp, monkeypatch):

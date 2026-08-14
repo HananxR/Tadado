@@ -455,7 +455,8 @@ class TadadoApp(QApplication):
     def _handle_cli_request(self, conn, data: bytes) -> None:
         """Execute a CLI request against the running instance's service seam."""
         from .cli.commands import CliError, execute
-        from .cli.protocol import PROTO_HEADER
+        from .cli.protocol import IDENTITY_EXIT_CODE, PROTO_HEADER, validate_request
+        from .version import get_version
 
         try:
             request = json.loads(data[len(PROTO_HEADER):].decode("utf-8"))
@@ -467,6 +468,15 @@ class TadadoApp(QApplication):
         if request.get("v") != 1:
             self._write_cli_response(
                 conn, {"ok": False, "error": f"不支持的协议版本: {request.get('v')!r}", "code": 1}
+            )
+            return
+        identity_error = validate_request(
+            request, get_version(), str(self._config.data_dir.resolve())
+        )
+        if identity_error:
+            self._log.warning("CLI request rejected: %s", identity_error)
+            self._write_cli_response(
+                conn, {"ok": False, "error": identity_error, "code": IDENTITY_EXIT_CODE}
             )
             return
         command = request.get("command")

@@ -60,11 +60,25 @@ def run_cli(argv: list[str]) -> int:
 
     app = QCoreApplication(["tadado-cli"])  # noqa: F841 — signals need an event core
 
+    from ..config import AppConfig
+    from ..models.repository import TaskRepository
+    from ..services.task_service import TaskService
+    from ..version import get_version
+
+    env_dir = os.environ.get(_ENV_DATA_DIR)
+    config = AppConfig(Path(env_dir)) if env_dir else AppConfig()
+
     # ── Path 1: forward to a running GUI instance (single-writer rule) ──────
     if not os.environ.get("TADADO_NO_FORWARD"):
         from .forward import try_forward
 
-        request = {"v": 1, "command": args.command, "args": vars(args)}
+        request = {
+            "v": 1,
+            "app": get_version(),
+            "data_dir": str(config.data_dir.resolve()),
+            "command": args.command,
+            "args": vars(args),
+        }
         connected, response = try_forward(request)
         if connected:
             if response is None:
@@ -81,12 +95,6 @@ def run_cli(argv: list[str]) -> int:
             return int(response.get("code", 1))
 
     # ── Path 2: headless execution over the same service seam as the GUI ────
-    from ..config import AppConfig
-    from ..models.repository import TaskRepository
-    from ..services.task_service import TaskService
-
-    env_dir = os.environ.get(_ENV_DATA_DIR)
-    config = AppConfig(Path(env_dir)) if env_dir else AppConfig()
     repository = TaskRepository(config.db_path())
     repository.open()
     try:
