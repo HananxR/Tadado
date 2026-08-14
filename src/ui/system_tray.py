@@ -45,24 +45,34 @@ class SystemTrayManager:
 
         menu.addSeparator()
 
-        ai_action = menu.addAction("AI 助手")
-        provider = self._detect_ai_provider()
-        if provider is None:
-            ai_action.setEnabled(False)
-            ai_action.setText("AI 助手（未检测到 Claude/Codex）")
-            ai_action.setToolTip("安装 Claude Code 或 Codex 后可用，或检查配置 ai_assistant.provider")
-        else:
-            ai_action.setText(f"AI 助手（{provider.capitalize()}）")
-            ai_action.setToolTip(f"启动专属 {provider} 会话，自动加载 Tadado skill")
-            ai_action.triggered.connect(self._launch_ai_assistant)
+        # AI 助手入口：菜单构建一次，展开时原位刷新检测状态。
+        # 注意：不可在 aboutToShow 里重建/替换整个菜单——Windows 上会
+        # 取消正在弹出的菜单，表现为点击无反应。
+        self._ai_action = menu.addAction("AI 助手")
+        self._ai_action.triggered.connect(self._launch_ai_assistant)
+        self._refresh_ai_action()
 
         menu.addSeparator()
 
         quit_action = menu.addAction("退出")
         quit_action.triggered.connect(self._main_window._on_quit)
 
-        menu.aboutToShow.connect(self._build_menu)  # 每次展开重新检测
+        menu.aboutToShow.connect(self._refresh_ai_action)
         self._tray.setContextMenu(menu)
+
+    def _refresh_ai_action(self) -> None:
+        """In-place refresh of the AI action's availability label."""
+        provider = self._detect_ai_provider()
+        if provider is None:
+            self._ai_action.setEnabled(False)
+            self._ai_action.setText("AI 助手（未检测到 Claude/Codex）")
+            self._ai_action.setToolTip(
+                "安装 Claude Code 或 Codex 后可用，或检查配置 ai_assistant.provider"
+            )
+        else:
+            self._ai_action.setEnabled(True)
+            self._ai_action.setText(f"AI 助手（{provider.capitalize()}）")
+            self._ai_action.setToolTip(f"启动专属 {provider} 会话，自动加载 Tadado skill")
 
     def show(self) -> None:
         """Show the tray icon (called after main window appears to avoid flash)."""
