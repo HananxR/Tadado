@@ -204,10 +204,11 @@ class AppConfig(QObject):
 def _deep_merge(base: dict, override: dict) -> dict:
     """Recursively merge override into base. Returns a new dict.
 
-    Values are deep-copied so instances never share (or mutate) the
-    process-global DEFAULT_CONFIG nested dicts.
+    The base is deep-copied so instances never share (or mutate) the
+    process-global DEFAULT_CONFIG nested dicts — even when ``override``
+    is empty, a shallow copy would still leak the nested references.
     """
-    result = base.copy()
+    result = copy.deepcopy(base)
     for k, v in override.items():
         if k in result and isinstance(result[k], dict) and isinstance(v, dict):
             result[k] = _deep_merge(result[k], v)
