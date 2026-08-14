@@ -426,18 +426,31 @@ class CalendarHeatmapWidget(QWidget):
         top_row.addSpacing(6)
 
         # ── 显示设置（仅影响热力图展示，就地调整，不再塞进设置对话框） ──
+        t_now = get_tokens()
+        scheme_label = QLabel("配色")
+        scheme_label.setStyleSheet(
+            f"font-size: 11px; color: {t_now.text_secondary}; padding-left: 4px;"
+        )
+        top_row.addWidget(scheme_label)
+
         self._scheme_combo = DropdownWidget()
         self._scheme_combo.setObjectName("heatmapSchemeCombo")
         self._scheme_combo.setToolTip("热力图配色方案")
-        for key, label in (("sunbeam", "☀️"), ("sprout", "🌱"),
-                           ("ocean", "🌊"), ("sakura", "🌸")):
+        for key, label in (("sunbeam", "☀️ 暖阳"), ("sprout", "🌱 新绿"),
+                           ("ocean", "🌊 海洋"), ("sakura", "🌸 樱花")):
             self._scheme_combo.addItem(label, key)
         cur_scheme = self._config.get("display", "heatmap_color_scheme", default="sunbeam")
         idx = self._scheme_combo.findData(cur_scheme)
         self._scheme_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._scheme_combo.currentIndexChanged.connect(self._on_scheme_changed)
-        self._scheme_combo.setFixedWidth(52)
+        self._scheme_combo.setFixedWidth(96)
         top_row.addWidget(self._scheme_combo)
+
+        year_label = QLabel("起始")
+        year_label.setStyleSheet(
+            f"font-size: 11px; color: {t_now.text_secondary}; padding-left: 4px;"
+        )
+        top_row.addWidget(year_label)
 
         self._start_year_combo = DropdownWidget()
         self._start_year_combo.setObjectName("heatmapStartYearCombo")
@@ -523,12 +536,20 @@ class CalendarHeatmapWidget(QWidget):
         self._main_grid.update()
 
     def _on_scheme_changed(self) -> None:
-        """配色方案变更：写入配置并热刷新（config_changed → 令牌/渐变重载）."""
+        """配色方案变更：写入配置并热刷新.
+
+        注意：AppConfig.config_changed 与 SignalBus.config_changed 之间无桥接，
+        设置对话框的路径是 MainWindow 手动 emit 总线；此处同样手动 emit，
+        确保 app._on_config_changed → refresh_tokens 立即刷新渐变密钥。
+        """
         scheme = self._scheme_combo.currentData()
         if not scheme or scheme == self._config.get("display", "heatmap_color_scheme", default="sunbeam"):
             return
         self._config.set("display", "heatmap_color_scheme", value=scheme)
         self._config.save()
+        from ...utils.signal_bus import get_signal_bus
+
+        get_signal_bus().config_changed.emit()
         self.refresh()
 
     def _on_start_year_changed(self) -> None:
@@ -538,6 +559,9 @@ class CalendarHeatmapWidget(QWidget):
             return
         self._config.set("display", "heatmap_start_year", value=int(year))
         self._config.save()
+        from ...utils.signal_bus import get_signal_bus
+
+        get_signal_bus().config_changed.emit()
         if self._model.current_year() < int(year):
             self.set_year(int(year))
         else:
