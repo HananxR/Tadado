@@ -159,7 +159,9 @@ tadado-cli <command> [args]
 
 **关键设计**：
 
-1. **单一写者** — GUI 运行时 CLI 一律转发，绝不双进程写库；GUI 未运行时才 headless 直写。
+1. **单一写者 + 实例身份校验** — GUI 运行时 CLI 一律转发，绝不双进程写库；GUI 未运行时才
+   headless 直写。请求帧携带调用方 app 版本与数据目录，GUI 校验不一致即拒绝（退出码 11），
+   防止旧版/异库实例占用管道名导致写入错误实例。
 2. **raw_md 不被绕过** — `add` 用 formatter 构造规范 Markdown 行再走 `TaskService.create_task`；
    `edit` 走 `update_task` 重建 raw_md。
 3. **LLM 输入防御** — `add` 归一化 `TODO<日期>`（缺空格）→ `TODO <日期>`，与 GUI 语法一致；
