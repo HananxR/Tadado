@@ -105,11 +105,17 @@ def _resolve_id_prefix(value: str, ids: list[str], kind: str) -> str | None:
 
 
 def _resolve_partition_id(svc, value: str) -> str:
-    """Resolve a partition id or unique prefix; raise on absence/ambiguity."""
-    resolved = _resolve_id_prefix(value, list(svc.get_partition_name_map()), "分区")
-    if resolved is None:
-        raise CliError(f"分区不存在: {value!r}（用 partitions 查看分区 ID）")
-    return resolved
+    """Resolve a partition by id, unique prefix (>=8 chars), or exact name."""
+    name_map = svc.get_partition_name_map()
+    resolved = _resolve_id_prefix(value, list(name_map), "分区")
+    if resolved is not None:
+        return resolved
+    by_name = [pid for pid, name in name_map.items() if name == value]
+    if len(by_name) == 1:
+        return by_name[0]
+    if len(by_name) > 1:
+        raise CliError(f"存在多个同名分区 {value!r}，请用 ID 指定")
+    raise CliError(f"分区不存在: {value!r}（用 partitions 查看分区名称与 ID）")
 
 
 def _resolve_ids(args, svc) -> list[str]:

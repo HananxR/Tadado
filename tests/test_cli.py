@@ -187,6 +187,17 @@ def test_id_prefix_too_short_or_unknown(parser, service):
         execute("partitions", _args(parser, "partitions", "--rm", "0"), service)
 
 
+def test_partition_by_name(parser, service):
+    """--partition 支持分区名称（ID / 前缀 / 名称三通道）."""
+    p = execute("partitions", _args(parser, "partitions"), service)["partitions"][0]
+    name = p["name"]
+    r = execute("add", _args(
+        parser, "add", "- [ ] TODO <2026-08-20> 按名分区任务", "--partition", name,
+    ), service)
+    assert r["task"]["partition_id"] == p["id"]
+    assert r["task"]["partition_name"] == name
+
+
 def test_done_and_recurrence_clone(parser, service, repository):
     from src.services.recurrence import TaskRecurrence
 
