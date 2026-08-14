@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -21,6 +22,7 @@ from ...models.task_status import TaskStatus
 from ...services.md_formatter import MarkdownTaskFormatter
 from ...services.md_parser import MarkdownTaskParser
 from ...services.task_service import TaskService
+from ...utils.design_tokens import get_tokens
 
 
 class TaskDialog(QDialog):
@@ -54,6 +56,7 @@ class TaskDialog(QDialog):
                     f"创建: {self._task.created_at.strftime('%Y-%m-%d %H:%M')}"
                 )
                 self._created_label.setVisible(True)
+            self._populate_timeline()
         self._update_preview()
 
     # ------------------------------------------------------------------
@@ -91,6 +94,23 @@ class TaskDialog(QDialog):
         self._created_label.setVisible(False)
         root.addWidget(self._created_label)
 
+        # 活动时间线（只读展示；无活动记录时整个区域隐藏）
+        self._timeline_header = QLabel("活动时间线")
+        self._timeline_header.setObjectName("timelineHeader")
+        self._timeline_header.setVisible(False)
+        root.addWidget(self._timeline_header)
+        self._timeline_container = QWidget()
+        self._timeline_layout = QVBoxLayout(self._timeline_container)
+        self._timeline_layout.setContentsMargins(0, 0, 0, 0)
+        self._timeline_layout.setSpacing(4)
+        self._timeline_scroll = QScrollArea()
+        self._timeline_scroll.setWidgetResizable(True)
+        self._timeline_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._timeline_scroll.setWidget(self._timeline_container)
+        self._timeline_scroll.setMaximumHeight(150)
+        self._timeline_scroll.setVisible(False)
+        root.addWidget(self._timeline_scroll)
+
         # Buttons
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -104,6 +124,36 @@ class TaskDialog(QDialog):
     # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
+
+    def _populate_timeline(self) -> None:
+        """只读展示任务活动时间线（新→旧）；无记录时隐藏整个区域."""
+        logs = (self._task.activity_log or []) if self._task else []
+        if not logs:
+            self._timeline_header.setVisible(False)
+            self._timeline_scroll.setVisible(False)
+            return
+        self._timeline_header.setVisible(True)
+        self._timeline_scroll.setVisible(True)
+        t = get_tokens()
+        # 清空旧条目
+        while self._timeline_layout.count():
+            item = self._timeline_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        for entry in reversed(logs):
+            ts = str(entry.get("ts", ""))
+            display_ts = ts[5:16].replace("T", " ") if len(ts) >= 16 else ts
+            content = str(entry.get("content", "")).strip() or "（无内容）"
+            status = str(entry.get("status", ""))
+            progress = entry.get("progress", 0)
+            line = QLabel(f"{display_ts}  {content}（{status} {progress}%）")
+            line.setWordWrap(True)
+            line.setStyleSheet(
+                f"QLabel {{ color: {t.text_secondary}; font-size: 12px;"
+                f" padding: 2px 6px; border-left: 2px solid {t.border_primary}; }}"
+            )
+            self._timeline_layout.addWidget(line)
+        self._timeline_layout.addStretch()
 
     def _update_preview(self) -> None:
         text = self._md_edit.text().strip()
