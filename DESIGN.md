@@ -67,6 +67,10 @@ MainWindow 拆分为 3 个可独立测试的控制器（`src/ui/controllers/`）
 3. **SignalBus 解耦** — 所有模块通过 Qt 信号通信，无直接跨层调用。
 3. **生产/开发环境隔离** — `sys.frozen` 判断，打包版使用预制 package DB（4 分区 + 演示空间预设数据），开发版使用 dev DB（含测试分区 + 功能演示分区）；构建时通过 `scripts/create_package_db.py` 生成 package DB，frozen 模式跳过自动 seeding。
 4. **Design Tokens 语义化配色** — 所有颜色通过 `design_tokens.py` 的语义角色引用，亮/暗主题全局切换。
+   视觉规范（暖灰精修）：浅色暖灰阶（正文 `#3a3832`/次要 `#6f6a5f` 对比度 ≥4.5:1）、
+   暖调靛青强调 `#4d57c3`；深色 Tokyo-night 基底 + 暖灰文字 + `#7c83ea` 强调；
+   圆角标度 4/6/8、卡片 `surface_raised` 分层 + 软阴影（`apply_card_shadow`）、
+   状态色统一走 `status_color()` 令牌辅助函数。
 
 ### 1.4 全局信号总线
 
@@ -241,7 +245,7 @@ tadado-cli <command> [args]
 
 **呈现规则**：
 - 仅 COL_CONTENT（任务内容列）文字红色 + 粗体
-- 红色值走 `design_tokens.danger`（浅色 `#c0392b` / 深色 `#e07070`），主题切换自动适配
+- 红色值走 `design_tokens.danger`（浅色 `#c4453c` / 深色 `#e06c63`），主题切换自动适配
 - 紧急程度整行背景色不受影响，所有行统一渲染
 - 其余列（行号、创建时间、截止时间、进度、状态、标签、归档）无额外视觉变化
 - Qt 原生选中蓝色高亮已被移除（Col 0 复选框列、Col 6 状态徽章列均不再响应 `State_Selected`），选中状态仅通过复选框勾选状态体现
