@@ -561,9 +561,9 @@ def _cmd_report(args, svc, config) -> dict:
     stats = {"entries": 0, "touched_tasks": 0, "completed": 0, "created": 0}
 
     def _bucket(task: Task, key: str, item: dict) -> None:
-        """每个任务只归入其主标签组（第一个标签），避免多标签重复出现."""
-        tag = task.tags[0] if task.tags else "未分类"
-        groups.setdefault(tag, {"worked": [], "planned": []})[key].append(item)
+        """任务归入其每一个标签组（标签属性不丢失），无标签归入未分类."""
+        for tag in task.tags or ["未分类"]:
+            groups.setdefault(tag, {"worked": [], "planned": []})[key].append(item)
 
     def _noise(content: str) -> bool:
         return (
@@ -633,7 +633,8 @@ def _cmd_report(args, svc, config) -> dict:
             })
 
     for g in groups.values():
-        g["worked"].sort(key=lambda i: i["task_id"])
+        # 有进展的条目在前，无进展的条目聚合在后
+        g["worked"].sort(key=lambda i: (1 if i.get("no_progress") else 0, i["task_id"]))
         # 期内创建无进展的任务优先安排（置顶），其余按截止日/优先级
         g["planned"].sort(
             key=lambda i: (

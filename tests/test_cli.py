@@ -344,6 +344,8 @@ def test_report_week(parser, service, repository):
     assert "新建任务B" in worked_titles  # 期内创建 → 本周工作内容
     worked_b = [i for i in group["worked"] if i["title"] == "新建任务B"][0]
     assert worked_b["no_progress"] is True  # 仅创建无进展 → 标注
+    # 组内有进展条目在前，无进展条目聚合在后
+    assert worked_titles == ["报告任务A", "新建任务B"]
     planned_titles = [i["title"] for i in group["planned"]]
     # 期内创建无进展 → 进入下周计划并优先排列（置顶于期前遗留之前）
     assert planned_titles == ["新建任务B", "遗留任务C"]
@@ -351,6 +353,18 @@ def test_report_week(parser, service, repository):
     human = render(report, "human")
     assert "本周工作内容" in human and "下周工作计划" in human and "#工作" in human
     assert "（无进展）" in human
+
+
+def test_report_multi_tag_membership(parser, service, repository):
+    """多标签任务出现在其每一个标签组下，标签属性不丢失."""
+    repository.update_partition_archive_days(service.ensure_default_partition(), 30)
+    execute("add", _args(parser, "add", "多标签任务 #工作 #后端"), service)
+    report = execute("report", _args(parser, "report"), service)
+    tags = {g["tag"] for g in report["groups"]}
+    assert "工作" in tags and "后端" in tags
+    for tag in ("工作", "后端"):
+        group = next(g for g in report["groups"] if g["tag"] == tag)
+        assert any(i["title"] == "多标签任务" for i in group["worked"])
 
 
 def test_report_offset_last_week(parser, service):
