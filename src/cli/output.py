@@ -115,14 +115,28 @@ def _render_human(result: dict) -> str:
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
+def _countdown(t: dict) -> str:
+    """剩余天数倒计时：剩 N 天 / 今天到期 / 已逾期 N 天；无截止为空."""
+    deadline = t.get("deadline_date")
+    if not deadline:
+        return ""
+    delta = (date.fromisoformat(deadline) - date.today()).days
+    if delta < 0:
+        return f"已逾期 {-delta} 天"
+    if delta == 0:
+        return "今天到期"
+    return f"剩 {delta} 天"
+
+
 def _task_lines(tasks: list[dict]) -> list[str]:
     lines = []
     for t in tasks:
         when = t.get("deadline_date") or t.get("scheduled_date") or ""
+        countdown = _countdown(t)
         tags = " ".join(f"#{tag}" for tag in t.get("tags") or [])
         partition = f"「{t['partition_name']}」" if t.get("partition_name") else ""
         lines.append(
             f"  [{t['id'][:8]}] {t['status_display']:<4} {when:<12} "
-            f"{t['title']} {tags} {partition}".rstrip()
+            f"({countdown}) {t['title']} {tags} {partition}".rstrip()
         )
     return lines

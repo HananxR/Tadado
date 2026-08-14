@@ -298,6 +298,21 @@ def test_render_json_and_human(parser, service):
     assert "渲染任务" in human and "#工作" in human
 
 
+def test_render_countdown(parser, service):
+    """human 输出带倒计数：今天到期 / 剩 N 天 / 已逾期 N 天."""
+    from datetime import date as _date
+    from datetime import timedelta
+
+    today = _date.today()
+    execute("add", _args(parser, "add", f"- [ ] TODO <{today}> 当天任务"), service)
+    execute("add", _args(parser, "add", f"- [ ] TODO <{today + timedelta(days=3)}> 三天后"), service)
+    execute("add", _args(parser, "add", f"- [ ] TODO <{today - timedelta(days=2)}> 两天前"), service)
+    human = render(execute("list", _args(parser, "list"), service), "human")
+    assert "今天到期" in human
+    assert "剩 3 天" in human
+    assert "已逾期 2 天" in human
+
+
 # ------------------------------------------------------------------
 # pipe protocol + forwarding
 # ------------------------------------------------------------------
