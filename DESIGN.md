@@ -166,8 +166,11 @@ tadado-cli <command> [args]
 4. **管道可靠性**（Windows 命名管道经验）— 服务端写完响应后 `waitForDisconnected` 再关闭
    （立即 close 会丢弃未读数据）；客户端写完请求立即读响应（`waitForBytesWritten` 会空转超时）；
    `read_raw` 收到首个 chunk 即返回（防双方互相等待死锁）。
-5. **打包** — `Tadado.spec` 单 Analysis 双入口：`Tadado.exe`（windowed GUI）+
-   `tadado-cli.exe`（console CLI）共用同一 `_internal` 包；`build.bat` 改由 spec 驱动。
+5. **打包** — `Tadado.spec` 单 Analysis 单脚本（`main.py`）双 EXE：`Tadado.exe`
+   （windowed GUI）+ `tadado-cli.exe`（console CLI）共用同一 `_internal` 包；
+   入口分流按 `argv[0]` 文件名（`tadado-cli.exe`）或 `--cli` 参数判定
+   （PyInstaller 对多脚本切片的入口分配不可靠，故不切片）；
+   `build.bat` 改由 spec 驱动。
 6. **安全** — `rm`/`archive`/`edit` 提供 `--dry-run`；SKILL.md 规定破坏性操作先展示确认。
 7. **环境隔离** — dev 用 `uv run python main.py --cli`（dev DB），发布版用安装的
    `tadado-cli.exe`（用户 DB）；`TADADO_DATA_DIR` 可覆盖数据目录。
