@@ -536,20 +536,19 @@ class CalendarHeatmapWidget(QWidget):
         self._main_grid.update()
 
     def _on_scheme_changed(self) -> None:
-        """配色方案变更：写入配置并热刷新.
+        """配色方案变更：写入配置并就地热刷新.
 
-        注意：AppConfig.config_changed 与 SignalBus.config_changed 之间无桥接，
-        设置对话框的路径是 MainWindow 手动 emit 总线；此处同样手动 emit，
-        确保 app._on_config_changed → refresh_tokens 立即刷新渐变密钥。
+        仅影响展示——不 emit 总线 config_changed（会触发分区/分页等无关同步），
+        直接 refresh_tokens 更新渐变密钥后重绘。
         """
         scheme = self._scheme_combo.currentData()
         if not scheme or scheme == self._config.get("display", "heatmap_color_scheme", default="sunbeam"):
             return
         self._config.set("display", "heatmap_color_scheme", value=scheme)
         self._config.save()
-        from ...utils.signal_bus import get_signal_bus
+        from ...utils.design_tokens import refresh_tokens
 
-        get_signal_bus().config_changed.emit()
+        refresh_tokens()
         self.refresh()
 
     def _on_start_year_changed(self) -> None:
@@ -559,9 +558,6 @@ class CalendarHeatmapWidget(QWidget):
             return
         self._config.set("display", "heatmap_start_year", value=int(year))
         self._config.save()
-        from ...utils.signal_bus import get_signal_bus
-
-        get_signal_bus().config_changed.emit()
         if self._model.current_year() < int(year):
             self.set_year(int(year))
         else:

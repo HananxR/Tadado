@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
         self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
         self._config = config
         self._last_applied_theme = config.theme
+        self._last_default_pid: str = config.get("general", "default_partition", default="")
         self._repository = repository
         self._task_service = task_service
         self._signal_bus = get_signal_bus()
@@ -2059,11 +2060,14 @@ class MainWindow(QMainWindow):
         if data_changed:
             self._on_data_changed()
 
-        # If default partition changed in settings, sync status bar
+        # 仅当默认分区的值真正发生变化时才切换（任何配置变更都跳回
+        # 默认分区是错误行为——如切换主题/分页大小会无故丢失当前分区）
         default_pid = self._config.get("general", "default_partition", default="")
-        current_pid = self._partition_ctrl.active_id or ""
-        if default_pid and default_pid != current_pid:
-            self._partition_ctrl.activate(default_pid)
+        if default_pid and default_pid != getattr(self, "_last_default_pid", ""):
+            self._last_default_pid = default_pid
+            current_pid = self._partition_ctrl.active_id or ""
+            if default_pid != current_pid:
+                self._partition_ctrl.activate(default_pid)
 
     # ------------------------------------------------------------------
     # Midnight timer
