@@ -113,18 +113,19 @@ class SettingsDialog(QDialog):
 
     def __init__(
         self, config: AppConfig, repository: TaskRepository,
-        task_service=None, parent: QWidget | None = None,
+        task_service=None, update_checker=None, parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._config = config
         self._repository = repository
         self._task_service = task_service
+        self._update_checker = update_checker
         self._original_theme = config.theme
 
         self.setWindowTitle("设置")
         self.setObjectName("settingsDialog")
-        self.resize(640, 480)
-        self.setMinimumSize(560, 400)
+        self.resize(680, 520)
+        self.setMinimumSize(580, 440)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(4, 4, 4, 4)
@@ -343,7 +344,7 @@ class SettingsDialog(QDialog):
         ai_grid.addWidget(self._ai_status_label, ra[0], 0, 1, 2); ra[0] += 1
         self._refresh_ai_status()
 
-        # 页签装配：常规 / AI 助手 / 归档与分区
+        # 页签装配：常规 / AI 助手 / 归档与分区 / 帮助文档 / 关于
         for grid_, title in (
             (general_grid, "常规"),
             (ai_grid, "AI 助手"),
@@ -355,6 +356,14 @@ class SettingsDialog(QDialog):
             layout.addLayout(grid_)
             layout.addStretch()
             self._tabs.addTab(page, title)
+
+        from ..widgets.help_page import HelpPage
+
+        self._tabs.addTab(HelpPage(), "帮助文档")
+
+        from .about_dialog import AboutPage
+
+        self._tabs.addTab(AboutPage(update_checker=self._update_checker), "关于")
 
         content_layout.addWidget(self._tabs)
         self._scroll.setWidget(content)

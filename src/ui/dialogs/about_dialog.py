@@ -271,8 +271,8 @@ class VersionHistoryDialog(QDialog):
             set_window_dark_mode(self, True, caption_color=get_surface_color())
 
 
-class AboutDialog(QDialog):
-    """App information — WeChat-style fixed-height about page."""
+class AboutPage(QWidget):
+    """关于内容页（方案 D 左侧品牌栏）— 嵌入设置对话框的「关于」页签."""
 
     def __init__(
         self,
@@ -282,11 +282,6 @@ class AboutDialog(QDialog):
         super().__init__(parent)
         self._update_checker = update_checker
         self._update_info: dict | None = None
-
-        self.setWindowTitle("关于 Tadado")
-        self.setObjectName("aboutDialog")
-        self.setFixedSize(460, 400)
-
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -296,15 +291,9 @@ class AboutDialog(QDialog):
     def _build_ui(self) -> None:
         t = get_tokens()
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-        outer.addWidget(_HeaderBar("关于 Tadado", self.reject))
-
-        body = QWidget()
-        body_layout = QHBoxLayout(body)
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(0)
+        body = QHBoxLayout(self)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
 
         # ── 左侧品牌栏 ──
         side = QWidget()
@@ -349,7 +338,7 @@ class AboutDialog(QDialog):
         side_layout.addWidget(ver)
         side_layout.addStretch()
 
-        body_layout.addWidget(side)
+        body.addWidget(side)
 
         # ── 右侧内容区 ──
         content = QWidget()
@@ -405,8 +394,7 @@ class AboutDialog(QDialog):
         copyright_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary};")
         content_layout.addWidget(copyright_label)
 
-        body_layout.addWidget(content, 1)
-        outer.addWidget(body, 1)
+        body.addWidget(content, 1)
 
     def _open_history(self) -> None:
         VersionHistoryDialog(self).exec()

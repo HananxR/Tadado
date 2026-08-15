@@ -49,7 +49,6 @@ from .calendar_heatmap.task_tree_panel import TaskTreePanel
 from .controllers.batch_controller import BatchController
 from .controllers.filter_coordinator import FilterCoordinator
 from .controllers.partition_controller import PartitionController
-from .dialogs.about_dialog import AboutDialog
 from .dialogs.settings_dialog import SettingsDialog
 from .task_list.batch_toolbar import BatchToolbar
 from .task_list.task_edit_panel import TaskEditPanel
@@ -284,24 +283,10 @@ class MainWindow(QMainWindow):
             btn.clicked.connect(slot)
             tb.addWidget(btn)
 
-        # Help button with dropdown
-        help_btn = QPushButton()
-        help_btn.setIcon(load_icon("help"))
-        help_btn.setIconSize(icon_sz)
-        help_btn.setText("帮助")
-        help_btn.setFlat(True)
-        help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        help_btn.setStyleSheet(btn_style)
-        help_menu = QMenu(help_btn)
-        help_menu.addAction("帮助文档(&D)", self._on_help_docs)
-        help_menu.addSeparator()
-        help_menu.addAction("关于(&A)", self._on_about)
-        help_btn.setMenu(help_menu)
-        help_btn.clicked.connect(lambda: help_btn.showMenu())
-        tb.addWidget(help_btn)
+        # Help/docs/about 已移入设置对话框（帮助文档 / 关于 页签）
 
-        # Store the right edge of nav buttons for hit-test (logo 36 + ~110px per button * 6 + help ~80px)
-        self._title_nav_right = 36 + 110 * 6 + 80
+        # Store the right edge of nav buttons for hit-test (logo 36 + ~110px per button * 6)
+        self._title_nav_right = 36 + 110 * 6
 
         tb.addStretch()
 
@@ -1990,7 +1975,9 @@ class MainWindow(QMainWindow):
         _before = json.dumps(self._config.to_dict(), sort_keys=True)
         dlg = SettingsDialog(
             self._config, self._repository,
-            task_service=self._task_service, parent=self,
+            task_service=self._task_service,
+            update_checker=self._update_checker,
+            parent=self,
         )
         if dlg.exec() == SettingsDialog.DialogCode.Accepted:
             _after = json.dumps(self._config.to_dict(), sort_keys=True)
@@ -1999,25 +1986,6 @@ class MainWindow(QMainWindow):
             # 设置保存后强制激活默认分区
             self._partition_ctrl.load_all()
             self._signal_bus.config_changed.emit()
-
-    def _on_about(self) -> None:
-        dlg = AboutDialog(self, update_checker=self._update_checker)
-        dlg.exec()
-
-    def _on_help_docs(self) -> None:
-        import sys
-        from pathlib import Path
-
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
-
-        base = getattr(sys, "_MEIPASS", None)
-        if base:
-            path = Path(base) / "resources" / "help" / "manual.html"
-        else:
-            path = Path(__file__).resolve().parents[2] / "resources" / "help" / "manual.html"
-        if path.exists():
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _on_quit(self) -> None:
         self._signal_bus.application_quit.emit()
