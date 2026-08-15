@@ -1,6 +1,6 @@
 """Dialog windows."""
 
-from .about_dialog import AboutPage, VersionHistoryDialog  # noqa: F401
+from .about_dialog import AboutPage  # noqa: F401
 from .multi_task_dialog import MultiTaskDialog  # noqa: F401
 from .settings_dialog import SettingsDialog  # noqa: F401
 from .task_dialog import TaskDialog  # noqa: F401

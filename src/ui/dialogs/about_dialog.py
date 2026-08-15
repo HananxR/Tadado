@@ -12,14 +12,12 @@ import re
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QPixmap, QShowEvent
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
-    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QScrollArea,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
@@ -158,119 +156,6 @@ class _RowLink(QPushButton):
         super().leaveEvent(event)
 
 
-def _close_button(clicked) -> QPushButton:
-    t = get_tokens()
-    btn = QPushButton("✕")
-    btn.setFixedSize(28, 28)
-    btn.setCursor(Qt.CursorShape.PointingHandCursor)
-    btn.setStyleSheet(
-        f"QPushButton {{"
-        f"  border: none; border-radius: 4px; background: transparent;"
-        f"  color: {t.text_secondary}; font-size: 13px;"
-        f"}}"
-        f"QPushButton:hover {{ background: {t.bg_tertiary}; color: {t.text_primary}; }}"
-    )
-    btn.clicked.connect(clicked)
-    return btn
-
-
-class _HeaderBar(QWidget):
-    """Title + ✕ close — shared by both pages."""
-
-    def __init__(self, title: str, close_callback, parent=None) -> None:
-        super().__init__(parent)
-        t = get_tokens()
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 10, 10, 6)
-        title_label = QLabel(title)
-        title_label.setStyleSheet(
-            f"font-size: 13px; font-weight: 600; color: {t.text_primary};"
-        )
-        layout.addWidget(title_label)
-        layout.addStretch()
-        layout.addWidget(_close_button(close_callback))
-
-
-class VersionHistoryDialog(QDialog):
-    """独立滚动页：全版本更新记录，以帮助文档同款 HTML 风格渲染."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("版本更新记录")
-        self.setObjectName("versionHistoryDialog")
-        self.resize(480, 620)
-        self.setMinimumSize(400, 480)
-
-        t = get_tokens()
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-        outer.addWidget(_HeaderBar("版本更新记录", self.reject))
-
-        versions = _parse_changelog_md()
-        if not versions:
-            highlights = get_release_highlights()
-            versions = [{
-                "version": get_version_display(),
-                "date": "",
-                "categories": [(cat, list(items)) for cat, items in highlights.items() if items],
-            }]
-
-        browser = QTextBrowser()
-        browser.setOpenExternalLinks(True)
-        browser.setFrameShape(QFrame.Shape.NoFrame)
-        browser.setStyleSheet(
-            f"QTextBrowser {{ background: {t.bg_primary}; padding: 6px; }}"
-        )
-        # 帮助手册同款文档级样式表（QTextBrowser 内联 CSS 支持有限，
-        # hr 边框等需用 setDefaultStyleSheet + 语义标签实现）
-        browser.document().setDefaultStyleSheet(self._default_css(t))
-        browser.setHtml(self._build_html(versions))
-        outer.addWidget(browser, 1)
-
-    @staticmethod
-    def _default_css(t) -> str:
-        return (
-            f"h2 {{ font-size:16px; font-weight:700; color:{t.text_primary};"
-            f" margin-top:22px; margin-bottom:2px; }}"
-            f".date {{ font-size:11px; font-weight:400; color:{t.text_secondary}; }}"
-            f"h3 {{ font-size:12px; font-weight:700; margin-top:12px; margin-bottom:4px; }}"
-            f".cat-new {{ color:{t.success}; }}"
-            f".cat-opt {{ color:{t.warning}; }}"
-            f".cat-fix {{ color:{t.danger}; }}"
-            f"ul {{ margin-top:0; margin-bottom:8px; margin-left:16px; }}"
-            f"li {{ font-size:12px; color:{t.text_secondary}; margin:4px 0; }}"
-            f"a {{ color:{t.accent}; text-decoration:none; }}"
-        )
-
-    @staticmethod
-    def _build_html(versions: list[dict]) -> str:
-        """语义化 HTML：版本 h2 + 分类 h3 + 无序列表，样式全走文档级 CSS."""
-        parts = []
-        for ver in versions:
-            date_span = (
-                f'<span class="date">{ver["date"]}</span>'
-                if ver.get("date") else ""
-            )
-            parts.append(f"<h2>v{ver['version']}&nbsp;{date_span}</h2>")
-            parts.append("<hr>")
-            for cat, items in ver["categories"]:
-                if not items:
-                    continue
-                cls = {"新增": "cat-new", "优化": "cat-opt", "修复": "cat-fix"}.get(cat, "")
-                parts.append(f'<h3 class="{cls}">{cat}</h3>')
-                parts.append("<ul>")
-                for item in items:
-                    parts.append(f"<li>{_md_to_html(item)}</li>")
-                parts.append("</ul>")
-        return "".join(parts)
-
-    def showEvent(self, event: QShowEvent) -> None:
-        super().showEvent(event)
-        if is_dark_mode_supported() and is_dark():
-            set_window_dark_mode(self, True, caption_color=get_surface_color())
-
-
 class AboutPage(QWidget):
     """关于内容页（方案 D 左侧品牌栏）— 嵌入设置对话框的「关于」页签."""
 
@@ -363,7 +248,17 @@ class AboutPage(QWidget):
 
         _section("服务")
         self._check_row = _row("检查更新", clicked=self._on_check_updates)
-        _row("版本更新记录", clicked=self._open_history)
+
+        # 版本更新记录：行内展开（不再二次弹窗）
+        self._history_row = _row("版本更新记录", "▾", clicked=self._toggle_history)
+        self._history_browser = QTextBrowser()
+        self._history_browser.setOpenExternalLinks(True)
+        self._history_browser.setFrameShape(QFrame.Shape.NoFrame)
+        self._history_browser.setMaximumHeight(240)
+        self._history_browser.setVisible(False)
+        self._history_browser.document().setDefaultStyleSheet(version_history_css(t))
+        self._history_browser.setHtml(build_version_history_html(load_version_versions()))
+        content_layout.addWidget(self._history_browser)
 
         _section("下载")
         _row("GitHub Releases", "↗",
@@ -396,8 +291,11 @@ class AboutPage(QWidget):
 
         body.addWidget(content, 1)
 
-    def _open_history(self) -> None:
-        VersionHistoryDialog(self).exec()
+    def _toggle_history(self) -> None:
+        """行内展开/收起版本更新记录."""
+        self._history_expanded = not getattr(self, "_history_expanded", False)
+        self._history_browser.setVisible(self._history_expanded)
+        self._history_row.set_detail("▴" if self._history_expanded else "▾")
 
     def _copy_email(self) -> None:
         """复制邮箱地址到剪贴板，行尾提示已复制."""

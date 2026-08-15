@@ -359,11 +359,19 @@ class SettingsDialog(QDialog):
 
         from ..widgets.help_page import HelpPage
 
-        self._tabs.addTab(HelpPage(), "帮助文档")
+        help_page = QWidget()
+        help_layout = QVBoxLayout(help_page)
+        help_layout.setContentsMargins(12, 8, 12, 8)
+        help_layout.addWidget(HelpPage())
+        self._tabs.addTab(help_page, "帮助文档")
 
         from .about_dialog import AboutPage
 
-        self._tabs.addTab(AboutPage(update_checker=self._update_checker), "关于")
+        about_page = QWidget()
+        about_layout = QVBoxLayout(about_page)
+        about_layout.setContentsMargins(12, 8, 12, 8)
+        about_layout.addWidget(AboutPage(update_checker=self._update_checker))
+        self._tabs.addTab(about_page, "关于")
 
         content_layout.addWidget(self._tabs)
         self._scroll.setWidget(content)
