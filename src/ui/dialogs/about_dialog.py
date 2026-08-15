@@ -156,6 +156,57 @@ class _RowLink(QPushButton):
         super().leaveEvent(event)
 
 
+def version_history_css(t) -> str:
+    """版本记录文档级样式表（帮助手册同款体系）."""
+    return (
+        f"h2 {{ font-size:16px; font-weight:700; color:{t.text_primary};"
+        f" margin-top:22px; margin-bottom:2px; }}"
+        f".date {{ font-size:11px; font-weight:400; color:{t.text_secondary}; }}"
+        f"h3 {{ font-size:12px; font-weight:700; margin-top:12px; margin-bottom:4px; }}"
+        f".cat-new {{ color:{t.success}; }}"
+        f".cat-opt {{ color:{t.warning}; }}"
+        f".cat-fix {{ color:{t.danger}; }}"
+        f"ul {{ margin-top:0; margin-bottom:8px; margin-left:16px; }}"
+        f"li {{ font-size:12px; color:{t.text_secondary}; margin:4px 0; }}"
+        f"a {{ color:{t.accent}; text-decoration:none; }}"
+    )
+
+
+def build_version_history_html(versions: list[dict]) -> str:
+    """语义化 HTML：版本 h2 + 分类 h3 + 无序列表，样式全走文档级 CSS."""
+    parts = []
+    for ver in versions:
+        date_span = (
+            f'<span class="date">{ver["date"]}</span>'
+            if ver.get("date") else ""
+        )
+        parts.append(f"<h2>v{ver['version']}&nbsp;{date_span}</h2>")
+        parts.append("<hr>")
+        for cat, items in ver["categories"]:
+            if not items:
+                continue
+            cls = {"新增": "cat-new", "优化": "cat-opt", "修复": "cat-fix"}.get(cat, "")
+            parts.append(f'<h3 class="{cls}">{cat}</h3>')
+            parts.append("<ul>")
+            for item in items:
+                parts.append(f"<li>{_md_to_html(item)}</li>")
+            parts.append("</ul>")
+    return "".join(parts)
+
+
+def load_version_versions() -> list[dict]:
+    """解析 CHANGELOG.md；不可用时回退当前版本 highlights."""
+    versions = _parse_changelog_md()
+    if not versions:
+        highlights = get_release_highlights()
+        versions = [{
+            "version": get_version_display(),
+            "date": "",
+            "categories": [(cat, list(items)) for cat, items in highlights.items() if items],
+        }]
+    return versions
+
+
 class AboutPage(QWidget):
     """关于内容页（方案 D 左侧品牌栏）— 嵌入设置对话框的「关于」页签."""
 
