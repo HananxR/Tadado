@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QScrollArea,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -191,30 +192,20 @@ class _HeaderBar(QWidget):
 
 
 class VersionHistoryDialog(QDialog):
-    """独立滚动页：全版本更新记录（CHANGELOG.md 解析，缺省回退当前版本 highlights）."""
+    """独立滚动页：全版本更新记录，以帮助文档同款 HTML 风格渲染."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("版本更新记录")
         self.setObjectName("versionHistoryDialog")
-        self.resize(460, 600)
-        self.setMinimumSize(380, 480)
+        self.resize(480, 620)
+        self.setMinimumSize(400, 480)
 
         t = get_tokens()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         outer.addWidget(_HeaderBar("版本更新记录", self.reject))
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(28, 8, 28, 24)
-        layout.setSpacing(0)
 
         versions = _parse_changelog_md()
         if not versions:
@@ -225,52 +216,53 @@ class VersionHistoryDialog(QDialog):
                 "categories": [(cat, list(items)) for cat, items in highlights.items() if items],
             }]
 
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        browser.setFrameShape(QFrame.Shape.NoFrame)
+        browser.setStyleSheet(
+            f"QTextBrowser {{ background: {t.bg_primary}; padding: 6px; }}"
+        )
+        browser.setHtml(self._build_html(versions, t))
+        outer.addWidget(browser, 1)
+
+    @staticmethod
+    def _build_html(versions: list[dict], t) -> str:
+        """构建帮助手册同款排版：版本 h2 + 分类 h3 + 无序列表."""
         cat_colors = {"新增": t.success, "优化": t.warning, "修复": t.danger}
-
-        cat_colors = {"新增": t.success, "优化": t.warning, "修复": t.danger}
-
-        for vi, ver in enumerate(versions):
-            if vi:
-                sep = QFrame()
-                sep.setFrameShape(QFrame.Shape.HLine)
-                sep.setStyleSheet(f"QFrame {{ color: {t.border_primary}; }}")
-                sep.setFixedHeight(1)
-                layout.addWidget(sep)
-
-            # 每个版本一个 QLabel，用 HTML <p> 段落统一控制行距与缩进
-            # （QLabel 不支持 CSS line-height，逐条 QLabel 会导致行距不齐）
-            parts = []
+        parts = ['<div style="margin:8px 6px 4px 6px;">']
+        for ver in versions:
             date_html = (
-                f"&nbsp;<span style='font-size:11px;font-weight:400;"
-                f"color:{t.text_secondary};'>{ver['date']}</span>"
+                f'&nbsp;<span style="font-size:11px;font-weight:400;'
+                f'color:{t.text_secondary};">{ver["date"]}</span>'
                 if ver.get("date") else ""
             )
             parts.append(
-                f'<p style="margin:14px 0 2px 0;font-size:15px;font-weight:700;'
-                f'color:{t.text_primary};">v{ver["version"]}{date_html}</p>'
+                f'<h2 style="font-size:16px;font-weight:700;color:{t.text_primary};'
+                f'margin:22px 0 2px 0;">v{ver["version"]}{date_html}</h2>'
+            )
+            parts.append(
+                f'<hr style="border:none;border-top:2px solid {t.accent};'
+                f'margin:4px 0 8px 0;">'
             )
             for cat, items in ver["categories"]:
                 if not items:
                     continue
                 color = cat_colors.get(cat, t.text_primary)
                 parts.append(
-                    f'<p style="margin:8px 0 2px 0;font-size:11px;font-weight:700;'
-                    f'color:{color};">● {cat}</p>'
+                    f'<h3 style="font-size:12px;font-weight:700;color:{color};'
+                    f'margin:12px 0 4px 0;">{cat}</h3>'
+                )
+                parts.append(
+                    f'<ul style="margin:0 0 6px 0;color:{t.text_secondary};">'
                 )
                 for item in items:
                     parts.append(
-                        f'<p style="margin:3px 0 3px 12px;font-size:12px;'
-                        f'color:{t.text_secondary};">· {_md_to_html(item, t)}</p>'
+                        f'<li style="font-size:12px;margin:4px 0;">'
+                        f'{_md_to_html(item, t)}</li>'
                     )
-            section = QLabel("".join(parts))
-            section.setWordWrap(True)
-            section.setTextFormat(Qt.TextFormat.RichText)
-            section.setOpenExternalLinks(True)
-            layout.addWidget(section)
-
-        layout.addStretch()
-        scroll.setWidget(content)
-        outer.addWidget(scroll, 1)
+                parts.append("</ul>")
+        parts.append("</div>")
+        return "".join(parts)
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
@@ -390,10 +382,11 @@ class AboutDialog(QDialog):
              clicked=lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL)))
 
         _section("反馈")
+        # 邮箱点击复制到剪贴板（不依赖系统邮件客户端）
+        self._email_row = _row(
+            "电子邮箱", "hanxy8413@gmail.com", clicked=self._copy_email
+        )
         feedback = QLabel(
-            f'<a href="mailto:hanxy8413@gmail.com" '
-            f'style="color:{t.text_secondary}; text-decoration:none;">✉ 邮箱</a>'
-            f'&nbsp;&nbsp;·&nbsp;&nbsp;'
             f'<span style="color:{t.text_secondary};">💬 Pyvan</span>'
             f'&nbsp;&nbsp;·&nbsp;&nbsp;'
             f'<a href="{_GITHUB_REPO}" '
@@ -416,6 +409,13 @@ class AboutDialog(QDialog):
 
     def _open_history(self) -> None:
         VersionHistoryDialog(self).exec()
+
+    def _copy_email(self) -> None:
+        """复制邮箱地址到剪贴板，行尾提示已复制."""
+        from PySide6.QtWidgets import QApplication
+
+        QApplication.clipboard().setText("hanxy8413@gmail.com")
+        self._email_row.set_detail("已复制 ✓", get_tokens().success)
 
     # ── Update check slots ────────────────────────────────────────
 
