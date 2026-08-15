@@ -148,6 +148,14 @@ class _RowLink(QPushButton):
             f"font-size: 13px; color: {t.text_primary}; border: none; background: transparent;"
         )
 
+    def enterEvent(self, event) -> None:
+        self._hover_on()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._hover_off()
+        super().leaveEvent(event)
+
 
 def _close_button(clicked) -> QPushButton:
     t = get_tokens()
@@ -366,8 +374,6 @@ class AboutDialog(QDialog):
 
         def _row(title: str, detail: str = "›", clicked=None) -> _RowLink:
             row = _RowLink(title, detail)
-            row.entered.connect(row._hover_on)
-            row.left.connect(row._hover_off)
             if clicked:
                 row.clicked.connect(clicked)
             content_layout.addWidget(row)
