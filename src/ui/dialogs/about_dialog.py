@@ -93,58 +93,59 @@ def _parse_changelog_md() -> list[dict]:
     return versions
 
 
-class _GridTile(QPushButton):
-    """2×2 等宽网格卡片：图标 + 标题 + 可选状态行，对称布局无宽度差."""
+class _RowLink(QPushButton):
+    """左侧品牌栏方案的行链接：左标题 + 右状态/箭头，悬停强调色，细分割线."""
 
-    def __init__(self, icon: str, title: str, parent=None) -> None:
+    def __init__(self, title: str, detail: str = "›", parent=None) -> None:
         super().__init__(parent)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setFixedHeight(72)
+        self.setObjectName("aboutRowLink")
         t = get_tokens()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(2)
-
-        icon_label = QLabel(icon)
-        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_label.setStyleSheet("font-size: 20px; border: none; background: transparent;")
-        layout.addWidget(icon_label)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 10, 0, 10)
+        layout.setSpacing(8)
 
         title_label = QLabel(title)
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_label.setStyleSheet(
-            f"font-size: 12px; font-weight: 600; color: {t.text_primary};"
-            f"border: none; background: transparent;"
+            f"font-size: 13px; color: {t.text_primary}; border: none; background: transparent;"
         )
         layout.addWidget(title_label)
+        layout.addStretch()
 
-        self._status_label = QLabel("")
-        self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._status_label.setStyleSheet(
-            f"font-size: 10px; color: {t.text_secondary}; border: none;"
-            f"background: transparent;"
+        self._detail = QLabel(detail)
+        self._detail.setStyleSheet(
+            f"font-size: 12px; color: {t.text_secondary}; border: none; background: transparent;"
         )
-        layout.addWidget(self._status_label)
+        layout.addWidget(self._detail)
 
         self.setStyleSheet(
-            f"QPushButton {{"
-            f"  background: {t.surface_raised};"
-            f"  border: 1px solid {t.border_primary};"
-            f"  border-radius: 8px;"
+            f"QPushButton#aboutRowLink {{"
+            f"  border: none; background: transparent; text-align: left;"
+            f"  border-bottom: 1px solid {t.border_primary};"
             f"}}"
-            f"QPushButton:hover {{"
-            f"  background: {t.bg_tertiary};"
-            f"  border-color: {t.accent};"
-            f"}}"
+            f"QPushButton#aboutRowLink:hover {{ background: transparent; }}"
+        )
+        self._title_label = title_label
+
+    def set_detail(self, text: str, color: str | None = None) -> None:
+        t = get_tokens()
+        self._detail.setText(text)
+        self._detail.setStyleSheet(
+            f"font-size: 12px; color: {color or t.text_secondary};"
+            f"border: none; background: transparent;"
         )
 
-    def set_status(self, text: str, color: str | None = None) -> None:
+    def _hover_on(self) -> None:
         t = get_tokens()
-        self._status_label.setText(text)
-        self._status_label.setStyleSheet(
-            f"font-size: 10px; color: {color or t.text_secondary};"
-            f"border: none; background: transparent;"
+        self._title_label.setStyleSheet(
+            f"font-size: 13px; color: {t.accent}; border: none; background: transparent;"
+        )
+
+    def _hover_off(self) -> None:
+        t = get_tokens()
+        self._title_label.setStyleSheet(
+            f"font-size: 13px; color: {t.text_primary}; border: none; background: transparent;"
         )
 
 
@@ -283,9 +284,7 @@ class AboutDialog(QDialog):
 
         self.setWindowTitle("关于 Tadado")
         self.setObjectName("aboutDialog")
-        self.setFixedWidth(420)
-        self.resize(420, 520)
-        self.setMinimumHeight(480)
+        self.setFixedSize(460, 400)
 
         self._build_ui()
 
@@ -301,103 +300,113 @@ class AboutDialog(QDialog):
         outer.setSpacing(0)
         outer.addWidget(_HeaderBar("关于 Tadado", self.reject))
 
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(32, 8, 32, 20)
-        layout.setSpacing(0)
+        body = QWidget()
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
 
-        # ── Brand block ──
+        # ── 左侧品牌栏 ──
+        side = QWidget()
+        side.setObjectName("aboutSide")
+        side.setFixedWidth(118)
+        side.setStyleSheet(
+            f"QWidget#aboutSide {{"
+            f"  background: {t.bg_secondary};"
+            f"  border-right: 1px solid {t.border_primary};"
+            f"}}"
+        )
+        side_layout = QVBoxLayout(side)
+        side_layout.setContentsMargins(0, 28, 0, 0)
+        side_layout.setSpacing(0)
+
         logo = QLabel()
         logo_path = self._find_icon("app_icon.svg")
         pix = QPixmap(logo_path) if logo_path else QPixmap()
         if not pix.isNull():
             pix = pix.scaled(
-                64, 64,
+                46, 46,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
             logo.setPixmap(pix)
         else:
             logo.setText("✦")
-            logo.setStyleSheet(f"font-size: 44px; color: {t.accent};")
+            logo.setStyleSheet(f"font-size: 30px; color: {t.accent};")
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(logo)
-        layout.addSpacing(12)
+        side_layout.addWidget(logo)
+        side_layout.addSpacing(12)
 
         name = QLabel("Tadado")
         name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        name.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {t.text_primary};")
-        layout.addWidget(name)
-        layout.addSpacing(4)
+        name.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {t.text_primary};")
+        side_layout.addWidget(name)
+        side_layout.addSpacing(3)
 
-        ver = QLabel(f"Version {get_version_display()}")
+        ver = QLabel(f"v{get_version_display()}")
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ver.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
-        layout.addWidget(ver)
-        layout.addSpacing(2)
+        ver.setStyleSheet(f"font-size: 11px; color: {t.text_secondary};")
+        side_layout.addWidget(ver)
+        side_layout.addStretch()
 
-        tagline = QLabel("Less Noise, More Done")
-        tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        tagline.setStyleSheet(f"font-size: 12px; color: {t.text_secondary};")
-        layout.addWidget(tagline)
-        layout.addSpacing(22)
+        body_layout.addWidget(side)
 
-        # ── 2×2 等宽网格卡片：对称布局，无宽度差异 ──
-        from PySide6.QtWidgets import QGridLayout
+        # ── 右侧内容区 ──
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(22, 20, 20, 16)
+        content_layout.setSpacing(0)
 
-        grid = QGridLayout()
-        grid.setSpacing(10)
-        grid.setColumnStretch(0, 1)
-        grid.setColumnStretch(1, 1)
+        def _section(text: str) -> None:
+            label = QLabel(text)
+            label.setStyleSheet(
+                f"font-size: 12px; color: {t.text_secondary};"
+                f"padding-top: 14px; padding-bottom: 4px;"
+            )
+            content_layout.addWidget(label)
 
-        self._check_tile = _GridTile("🔄", "检查更新")
-        self._check_tile.clicked.connect(self._on_check_updates)
-        grid.addWidget(self._check_tile, 0, 0)
+        def _row(title: str, detail: str = "›", clicked=None) -> _RowLink:
+            row = _RowLink(title, detail)
+            row.entered.connect(row._hover_on)
+            row.left.connect(row._hover_off)
+            if clicked:
+                row.clicked.connect(clicked)
+            content_layout.addWidget(row)
+            return row
 
-        history_tile = _GridTile("📜", "版本更新记录")
-        history_tile.clicked.connect(self._open_history)
-        grid.addWidget(history_tile, 0, 1)
+        _section("服务")
+        self._check_row = _row("检查更新", clicked=self._on_check_updates)
+        _row("版本更新记录", clicked=self._open_history)
 
-        github_tile = _GridTile("🌐", "GitHub Releases")
-        github_tile.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(_GITHUB_RELEASES))
-        )
-        grid.addWidget(github_tile, 1, 0)
+        _section("下载")
+        _row("GitHub Releases", "↗",
+             clicked=lambda: QDesktopServices.openUrl(QUrl(_GITHUB_RELEASES)))
+        _row("阿里云盘", "↗",
+             clicked=lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL)))
 
-        aliyun_tile = _GridTile("☁️", "阿里云盘")
-        aliyun_tile.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(ALIYUN_DRIVE_URL))
-        )
-        grid.addWidget(aliyun_tile, 1, 1)
-
-        layout.addLayout(grid)
-        layout.addSpacing(18)
-
-        # ── 反馈行（小图标链接，居中） ──
+        _section("反馈")
         feedback = QLabel(
             f'<a href="mailto:hanxy8413@gmail.com" '
             f'style="color:{t.text_secondary}; text-decoration:none;">✉ 邮箱</a>'
             f'&nbsp;&nbsp;·&nbsp;&nbsp;'
-            f'<span style="color:{t.text_secondary};">💬 Pyvan 公众号</span>'
+            f'<span style="color:{t.text_secondary};">💬 Pyvan</span>'
             f'&nbsp;&nbsp;·&nbsp;&nbsp;'
             f'<a href="{_GITHUB_REPO}" '
             f'style="color:{t.text_secondary}; text-decoration:none;">GitHub</a>'
         )
-        feedback.setAlignment(Qt.AlignmentFlag.AlignCenter)
         feedback.setOpenExternalLinks(True)
         feedback.setStyleSheet("font-size: 11px;")
-        layout.addWidget(feedback)
-        layout.addStretch()
+        content_layout.addWidget(feedback)
 
-        # ── Copyright ──
+        content_layout.addStretch()
+
         copyright_label = QLabel(
             f"Copyright © {datetime.now().year} HananxR · MIT License"
         )
-        copyright_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         copyright_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary};")
-        layout.addWidget(copyright_label)
+        content_layout.addWidget(copyright_label)
 
-        outer.addWidget(content, 1)
+        body_layout.addWidget(content, 1)
+        outer.addWidget(body, 1)
 
     def _open_history(self) -> None:
         VersionHistoryDialog(self).exec()
@@ -406,11 +415,11 @@ class AboutDialog(QDialog):
 
     def _on_check_updates(self) -> None:
         if self._update_checker is None:
-            self._check_tile.set_status("不可用")
+            self._check_row.set_detail("不可用")
             return
 
-        self._check_tile.setEnabled(False)
-        self._check_tile.set_status("检查中…")
+        self._check_row.setEnabled(False)
+        self._check_row.set_detail("检查中…")
         self._update_checker.check_finished.connect(
             self._on_check_finished, type=Qt.ConnectionType.SingleShotConnection
         )
@@ -421,18 +430,18 @@ class AboutDialog(QDialog):
 
     def _on_check_finished(self, update_info: dict | None) -> None:
         t = get_tokens()
-        self._check_tile.setEnabled(True)
+        self._check_row.setEnabled(True)
         if update_info is None:
-            self._check_tile.set_status("✓ 已是最新版本", t.success)
+            self._check_row.set_detail("✓ 已是最新版本", t.success)
         else:
             self._update_info = update_info
             latest = update_info.get("latest_version", "")
-            self._check_tile.set_status(f"发现新版本 {latest}", t.accent)
+            self._check_row.set_detail(f"发现新版本 {latest}", t.accent)
 
     def _on_check_error(self, message: str) -> None:
         t = get_tokens()
-        self._check_tile.setEnabled(True)
-        self._check_tile.set_status(message, t.danger)
+        self._check_row.setEnabled(True)
+        self._check_row.set_detail(message, t.danger)
 
     # ── helpers ─────────────────────────────────────────────────────
 
