@@ -37,8 +37,8 @@ _CAT_LABELS = {"Added": "新增", "Changed": "优化", "Fixed": "修复"}
 _CAT_ICONS = {"新增": "✨", "优化": "🔧", "修复": "🐛"}
 
 
-def _md_to_html(text: str, t) -> str:
-    """CHANGELOG Markdown 片段 → 富文本（加粗/行内代码/链接）."""
+def _md_to_html(text: str) -> str:
+    """CHANGELOG Markdown 片段 → 富文本（加粗/行内代码/链接，颜色走文档 CSS）."""
     safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     # 兼容历史条目里写死的 <code> 标签
     safe = safe.replace("&lt;code&gt;", "<code>").replace("&lt;/code&gt;", "</code>")
@@ -46,7 +46,7 @@ def _md_to_html(text: str, t) -> str:
     safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe)
     safe = re.sub(
         r"\[([^\]]+)\]\(([^)]+)\)",
-        rf'<a href="\2" style="color:{t.accent}; text-decoration:none;">\1</a>',
+        r'<a href="\2">\1</a>',
         safe,
     )
     return safe
@@ -222,46 +222,47 @@ class VersionHistoryDialog(QDialog):
         browser.setStyleSheet(
             f"QTextBrowser {{ background: {t.bg_primary}; padding: 6px; }}"
         )
-        browser.setHtml(self._build_html(versions, t))
+        # 帮助手册同款文档级样式表（QTextBrowser 内联 CSS 支持有限，
+        # hr 边框等需用 setDefaultStyleSheet + 语义标签实现）
+        browser.document().setDefaultStyleSheet(self._default_css(t))
+        browser.setHtml(self._build_html(versions))
         outer.addWidget(browser, 1)
 
     @staticmethod
-    def _build_html(versions: list[dict], t) -> str:
-        """构建帮助手册同款排版：版本 h2 + 分类 h3 + 无序列表."""
-        cat_colors = {"新增": t.success, "优化": t.warning, "修复": t.danger}
-        parts = ['<div style="margin:8px 6px 4px 6px;">']
+    def _default_css(t) -> str:
+        return (
+            f"h2 {{ font-size:16px; font-weight:700; color:{t.text_primary};"
+            f" margin-top:22px; margin-bottom:2px; }}"
+            f".date {{ font-size:11px; font-weight:400; color:{t.text_secondary}; }}"
+            f"h3 {{ font-size:12px; font-weight:700; margin-top:12px; margin-bottom:4px; }}"
+            f".cat-new {{ color:{t.success}; }}"
+            f".cat-opt {{ color:{t.warning}; }}"
+            f".cat-fix {{ color:{t.danger}; }}"
+            f"ul {{ margin-top:0; margin-bottom:8px; margin-left:16px; }}"
+            f"li {{ font-size:12px; color:{t.text_secondary}; margin:4px 0; }}"
+            f"a {{ color:{t.accent}; text-decoration:none; }}"
+        )
+
+    @staticmethod
+    def _build_html(versions: list[dict]) -> str:
+        """语义化 HTML：版本 h2 + 分类 h3 + 无序列表，样式全走文档级 CSS."""
+        parts = []
         for ver in versions:
-            date_html = (
-                f'&nbsp;<span style="font-size:11px;font-weight:400;'
-                f'color:{t.text_secondary};">{ver["date"]}</span>'
+            date_span = (
+                f'<span class="date">{ver["date"]}</span>'
                 if ver.get("date") else ""
             )
-            parts.append(
-                f'<h2 style="font-size:16px;font-weight:700;color:{t.text_primary};'
-                f'margin:22px 0 2px 0;">v{ver["version"]}{date_html}</h2>'
-            )
-            parts.append(
-                f'<hr style="border:none;border-top:2px solid {t.accent};'
-                f'margin:4px 0 8px 0;">'
-            )
+            parts.append(f"<h2>v{ver['version']}&nbsp;{date_span}</h2>")
+            parts.append("<hr>")
             for cat, items in ver["categories"]:
                 if not items:
                     continue
-                color = cat_colors.get(cat, t.text_primary)
-                parts.append(
-                    f'<h3 style="font-size:12px;font-weight:700;color:{color};'
-                    f'margin:12px 0 4px 0;">{cat}</h3>'
-                )
-                parts.append(
-                    f'<ul style="margin:0 0 6px 0;color:{t.text_secondary};">'
-                )
+                cls = {"新增": "cat-new", "优化": "cat-opt", "修复": "cat-fix"}.get(cat, "")
+                parts.append(f'<h3 class="{cls}">{cat}</h3>')
+                parts.append("<ul>")
                 for item in items:
-                    parts.append(
-                        f'<li style="font-size:12px;margin:4px 0;">'
-                        f'{_md_to_html(item, t)}</li>'
-                    )
+                    parts.append(f"<li>{_md_to_html(item)}</li>")
                 parts.append("</ul>")
-        parts.append("</div>")
         return "".join(parts)
 
     def showEvent(self, event: QShowEvent) -> None:
