@@ -328,6 +328,39 @@ def ensure_workspace_claude_md(workspace: Path) -> Path:
     if not target.exists() or target.read_text(encoding="utf-8") != _WORKSPACE_CLAUDE_MD:
         target.write_text(_WORKSPACE_CLAUDE_MD, encoding="utf-8")
         _log.info("Workspace CLAUDE.md synced: %s", target)
+    ensure_workspace_hooks(workspace)
+    return target
+
+
+_WORKSPACE_SETTINGS_JSON = """{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo [Tadado AI assistant] For any task operation (list/add/done/partition/tag/report etc.), load and follow the tadado skill at .claude/skills/tadado/SKILL.md; execute commands via tadado-cli.exe only, never uv or guessed paths."
+          }
+        ]
+      }
+    ]
+  }
+}
+"""
+
+
+def ensure_workspace_hooks(workspace: Path) -> Path:
+    """工作区 SessionStart hook——启动/续接/`/clear` 时注入 skill 提醒.
+
+    SessionStart 的 matcher 覆盖 startup（新会话）、resume（续接）、
+    clear（/clear 后重新触发），保证每次会话边界 skill 约定都被重申。
+    """
+    target = workspace / ".claude" / "settings.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.exists() or target.read_text(encoding="utf-8") != _WORKSPACE_SETTINGS_JSON:
+        target.write_text(_WORKSPACE_SETTINGS_JSON, encoding="utf-8")
+        _log.info("Workspace SessionStart hook synced: %s", target)
     return target
 
 
