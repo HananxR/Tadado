@@ -2,10 +2,12 @@
 version: "0.2.7"
 name: tadado
 description: >-
-  通过 Tadado 命令行（tadado-cli.exe / uv run）管理本地 todo 任务。当用户要求
-  查看待办、添加任务、完成/修改/删除任务、查看标签与分区、归档、设置周期或提醒、
-  导出任务、生成今日摘要或周回顾时使用。Tadado 是用户的本地任务管理软件，数据存于
-  SQLite；本 skill 是它的 AI 操作通道，与 GUI 操作等价。
+  Tadado 任务管理 skill。当用户提到 Tadado/tatoda/todo 或任何任务管理词——
+  任务/待办/任务列表、当前分区/分区、标签、周报/月报、活动、归档、提醒、
+  今日摘要——或要求查看/添加/完成/修改/删除任务时，立即加载本 skill 并按其
+  指令执行。会话位于 Tadado 工作区（存在 CLAUDE.md 声明）时，一切任务相关
+  操作默认使用本 skill。命令经 tadado-cli.exe 执行（见 skill 定位规则），
+  禁止使用 uv 或猜测路径。
 ---
 
 # Tadado Skill — AI 任务管理通道

@@ -306,6 +306,28 @@ def ensure_workspace_skill(workspace: Path) -> Path:
     if not target.exists() or target.read_text(encoding="utf-8") != content:
         target.write_text(content, encoding="utf-8")
         _log.info("Workspace skill synced: %s", target)
+    ensure_workspace_claude_md(workspace)
+    return target
+
+
+_WORKSPACE_CLAUDE_MD = """# Tadado AI 助手工作区
+
+本工作区由 Tadado 托盘 AI 助手创建，是 Tadado 任务管理的专属会话环境。
+
+- 一切任务相关操作（查看/添加/完成/修改/删除任务、分区、标签、周报/月报、
+  活动、归档、提醒、今日摘要）必须通过 `tadado` skill 执行——其完整指令在
+  `.claude/skills/tadado/SKILL.md`。`/clear` 后本条说明仍在，请继续保持该约定。
+- 命令一律经 skill 的定位规则执行（tadado-cli.exe / TADADO_EXE），
+  禁止使用 uv、python 或猜测仓库路径。
+"""
+
+
+def ensure_workspace_claude_md(workspace: Path) -> Path:
+    """工作区 CLAUDE.md——/clear 后重新注入的持久记忆，保证 skill 约定不丢."""
+    target = workspace / "CLAUDE.md"
+    if not target.exists() or target.read_text(encoding="utf-8") != _WORKSPACE_CLAUDE_MD:
+        target.write_text(_WORKSPACE_CLAUDE_MD, encoding="utf-8")
+        _log.info("Workspace CLAUDE.md synced: %s", target)
     return target
 
 
