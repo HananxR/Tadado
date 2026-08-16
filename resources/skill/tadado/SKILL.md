@@ -15,14 +15,22 @@ Tadado 是本地 Windows 任务管理软件。本 skill 通过其 CLI（`tadado-
 
 ## 定位执行程序（按顺序尝试）
 
-1. 环境变量 `TADADO_EXE` 指向的可执行文件（若设置，直接使用）
-2. 打包版 `tadado-cli.exe`，候选位置：
-   - `C:\Program Files\Tadado\tadado-cli.exe`
-   - `C:\Program Files (x86)\Tadado\tadado-cli.exe`
-   - 便携版所在目录下的 `tadado-cli.exe`（用户提供路径时）
-3. 开发回退（在 Tadado 仓库根目录执行）：`uv run python main.py --cli ...`
+1. 环境变量 `TADADO_EXE` 指向的可执行文件：
+   - 文件名为 `tadado-cli.exe` → 直接调用：`<TADADO_EXE> <命令> ...`
+   - 文件名为 `Tadado.exe` → 加 `--cli`：`<TADADO_EXE> --cli <命令> ...`
+   - 未设置 → 继续下一步
+2. 从当前工作区向上查找：会话工作区形如 `<安装目录>/_internal/resources/ai_workspace`，
+   逐级向上找 `tadado-cli.exe`（便携版则在工作区同级/上级目录）
+3. 常见安装路径：`C:\Program Files\Tadado\tadado-cli.exe`、
+   `C:\Program Files (x86)\Tadado\tadado-cli.exe`
+4. 开发回退 `uv run python main.py --cli ...` ——**仅当**当前工作目录位于 Tadado
+   仓库内（存在 `main.py` 与 `src/`）时允许；安装版/便携版会话**禁止**使用
+   uv 或猜测仓库路径。
 
 统一用法：`<执行程序> <命令> [参数]`。默认输出 JSON（`--format human` 给终端用户看）。
+
+**找不到可执行程序时**：直接报错提示用户（安装版缺少 `tadado-cli.exe` 时建议
+重新安装/更新），绝不使用 uv、python 或其他路径猜测。
 
 ## 运行行为（重要）
 

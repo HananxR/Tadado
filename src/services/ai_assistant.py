@@ -83,11 +83,19 @@ def _workspace_dir(config) -> Path:
 
 
 def _tadado_cli_path() -> str | None:
-    """Frozen bundle: the sibling tadado-cli.exe (same-version instance)."""
+    """Frozen bundle: the sibling tadado-cli.exe (same-version instance).
+
+    单 exe 旧包无 tadado-cli.exe 时回退返回 Tadado.exe——它同样支持
+    `--cli` 参数进入命令行模式（main.py 入口分流）。
+    """
     if getattr(sys, "frozen", False):
-        candidate = Path(sys.executable).parent / "tadado-cli.exe"
+        exe_dir = Path(sys.executable).parent
+        candidate = exe_dir / "tadado-cli.exe"
         if candidate.exists():
             return str(candidate)
+        gui = exe_dir / "Tadado.exe"
+        if gui.exists():
+            return str(gui)
     return None
 
 
