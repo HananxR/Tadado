@@ -91,6 +91,40 @@ def _tadado_cli_path() -> str | None:
     return None
 
 
+def user_skill_path() -> Path:
+    """用户级 skill 文件路径（~/.claude/skills/tadado/SKILL.md）."""
+    return Path(os.path.expanduser("~")) / ".claude" / "skills" / "tadado" / "SKILL.md"
+
+
+def ensure_user_skill() -> Path:
+    """确保用户 skill 文件存在；首次缺失时用随附默认内容初始化.
+
+    纯用户自管：之后的内容变化完全由用户掌控，软件不再触碰。
+    """
+    path = user_skill_path()
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 默认内容来源：frozen → 随附资源；dev → 仓库 .claude/skills
+    import sys
+
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
+        bundled = base / "resources" / "skill" / "tadado" / "SKILL.md"
+    else:
+        bundled = Path(__file__).resolve().parents[3] / ".claude" / "skills" / "tadado" / "SKILL.md"
+    if bundled.exists():
+        path.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
+    else:
+        path.write_text(
+            "---\nname: tadado\ndescription: Tadado 任务管理\n---\n"
+            "\n# Tadado Skill\n\n（默认模板，请按需编辑）\n",
+            encoding="utf-8",
+        )
+    return path
+
+
 def _project_slug(path: str) -> str:
     """Claude Code 项目目录命名规则：非字母数字字符全部替换为 '-'."""
     return re.sub(r"[^0-9a-zA-Z]", "-", os.path.abspath(path))

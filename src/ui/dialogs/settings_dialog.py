@@ -344,6 +344,33 @@ class SettingsDialog(QDialog):
         ai_grid.addWidget(self._ai_status_label, ra[0], 0, 1, 2); ra[0] += 1
         self._refresh_ai_status()
 
+        # ================================================================
+        # Skill（纯用户自管：提供编辑入口，软件不自动覆盖用户修改）
+        # ================================================================
+        _header(ai_grid, ra, "Skill")
+        self._skill_path_label = QLabel("")
+        self._skill_path_label.setWordWrap(True)
+        self._skill_path_label.setStyleSheet(
+            f"QLabel {{ font-size: 11px; color: {t.text_secondary}; }}"
+        )
+        ai_grid.addWidget(self._skill_path_label, ra[0], 0, 1, 2); ra[0] += 1
+
+        skill_btns = QWidget()
+        skill_btns_layout = QHBoxLayout(skill_btns)
+        skill_btns_layout.setContentsMargins(0, 0, 0, 0)
+        skill_btns_layout.setSpacing(8)
+        self._skill_edit_btn = QPushButton("编辑 Skill")
+        self._skill_edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._skill_edit_btn.clicked.connect(self._on_edit_skill)
+        skill_btns_layout.addWidget(self._skill_edit_btn)
+        self._skill_dir_btn = QPushButton("打开目录")
+        self._skill_dir_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._skill_dir_btn.clicked.connect(self._on_open_skill_dir)
+        skill_btns_layout.addWidget(self._skill_dir_btn)
+        skill_btns_layout.addStretch()
+        ai_grid.addWidget(skill_btns, ra[0], 0, 1, 2); ra[0] += 1
+        self._refresh_skill_status()
+
         # 页签装配：常规 / AI 助手 / 归档与分区 / 关于（帮助文档并入关于页）
         for grid_, title in (
             (general_grid, "常规"),
@@ -915,6 +942,35 @@ class SettingsDialog(QDialog):
         self._config.set(
             "ai_assistant", "provider", value=self._ai_provider_combo.currentData()
         )
+
+    def _refresh_skill_status(self) -> None:
+        """刷新 skill 文件路径与存在状态（纯自管，只读展示）."""
+        from ...services.ai_assistant import user_skill_path
+
+        path = user_skill_path()
+        state = "已存在" if path.exists() else "首次编辑时自动创建"
+        self._skill_path_label.setText(f"{path}\n（{state}，修改后自行保存即生效）")
+
+    def _on_edit_skill(self) -> None:
+        """打开（或首次初始化）用户 skill 文件，交系统默认编辑器编辑."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from ...services.ai_assistant import ensure_user_skill
+
+        path = ensure_user_skill()
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        self._refresh_skill_status()
+
+    def _on_open_skill_dir(self) -> None:
+        """资源管理器打开 skill 目录（便于管理 Codex 副本等）."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from ...services.ai_assistant import user_skill_path
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(user_skill_path().parent)))
+        self._refresh_skill_status()
 
     def _refresh_ai_status(self) -> None:
         """选择变更后即时校验所选 AI 助手的可用性."""
