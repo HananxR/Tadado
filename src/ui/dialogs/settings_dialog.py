@@ -344,7 +344,7 @@ class SettingsDialog(QDialog):
         ai_grid.addWidget(self._ai_status_label, ra[0], 0, 1, 2); ra[0] += 1
         self._refresh_ai_status()
 
-        # 页签装配：常规 / AI 助手 / 归档与分区 / 帮助文档 / 关于
+        # 页签装配：常规 / AI 助手 / 归档与分区 / 关于（帮助文档并入关于页）
         for grid_, title in (
             (general_grid, "常规"),
             (ai_grid, "AI 助手"),
@@ -356,14 +356,6 @@ class SettingsDialog(QDialog):
             layout.addLayout(grid_)
             layout.addStretch()
             self._tabs.addTab(page, title)
-
-        from ..widgets.help_page import HelpPage
-
-        help_page = QWidget()
-        help_layout = QVBoxLayout(help_page)
-        help_layout.setContentsMargins(12, 8, 12, 8)
-        help_layout.addWidget(HelpPage())
-        self._tabs.addTab(help_page, "帮助文档")
 
         from .about_dialog import AboutPage
 

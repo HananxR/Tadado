@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QPixmap
@@ -156,42 +157,80 @@ class _RowLink(QPushButton):
         super().leaveEvent(event)
 
 
-def version_history_css(t) -> str:
-    """版本记录文档级样式表（帮助手册同款体系）."""
-    return (
-        f"h2 {{ font-size:16px; font-weight:700; color:{t.text_primary};"
-        f" margin-top:22px; margin-bottom:2px; }}"
-        f".date {{ font-size:11px; font-weight:400; color:{t.text_secondary}; }}"
-        f"h3 {{ font-size:12px; font-weight:700; margin-top:12px; margin-bottom:4px; }}"
-        f".cat-new {{ color:{t.success}; }}"
-        f".cat-opt {{ color:{t.warning}; }}"
-        f".cat-fix {{ color:{t.danger}; }}"
-        f"ul {{ margin-top:0; margin-bottom:8px; margin-left:16px; }}"
-        f"li {{ font-size:12px; color:{t.text_secondary}; margin:4px 0; }}"
-        f"a {{ color:{t.accent}; text-decoration:none; }}"
-    )
+_CHANGELOG_DOC_CSS = """
+  :root {
+    --bg: #f6f4ef; --surface: #fdfcf8; --text: #3a3832;
+    --text-2: #6f6a5f; --accent: #4d57c3; --border: #e3dfd4;
+    --success: #2f9e63; --warning: #d97f26; --danger: #c4453c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1c26; --surface: #272835; --text: #d8d5c9;
+      --text-2: #9d988b; --accent: #7c83ea; --border: #32333f;
+      --success: #3fae7c; --warning: #e0963f; --danger: #e06c63;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Microsoft YaHei", "Segoe UI", "Noto Sans SC", sans-serif;
+    font-size: 14px; line-height: 1.75; max-width: 780px;
+    margin: 0 auto; padding: 40px 32px 64px;
+  }
+  h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 6px; }
+  h1 + p { text-align: center; color: var(--text-2); font-size: 13px; margin-bottom: 36px; }
+  h2 {
+    font-size: 17px; font-weight: 700; margin-top: 30px; margin-bottom: 6px;
+    padding-bottom: 6px; border-bottom: 2px solid var(--accent);
+  }
+  h2 .date { font-size: 12px; font-weight: 400; color: var(--text-2); margin-left: 8px; }
+  h3 { font-size: 13px; font-weight: 700; margin-top: 14px; margin-bottom: 4px; }
+  .cat-new { color: var(--success); }
+  .cat-opt { color: var(--warning); }
+  .cat-fix { color: var(--danger); }
+  ul { margin: 4px 0 10px 20px; color: var(--text-2); }
+  li { margin: 4px 0; font-size: 13px; }
+  code {
+    font-family: "Cascadia Code", "Consolas", monospace; font-size: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 3px; color: var(--text);
+  }
+  a { color: var(--accent); text-decoration: none; }
+"""
 
 
-def build_version_history_html(versions: list[dict]) -> str:
-    """语义化 HTML：版本 h2 + 分类 h3 + 无序列表，样式全走文档级 CSS."""
+def _changelog_doc_path() -> str:
+    """生成独立版本记录 HTML 文件（临时目录，浏览器渲染），返回路径."""
+    import tempfile
+
+    versions = load_version_versions()
     parts = []
     for ver in versions:
         date_span = (
             f'<span class="date">{ver["date"]}</span>'
             if ver.get("date") else ""
         )
-        parts.append(f"<h2>v{ver['version']}&nbsp;{date_span}</h2>")
-        parts.append("<hr>")
+        parts.append(f"<h2>v{ver['version']}{date_span}</h2>")
         for cat, items in ver["categories"]:
             if not items:
                 continue
             cls = {"新增": "cat-new", "优化": "cat-opt", "修复": "cat-fix"}.get(cat, "")
-            parts.append(f'<h3 class="{cls}">{cat}</h3>')
-            parts.append("<ul>")
+            parts.append(f'<h3 class="{cls}">{cat}</h3><ul>')
             for item in items:
                 parts.append(f"<li>{_md_to_html(item)}</li>")
             parts.append("</ul>")
-    return "".join(parts)
+    body = "".join(parts)
+    doc = (
+        "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
+        "<title>Tadado 版本更新记录</title>"
+        f"<style>{_CHANGELOG_DOC_CSS}</style></head><body>"
+        "<h1>Tadado 版本更新记录</h1>"
+        f"<p>Less Noise, More Done · 共 {len(versions)} 个版本</p>"
+        f"{body}</body></html>"
+    )
+    path = Path(tempfile.gettempdir()) / "tadado_changelog.html"
+    path.write_text(doc, encoding="utf-8")
+    return str(path)
 
 
 def load_version_versions() -> list[dict]:
@@ -299,17 +338,9 @@ class AboutPage(QWidget):
 
         _section("服务")
         self._check_row = _row("检查更新", clicked=self._on_check_updates)
-
-        # 版本更新记录：行内展开（不再二次弹窗）
-        self._history_row = _row("版本更新记录", "▾", clicked=self._toggle_history)
-        self._history_browser = QTextBrowser()
-        self._history_browser.setOpenExternalLinks(True)
-        self._history_browser.setFrameShape(QFrame.Shape.NoFrame)
-        self._history_browser.setMaximumHeight(240)
-        self._history_browser.setVisible(False)
-        self._history_browser.document().setDefaultStyleSheet(version_history_css(t))
-        self._history_browser.setHtml(build_version_history_html(load_version_versions()))
-        content_layout.addWidget(self._history_browser)
+        # 版本更新记录与帮助文档：点击后调用本地浏览器呈现
+        _row("版本更新记录", "↗", clicked=self._open_changelog_browser)
+        _row("帮助文档", "↗", clicked=self._open_help_browser)
 
         _section("下载")
         _row("GitHub Releases", "↗",
@@ -342,11 +373,18 @@ class AboutPage(QWidget):
 
         body.addWidget(content, 1)
 
-    def _toggle_history(self) -> None:
-        """行内展开/收起版本更新记录."""
-        self._history_expanded = not getattr(self, "_history_expanded", False)
-        self._history_browser.setVisible(self._history_expanded)
-        self._history_row.set_detail("▴" if self._history_expanded else "▾")
+    def _open_changelog_browser(self) -> None:
+        """生成版本记录 HTML 后用本地浏览器打开."""
+        QDesktopServices.openUrl(QUrl.fromLocalFile(_changelog_doc_path()))
+
+    def _open_help_browser(self) -> None:
+        """用本地浏览器打开帮助文档 manual.html."""
+        import sys
+
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
+        path = base / "resources" / "help" / "manual.html"
+        if path.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
     def _copy_email(self) -> None:
         """复制邮箱地址到剪贴板，行尾提示已复制."""
