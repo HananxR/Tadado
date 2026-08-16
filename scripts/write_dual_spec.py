@@ -44,7 +44,7 @@ exe_gui = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['resources\\\\icons\\\\app.ico'],
+    icon=['resources/icons/app.ico'],
 )
 exe_cli = EXE(
     pyz,
@@ -62,7 +62,7 @@ exe_cli = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['resources\\\\icons\\\\app.ico'],
+    icon=['resources/icons/app.ico'],
 )
 coll = COLLECT(
     exe_gui,
