@@ -60,8 +60,12 @@ def _parse_changelog_md() -> list[dict]:
     import sys
     from pathlib import Path
 
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
-    path = base / "CHANGELOG.md"
+    # frozen：随附到 resources/help/ 的副本；dev：仓库根 CHANGELOG.md
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
+        path = base / "resources" / "help" / "CHANGELOG.md"
+    else:
+        path = Path(__file__).resolve().parents[3] / "CHANGELOG.md"
     if not path.exists():
         return []
     try:
@@ -307,7 +311,8 @@ def load_version_versions() -> list[dict]:
     if not versions:
         highlights = get_release_highlights()
         versions = [{
-            "version": get_version_display(),
+            # get_version_display() 自带 v 前缀，这里存储无前缀版本号
+            "version": get_version_display().lstrip("v"),
             "date": "",
             "categories": [(cat, list(items)) for cat, items in highlights.items() if items],
         }]
