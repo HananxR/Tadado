@@ -96,10 +96,11 @@ def bundled_skill_path() -> Path:
 
     frozen（onedir）与 dev 均解析到应用目录的 resources/skill/tadado/SKILL.md；
     该目录随程序分发，且按用户权限安装（可写）。
+    注意：ai_assistant.py 位于 src/services/，项目根 = parents[2]。
     """
     import sys
 
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
+    base = Path(getattr(sys, "_MEIPASS", str(Path(__file__).resolve().parents[2])))
     return base / "resources" / "skill" / "tadado" / "SKILL.md"
 
 
@@ -110,7 +111,7 @@ def ensure_bundled_skill() -> Path:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
     dev_source = (
-        Path(__file__).resolve().parents[3] / ".claude" / "skills" / "tadado" / "SKILL.md"
+        Path(__file__).resolve().parents[2] / ".claude" / "skills" / "tadado" / "SKILL.md"
     )
     if dev_source.exists():
         path.write_text(dev_source.read_text(encoding="utf-8"), encoding="utf-8")

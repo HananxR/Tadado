@@ -348,27 +348,55 @@ class SettingsDialog(QDialog):
         # Skill（resources 副本为唯一权威源：编辑它 + 同步到宿主才生效）
         # ================================================================
         _header(ai_grid, ra, "Skill")
+        skill_card = QWidget()
+        skill_card.setObjectName("skillCard")
+        skill_card.setStyleSheet(
+            f"QWidget#skillCard {{"
+            f"  background: {t.surface_raised};"
+            f"  border: 1px solid {t.border_primary};"
+            f"  border-radius: 8px;"
+            f"}}"
+        )
+        sc = QVBoxLayout(skill_card)
+        sc.setContentsMargins(12, 10, 12, 10)
+        sc.setSpacing(8)
         self._skill_path_label = QLabel("")
         self._skill_path_label.setWordWrap(True)
         self._skill_path_label.setStyleSheet(
             f"QLabel {{ font-size: 11px; color: {t.text_secondary}; }}"
         )
-        ai_grid.addWidget(self._skill_path_label, ra[0], 0, 1, 2); ra[0] += 1
-
+        sc.addWidget(self._skill_path_label)
         skill_btns = QWidget()
         skill_btns_layout = QHBoxLayout(skill_btns)
         skill_btns_layout.setContentsMargins(0, 0, 0, 0)
         skill_btns_layout.setSpacing(8)
         self._skill_edit_btn = QPushButton("编辑 Skill")
         self._skill_edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._skill_edit_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size: 11px; font-weight: bold; padding: 4px 14px;"
+            f"  border: none; border-radius: 4px;"
+            f"  background: {t.accent}; color: {t.text_on_accent};"
+            f"}}"
+            f"QPushButton:hover {{ background: {t.accent_hover}; }}"
+        )
         self._skill_edit_btn.clicked.connect(self._on_edit_skill)
         skill_btns_layout.addWidget(self._skill_edit_btn)
         self._skill_sync_btn = QPushButton("同步到 Claude / Codex")
         self._skill_sync_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._skill_sync_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  font-size: 11px; padding: 4px 14px;"
+            f"  border: 1px solid {t.accent}; border-radius: 4px;"
+            f"  background: transparent; color: {t.accent};"
+            f"}}"
+            f"QPushButton:hover {{ background: {t.bg_tertiary}; }}"
+        )
         self._skill_sync_btn.clicked.connect(self._on_sync_skill)
         skill_btns_layout.addWidget(self._skill_sync_btn)
         skill_btns_layout.addStretch()
-        ai_grid.addWidget(skill_btns, ra[0], 0, 1, 2); ra[0] += 1
+        sc.addWidget(skill_btns)
+        ai_grid.addWidget(skill_card, ra[0], 0, 1, 2); ra[0] += 1
         self._refresh_skill_status()
 
         # 页签装配：常规 / AI 助手 / 归档与分区 / 关于（帮助文档并入关于页）
