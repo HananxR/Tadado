@@ -50,10 +50,40 @@
     line-height: 1.75;
     color: var(--text);
     background: var(--bg);
-    max-width: 860px;
-    margin: 0 auto;
-    padding: 32px 24px 64px;
   }
+  .layout {
+    display: flex; align-items: flex-start; gap: 28px;
+    max-width: 1200px; margin: 0 auto; padding: 32px 24px 64px;
+  }
+  .toc-side {
+    position: sticky; top: 24px; flex-shrink: 0; width: 224px;
+  }
+  .toc-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; background: var(--toc-bg);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-weight: 600; color: var(--text);
+  }
+  .toc-toggle {
+    background: none; border: none; color: var(--accent);
+    cursor: pointer; font-size: 14px; padding: 0 4px;
+  }
+  .toc-nav {
+    margin-top: 8px; background: var(--toc-bg);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .toc-side.collapsed { width: auto; }
+  .toc-side.collapsed .toc-nav { display: none; }
+  .toc-nav ol { list-style: none; margin: 0; }
+  .toc-nav li { margin-bottom: 2px; }
+  .toc-nav a {
+    display: block; padding: 5px 8px; border-radius: 4px;
+    color: var(--text-secondary); font-size: 13px; text-decoration: none;
+  }
+  .toc-nav a:hover { color: var(--accent); background: var(--code-bg); }
+  .toc-nav a.active { color: var(--accent); background: var(--code-bg); font-weight: 600; }
+  .content { flex: 1; min-width: 0; }
 
   h1 { font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 4px; letter-spacing: -0.5px; }
   h1 + p { text-align: center; color: var(--text-secondary); margin-bottom: 32px; }
@@ -110,21 +140,28 @@
 <h1>Tadado 使用手册</h1>
 <p>v0.2.2 &mdash; Markdown 驱动的 Windows / Linux 桌面任务管理工具 &middot; 轻量、离线、开源</p>
 
-<div class="toc">
-<h3>目录</h3>
-<ol>
-  <li><a href="#quickstart">快速入门</a></li>
-  <li><a href="#task-view">任务视图</a></li>
-  <li><a href="#dashboard">活动分析</a></li>
-  <li><a href="#batch-view">任务管理控制台</a></li>
-  <li><a href="#partitions">分区管理</a></li>
-  <li><a href="#tray">系统托盘与提醒</a></li>
-  <li><a href="#settings">设置</a></li>
-  <li><a href="#cli">命令行与 AI 助手</a></li>
-  <li><a href="#faq">常见问题</a></li>
-  <li><a href="#acknowledgments">致谢与许可</a></li>
-</ol>
-</div>
+<div class="layout">
+<aside class="toc-side" id="tocSide">
+  <div class="toc-head">
+    <span>目录</span>
+    <button class="toc-toggle" id="tocToggle" title="收起 / 展开">«</button>
+  </div>
+  <nav class="toc-nav" id="tocNav">
+    <ol>
+      <li><a href="#quickstart">快速入门</a></li>
+      <li><a href="#task-view">任务视图</a></li>
+      <li><a href="#dashboard">活动分析</a></li>
+      <li><a href="#batch-view">任务管理控制台</a></li>
+      <li><a href="#partitions">分区管理</a></li>
+      <li><a href="#tray">系统托盘与提醒</a></li>
+      <li><a href="#settings">设置</a></li>
+      <li><a href="#cli">命令行与 AI 助手</a></li>
+      <li><a href="#faq">常见问题</a></li>
+      <li><a href="#acknowledgments">致谢与许可</a></li>
+    </ol>
+  </nav>
+</aside>
+<main class="content">
 
 <!-- ===== 1. Quick Start ===== -->
 <h2 id="quickstart">1. 快速入门</h2>
@@ -443,5 +480,39 @@
 <hr>
 <footer>Tadado v0.2.7 &middot; MIT License &middot; <a href="https://github.com/HananxR/Tadado">GitHub</a> &middot; HananxR &lt;hanxy8413@gmail.com&gt;</footer>
 
+</main>
+</div>
+<script>
+  (function () {
+    var toggle = document.getElementById('tocToggle');
+    var side = document.getElementById('tocSide');
+    if (toggle && side) {
+      toggle.addEventListener('click', function () {
+        side.classList.toggle('collapsed');
+        toggle.textContent = side.classList.contains('collapsed') ? '»' : '«';
+      });
+    }
+    var links = Array.prototype.slice.call(document.querySelectorAll('.toc-nav a'));
+    var sections = links.map(function (a) {
+      return document.querySelector(a.getAttribute('href'));
+    }).filter(Boolean);
+    links.forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        var target = document.querySelector(a.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    window.addEventListener('scroll', function () {
+      var current = sections[0];
+      sections.forEach(function (sec) {
+        if (sec.offsetTop - 90 <= window.scrollY) current = sec;
+      });
+      links.forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + current.id);
+      });
+    });
+  })();
+</script>
 </body>
 </html>

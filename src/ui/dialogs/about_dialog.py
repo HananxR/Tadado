@@ -174,11 +174,37 @@ _CHANGELOG_DOC_CSS = """
   body {
     background: var(--bg); color: var(--text);
     font-family: "Microsoft YaHei", "Segoe UI", "Noto Sans SC", sans-serif;
-    font-size: 14px; line-height: 1.75; max-width: 780px;
-    margin: 0 auto; padding: 40px 32px 64px;
+    font-size: 14px; line-height: 1.75;
   }
-  h1 { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 6px; }
-  h1 + p { text-align: center; color: var(--text-2); font-size: 13px; margin-bottom: 36px; }
+  .layout {
+    display: flex; align-items: flex-start; gap: 28px;
+    max-width: 1100px; margin: 0 auto; padding: 36px 24px 64px;
+  }
+  .toc-side { position: sticky; top: 24px; flex-shrink: 0; width: 224px; }
+  .toc-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-weight: 600;
+  }
+  .toc-toggle { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 14px; padding: 0 4px; }
+  .toc-nav {
+    margin-top: 8px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  }
+  .toc-side.collapsed { width: auto; }
+  .toc-side.collapsed .toc-nav { display: none; }
+  .toc-nav ol { list-style: none; margin: 0; }
+  .toc-nav li { margin-bottom: 2px; }
+  .toc-nav a {
+    display: block; padding: 5px 8px; border-radius: 4px;
+    color: var(--text-2); font-size: 13px; text-decoration: none;
+  }
+  .toc-nav a:hover { color: var(--accent); background: var(--surface); }
+  .toc-nav a.active { color: var(--accent); font-weight: 600; }
+  .content { flex: 1; min-width: 0; }
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+  h1 + p { color: var(--text-2); font-size: 13px; margin-bottom: 30px; }
   h2 {
     font-size: 17px; font-weight: 700; margin-top: 30px; margin-bottom: 6px;
     padding-bottom: 6px; border-bottom: 2px solid var(--accent);
@@ -196,37 +222,78 @@ _CHANGELOG_DOC_CSS = """
     padding: 1px 5px; border-radius: 3px; color: var(--text);
   }
   a { color: var(--accent); text-decoration: none; }
+  .js {
+    font-family: "Cascadia Code", "Consolas", monospace; font-size: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 3px; color: var(--text);
+  }
 """
 
 
+
 def _changelog_doc_path() -> str:
-    """生成独立版本记录 HTML 文件（临时目录，浏览器渲染），返回路径."""
+    """生成独立版本记录 HTML（左侧可收起目录 + 版本锚点），返回路径."""
     import tempfile
 
     versions = load_version_versions()
-    parts = []
-    for ver in versions:
+    toc_items = []
+    body_parts = []
+    for i, ver in enumerate(versions):
+        anchor = f"v{ver['version'].replace('.', '-')}"
         date_span = (
             f'<span class="date">{ver["date"]}</span>'
             if ver.get("date") else ""
         )
-        parts.append(f"<h2>v{ver['version']}{date_span}</h2>")
+        date_mini = (
+            f' <span style="font-size:11px;">{ver["date"][:10]}</span>'
+            if ver.get("date") else ""
+        )
+        toc_items.append(
+            f'<li><a href="#{anchor}">v{ver["version"]}{date_mini}</a></li>'
+        )
+        body_parts.append(f'<h2 id="{anchor}">v{ver["version"]}{date_span}</h2>')
         for cat, items in ver["categories"]:
             if not items:
                 continue
             cls = {"新增": "cat-new", "优化": "cat-opt", "修复": "cat-fix"}.get(cat, "")
-            parts.append(f'<h3 class="{cls}">{cat}</h3><ul>')
+            body_parts.append(f'<h3 class="{cls}">{cat}</h3><ul>')
             for item in items:
-                parts.append(f"<li>{_md_to_html(item)}</li>")
-            parts.append("</ul>")
-    body = "".join(parts)
+                body_parts.append(f"<li>{_md_to_html(item)}</li>")
+            body_parts.append("</ul>")
+    toc = "".join(toc_items)
+    body = "".join(body_parts)
     doc = (
         "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
         "<title>Tadado 版本更新记录</title>"
         f"<style>{_CHANGELOG_DOC_CSS}</style></head><body>"
+        '<div class="layout">'
+        '<aside class="toc-side" id="tocSide">'
+        '<div class="toc-head"><span>版本目录</span>'
+        '<button class="toc-toggle" id="tocToggle" title="收起 / 展开">«</button></div>'
+        f'<nav class="toc-nav" id="tocNav"><ol>{toc}</ol></nav>'
+        "</aside>"
+        '<main class="content">'
         "<h1>Tadado 版本更新记录</h1>"
         f"<p>Less Noise, More Done · 共 {len(versions)} 个版本</p>"
-        f"{body}</body></html>"
+        f"{body}</main></div>"
+        "<script>"
+        "(function(){"
+        "var toggle=document.getElementById('tocToggle');"
+        "var side=document.getElementById('tocSide');"
+        "toggle.addEventListener('click',function(){"
+        "side.classList.toggle('collapsed');"
+        "toggle.textContent=side.classList.contains('collapsed')?'»':'«';});"
+        "var links=[].slice.call(document.querySelectorAll('.toc-nav a'));"
+        "var sections=links.map(function(a){return document.querySelector(a.getAttribute('href'));}).filter(Boolean);"
+        "links.forEach(function(a){a.addEventListener('click',function(e){"
+        "e.preventDefault();var t=document.querySelector(a.getAttribute('href'));"
+        "if(t)t.scrollIntoView({behavior:'smooth',block:'start'});});});"
+        "window.addEventListener('scroll',function(){"
+        "var cur=sections[0];sections.forEach(function(s){if(s.offsetTop-90<=window.scrollY)cur=s;});"
+        "links.forEach(function(a){a.classList.toggle('active',a.getAttribute('href')==='#'+cur.id);});});"
+        "})();"
+        "</script></body></html>"
     )
     path = Path(tempfile.gettempdir()) / "tadado_changelog.html"
     path.write_text(doc, encoding="utf-8")
