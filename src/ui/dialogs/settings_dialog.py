@@ -944,12 +944,15 @@ class SettingsDialog(QDialog):
         )
 
     def _refresh_skill_status(self) -> None:
-        """刷新 skill 文件路径与存在状态（纯自管，只读展示）."""
-        from ...services.ai_assistant import user_skill_path
+        """刷新 skill 文件路径、版本与存在状态（纯自管，只读展示）."""
+        from ...services.ai_assistant import skill_version, user_skill_path
 
         path = user_skill_path()
         state = "已存在" if path.exists() else "首次编辑时自动创建"
-        self._skill_path_label.setText(f"{path}\n（{state}，修改后自行保存即生效）")
+        ver = skill_version(path) or "未标注版本"
+        self._skill_path_label.setText(
+            f"{path}\n（{state}，skill 版本：{ver}，修改后自行保存即生效）"
+        )
 
     def _on_edit_skill(self) -> None:
         """打开（或首次初始化）用户 skill 文件，交系统默认编辑器编辑."""

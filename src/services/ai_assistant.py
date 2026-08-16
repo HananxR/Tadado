@@ -96,6 +96,18 @@ def user_skill_path() -> Path:
     return Path(os.path.expanduser("~")) / ".claude" / "skills" / "tadado" / "SKILL.md"
 
 
+def skill_version(path: Path) -> str:
+    """读取 SKILL.md frontmatter 的 version 字段（无则返回空串）."""
+    import re
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    m = re.search(r"^version:\s*[\"']?([^\"'\n]+)[\"']?$", text, re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
 def ensure_user_skill() -> Path:
     """确保用户 skill 文件存在；首次缺失时用随附默认内容初始化.
 
@@ -118,7 +130,7 @@ def ensure_user_skill() -> Path:
         path.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
     else:
         path.write_text(
-            "---\nname: tadado\ndescription: Tadado 任务管理\n---\n"
+            "---\nversion: \"0.2.7\"\nname: tadado\ndescription: Tadado 任务管理\n---\n"
             "\n# Tadado Skill\n\n（默认模板，请按需编辑）\n",
             encoding="utf-8",
         )

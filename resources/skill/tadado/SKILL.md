@@ -1,4 +1,5 @@
 ---
+version: "0.2.7"
 name: tadado
 description: >-
   通过 Tadado 命令行（tadado-cli.exe / uv run）管理本地 todo 任务。当用户要求
