@@ -87,7 +87,8 @@ def _parse_changelog_md() -> list[dict]:
             continue
         m = re.match(r"^[-*]\s+(.+)", line.strip())
         if m and current is not None and current_cat is not None:
-            item = m.group(1).strip().lstrip("*").strip()
+            # 只去空白——开头的 ** 是加粗标记，必须保留给 _md_to_html 渲染
+            item = m.group(1).strip()
             if item:
                 current["categories"][-1][1].append(item)
     return versions
