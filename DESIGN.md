@@ -155,11 +155,12 @@ tadado-cli <command> [args]
               → 同栈执行 → JSON 输出
 ```
 
-**命令集**（12 个）：`list`（筛选/排序/分页）、`today`（今日摘要分组）、`add`
-（Markdown 行为主 + flags 覆盖）、`edit`（字段修改 + `--dry-run` diff）、`done`
-（状态变更，触发周期克隆与即时归档）、`rm`、`tags`、`partitions`（增删改）、
-`archive`（`--all` 归档全部已完成）、`recurrence`（`+1d/+1w/+1m/+1y`）、
-`reminder`（全局提醒配置）、`export`（md/xlsx，复用 `MarkdownExporter`/`task_exporter`）。
+**命令集**（14 个）：`list`（筛选/排序/分页）、`today`（今日摘要分组，分区可过滤）、
+`activity`（指定日期活动时间线）、`add`（Markdown 行为主 + flags 覆盖）、`edit`
+（字段修改 + `--dry-run` diff）、`done`（状态变更，触发周期克隆与即时归档）、`log`
+（追加活动进展）、`rm`、`tags`、`partitions`（增删改）、`archive`（`--all` 归档全部
+已完成）、`recurrence`（`+1d/+1w/+1m/+1y`）、`reminder`（全局提醒配置）、`export`
+（md/xlsx，复用 `MarkdownExporter`/`task_exporter`）、`report`（周报/月报摘要）。
 
 **关键设计**：
 
@@ -183,9 +184,16 @@ tadado-cli <command> [args]
    `tadado-cli.exe`（用户 DB）；`TADADO_DATA_DIR` 可覆盖数据目录。
 8. **AI 助手托盘入口**（`src/services/ai_assistant.py`）— 托盘「AI 助手」一键启动专属
    Claude Code / Codex 会话：单一 provider（配置 `ai_assistant.provider` 指定，未配置
-   自动检测 claude 优先）；专用工作区 `ai_workspace/` + 首条指令 `/tadado` 保证
-   skill 唯一加载；未安装助手时菜单置灰。启动时注入 `TADADO_EXE` 指向同版本
-   `tadado-cli.exe`。
+   自动检测 claude 优先）；自动续接上次会话（会话 ID 捕获 + `--resume`）；专用工作区
+   `ai_workspace/` + 首条指令 `/tadado` 保证 skill 唯一加载；未安装助手时菜单置灰；
+   启动时注入 `TADADO_EXE`/`TADADO_PARTITION`；会话 jsonl usage 超 80% 托盘提醒 /compact。
+9. **Skill 管理**（设置 → AI 助手）— `resources/skill/tadado/SKILL.md`（随程序分发、
+   带 version 字段）为唯一权威源：「编辑 Skill」打开微调，「同步到 Claude / Codex」
+   分发到 `~/.claude`/`~/.agents` 宿主目录后生效；状态行实时展示版本与同步状态。
+10. **字体平台适配** — Windows 用系统字体（安装包剔除内置字体 -27MB）；Linux 启动时
+   探测系统 CJK/Emoji 字体族，缺失才加载内置 Noto 字体。
+11. **设置对话框页签化** — 常规 / AI 助手 / 归档与分区 / 关于；帮助文档并入关于页，
+   与版本更新记录一样以浏览器打开（左侧可收起目录 + 锚点滚动高亮）。
 
 **关联修复**：`repository.count()` 的 FTS 分支修正为 `rowid IN` + LIKE 兜底
 （原实现 `id IN` 恒假且缺中文 LIKE，导致关键词搜索时 total 恒为 0）；

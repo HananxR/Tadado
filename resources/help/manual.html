@@ -138,7 +138,7 @@
 <body>
 
 <h1>Tadado 使用手册</h1>
-<p>v0.2.2 &mdash; Markdown 驱动的 Windows / Linux 桌面任务管理工具 &middot; 轻量、离线、开源</p>
+<p>v0.2.7 &mdash; Markdown 驱动的 Windows / Linux 桌面任务管理工具 &middot; 轻量、离线、开源</p>
 
 <div class="layout">
 <aside class="toc-side" id="tocSide">
@@ -351,35 +351,46 @@
 <!-- ===== 7. Settings ===== -->
 <h2 id="settings">7. 设置</h2>
 
-<h3>7.1 外观</h3>
-<ul>
-  <li><strong>主题</strong> — 亮色（暖灰纸感）/ 暗色（Tokyo-night 系），视觉规范统一：
-  暖调靛青强调色、卡片分层软阴影、统一圆角标度</li>
-  <li><strong>最小化到托盘</strong> — 开启后最小化按钮隐藏到系统托盘</li>
-  <li><strong>开机自动启动</strong> — 开启后随系统自动启动 Tadado</li>
-</ul>
+<p>设置对话框按页签组织：<strong>常规 / AI 助手 / 归档与分区 / 关于</strong>。</p>
 
-<h3>7.2 任务列表</h3>
+<h3>7.1 常规</h3>
 <ul>
+  <li><strong>主题</strong> — 亮色（暖灰纸感）/ 暗色（Tokyo-night 系），视觉规范统一：暖调靛青强调色、卡片分层软阴影、统一圆角标度</li>
+  <li><strong>最小化到托盘</strong> — 开启后最小化隐藏到系统托盘</li>
+  <li><strong>开机自动启动</strong> — 开启后随系统自动启动 Tadado</li>
   <li><strong>每页条数</strong> — 20 / 50 / 100</li>
   <li><strong>默认排序</strong> — 优先级 / 截止日期 / 创建时间 / 状态 / 标题</li>
-  <li><strong>已完成置底</strong> — 开启后（默认），所有排序模式下已完成任务自动排在列表底部；关闭后与活跃任务混合排列</li>
-  <li><strong>热力图起始年份</strong> — 日历热力图的数据起始年</li>
-  <li><strong>热力图配色方案</strong> — 4 组配色可选</li>
+  <li><strong>已完成置底</strong> — 开启后（默认），已完成任务自动排在列表底部</li>
 </ul>
 
-<h3>7.3 归档 / 分区管理</h3>
+<h3>7.2 热力图显示设置</h3>
+<p>热力图的<strong>配色方案</strong>（暖阳/新绿/海洋/樱花）与<strong>起始年份</strong>
+已移至活动分析页热力图导航栏（🏠 按钮旁），就地调整即时生效。</p>
+
+<h3>7.3 AI 助手</h3>
+<ul>
+  <li><strong>AI 助手</strong> — 选择托盘「AI 助手」的 provider：自动检测（优先 Claude）/ Claude / Codex；选择即校验是否已安装（绿色路径 / 红色提示）</li>
+  <li><strong>Skill 管理</strong> — 显示随附 skill 版本与 Claude/Codex 同步状态：
+  点「编辑 Skill」打开随附 skill（唯一权威源）微调，点「同步到 Claude / Codex」
+  分发修改；只有同步后才生效</li>
+</ul>
+
+<h3>7.4 归档 / 分区管理</h3>
 <ul>
   <li><strong>分区表格</strong> — 5 列：名称 / 默认分区 / 归档阈值(天) / 自动锁定(分) / 密码</li>
-  <li><strong>表头固定</strong> — 分区超过 6~7 行时表格自动出现滚动条，表头始终可见</li>
-  <li><strong>工具栏</strong> — <code>+ 新增</code> 和 <code>− 删除</code> 按钮始终可见，选中行后显示"已选 N 个分区"</li>
   <li><strong>归档阈值</strong> — 双击单元格编辑。0=完成任务后即时归档，1~9998=完成后N天午夜归档，9999=永不归档</li>
   <li><strong>自动锁定</strong> — 双击单元格编辑空闲超时分钟数（默认 3 分钟）</li>
-  <li><strong>新增分区</strong> — 点击 <code>+ 新增</code> 创建新分区，名称列直接输入</li>
-  <li><strong>删除分区</strong> — 选中分区后点击 <code>− 删除</code>，分区内有任务时阻止删除</li>
+  <li><strong>新增/删除分区</strong> — 工具栏 <code>+ 新增</code> / <code>− 删除</code>，分区内有任务时阻止删除</li>
 </ul>
 
-<!-- ===== 8. CLI & AI ===== -->
+<h3>7.5 关于</h3>
+<ul>
+  <li><strong>检查更新</strong> — 行尾显示结果（✓ 已是最新 / 发现新版本）</li>
+  <li><strong>版本更新记录</strong> — 点击在浏览器打开完整版本历史（左侧版本目录可收起）</li>
+  <li><strong>帮助文档</strong> — 点击在浏览器打开本手册（左侧章节目录可收起）</li>
+  <li><strong>下载渠道 / 反馈</strong> — GitHub Releases、阿里云盘、邮箱（点击复制）、公众号</li>
+</ul>
+
 <h2 id="cli">8. 命令行与 AI 助手</h2>
 
 <h3>8.1 什么是 tadado-cli</h3>
