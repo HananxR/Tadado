@@ -510,17 +510,26 @@ class TadadoApp(QApplication):
     # ------------------------------------------------------------------
 
     def _load_bundled_fonts(self) -> None:
-        """Load bundled CJK + Emoji fonts on Linux (Windows has these system-wide)."""
+        """按平台适配字体：Windows 用系统自带，Linux 先探测系统字体，
+        缺失时才加载内置 CJK/Emoji 字体，避免无谓的 27MB 加载。"""
         if sys.platform == "win32":
-            return
-        # CJK fallback: Noto Sans CJK SC (OFL)
+            return  # 微软雅黑 / Segoe UI Emoji 系统自带
+
+        system_families = set(QFontDatabase.families())
+        cjk_families = (
+            "Noto Sans CJK SC", "Source Han Sans SC", "WenQuanYi Micro Hei",
+            "WenQuanYi Zen Hei", "AR PL UMing CN", "Microsoft YaHei",
+        )
+        emoji_families = ("Noto Color Emoji", "Segoe UI Emoji", "Apple Color Emoji")
+
         cjk = self._resource_path("fonts", "NotoSansCJKsc-Regular.otf")
-        if cjk and cjk.exists():
+        if cjk and cjk.exists() and not any(f in system_families for f in cjk_families):
             QFontDatabase.addApplicationFont(str(cjk))
-        # Emoji fallback: Noto Color Emoji (OFL)
+            self._log.info("Bundled CJK font loaded (no system CJK font found)")
         emoji = self._resource_path("fonts", "NotoColorEmoji.ttf")
-        if emoji and emoji.exists():
+        if emoji and emoji.exists() and not any(f in system_families for f in emoji_families):
             QFontDatabase.addApplicationFont(str(emoji))
+            self._log.info("Bundled emoji font loaded (no system emoji font found)")
         # Do NOT call setFont() — let Qt match fonts per-character via fallback chain.
 
     # ------------------------------------------------------------------
