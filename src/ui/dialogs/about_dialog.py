@@ -375,7 +375,7 @@ class AboutPage(QWidget):
         side_layout.addWidget(name)
         side_layout.addSpacing(3)
 
-        ver = QLabel(f"v{get_version_display()}")
+        ver = QLabel(get_version_display())
         ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
         ver.setStyleSheet(f"font-size: 11px; color: {t.text_secondary};")
         side_layout.addWidget(ver)
