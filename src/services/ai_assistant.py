@@ -283,6 +283,24 @@ def _session_env(config, partition_name: str) -> dict:
     return env
 
 
+def ensure_workspace_skill(workspace: Path) -> Path:
+    """把随附 skill（版本锁定的权威源）复制到会话工作区.
+
+    安装版的工作区不在任何仓库内，项目级 skill 无法通过向上扫描发现——
+    必须由启动器把 skill 落盘到 workspace/.claude/skills/tadado/，
+    首条指令 `/tadado` 才能命中。随附 skill 与当前 Tadado 版本一致，
+    天然保证「哪个版本的 Tadado 用哪个版本的 skill」。
+    """
+    source = ensure_bundled_skill()
+    target = workspace / ".claude" / "skills" / "tadado" / "SKILL.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    content = source.read_text(encoding="utf-8")
+    if not target.exists() or target.read_text(encoding="utf-8") != content:
+        target.write_text(content, encoding="utf-8")
+        _log.info("Workspace skill synced: %s", target)
+    return target
+
+
 def start_session(config, partition_name: str = "", resume: bool = False) -> tuple[bool, str]:
     """启动 AI 助手会话。Returns (ok, message).
 
@@ -299,6 +317,7 @@ def start_session(config, partition_name: str = "", resume: bool = False) -> tup
     if provider is None:
         return False, "未检测到 Claude Code 或 Codex，AI 助手不可用"
     workspace = _workspace_dir(config)
+    ensure_workspace_skill(workspace)
     env = _session_env(config, partition_name)
 
     is_resume = resume
