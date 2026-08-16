@@ -345,7 +345,7 @@ class SettingsDialog(QDialog):
         self._refresh_ai_status()
 
         # ================================================================
-        # Skill（纯用户自管：提供编辑入口，软件不自动覆盖用户修改）
+        # Skill（resources 副本为唯一权威源：编辑它 + 同步到宿主才生效）
         # ================================================================
         _header(ai_grid, ra, "Skill")
         self._skill_path_label = QLabel("")
@@ -363,10 +363,10 @@ class SettingsDialog(QDialog):
         self._skill_edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._skill_edit_btn.clicked.connect(self._on_edit_skill)
         skill_btns_layout.addWidget(self._skill_edit_btn)
-        self._skill_dir_btn = QPushButton("打开目录")
-        self._skill_dir_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._skill_dir_btn.clicked.connect(self._on_open_skill_dir)
-        skill_btns_layout.addWidget(self._skill_dir_btn)
+        self._skill_sync_btn = QPushButton("同步到 Claude / Codex")
+        self._skill_sync_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._skill_sync_btn.clicked.connect(self._on_sync_skill)
+        skill_btns_layout.addWidget(self._skill_sync_btn)
         skill_btns_layout.addStretch()
         ai_grid.addWidget(skill_btns, ra[0], 0, 1, 2); ra[0] += 1
         self._refresh_skill_status()
@@ -944,35 +944,37 @@ class SettingsDialog(QDialog):
         )
 
     def _refresh_skill_status(self) -> None:
-        """刷新 skill 文件路径、版本与存在状态（纯自管，只读展示）."""
-        from ...services.ai_assistant import skill_version, user_skill_path
+        """刷新随附 skill 状态：权威源路径、版本、各宿主同步状态."""
+        from ...services.ai_assistant import skill_sync_status
 
-        path = user_skill_path()
-        state = "已存在" if path.exists() else "首次编辑时自动创建"
-        ver = skill_version(path) or "未标注版本"
+        st = skill_sync_status()
+        state = "已存在" if st["exists"] else "缺失"
+        ver = st["version"] or "未标注版本"
+        claude = "已同步" if st["synced"].get("claude") else "未同步"
+        codex = "已同步" if st["synced"].get("codex") else "未同步"
         self._skill_path_label.setText(
-            f"{path}\n（{state}，skill 版本：{ver}，修改后自行保存即生效）"
+            f"{st['path']}\n"
+            f"（{state}，skill 版本：{ver}）\n"
+            f"Claude Code：{claude} · Codex：{codex}\n"
+            f"编辑此文件后点击「同步」分发，修改才会生效"
         )
 
     def _on_edit_skill(self) -> None:
-        """打开（或首次初始化）用户 skill 文件，交系统默认编辑器编辑."""
+        """打开随附 skill（唯一权威源）交系统默认编辑器编辑."""
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
 
-        from ...services.ai_assistant import ensure_user_skill
+        from ...services.ai_assistant import ensure_bundled_skill
 
-        path = ensure_user_skill()
+        path = ensure_bundled_skill()
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
         self._refresh_skill_status()
 
-    def _on_open_skill_dir(self) -> None:
-        """资源管理器打开 skill 目录（便于管理 Codex 副本等）."""
-        from PySide6.QtCore import QUrl
-        from PySide6.QtGui import QDesktopServices
+    def _on_sync_skill(self) -> None:
+        """把随附 skill 分发到 Claude/Codex 宿主目录并刷新状态."""
+        from ...services.ai_assistant import sync_skill_to_hosts
 
-        from ...services.ai_assistant import user_skill_path
-
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(user_skill_path().parent)))
+        sync_skill_to_hosts()
         self._refresh_skill_status()
 
     def _refresh_ai_status(self) -> None:

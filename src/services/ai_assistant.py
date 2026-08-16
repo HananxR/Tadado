@@ -91,9 +91,36 @@ def _tadado_cli_path() -> str | None:
     return None
 
 
-def user_skill_path() -> Path:
-    """用户级 skill 文件路径（~/.claude/skills/tadado/SKILL.md）."""
-    return Path(os.path.expanduser("~")) / ".claude" / "skills" / "tadado" / "SKILL.md"
+def bundled_skill_path() -> Path:
+    """软件随附 skill 路径（唯一权威源，用户编辑对象）.
+
+    frozen（onedir）与 dev 均解析到应用目录的 resources/skill/tadado/SKILL.md；
+    该目录随程序分发，且按用户权限安装（可写）。
+    """
+    import sys
+
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
+    return base / "resources" / "skill" / "tadado" / "SKILL.md"
+
+
+def ensure_bundled_skill() -> Path:
+    """确保随附 skill 存在：缺失时用仓库 .claude 副本（dev）或内置模板初始化."""
+    path = bundled_skill_path()
+    if path.exists():
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    dev_source = (
+        Path(__file__).resolve().parents[3] / ".claude" / "skills" / "tadado" / "SKILL.md"
+    )
+    if dev_source.exists():
+        path.write_text(dev_source.read_text(encoding="utf-8"), encoding="utf-8")
+    else:
+        path.write_text(
+            "---\nversion: \"0.2.7\"\nname: tadado\ndescription: Tadado 任务管理\n---\n"
+            "\n# Tadado Skill\n\n（默认模板，请按需编辑）\n",
+            encoding="utf-8",
+        )
+    return path
 
 
 def skill_version(path: Path) -> str:
@@ -108,33 +135,49 @@ def skill_version(path: Path) -> str:
     return m.group(1).strip() if m else ""
 
 
-def ensure_user_skill() -> Path:
-    """确保用户 skill 文件存在；首次缺失时用随附默认内容初始化.
+def _skill_host_paths() -> dict[str, Path]:
+    """宿主 skill 目录：Claude Code 与 Codex 的用户级位置."""
+    home = Path(os.path.expanduser("~"))
+    return {
+        "claude": home / ".claude" / "skills" / "tadado" / "SKILL.md",
+        "codex": home / ".agents" / "skills" / "tadado" / "SKILL.md",
+    }
 
-    纯用户自管：之后的内容变化完全由用户掌控，软件不再触碰。
+
+def sync_skill_to_hosts() -> dict:
+    """把随附 skill（权威源）分发到 Claude/Codex 宿主目录.
+
+    返回 {host: bool(内容已与源一致)}。只有从这里分发的 skill 才生效。
     """
-    path = user_skill_path()
-    if path.exists():
-        return path
-    path.parent.mkdir(parents=True, exist_ok=True)
+    source = ensure_bundled_skill()
+    content = source.read_text(encoding="utf-8")
+    result: dict = {}
+    for host, target in _skill_host_paths().items():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        result[host] = True
+    return result
 
-    # 默认内容来源：frozen → 随附资源；dev → 仓库 .claude/skills
-    import sys
 
-    if getattr(sys, "frozen", False):
-        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3]))
-        bundled = base / "resources" / "skill" / "tadado" / "SKILL.md"
-    else:
-        bundled = Path(__file__).resolve().parents[3] / ".claude" / "skills" / "tadado" / "SKILL.md"
-    if bundled.exists():
-        path.write_text(bundled.read_text(encoding="utf-8"), encoding="utf-8")
-    else:
-        path.write_text(
-            "---\nversion: \"0.2.7\"\nname: tadado\ndescription: Tadado 任务管理\n---\n"
-            "\n# Tadado Skill\n\n（默认模板，请按需编辑）\n",
-            encoding="utf-8",
-        )
-    return path
+def skill_sync_status() -> dict:
+    """随附 skill 的状态：路径、版本、各宿主是否已同步."""
+    source = bundled_skill_path()
+    exists = source.exists()
+    version = skill_version(source) if exists else ""
+    try:
+        content = source.read_text(encoding="utf-8")
+    except OSError:
+        content = None
+    synced: dict[str, bool] = {}
+    for host, target in _skill_host_paths().items():
+        if not target.exists() or content is None:
+            synced[host] = False
+            continue
+        try:
+            synced[host] = target.read_text(encoding="utf-8") == content
+        except OSError:
+            synced[host] = False
+    return {"path": source, "exists": exists, "version": version, "synced": synced}
 
 
 def _project_slug(path: str) -> str:
