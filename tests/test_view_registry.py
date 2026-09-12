@@ -28,9 +28,12 @@ def test_groups(qapp):
 
 
 def test_factory_returns_widget(qapp):
-    for page_id, spec in VIEW_REGISTRY.items():
-        w = spec.factory(None, {})
-        assert isinstance(w, QWidget), f"{page_id} factory 未返回 QWidget"
+    # 占位页可直接实例化；真实工厂需 main_window 依赖（由 MainWindow 装配时验证）
+    for pid in ("overview", "graph"):
+        w = VIEW_REGISTRY[pid].factory(None, {})
+        assert isinstance(w, QWidget), f"{pid} factory 未返回 QWidget"
+    for pid in ("tasks", "analysis", "manage"):
+        assert callable(VIEW_REGISTRY[pid].factory), f"{pid} factory 不可调用"
 
 
 def test_alias_resolution():

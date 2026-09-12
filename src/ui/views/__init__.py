@@ -112,3 +112,56 @@ register(
         description="批量审视与处置",
     )
 )
+
+
+# ── 真实构建（Phase 1：纯移动后的旧实现；Phase 3/4/6 逐个重写） ──
+
+
+def _build_tasks(parent=None, deps=None):
+    from .tasks_view import build
+
+    return build(deps["main_window"])
+
+
+def _build_analysis(parent=None, deps=None):
+    from .analysis_view import build
+
+    return build(deps["main_window"])
+
+
+def _build_manage(parent=None, deps=None):
+    from .manage_view import build
+
+    return build(deps["main_window"])
+
+
+register(
+    ViewSpec(
+        id="tasks",
+        title="任务",
+        group="工作",
+        icon="tasks",
+        factory=_build_tasks,
+        description="任务浏览与编辑",
+    )
+)
+register(
+    ViewSpec(
+        id="analysis",
+        title="活动分析",
+        group="洞察",
+        icon="heatmap",
+        factory=_build_analysis,
+        description="热力图与活动报告",
+    )
+)
+register(
+    ViewSpec(
+        id="manage",
+        title="任务管理",
+        group="管理",
+        icon="task_manage",
+        factory=_build_manage,
+        description="批量审视与处置",
+    )
+)

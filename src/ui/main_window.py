@@ -21,8 +21,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
-    QSplitter,
     QStackedWidget,
     QStatusBar,
     QVBoxLayout,
@@ -37,30 +35,13 @@ from ..models.task_status import TaskStatus
 from ..services.update_checker import UpdateChecker
 from ..utils.icon_loader import load_icon
 from ..utils.signal_bus import get_signal_bus
-from ..utils.widget_utils import combo_width
-
-_log = logging.getLogger("runlog")
-
-from .calendar_heatmap.activity_content_view import ActivityContentView
-from .calendar_heatmap.calendar_heatmap_widget import CalendarHeatmapWidget
-from .calendar_heatmap.collapse_panel import HeatmapCollapsePanel
-from .calendar_heatmap.period_selector import PeriodSelectorBar
-from .calendar_heatmap.task_tree_panel import TaskTreePanel
 from .controllers.batch_controller import BatchController
 from .controllers.filter_coordinator import FilterCoordinator
 from .controllers.partition_controller import PartitionController
 from .dialogs.settings_dialog import SettingsDialog
-from .task_list.batch_toolbar import BatchToolbar
-from .task_list.task_edit_panel import TaskEditPanel
-from .task_list.task_list_model import COL_ARCHIVED, TaskListModel
-from .task_list.task_list_view import TaskListView
 from .widgets.calendar_popup import CalendarPopup
-from .widgets.dropdown import DropdownWidget
-from .widgets.filter_bar import FilterBar
-from .widgets.progress_dynamics_bar import ProgressDynamicsBar
-from .widgets.quick_overview_bar import QuickOverviewBar
-from .widgets.status_badge_strip import StatusBadgeStrip
-from .widgets.tag_management_panel import TagManagementPanel
+
+_log = logging.getLogger("runlog")
 
 
 class MainWindow(QMainWindow):
@@ -83,9 +64,10 @@ class MainWindow(QMainWindow):
             set_window_cloaked,
             set_window_nc_rendering_disabled,
         )
-        set_window_nc_rendering_disabled(self)   # never draw native NC buttons
-        set_window_cloaked(self, True)           # hide from DWM until fully ready
-        enable_window_snap(self)                 # restore WS_THICKFRAME for Aero Snap
+
+        set_window_nc_rendering_disabled(self)  # never draw native NC buttons
+        set_window_cloaked(self, True)  # hide from DWM until fully ready
+        enable_window_snap(self)  # restore WS_THICKFRAME for Aero Snap
         # ──────────────────────────────────────────────────────────────────────
 
         self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
@@ -113,16 +95,21 @@ class MainWindow(QMainWindow):
         self._setup_central_widget()
         # PartitionController — owns partition lifecycle, replaces _setup_idle_lock + _load_partitions
         self._partition_ctrl = PartitionController(
-            self._task_service, self._config,
+            self._task_service,
+            self._config,
             self._splitter_stack,
-            self._status_partition_btn, self._status_partition_menu,
+            self._status_partition_btn,
+            self._status_partition_menu,
             self,
         )
         self._partition_ctrl.partition_activated.connect(self._on_partition_activated)
         # BatchController — lazily builds page2
         self._batch_ctrl = BatchController(
-            self._task_service, self._config, self._repository,
-            self._partition_ctrl, self,
+            self._task_service,
+            self._config,
+            self._repository,
+            self._partition_ctrl,
+            self,
         )
         self._batch_ctrl.data_changed.connect(self._on_data_changed)
         self._batch_ctrl.status_message.connect(self._flash_status)
@@ -198,16 +185,17 @@ class MainWindow(QMainWindow):
 
     def refresh_theme(self) -> None:
         self._edit_panel.refresh_theme()
-        if hasattr(self, '_analysis_content_view'):
+        if hasattr(self, "_analysis_content_view"):
             self._analysis_content_view.refresh_theme()
-        if hasattr(self, '_title_icon_btn'):
+        if hasattr(self, "_title_icon_btn"):
             self._refresh_title_bar_theme()
-        if hasattr(self, '_status_partition_btn'):
+        if hasattr(self, "_status_partition_btn"):
             self._refresh_status_partition_style()
 
     def _refresh_title_bar_theme(self) -> None:
         """Re-apply inline QSS on the title-bar logo button after theme switch."""
         from ..utils.design_tokens import get_tokens as _gt
+
         t = _gt()
         self._title_icon_btn.setStyleSheet(
             f"QPushButton {{ border: none; background: transparent; padding: 0px; }}"
@@ -222,6 +210,7 @@ class MainWindow(QMainWindow):
     def _refresh_status_partition_style(self) -> None:
         """Re-apply inline QSS on the status-bar partition button after theme switch."""
         from ..utils.design_tokens import get_tokens as _gt
+
         t = _gt()
         accent = t.accent if t else "#4d57c3"
         r, g, b = int(accent[1:3], 16), int(accent[3:5], 16), int(accent[5:7], 16)
@@ -259,9 +248,7 @@ class MainWindow(QMainWindow):
         tb.addWidget(self._title_icon_btn)
 
         # Nav buttons (icon + text, flat style) — colors via base.qss
-        btn_style = (
-            "QPushButton { border: none; background: transparent; padding: 2px 8px; font-size: 11px; }"
-        )
+        btn_style = "QPushButton { border: none; background: transparent; padding: 2px 8px; font-size: 11px; }"
         icon_sz = QSize(18, 18)
 
         nav_items = [
@@ -291,9 +278,7 @@ class MainWindow(QMainWindow):
         tb.addStretch()
 
         # Right-side window buttons (icon only) — colors via base.qss
-        right_btn_style = (
-            "QPushButton { border: none; background: transparent; padding: 0px; }"
-        )
+        right_btn_style = "QPushButton { border: none; background: transparent; padding: 0px; }"
         right_items = [
             ("tray_hide", "缩小到托盘", self.hide),
             ("window_minimize", "最小化", self._on_minimize),
@@ -417,161 +402,13 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _setup_central_widget(self) -> None:
+        from .views import get_spec
+
         self._stack = QStackedWidget()
 
-        # === Page 0: Task view ===
-        task_page = QWidget()
-        task_layout = QVBoxLayout(task_page)
-        task_layout.setContentsMargins(8, 4, 8, 4)
-        task_layout.setSpacing(2)
-
-        # Row 1: QuickOverviewBar only (presets + carousel)
-        self._top_bar = QWidget()
-        top_bar_layout = QHBoxLayout(self._top_bar)
-        top_bar_layout.setContentsMargins(4, 0, 4, 0)
-        top_bar_layout.setSpacing(0)
-
-        self._quick_overview = QuickOverviewBar(self._repository, max_items=2, group_size=2, interval_seconds=5)
-        self._quick_overview.preset_activated.connect(self._on_quick_preset)
-        self._quick_overview.task_clicked.connect(self._on_carousel_clicked)
-        top_bar_layout.addWidget(self._quick_overview, 1)
-        task_layout.addWidget(self._top_bar)
-
-        # Heatmap widget (created here, used in heatmap page)
-        self._heatmap_widget = CalendarHeatmapWidget(self._repository, self._config)
-        self._heatmap_widget.back_requested.connect(lambda: self._switch_view("edit"))
-
-        # Row 2: FilterBar + StatusBadgeStrip (same row, StatusBadgeStrip right-aligned)
-        filter_row = QWidget()
-        filter_row_layout = QHBoxLayout(filter_row)
-        filter_row_layout.setContentsMargins(4, 0, 4, 0)
-        filter_row_layout.setSpacing(6)
-
-        self._filter_bar = FilterBar()
-        self._filter_bar.set_sort(self._config.default_sort)
-        filter_row_layout.addWidget(self._filter_bar, 1)
-
-        self._status_badge = StatusBadgeStrip(self._repository)
-        self._status_badge.filter_changed.connect(self._on_filter_changed)
-        filter_row_layout.addWidget(self._status_badge)
-        task_layout.addWidget(filter_row)
-
-        # Splitter: task list (left) + edit panel (right)
-        from PySide6.QtWidgets import QStackedLayout as _QStackedLayout
-        self._splitter_container = QWidget()
-        self._splitter_stack = _QStackedLayout(self._splitter_container)
-        self._splitter_stack.setContentsMargins(0, 0, 0, 0)
-        self._splitter_stack.setStackingMode(_QStackedLayout.StackingMode.StackOne)
-
-        self._splitter = QSplitter(Qt.Orientation.Horizontal)
-        self._splitter.setHandleWidth(2)
-        self._splitter.setChildrenCollapsible(False)
-        self._splitter.setStretchFactor(0, 1)
-        self._splitter.setStretchFactor(1, 1)
-
-        # === Left panel: BatchToolbar + TaskListView + Pagination ===
-        left_panel = QWidget()
-        left_panel.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 2, 0)
-        left_layout.setSpacing(2)
-
-        self._batch_toolbar = BatchToolbar()
-        left_layout.addWidget(self._batch_toolbar)
-
-        self._task_model = TaskListModel()
-        self._task_view = TaskListView(
-            self._repository, task_service=self._task_service,
-        )
-        self._task_view.set_model(self._task_model)
-        self._task_view.setColumnHidden(COL_ARCHIVED, True)  # 归档列仅管理视图可见
-        self._task_view.task_selected.connect(self._on_view_task_selected)
-        self._task_view.detail_requested.connect(self._on_detail_requested)
-        # Batch operations from right-click menu
-        self._task_view.batch_status_change.connect(self._on_batch_status_change)
-        self._task_view.batch_urgency_change.connect(self._on_batch_urgency_change)
-        self._task_view.batch_delete.connect(self._on_batch_delete)
-        self._task_view.batch_suspend.connect(self._on_batch_suspend)
-        self._task_view.batch_restart.connect(self._on_batch_restart)
-        self._task_view.batch_postpone.connect(self._on_batch_postpone)
-        self._task_view.batch_move_partition.connect(self._on_batch_move_partition)
-        left_layout.addWidget(self._task_view, 1)
-
-        # Pagination
-        page_widget = QWidget()
-        page_row = QHBoxLayout(page_widget)
-        page_row.setContentsMargins(4, 2, 4, 2)
-        page_row.setSpacing(4)
-        page_row.addStretch()
-        self._prev_page_btn = QPushButton("‹")
-        self._prev_page_btn.setObjectName("navBtn")
-        self._prev_page_btn.setFixedWidth(28)
-        self._prev_page_btn.clicked.connect(self._on_page_prev)
-        page_row.addWidget(self._prev_page_btn)
-        self._page_label = QLabel("1 / 1")
-        self._page_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        page_row.addWidget(self._page_label)
-        self._next_page_btn = QPushButton("›")
-        self._next_page_btn.setObjectName("navBtn")
-        self._next_page_btn.setFixedWidth(28)
-        self._next_page_btn.clicked.connect(self._on_page_next)
-        page_row.addWidget(self._next_page_btn)
-        self._page_size_combo = DropdownWidget()
-        self._page_size_combo.setFixedWidth(combo_width(4))
-        for n in ["20", "50", "100"]:
-            self._page_size_combo.addItem(n, int(n))
-        self._page_size_combo.setCurrentText(str(self._page_size))
-        self._page_size_combo.currentIndexChanged.connect(self._on_page_size_changed)
-        page_row.addWidget(self._page_size_combo)
-        left_layout.addWidget(page_widget)
-
-        self._splitter.addWidget(left_panel)
-
-        # === Right panel: ProgressDynamicsBar + TaskEditPanel ===
-        right_panel = QWidget()
-        right_panel.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(2, 0, 0, 0)
-        right_layout.setSpacing(2)
-
-        self._progress_bar = ProgressDynamicsBar(self._repository)
-        right_layout.addWidget(self._progress_bar)
-        self._progress_bar.progress_filter_activated.connect(self._on_progress_filter)
-        self._progress_bar.task_clicked.connect(self._on_carousel_clicked)
-
-        self._edit_panel = TaskEditPanel(
-            self._repository, self._task_model,
-            task_service=self._task_service,
-        )
-        right_layout.addWidget(self._edit_panel, 1)
-        self._splitter.addWidget(right_panel)
-
-        self._splitter_stack.addWidget(self._splitter)
-        # Password mask overlay
-        self._partition_mask = QWidget()
-        self._partition_mask.setObjectName("partitionMask")
-        mask_layout = QVBoxLayout(self._partition_mask)
-        mask_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mask_hint = QLabel("此分区已加密\n请输入密码查看内容")
-        mask_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mask_hint.setStyleSheet(
-            "QLabel { font-size: 16px; font-weight: bold;"
-            " background: transparent; border: none; }"
-        )
-        mask_layout.addWidget(mask_hint)
-        unlock_btn = QPushButton("输入密码解锁")
-        unlock_btn.setObjectName("saveBtn")
-        unlock_btn.setFixedWidth(140)
-        # Deferred connect: _partition_ctrl created after _setup_central_widget
-        unlock_btn.clicked.connect(lambda: self._partition_ctrl.unlock())
-        mask_btn_row = QHBoxLayout()
-        mask_btn_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        mask_btn_row.addWidget(unlock_btn)
-        mask_layout.addLayout(mask_btn_row)
-        self._splitter_stack.addWidget(self._partition_mask)
-        self._splitter_stack.setCurrentIndex(0)
-        task_layout.addWidget(self._splitter_container, 1)
-
+        # Page 0: Task view（构建逻辑已迁至 views/tasks_view.py）
+        spec = get_spec("tasks")
+        task_page = spec.factory(None, {"main_window": self})
         self._stack.addWidget(task_page)
 
         # Page 1 & 2 are built lazily on first access
@@ -591,93 +428,11 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_page1(self) -> None:
-        """Build Activity Analysis page on first access."""
-        from .calendar_heatmap.heatmap_stats_panel import HeatmapStatsPanel
+        """Build Activity Analysis page on first access（构建逻辑已迁至 views/analysis_view.py）."""
+        from .views import get_spec
 
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(8)
-
-        heatmap_label = QLabel("活动热力图")
-        heatmap_label.setObjectName("analysisSectionLabel")
-        layout.addWidget(heatmap_label)
-
-        ht_row = QWidget()
-        ht_layout = QHBoxLayout(ht_row)
-        ht_layout.setContentsMargins(0, 0, 0, 0)
-        ht_layout.addWidget(self._heatmap_widget.nav_bar)
-        ht_layout.addStretch()
-        layout.addWidget(ht_row)
-
-        collapsible = HeatmapCollapsePanel(self._heatmap_widget)
-        layout.addWidget(collapsible, 0)
-
-        # 统计指标：热力图下方右侧（上方导航栏保持清爽）
-        stats_row = QWidget()
-        stats_layout = QHBoxLayout(stats_row)
-        stats_layout.setContentsMargins(0, 0, 4, 0)
-        stats_layout.addStretch()
-        self._analysis_stats = HeatmapStatsPanel()
-        self._analysis_stats.setFixedHeight(28)
-        # 面板只占内容宽度，左侧 stretch 将其推到行尾（右对齐）
-        self._analysis_stats.setSizePolicy(
-            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
-        )
-        stats_layout.addWidget(self._analysis_stats)
-        layout.addWidget(stats_row)
-
-        report_label = QLabel("活动报告")
-        report_label.setObjectName("analysisSectionLabel")
-        layout.addWidget(report_label)
-
-        period_row = QWidget()
-        period_layout = QHBoxLayout(period_row)
-        period_layout.setContentsMargins(0, 4, 0, 4)
-        period_layout.setSpacing(6)
-
-        self._analysis_period_selector = PeriodSelectorBar()
-        self._analysis_period_selector.period_changed.connect(self._on_analysis_period_changed)
-        period_layout.addWidget(self._analysis_period_selector, 1)
-
-        self._analysis_search = QLineEdit()
-        self._analysis_search.setPlaceholderText("搜索活动内容...")
-        self._analysis_search.setFixedWidth(150)
-        self._analysis_search.setFixedHeight(28)
-        self._analysis_search.textChanged.connect(self._on_analysis_search_changed)
-        period_layout.addWidget(self._analysis_search)
-
-        export_btn = QPushButton("导出")
-        export_btn.setObjectName("exportBtn")
-        export_btn.setFixedHeight(28)
-        export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        export_menu = QMenu(export_btn)
-        export_menu.addAction("导出 Markdown", self._on_export_analysis_md)
-        export_menu.addAction("导出 Excel", self._on_export_analysis_xlsx)
-        export_menu.addAction("导出 TXT", self._on_export_analysis_txt)
-        export_btn.setMenu(export_menu)
-        export_btn.clicked.connect(lambda: export_btn.showMenu())
-        period_layout.addWidget(export_btn)
-        layout.addWidget(period_row)
-
-        self._analysis_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self._analysis_splitter.setHandleWidth(1)
-        self._analysis_splitter.setChildrenCollapsible(False)
-
-        self._analysis_task_tree = TaskTreePanel(self._repository)
-        self._analysis_task_tree.tag_selected.connect(self._on_analysis_tag_selected)
-        self._analysis_splitter.addWidget(self._analysis_task_tree)
-
-        self._analysis_content_view = ActivityContentView()
-        self._analysis_content_view.prev_requested.connect(self._on_analysis_prev)
-        self._analysis_content_view.next_requested.connect(self._on_analysis_next)
-        self._analysis_splitter.addWidget(self._analysis_content_view)
-
-        self._analysis_splitter.setStretchFactor(0, 1)
-        self._analysis_splitter.setStretchFactor(1, 3)
-        layout.addWidget(self._analysis_splitter, 1)
-
-        self._heatmap_widget.grid.date_clicked.connect(self._on_heatmap_date_clicked)
+        spec = get_spec("analysis")
+        page = spec.factory(None, {"main_window": self})
 
         old = self._stack.widget(1)
         self._stack.removeWidget(old)
@@ -687,8 +442,12 @@ class MainWindow(QMainWindow):
         self._page1_built = True
 
     def _build_page2(self) -> None:
-        """Build Task Management Console page — delegated to BatchController."""
-        page = self._batch_ctrl.build_page()
+        """Build Task Management Console page（构建逻辑已迁至 views/manage_view.py）."""
+        from .views import get_spec
+
+        spec = get_spec("manage")
+        page = spec.factory(None, {"main_window": self})
+
         old = self._stack.widget(2)
         self._stack.removeWidget(old)
         if old:
@@ -788,9 +547,7 @@ class MainWindow(QMainWindow):
 
         # Edit-view toolbar (still in MainWindow for now)
         self._batch_toolbar.select_all_requested.connect(
-            lambda: self._task_model.set_checked_ids(
-                set(t.id for t in self._task_model.tasks)
-            )
+            lambda: self._task_model.set_checked_ids(set(t.id for t in self._task_model.tasks))
         )
         self._batch_toolbar.deselect_all_requested.connect(
             lambda: self._task_model.set_checked_ids(set())
@@ -801,17 +558,17 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _on_data_changed(self, *args) -> None:
-        if hasattr(self, '_splitter_stack') and self._splitter_stack.currentIndex() == 1:
+        if hasattr(self, "_splitter_stack") and self._splitter_stack.currentIndex() == 1:
             return
-        if hasattr(self, '_progress_bar'):
+        if hasattr(self, "_progress_bar"):
             self._progress_bar.reset_to_unclicked()
-        _sizes = self._splitter.sizes() if hasattr(self, '_splitter') and self._splitter else None
+        _sizes = self._splitter.sizes() if hasattr(self, "_splitter") and self._splitter else None
         f = self._build_filter_with_sort()
         self._refresh_all_views(f, reset_page=False)
         if _sizes:
             self._splitter.setSizes(_sizes)
         # Re-select task if triggered by a task update signal (keep current task open)
-        if args and hasattr(args[0], 'id'):
+        if args and hasattr(args[0], "id"):
             self._select_and_load_task(args[0].id)
 
     def _on_tasks_bulk_created(self, count: int, task_ids: list) -> None:
@@ -822,7 +579,7 @@ class MainWindow(QMainWindow):
         self._filter_bar.reset()
         self._filter_bar._debounce.stop()  # 杀死 reset() 残留的 300ms debounce，避免竞态
         self._filter_bar.blockSignals(False)
-        if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
+        if hasattr(self, "_quick_overview") and self._quick_overview.active_preset != "today":
             self._new_task_sort_active = False  # 临时清除，避免 _on_quick_preset 恢复默认排序
             self._quick_overview.activate_preset("today")
             self._new_task_sort_active = True
@@ -834,7 +591,7 @@ class MainWindow(QMainWindow):
         """Build filter with FilterBar's sort as base, overlay scope from quick-overview + partition."""
         f = self._filter_bar.build_filter()  # preserves sort + search + urgencies
         # 从速览栏当前预设直接获取时间窗口和状态过滤（不受 _carousel_filter 覆写影响）
-        if hasattr(self, '_quick_overview'):
+        if hasattr(self, "_quick_overview"):
             overview_f = self._quick_overview.build_filter()
             f.created_to = overview_f.created_to
             f.statuses = overview_f.statuses
@@ -843,7 +600,9 @@ class MainWindow(QMainWindow):
             f.date_to = self._carousel_filter.date_to
             f.activity_field = self._carousel_filter.activity_field
             f.activity_min = self._carousel_filter.activity_min
-            f.partition_id = self._carousel_filter.partition_id or self._partition_ctrl.active_id or None  # "" → None
+            f.partition_id = (
+                self._carousel_filter.partition_id or self._partition_ctrl.active_id or None
+            )  # "" → None
         else:
             f.partition_id = self._partition_ctrl.active_id or None  # "" → None
         return f
@@ -851,11 +610,13 @@ class MainWindow(QMainWindow):
     def _refresh_all_views(self, filter_: TaskFilter, reset_page: bool = True) -> None:
         if reset_page:
             self._reset_pagination()
-        filter_.partition_id = filter_.partition_id or self._partition_ctrl.active_id or None  # "" → None
+        filter_.partition_id = (
+            filter_.partition_id or self._partition_ctrl.active_id or None
+        )  # "" → None
         all_tasks, self._total_count = self._task_service.search_with_total(filter_)
         # Paginate table display — full list still passed to overview / progress bar
         start = self._page * self._page_size
-        page_tasks = all_tasks[start:start + self._page_size]
+        page_tasks = all_tasks[start : start + self._page_size]
         self._task_model.set_offset(start)
         self._task_model.load_tasks(page_tasks)
         self._quick_overview.set_items(all_tasks)
@@ -871,7 +632,7 @@ class MainWindow(QMainWindow):
         self._filter_bar.reset()
         self._filter_bar._debounce.stop()  # 杀死 reset() 残留的 300ms debounce，避免竞态
         self._filter_bar.blockSignals(False)
-        if hasattr(self, '_quick_overview') and self._quick_overview.active_preset != "today":
+        if hasattr(self, "_quick_overview") and self._quick_overview.active_preset != "today":
             self._new_task_sort_active = False  # 临时清除，避免 _on_quick_preset 恢复默认排序
             self._quick_overview.activate_preset("today")
             self._new_task_sort_active = True
@@ -897,7 +658,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_batch_page(self) -> None:
         """Refresh the task management page applying all sidebar filters."""
-        if not hasattr(self, '_batch_task_model'):
+        if not hasattr(self, "_batch_task_model"):
             return
         f = TaskFilter()
         f.sort_by = self._filter_bar.build_filter().sort_by  # inherit main sort
@@ -912,11 +673,11 @@ class MainWindow(QMainWindow):
         if pd is not None:
             f.urgencies = {pd}
         # Created time
-        f.created_from = self._read_date_edit('_batch_created_from')
-        f.created_to = self._read_date_edit('_batch_created_to')
+        f.created_from = self._read_date_edit("_batch_created_from")
+        f.created_to = self._read_date_edit("_batch_created_to")
         # Deadline time
-        f.date_from = self._read_date_edit('_batch_deadline_from')
-        f.date_to = self._read_date_edit('_batch_deadline_to')
+        f.date_from = self._read_date_edit("_batch_deadline_from")
+        f.date_to = self._read_date_edit("_batch_deadline_to")
         # Progress
         lo, hi = self._batch_progress_combo.currentData()
         f.progress_min = lo
@@ -937,7 +698,7 @@ class MainWindow(QMainWindow):
             tasks = [t for t in self._task_service.search(f) if t.archived]
             self._batch_total_count = len(tasks)
             start = self._batch_page * self._batch_page_size
-            tasks = tasks[start:start + self._batch_page_size]
+            tasks = tasks[start : start + self._batch_page_size]
         else:
             f.limit = self._batch_page_size
             f.offset = self._batch_page * self._batch_page_size
@@ -964,10 +725,12 @@ class MainWindow(QMainWindow):
         txt = line_edit.text().strip()
         initial = date.fromisoformat(txt) if txt else date.today()
         popup = CalendarPopup(initial, self)
-        popup.date_selected.connect(lambda qd: (
-            line_edit.setText(qd.toPython().isoformat()),
-            self._on_batch_filter_changed()
-        ))
+        popup.date_selected.connect(
+            lambda qd: (
+                line_edit.setText(qd.toPython().isoformat()),
+                self._on_batch_filter_changed(),
+            )
+        )
         popup.smart_place(line_edit)
         popup.exec()
 
@@ -975,7 +738,9 @@ class MainWindow(QMainWindow):
         if self._batch_page_size <= 0:
             self._batch_page_label.setText("全部")
             return
-        total_pages = max(1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size)
+        total_pages = max(
+            1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size
+        )
         self._batch_page_label.setText(f"{self._batch_page + 1} / {total_pages}")
         self._batch_prev_btn.setEnabled(self._batch_page > 0)
         self._batch_next_btn.setEnabled(self._batch_page < total_pages - 1)
@@ -992,18 +757,18 @@ class MainWindow(QMainWindow):
         if self._batch_page > 0:
             self._batch_page -= 1
             self._refresh_batch_page()
-            if hasattr(self, '_batch_task_model') and self._batch_task_model.rowCount() > 0:
-                self._batch_task_model.set_highlighted_task(
-                    self._batch_task_model.tasks[0].id)
+            if hasattr(self, "_batch_task_model") and self._batch_task_model.rowCount() > 0:
+                self._batch_task_model.set_highlighted_task(self._batch_task_model.tasks[0].id)
 
     def _on_batch_page_next(self) -> None:
-        total_pages = max(1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size)
+        total_pages = max(
+            1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size
+        )
         if self._batch_page < total_pages - 1:
             self._batch_page += 1
             self._refresh_batch_page()
-            if hasattr(self, '_batch_task_model') and self._batch_task_model.rowCount() > 0:
-                self._batch_task_model.set_highlighted_task(
-                    self._batch_task_model.tasks[0].id)
+            if hasattr(self, "_batch_task_model") and self._batch_task_model.rowCount() > 0:
+                self._batch_task_model.set_highlighted_task(self._batch_task_model.tasks[0].id)
 
     def _on_batch_page_size_changed(self, index: int) -> None:
         widget = self.sender()
@@ -1013,21 +778,21 @@ class MainWindow(QMainWindow):
             self._refresh_batch_page()
 
     def _on_edit_select_all(self) -> None:
-        if hasattr(self, '_task_model'):
+        if hasattr(self, "_task_model"):
             ids = set(t.id for t in self._task_model.tasks)
             self._task_model.set_checked_ids(ids)
 
     def _on_edit_deselect_all(self) -> None:
-        if hasattr(self, '_task_model'):
+        if hasattr(self, "_task_model"):
             self._task_model.set_checked_ids(set())
 
     def _on_batch_select_all(self) -> None:
-        if hasattr(self, '_batch_task_model'):
+        if hasattr(self, "_batch_task_model"):
             ids = set(t.id for t in self._batch_task_model.tasks)
             self._batch_task_model.set_checked_ids(ids)
 
     def _on_batch_deselect_all(self) -> None:
-        if hasattr(self, '_batch_task_model'):
+        if hasattr(self, "_batch_task_model"):
             self._batch_task_model.set_checked_ids(set())
 
     def _on_batch_task_selected(self, task: Task) -> None:
@@ -1035,14 +800,15 @@ class MainWindow(QMainWindow):
         self._batch_task_model.set_highlighted_task(task.id)
 
     def _on_batch_model_data_changed(self) -> None:
-        if hasattr(self, '_batch_toolbar2'):
+        if hasattr(self, "_batch_toolbar2"):
             ids = self._batch_task_model.checked_task_ids()
             self._batch_toolbar2.set_selected(ids)
 
     def _on_batch_status_change(self, ids: list[str], status) -> None:
         if self._current_view == "edit":
             reply = QMessageBox.question(
-                self, "确认操作",
+                self,
+                "确认操作",
                 f"确认更改 {len(ids)} 个任务的状态？",
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
             )
@@ -1088,7 +854,8 @@ class MainWindow(QMainWindow):
     def _on_batch_delete(self, ids: list[str]) -> None:
         if self._current_view == "edit":
             reply = QMessageBox.question(
-                self, "确认删除",
+                self,
+                "确认删除",
                 f"确认删除 {len(ids)} 个任务？此操作不可撤销。",
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
             )
@@ -1116,7 +883,8 @@ class MainWindow(QMainWindow):
     def _on_batch_suspend(self, ids: list[str]) -> None:
         if self._current_view == "edit":
             reply = QMessageBox.question(
-                self, "确认操作",
+                self,
+                "确认操作",
                 f"确认中止 {len(ids)} 个任务？",
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
             )
@@ -1144,7 +912,8 @@ class MainWindow(QMainWindow):
     def _on_batch_restart(self, ids: list[str]) -> None:
         if self._current_view == "edit":
             reply = QMessageBox.question(
-                self, "确认操作",
+                self,
+                "确认操作",
                 f"确认重启 {len(ids)} 个任务？",
                 QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
             )
@@ -1171,7 +940,8 @@ class MainWindow(QMainWindow):
 
     def _on_batch_postpone(self, ids: list[str], days: int) -> None:
         reply = QMessageBox.question(
-            self, "确认操作",
+            self,
+            "确认操作",
             f"确认将 {len(ids)} 个任务的截止时间延后 {days} 天？",
             QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
         )
@@ -1192,7 +962,6 @@ class MainWindow(QMainWindow):
             QDialogButtonBox,
             QListWidget,
             QListWidgetItem,
-            QVBoxLayout,
         )
 
         from_partition_id = self._partition_ctrl.active_id or ""
@@ -1203,7 +972,8 @@ class MainWindow(QMainWindow):
         from_pw = self._partition_ctrl.passwords.get(from_partition_id, "")
         if from_pw:
             pw, ok = QInputDialog.getText(
-                self, "验证来源分区密码",
+                self,
+                "验证来源分区密码",
                 f"来源分区「{from_name}」设有密码，请输入密码：",
                 QLineEdit.EchoMode.Password,
             )
@@ -1256,7 +1026,8 @@ class MainWindow(QMainWindow):
         to_pw = self._partition_ctrl.passwords.get(to_partition_id, "")
         if to_pw:
             pw, ok = QInputDialog.getText(
-                self, "验证目标分区密码",
+                self,
+                "验证目标分区密码",
                 f"目标分区「{to_name}」设有密码，请输入密码：",
                 QLineEdit.EchoMode.Password,
             )
@@ -1268,7 +1039,8 @@ class MainWindow(QMainWindow):
 
         # ── Step 4: Confirmation ──
         reply = QMessageBox.question(
-            self, "确认操作",
+            self,
+            "确认操作",
             f"确认将 {len(ids)} 个任务从「{from_name}」移动到「{to_name}」？",
             QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
         )
@@ -1307,7 +1079,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "归档", "当前分区没有已完成的任务。")
             return
         reply = QMessageBox.question(
-            self, "确认归档",
+            self,
+            "确认归档",
             f"归档当前分区全部 {len(done_tasks)} 个已完成任务？",
             QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
         )
@@ -1335,7 +1108,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "清除", "当前分区没有已归档的任务。")
             return
         reply = QMessageBox.warning(
-            self, "⚠ 确认清除",
+            self,
+            "⚠ 确认清除",
             f"将永久删除 {len(archived)} 个已归档任务，此操作不可恢复！",
             QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
         )
@@ -1368,8 +1142,7 @@ class MainWindow(QMainWindow):
 
         if fmt == "md":
             path, _ = QFileDialog.getSaveFileName(
-                self, "导出 Markdown", f"{pname}_{today}.md",
-                "Markdown 文件 (*.md);;所有文件 (*)"
+                self, "导出 Markdown", f"{pname}_{today}.md", "Markdown 文件 (*.md);;所有文件 (*)"
             )
             if path:
                 lines = [t.raw_md for t in tasks]
@@ -1378,23 +1151,34 @@ class MainWindow(QMainWindow):
                 self._flash_status(f"已导出 {len(tasks)} 个任务到 {path}")
         elif fmt == "xlsx":
             path, _ = QFileDialog.getSaveFileName(
-                self, "导出 Excel", f"{pname}_{today}.xlsx",
-                "Excel 文件 (*.xlsx);;所有文件 (*)"
+                self, "导出 Excel", f"{pname}_{today}.xlsx", "Excel 文件 (*.xlsx);;所有文件 (*)"
             )
             if path:
                 from openpyxl import Workbook
+
                 wb = Workbook()
                 ws = wb.active
                 ws.title = pname
-                ws.append(["序号", "任务内容", "状态", "进度", "截止日期", "标签", "创建时间", "归档"])
+                ws.append(
+                    ["序号", "任务内容", "状态", "进度", "截止日期", "标签", "创建时间", "归档"]
+                )
                 for i, t in enumerate(tasks, 1):
-                    ws.append([
-                        i, t.title, t.status.display_name, f"{t.progress}%",
-                        t.deadline_date.isoformat() if t.deadline_date else "",
-                        " ".join(f"#{tag}" for tag in t.tags),
-                        t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "",
-                        "已归档" if t.archived else ("未归档" if t.status == TaskStatus.DONE else "/"),
-                    ])
+                    ws.append(
+                        [
+                            i,
+                            t.title,
+                            t.status.display_name,
+                            f"{t.progress}%",
+                            t.deadline_date.isoformat() if t.deadline_date else "",
+                            " ".join(f"#{tag}" for tag in t.tags),
+                            t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "",
+                            (
+                                "已归档"
+                                if t.archived
+                                else ("未归档" if t.status == TaskStatus.DONE else "/")
+                            ),
+                        ]
+                    )
                 wb.save(path)
                 self._flash_status(f"已导出 {len(tasks)} 个任务到 {path}")
 
@@ -1435,6 +1219,7 @@ class MainWindow(QMainWindow):
             f.created_to = today.replace(day=1) - dt.timedelta(days=1)
         elif preset == "month":
             import calendar as _cal
+
             today = date.today()
             _, last = _cal.monthrange(today.year, today.month)
             f.created_to = today.replace(day=last)
@@ -1447,7 +1232,7 @@ class MainWindow(QMainWindow):
         self._carousel_filter = f
         self._refresh_all_views(f)
         self._progress_bar.reset_to_unclicked()
-        if hasattr(self, '_task_model') and self._task_model.rowCount() > 0:
+        if hasattr(self, "_task_model") and self._task_model.rowCount() > 0:
             self._on_task_selected(self._task_model.tasks[0])
         if self._current_view != "edit":
             self._heatmap_widget.highlight_range(f.date_from, f.date_to, preset)
@@ -1467,13 +1252,11 @@ class MainWindow(QMainWindow):
         self._refresh_all_views(merged)
         # 进度栏: 对任务列表额外做 activity_log 活动过滤
         if self._progress_bar._active_period:
-            active_tasks = self._progress_bar.filter_tasks_by_activity(
-                self._task_model.tasks
-            )
+            active_tasks = self._progress_bar.filter_tasks_by_activity(self._task_model.tasks)
             if len(active_tasks) < len(self._task_model.tasks):
                 self._total_count = len(active_tasks)
                 self._task_model.set_offset(0)
-                self._task_model.load_tasks(active_tasks[:self._page_size])
+                self._task_model.load_tasks(active_tasks[: self._page_size])
                 self._update_page_label()
         # 同步轮播数据到过滤后的列表，确保点击定位一致
         self._progress_bar.set_items(list(self._task_model.tasks))
@@ -1508,7 +1291,7 @@ class MainWindow(QMainWindow):
         self._batch_toolbar.setVisible(len(selected) >= 1)
 
     def _on_model_data_changed(self) -> None:
-        if hasattr(self, '_batch_toolbar'):
+        if hasattr(self, "_batch_toolbar"):
             ids = self._task_model.checked_task_ids()
             self._batch_toolbar.set_selected(ids)
 
@@ -1516,7 +1299,7 @@ class MainWindow(QMainWindow):
         self._select_and_load_task(task_id)
 
     def _on_heatmap_data_changed(self, *args) -> None:
-        if hasattr(self, '_heatmap_widget'):
+        if hasattr(self, "_heatmap_widget"):
             self._heatmap_widget.force_refresh()
 
     def _on_go_home(self) -> None:
@@ -1577,7 +1360,6 @@ class MainWindow(QMainWindow):
         todo = counts.get(TaskStatus.TODO, 0)
         done = counts.get(TaskStatus.DONE, 0)
         total = sum(counts.values())
-        preset = self._quick_overview._active_preset if hasattr(self._quick_overview, '_active_preset') else "all"
         breakdown = f"逾期 {overdue} | 进行中 {doing} | 待办 {todo} | 已完成 {done} | 共{total}项"
         self._status_msg.setText(breakdown)
 
@@ -1625,7 +1407,7 @@ class MainWindow(QMainWindow):
         _log.info("View switched: %s", view)
         self._current_view = view
         # Cancel any pending deferred loads
-        if hasattr(self, '_deferred_timer') and self._deferred_timer.isActive():
+        if hasattr(self, "_deferred_timer") and self._deferred_timer.isActive():
             self._deferred_timer.stop()
 
         if view == "edit":
@@ -1669,7 +1451,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_analysis(self, partition_id: str | None = None) -> None:
         """Refresh analysis page: heatmap stats + task tree."""
-        if hasattr(self, '_analysis_stats') and hasattr(self, '_heatmap_widget'):
+        if hasattr(self, "_analysis_stats") and hasattr(self, "_heatmap_widget"):
             model = self._heatmap_widget._model
             self._analysis_stats.refresh(
                 total=model.total_count(),
@@ -1677,8 +1459,8 @@ class MainWindow(QMainWindow):
                 longest_streak=model.longest_streak(),
                 daily_avg=model.daily_average(),
             )
-        d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
-        if hasattr(self, '_analysis_task_tree'):
+        d_from, d_to = getattr(self, "_analysis_date_range", (None, None))
+        if hasattr(self, "_analysis_task_tree"):
             self._analysis_task_tree.refresh(d_from, d_to, partition_id)
 
     def _on_analysis_period_changed(self, d_from, d_to, label: str) -> None:
@@ -1688,16 +1470,16 @@ class MainWindow(QMainWindow):
             self._heatmap_widget.highlight_range(d_from, d_to, label)
         else:
             self._heatmap_widget.highlight_range(None, None, "")
-        if hasattr(self, '_analysis_task_tree'):
+        if hasattr(self, "_analysis_task_tree"):
             self._analysis_task_tree.refresh(d_from, d_to, self._partition_ctrl.active_id)
 
     def _on_analysis_tag_selected(self, tag: str) -> None:
-        if not tag or not hasattr(self, '_analysis_content_view'):
-            if hasattr(self, '_analysis_content_view'):
+        if not tag or not hasattr(self, "_analysis_content_view"):
+            if hasattr(self, "_analysis_content_view"):
                 self._analysis_content_view.show_hint()
             return
         tasks = self._analysis_task_tree.get_tasks_for_tag(tag)
-        d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
+        d_from, d_to = getattr(self, "_analysis_date_range", (None, None))
         checked = self._analysis_task_tree.get_checked_tags()
         if tag in checked:
             pos = checked.index(tag) + 1
@@ -1707,21 +1489,21 @@ class MainWindow(QMainWindow):
         self._analysis_content_view.show_tag_activity(tag, tasks, d_from, d_to)
 
     def _on_analysis_prev(self) -> None:
-        if hasattr(self, '_analysis_task_tree'):
+        if hasattr(self, "_analysis_task_tree"):
             self._analysis_task_tree.select_prev()
 
     def _on_analysis_next(self) -> None:
-        if hasattr(self, '_analysis_task_tree'):
+        if hasattr(self, "_analysis_task_tree"):
             self._analysis_task_tree.select_next()
 
     def _on_heatmap_date_clicked(self, d: date) -> None:
         """Handle date click on heatmap grid."""
-        if hasattr(self, '_analysis_period_selector'):
+        if hasattr(self, "_analysis_period_selector"):
             self._analysis_period_selector.set_custom_range(d, d)
 
     def _on_analysis_search_changed(self, text: str) -> None:
         """Filter activity content by search text."""
-        if hasattr(self, '_analysis_content_view'):
+        if hasattr(self, "_analysis_content_view"):
             self._analysis_content_view.set_search_text(text)
 
     def _on_export_analysis_md(self) -> None:
@@ -1735,11 +1517,11 @@ class MainWindow(QMainWindow):
 
     def _export_analysis(self, fmt: str) -> None:
         """Export analysis content for all checked tags to file."""
-        d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
+        d_from, d_to = getattr(self, "_analysis_date_range", (None, None))
 
         # Collect plain text from all checked tags
         texts: list[str] = []
-        if hasattr(self, '_analysis_task_tree') and hasattr(self, '_analysis_content_view'):
+        if hasattr(self, "_analysis_task_tree") and hasattr(self, "_analysis_content_view"):
             checked_tags = self._analysis_task_tree.get_checked_tags()
             for tag in checked_tags:
                 tasks = self._analysis_task_tree.get_tasks_for_tag(tag)
@@ -1758,7 +1540,9 @@ class MainWindow(QMainWindow):
             return
 
         # Build default filename with tag count
-        def_name = self._build_export_filename(fmt, len(checked_tags) if hasattr(self, '_analysis_task_tree') else 0)
+        def_name = self._build_export_filename(
+            fmt, len(checked_tags) if hasattr(self, "_analysis_task_tree") else 0
+        )
         filters = {"md": "Markdown (*.md)", "xlsx": "Excel (*.xlsx)", "txt": "文本文件 (*.txt)"}
         filepath, _ = QFileDialog.getSaveFileName(self, "导出报告", def_name, filters.get(fmt, ""))
         if not filepath:
@@ -1777,10 +1561,14 @@ class MainWindow(QMainWindow):
         """Build default export filename: 分区名_时间范围_n个标签.ext"""
         name_map = self._task_service.get_partition_name_map()
         pname = name_map.get(self._partition_ctrl.active_id or "", "默认分区")
-        d_from, d_to = getattr(self, '_analysis_date_range', (None, None))
+        d_from, d_to = getattr(self, "_analysis_date_range", (None, None))
         date_str = ""
         if d_from and d_to:
-            date_str = f"{d_from.isoformat()}" if d_from == d_to else f"{d_from.isoformat()}~{d_to.isoformat()}"
+            date_str = (
+                f"{d_from.isoformat()}"
+                if d_from == d_to
+                else f"{d_from.isoformat()}~{d_to.isoformat()}"
+            )
         tag_suffix = f"_{tag_count}个标签" if tag_count > 0 else ""
         return f"{pname}_{date_str}{tag_suffix}.{fmt}"
 
@@ -1789,6 +1577,7 @@ class MainWindow(QMainWindow):
         try:
             import openpyxl
             from openpyxl.styles import Font
+
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "活动报告"
@@ -1800,11 +1589,11 @@ class MainWindow(QMainWindow):
             for r, row_data in enumerate(rows, 2):
                 for c, val in enumerate(row_data, 1):
                     ws.cell(row=r, column=c, value=val)
-            ws.column_dimensions['A'].width = 6
-            ws.column_dimensions['B'].width = 30
-            ws.column_dimensions['C'].width = 14
-            ws.column_dimensions['D'].width = 12
-            ws.column_dimensions['E'].width = 60
+            ws.column_dimensions["A"].width = 6
+            ws.column_dimensions["B"].width = 30
+            ws.column_dimensions["C"].width = 14
+            ws.column_dimensions["D"].width = 12
+            ws.column_dimensions["E"].width = 60
             wb.save(filepath)
         except ImportError:
             QMessageBox.warning(self, "错误", "需要安装 openpyxl 库才能导出 Excel")
@@ -1826,10 +1615,15 @@ class MainWindow(QMainWindow):
 
         def _flush():
             if current_num and current_entries:
-                rows.append((
-                    int(current_num), current_title, current_status,
-                    current_prog, "\n".join(current_entries)
-                ))
+                rows.append(
+                    (
+                        int(current_num),
+                        current_title,
+                        current_status,
+                        current_prog,
+                        "\n".join(current_entries),
+                    )
+                )
 
         for line in text.split("\n"):
             stripped = line.strip()
@@ -1947,6 +1741,7 @@ class MainWindow(QMainWindow):
             return
         try:
             from ..services.md_importer import MarkdownImporter
+
             count = MarkdownImporter(self._repository).import_file(path)
             _log.info("Import: %s -> %s tasks", path, count)
             self._on_data_changed()
@@ -1963,6 +1758,7 @@ class MainWindow(QMainWindow):
             return
         try:
             from ..services.md_exporter import MarkdownExporter
+
             tasks = self._task_service.get_all()
             MarkdownExporter.export_to_file(tasks, path)
             _log.info("Export: %s -> %s tasks", path, len(tasks))
@@ -1974,7 +1770,8 @@ class MainWindow(QMainWindow):
     def _on_settings(self) -> None:
         _before = json.dumps(self._config.to_dict(), sort_keys=True)
         dlg = SettingsDialog(
-            self._config, self._repository,
+            self._config,
+            self._repository,
             task_service=self._task_service,
             update_checker=self._update_checker,
             parent=self,
@@ -2001,7 +1798,7 @@ class MainWindow(QMainWindow):
 
         # Only refresh theme-dependent widgets when the theme actually changed
         if theme_changed:
-            if hasattr(self, '_status_badge'):
+            if hasattr(self, "_status_badge"):
                 self._status_badge.refresh_theme()
             tag_panel = self._batch_ctrl.tag_panel
             if tag_panel is not None:
@@ -2014,20 +1811,20 @@ class MainWindow(QMainWindow):
             self._page_size = new_page_size
             self._page = 0
             data_changed = True
-            if hasattr(self, '_page_size_combo'):
+            if hasattr(self, "_page_size_combo"):
                 self._page_size_combo.setCurrentText(str(new_page_size))
-        if hasattr(self, '_batch_page_size') and self._batch_page_size != new_page_size:
+        if hasattr(self, "_batch_page_size") and self._batch_page_size != new_page_size:
             self._batch_page_size = new_page_size
             self._batch_page = 0
             data_changed = True
-            if hasattr(self, '_batch_page_size_combo'):
+            if hasattr(self, "_batch_page_size_combo"):
                 self._batch_page_size_combo.setCurrentText(str(new_page_size))
         tag_panel = self._batch_ctrl.tag_panel
         if tag_panel is not None:
             tag_panel.set_page_size(new_page_size)
 
         # Heatmap: repaint on colour-scheme change (refresh_tokens already called by app.py)
-        if hasattr(self, '_heatmap_widget'):
+        if hasattr(self, "_heatmap_widget"):
             self._heatmap_widget.force_refresh()
 
         # Sync completed-last sort setting to repository
