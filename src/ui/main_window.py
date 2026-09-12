@@ -14,16 +14,13 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
     QPushButton,
     QStackedWidget,
     QStatusBar,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -435,10 +432,6 @@ class MainWindow(QMainWindow):
         self._page_built["tasks"] = True
         self._nav_shell.set_active("tasks")
 
-        self._batch_page = 0
-        self._batch_total_count = 0
-        self._batch_pending_action: dict = {}
-
     def _toggle_pin(self) -> None:
         """常驻置顶（Phase 1 本地实现；TODO(phase5): WindowShell 接管）。"""
         on = self._pin_btn.isChecked()
@@ -562,22 +555,6 @@ class MainWindow(QMainWindow):
         if args and hasattr(args[0], "id"):
             self._select_and_load_task(args[0].id)
 
-    def _on_tasks_bulk_created(self, count: int, task_ids: list) -> None:
-        """Handle multi-task creation: switch to creation-time sort, refresh, highlight first."""
-        self._new_task_sort_active = True
-        self._filter_bar.blockSignals(True)
-        self._filter_bar.set_sort("created")
-        self._filter_bar.reset()
-        self._filter_bar._debounce.stop()  # 杀死 reset() 残留的 300ms debounce，避免竞态
-        self._filter_bar.blockSignals(False)
-        if hasattr(self, "_quick_overview") and self._quick_overview.active_preset != "today":
-            self._new_task_sort_active = False  # 临时清除，避免 _on_quick_preset 恢复默认排序
-            self._quick_overview.activate_preset("today")
-            self._new_task_sort_active = True
-        self._on_data_changed()
-        if self._task_model.tasks:
-            self._on_task_selected(self._task_model.tasks[0])
-
     def _build_filter_with_sort(self) -> TaskFilter:
         """Build filter with FilterBar's sort as base, overlay scope from quick-overview + partition."""
         f = self._filter_bar.build_filter()  # preserves sort + search + urgencies
@@ -616,32 +593,12 @@ class MainWindow(QMainWindow):
         self._status_badge.refresh(filter_.date_from, filter_.date_to)
         self._progress_bar.set_items(all_tasks)
 
-    def _on_task_created(self, task) -> None:
-        self._new_task_sort_active = True
-        self._filter_bar.blockSignals(True)
-        self._filter_bar.set_sort("created")
-        self._filter_bar.reset()
-        self._filter_bar._debounce.stop()  # 杀死 reset() 残留的 300ms debounce，避免竞态
-        self._filter_bar.blockSignals(False)
-        if hasattr(self, "_quick_overview") and self._quick_overview.active_preset != "today":
-            self._new_task_sort_active = False  # 临时清除，避免 _on_quick_preset 恢复默认排序
-            self._quick_overview.activate_preset("today")
-            self._new_task_sort_active = True
-        self._on_data_changed()
-        self._on_task_selected(task)
-
     def _select_and_load_task(self, task_id: str) -> None:
         """Find task by ID and delegate to _on_task_selected (unified凸显 entry)."""
         for row in range(self._task_model.rowCount()):
             if self._task_model.tasks[row].id == task_id:
                 self._on_task_selected(self._task_model.tasks[row])
                 return
-
-    def _on_task_deleted(self, task_id: str) -> None:
-        self._on_data_changed()
-
-    def _on_batch_completed(self) -> None:
-        self._on_data_changed()
 
     def _on_batch_status_change(self, ids: list[str], status) -> None:
         """编辑视图批处理：状态变更（批量视图路径由 BatchController 自持）。"""
@@ -728,231 +685,8 @@ class MainWindow(QMainWindow):
             self._flash_status(f"已延后 {len(ids)} 个任务")
 
     def _on_batch_move_partition(self, ids: list[str]) -> None:
-        """Move selected tasks to a different partition with password checks."""
-        from PySide6.QtWidgets import (
-            QDialog,
-            QDialogButtonBox,
-            QListWidget,
-            QListWidgetItem,
-        )
-
-        from_partition_id = self._partition_ctrl.active_id or ""
-        name_map = self._task_service.get_partition_name_map()
-        from_name = name_map.get(from_partition_id, "未分配") if from_partition_id else "未分配"
-
-        # ── Step 1: Verify FROM partition password ──
-        from_pw = self._partition_ctrl.passwords.get(from_partition_id, "")
-        if from_pw:
-            pw, ok = QInputDialog.getText(
-                self,
-                "验证来源分区密码",
-                f"来源分区「{from_name}」设有密码，请输入密码：",
-                QLineEdit.EchoMode.Password,
-            )
-            if not ok:
-                return
-            if pw.strip() != from_pw:
-                QMessageBox.warning(self, "错误", "密码不正确")
-                return
-
-        # ── Step 2: Select target partition ──
-        partitions = self._task_service.get_all_partitions()
-        # Exclude current partition
-        other = [p for p in partitions if p["id"] != from_partition_id]
-        if not other:
-            QMessageBox.information(self, "提示", "没有其他分区可供迁移。")
-            return
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle("选择目标分区")
-        dlg.resize(320, 240)
-        layout = QVBoxLayout(dlg)
-
-        list_widget = QListWidget(dlg)
-        for p in other:
-            pid, pname = p["id"], p["name"]
-            has_pw = bool(self._partition_ctrl.passwords.get(pid, ""))
-            label = f"{'🔒 ' if has_pw else ''}{pname}"
-            item = QListWidgetItem(label)
-            item.setData(Qt.ItemDataRole.UserRole, pid)
-            list_widget.addItem(item)
-        list_widget.setCurrentRow(0)
-        layout.addWidget(list_widget)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, dlg
-        )
-        buttons.accepted.connect(dlg.accept)
-        buttons.rejected.connect(dlg.reject)
-        layout.addWidget(buttons)
-
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-        selected = list_widget.currentItem()
-        if selected is None:
-            return
-        to_partition_id = selected.data(Qt.ItemDataRole.UserRole)
-        to_name = name_map.get(to_partition_id, to_partition_id)
-
-        # ── Step 3: Verify TO partition password ──
-        to_pw = self._partition_ctrl.passwords.get(to_partition_id, "")
-        if to_pw:
-            pw, ok = QInputDialog.getText(
-                self,
-                "验证目标分区密码",
-                f"目标分区「{to_name}」设有密码，请输入密码：",
-                QLineEdit.EchoMode.Password,
-            )
-            if not ok:
-                return
-            if pw.strip() != to_pw:
-                QMessageBox.warning(self, "错误", "密码不正确")
-                return
-
-        # ── Step 4: Confirmation ──
-        reply = QMessageBox.question(
-            self,
-            "确认操作",
-            f"确认将 {len(ids)} 个任务从「{from_name}」移动到「{to_name}」？",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-        )
-        if reply != QMessageBox.StandardButton.Ok:
-            return
-
-        # ── Step 5: Execute ──
-        moved = self._task_service.batch_move_partition(ids, to_partition_id)
-        if self._current_view == "edit":
-            self._task_model.set_checked_ids(set())
-            self._batch_toolbar.reset_toggle()
-        else:
-            self._refresh_batch_page()
-        self._on_data_changed()
-        self._flash_status(f"已将 {moved} 个任务移动至「{to_name}」")
-
-    def _hide_confirm(self) -> None:
-        self._confirm_bar.setVisible(False)
-        self._batch_pending_action = {}
-
-    # ------------------------------------------------------------------
-    # Manual archive & clear
-    # ------------------------------------------------------------------
-
-    def _on_manual_archive(self) -> None:
-        """Archive all DONE tasks in current partition (ignore archive_days threshold)."""
-        pid = self._partition_ctrl.active_id
-        if not pid:
-            return
-        f = TaskFilter()
-        f.sort_by = self._filter_bar.build_filter().sort_by
-        f.partition_id = pid
-        f.statuses = {TaskStatus.DONE}
-        done_tasks = self._task_service.search(f)
-        if not done_tasks:
-            QMessageBox.information(self, "归档", "当前分区没有已完成的任务。")
-            return
-        reply = QMessageBox.question(
-            self,
-            "确认归档",
-            f"归档当前分区全部 {len(done_tasks)} 个已完成任务？",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-        )
-        if reply == QMessageBox.StandardButton.Ok:
-            ids = [t.id for t in done_tasks if not t.archived]
-            if ids:
-                self._task_service.archive_batch(ids)
-                _log.info("Manual archive: %s tasks", len(ids))
-            self._batch_page = 0
-            self._refresh_batch_page()
-            self._on_data_changed()
-            self._flash_status(f"已归档 {len(ids)} 个任务")
-
-    def _on_clear_archived(self) -> None:
-        """Permanently delete all archived tasks in current partition."""
-        pid = self._partition_ctrl.active_id
-        if not pid:
-            return
-        f = TaskFilter()
-        f.partition_id = pid
-        f.show_archived = True
-        all_tasks = self._task_service.search(f)
-        archived = [t for t in all_tasks if t.archived]
-        if not archived:
-            QMessageBox.information(self, "清除", "当前分区没有已归档的任务。")
-            return
-        reply = QMessageBox.warning(
-            self,
-            "⚠ 确认清除",
-            f"将永久删除 {len(archived)} 个已归档任务，此操作不可恢复！",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-        )
-        if reply == QMessageBox.StandardButton.Ok:
-            ids = [t.id for t in archived]
-            self._task_service.batch_delete(ids)
-            self._batch_page = 0
-            self._refresh_batch_page()
-            self._on_data_changed()
-            self._flash_status(f"已清除 {len(ids)} 个已归档任务")
-
-    # ------------------------------------------------------------------
-    # Batch export
-    # ------------------------------------------------------------------
-
-    def _on_batch_export(self, fmt: str) -> None:
-        """Export all tasks in current partition to MD or Excel."""
-        pid = self._partition_ctrl.active_id
-        f = TaskFilter()
-        f.sort_by = self._filter_bar.build_filter().sort_by
-        f.partition_id = pid
-        tasks = self._task_service.search(f)
-        if not tasks:
-            QMessageBox.information(self, "导出", "当前分区没有任务。")
-            return
-
-        name_map = self._task_service.get_partition_name_map()
-        pname = name_map.get(pid or "", "未知")
-        today = date.today().isoformat()
-
-        if fmt == "md":
-            path, _ = QFileDialog.getSaveFileName(
-                self, "导出 Markdown", f"{pname}_{today}.md", "Markdown 文件 (*.md);;所有文件 (*)"
-            )
-            if path:
-                lines = [t.raw_md for t in tasks]
-                with open(path, "w", encoding="utf-8") as fh:
-                    fh.write("\n".join(lines) + "\n")
-                self._flash_status(f"已导出 {len(tasks)} 个任务到 {path}")
-        elif fmt == "xlsx":
-            path, _ = QFileDialog.getSaveFileName(
-                self, "导出 Excel", f"{pname}_{today}.xlsx", "Excel 文件 (*.xlsx);;所有文件 (*)"
-            )
-            if path:
-                from openpyxl import Workbook
-
-                wb = Workbook()
-                ws = wb.active
-                ws.title = pname
-                ws.append(
-                    ["序号", "任务内容", "状态", "进度", "截止日期", "标签", "创建时间", "归档"]
-                )
-                for i, t in enumerate(tasks, 1):
-                    ws.append(
-                        [
-                            i,
-                            t.title,
-                            t.status.display_name,
-                            f"{t.progress}%",
-                            t.deadline_date.isoformat() if t.deadline_date else "",
-                            " ".join(f"#{tag}" for tag in t.tags),
-                            t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "",
-                            (
-                                "已归档"
-                                if t.archived
-                                else ("未归档" if t.status == TaskStatus.DONE else "/")
-                            ),
-                        ]
-                    )
-                wb.save(path)
-                self._flash_status(f"已导出 {len(tasks)} 个任务到 {path}")
+        """编辑视图右键迁移分区 — 委托 BatchController（同一套密码校验与确认流）。"""
+        self._batch_ctrl.batch_move_partition(ids)
 
     def _on_filter_changed(self, filter_: TaskFilter) -> None:
         if self._setting_sort_internally:
@@ -1166,9 +900,6 @@ class MainWindow(QMainWindow):
             self._edit_panel.set_active_partition(pid)
             self._edit_panel.show_empty()
 
-    def _on_partitions_changed(self) -> None:
-        self._partition_ctrl.load_all()
-
     # ------------------------------------------------------------------
     # View switching
     # ------------------------------------------------------------------
@@ -1229,10 +960,6 @@ class MainWindow(QMainWindow):
         # Reset filter bar sort to config default on view switch
         self._new_task_sort_active = False
         self._filter_bar.set_sort(self._config.default_sort)
-
-    def _load_dashboard_data(self) -> None:
-        """Load dashboard stats after view switch (report loads on period click)."""
-        self._refresh_analysis()
 
     # ------------------------------------------------------------------
     # Activity analysis slots
@@ -1522,40 +1249,6 @@ class MainWindow(QMainWindow):
             return True
         return False
 
-    def _on_import(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(
-            self, "导入 Markdown", "", "Markdown 文件 (*.md *.txt);;所有文件 (*)"
-        )
-        if not path:
-            return
-        try:
-            from ..services.md_importer import MarkdownImporter
-
-            count = MarkdownImporter(self._repository).import_file(path)
-            _log.info("Import: %s -> %s tasks", path, count)
-            self._on_data_changed()
-            self._flash_status(f"已导入 {count} 个任务")
-        except Exception as e:
-            _log.error("Import failed: %s", e)
-            QMessageBox.warning(self, "导入失败", str(e))
-
-    def _on_export(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出 Markdown", "tasks.md", "Markdown 文件 (*.md);;所有文件 (*)"
-        )
-        if not path:
-            return
-        try:
-            from ..services.md_exporter import MarkdownExporter
-
-            tasks = self._task_service.get_all()
-            MarkdownExporter.export_to_file(tasks, path)
-            _log.info("Export: %s -> %s tasks", path, len(tasks))
-            self._flash_status(f"已导出到 {path}")
-        except Exception as e:
-            _log.error("Export failed: %s", e)
-            QMessageBox.warning(self, "导出失败", str(e))
-
     def _on_settings(self) -> None:
         _before = json.dumps(self._config.to_dict(), sort_keys=True)
         dlg = SettingsDialog(
@@ -1602,12 +1295,6 @@ class MainWindow(QMainWindow):
             data_changed = True
             if hasattr(self, "_page_size_combo"):
                 self._page_size_combo.setCurrentText(str(new_page_size))
-        if hasattr(self, "_batch_page_size") and self._batch_page_size != new_page_size:
-            self._batch_page_size = new_page_size
-            self._batch_page = 0
-            data_changed = True
-            if hasattr(self, "_batch_page_size_combo"):
-                self._batch_page_size_combo.setCurrentText(str(new_page_size))
         tag_panel = self._batch_ctrl.tag_panel
         if tag_panel is not None:
             tag_panel.set_page_size(new_page_size)
