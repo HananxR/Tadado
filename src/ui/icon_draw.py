@@ -22,8 +22,10 @@ PRIMARY = QColor("#4d57c3")
 PRIMARY_LIGHT = QColor("#7ba8f5")
 WHITE = QColor("#ffffff")
 
+
 def _dark_color() -> QColor:
     return QColor(_get_tk().text_primary)
+
 
 _LW = 2.0
 
@@ -38,6 +40,7 @@ def _pen(color: QColor, lw: float = _LW) -> QPen:
 # ═══════════════════════════════════════════════════════════════
 # App Logo — KEPT AS-IS (brand identity)
 # ═══════════════════════════════════════════════════════════════
+
 
 def draw_app(p: QPainter, r: QRectF, color: QColor) -> None:
     """Original app logo: blue rounded tile with white task lines + checkmark."""
@@ -75,6 +78,7 @@ def draw_app(p: QPainter, r: QRectF, color: QColor) -> None:
 # Tray icon — KEPT AS-IS
 # ═══════════════════════════════════════════════════════════════
 
+
 def draw_tray(p: QPainter, r: QRectF, color: QColor) -> None:
     """Simplified tray icon: blue tile with two white lines (readable at 16px)."""
     if r.width() <= 16:
@@ -106,6 +110,7 @@ def draw_tray(p: QPainter, r: QRectF, color: QColor) -> None:
 # ═══════════════════════════════════════════════════════════════
 # Nav icons — PRIMARY fill + white details, matching app logo
 # ═══════════════════════════════════════════════════════════════
+
 
 def draw_new_task(p: QPainter, r: QRectF, color: QColor) -> None:
     """Plus inside a filled blue circle."""
@@ -174,7 +179,8 @@ def draw_heatmap(p: QPainter, r: QRectF, color: QColor) -> None:
             p.setBrush(QBrush(shades[idx]))
             p.drawRoundedRect(
                 QRectF(r.x() + m + col * (cw + gap), r.y() + m + row * (ch + gap), cw, ch),
-                2, 2,
+                2,
+                2,
             )
 
 
@@ -204,6 +210,76 @@ def draw_task_manage(p: QPainter, r: QRectF, color: QColor) -> None:
             cx2 = lx - r.width() * 0.06
             p.drawLine(QPointF(cx2 - cm2 * 0.4, y - cm2 * 0.1), QPointF(cx2, y + cm2 * 0.3))
             p.drawLine(QPointF(cx2, y + cm2 * 0.3), QPointF(cx2 + cm2 * 0.8, y - cm2 * 0.4))
+
+
+def draw_overview(p: QPainter, r: QRectF, color: QColor) -> None:
+    """2×2 grid of filled rounded squares (overview dashboard)."""
+    m = r.width() * 0.14
+    gap = r.width() * 0.10
+    sq = (r.width() - 2 * m - gap) / 2
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(PRIMARY))
+    for col in range(2):
+        for row in range(2):
+            p.drawRoundedRect(
+                QRectF(
+                    r.x() + m + col * (sq + gap),
+                    r.y() + m + row * (sq + gap),
+                    sq,
+                    sq,
+                ),
+                3,
+                3,
+            )
+
+
+def draw_tasks(p: QPainter, r: QRectF, color: QColor) -> None:
+    """Filled circle with white checkmark (task list)."""
+    cx, cy = r.center().x(), r.center().y()
+    radius = r.width() * 0.40
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(PRIMARY))
+    p.drawEllipse(QPointF(cx, cy), radius, radius)
+    lw = max(2, r.width() * 0.08)
+    p.setPen(_pen(WHITE, lw))
+    s = r.width() * 0.26
+    p.drawLine(QPointF(cx - s * 0.7, cy + s * 0.05), QPointF(cx - s * 0.1, cy + s * 0.55))
+    p.drawLine(QPointF(cx - s * 0.1, cy + s * 0.55), QPointF(cx + s * 0.85, cy - s * 0.5))
+
+
+def draw_graph(p: QPainter, r: QRectF, color: QColor) -> None:
+    """Three connected nodes (task graph)."""
+    cx, cy = r.center().x(), r.center().y()
+    rad = r.width() * 0.15
+    pts = [
+        (cx - r.width() * 0.24, cy - r.height() * 0.20),
+        (cx + r.width() * 0.26, cy - r.height() * 0.16),
+        (cx + r.width() * 0.06, cy + r.height() * 0.26),
+    ]
+    p.setPen(_pen(PRIMARY, max(1.5, r.width() * 0.06)))
+    for i in range(3):
+        p.drawLine(QPointF(*pts[i]), QPointF(*pts[(i + 1) % 3]))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(PRIMARY))
+    for x, y in pts:
+        p.drawEllipse(QPointF(x, y), rad, rad)
+
+
+def draw_pin(p: QPainter, r: QRectF, color: QColor) -> None:
+    """Pin outline — title-bar toggle (outline style, theme color)."""
+    m = r.width() * 0.20
+    lw = max(1.8, r.width() * 0.08)
+    p.setPen(_pen(_dark_color(), lw))
+    cx = r.center().x()
+    top = r.y() + m
+    p.drawLine(QPointF(cx, top + r.height() * 0.26), QPointF(cx, r.bottom() - m))
+    head_w = r.width() * 0.34
+    head_h = r.height() * 0.26
+    p.drawRoundedRect(
+        QRectF(cx - head_w / 2, top, head_w, head_h),
+        lw,
+        lw,
+    )
 
 
 def draw_settings(p: QPainter, r: QRectF, color: QColor) -> None:
@@ -263,6 +339,7 @@ def draw_help(p: QPainter, r: QRectF, color: QColor) -> None:
 # ═══════════════════════════════════════════════════════════════
 # Window control icons — minimalist, match logo style
 # ═══════════════════════════════════════════════════════════════
+
 
 def draw_tray_hide(p: QPainter, r: QRectF, color: QColor) -> None:
     """Down arrow to a dash (minimize to tray)."""
@@ -361,6 +438,10 @@ def draw_home(p: QPainter, r: QRectF, color: QColor) -> None:
 ICON_DRAW_FUNCS = {
     "app": draw_app,
     "tray_normal": draw_tray,
+    "overview": draw_overview,
+    "tasks": draw_tasks,
+    "graph": draw_graph,
+    "pin": draw_pin,
     "new_task": draw_new_task,
     "new_multi_task": draw_new_multi_task,
     "heatmap": draw_heatmap,
