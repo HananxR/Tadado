@@ -39,7 +39,6 @@ from .controllers.batch_controller import BatchController
 from .controllers.filter_coordinator import FilterCoordinator
 from .controllers.partition_controller import PartitionController
 from .dialogs.settings_dialog import SettingsDialog
-from .widgets.calendar_popup import CalendarPopup
 
 _log = logging.getLogger("runlog")
 
@@ -644,291 +643,75 @@ class MainWindow(QMainWindow):
     def _on_batch_completed(self) -> None:
         self._on_data_changed()
 
-    # ------------------------------------------------------------------
-    # Batch page methods
-    # ------------------------------------------------------------------
-
-    def _refresh_batch_page(self) -> None:
-        """Refresh the task management page applying all sidebar filters."""
-        if not hasattr(self, "_batch_task_model"):
-            return
-        f = TaskFilter()
-        f.sort_by = self._filter_bar.build_filter().sort_by  # inherit main sort
-        f.partition_id = self._partition_ctrl.active_id
-        f.search_text = self._batch_search.text().strip()
-        # Status
-        sd = self._batch_status_combo.currentData()
-        if sd is not None:
-            f.statuses = {sd}
-        # Priority / Urgency
-        pd = self._batch_priority_combo.currentData()
-        if pd is not None:
-            f.urgencies = {pd}
-        # Created time
-        f.created_from = self._read_date_edit("_batch_created_from")
-        f.created_to = self._read_date_edit("_batch_created_to")
-        # Deadline time
-        f.date_from = self._read_date_edit("_batch_deadline_from")
-        f.date_to = self._read_date_edit("_batch_deadline_to")
-        # Progress
-        lo, hi = self._batch_progress_combo.currentData()
-        f.progress_min = lo
-        f.progress_max = hi
-        # Tags (strip leading # for consistency with UI display format)
-        tag_text = self._batch_tag_input.text().strip()
-        if tag_text:
-            f.tags = set(t.strip().lstrip("#").strip() for t in tag_text.split() if t.strip())
-        # Archive status
-        arc = self._batch_archive_combo.currentData()
-        if arc == "all" or arc == "archived":
-            f.show_archived = True
-
-        if arc == "archived":
-            # Load all tasks (no limit), filter client-side, then paginate manually
-            f.limit = None
-            f.offset = 0
-            tasks = [t for t in self._task_service.search(f) if t.archived]
-            self._batch_total_count = len(tasks)
-            start = self._batch_page * self._batch_page_size
-            tasks = tasks[start : start + self._batch_page_size]
-        else:
-            f.limit = self._batch_page_size
-            f.offset = self._batch_page * self._batch_page_size
-            tasks, self._batch_total_count = self._task_service.search_with_total(f)
-        self._batch_task_model.set_offset(self._batch_page * self._batch_page_size)
-        self._batch_task_model.load_tasks(tasks)
-        self._update_batch_pagination()
-
-    def _read_date_edit(self, attr: str) -> date | None:
-        """Parse yyyy-MM-dd from a QLineEdit attribute, return date or None."""
-        le = getattr(self, attr, None)
-        if le is None:
-            return None
-        txt = le.text().strip()
-        if not txt:
-            return None
-        try:
-            return date.fromisoformat(txt)
-        except ValueError:
-            return None
-
-    def _open_date_popup(self, line_edit: QLineEdit) -> None:
-        """Open CalendarPopup and set result into the QLineEdit."""
-        txt = line_edit.text().strip()
-        initial = date.fromisoformat(txt) if txt else date.today()
-        popup = CalendarPopup(initial, self)
-        popup.date_selected.connect(
-            lambda qd: (
-                line_edit.setText(qd.toPython().isoformat()),
-                self._on_batch_filter_changed(),
-            )
-        )
-        popup.smart_place(line_edit)
-        popup.exec()
-
-    def _update_batch_pagination(self) -> None:
-        if self._batch_page_size <= 0:
-            self._batch_page_label.setText("全部")
-            return
-        total_pages = max(
-            1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size
-        )
-        self._batch_page_label.setText(f"{self._batch_page + 1} / {total_pages}")
-        self._batch_prev_btn.setEnabled(self._batch_page > 0)
-        self._batch_next_btn.setEnabled(self._batch_page < total_pages - 1)
-
-    def _on_batch_search(self) -> None:
-        self._batch_page = 0
-        self._refresh_batch_page()
-
-    def _on_batch_filter_changed(self) -> None:
-        self._batch_page = 0
-        self._refresh_batch_page()
-
-    def _on_batch_page_prev(self) -> None:
-        if self._batch_page > 0:
-            self._batch_page -= 1
-            self._refresh_batch_page()
-            if hasattr(self, "_batch_task_model") and self._batch_task_model.rowCount() > 0:
-                self._batch_task_model.set_highlighted_task(self._batch_task_model.tasks[0].id)
-
-    def _on_batch_page_next(self) -> None:
-        total_pages = max(
-            1, (self._batch_total_count + self._batch_page_size - 1) // self._batch_page_size
-        )
-        if self._batch_page < total_pages - 1:
-            self._batch_page += 1
-            self._refresh_batch_page()
-            if hasattr(self, "_batch_task_model") and self._batch_task_model.rowCount() > 0:
-                self._batch_task_model.set_highlighted_task(self._batch_task_model.tasks[0].id)
-
-    def _on_batch_page_size_changed(self, index: int) -> None:
-        widget = self.sender()
-        if widget:
-            self._batch_page_size = widget.itemData(index)
-            self._batch_page = 0
-            self._refresh_batch_page()
-
-    def _on_edit_select_all(self) -> None:
-        if hasattr(self, "_task_model"):
-            ids = set(t.id for t in self._task_model.tasks)
-            self._task_model.set_checked_ids(ids)
-
-    def _on_edit_deselect_all(self) -> None:
-        if hasattr(self, "_task_model"):
-            self._task_model.set_checked_ids(set())
-
-    def _on_batch_select_all(self) -> None:
-        if hasattr(self, "_batch_task_model"):
-            ids = set(t.id for t in self._batch_task_model.tasks)
-            self._batch_task_model.set_checked_ids(ids)
-
-    def _on_batch_deselect_all(self) -> None:
-        if hasattr(self, "_batch_task_model"):
-            self._batch_task_model.set_checked_ids(set())
-
-    def _on_batch_task_selected(self, task: Task) -> None:
-        """Highlight the selected task in the batch view."""
-        self._batch_task_model.set_highlighted_task(task.id)
-
-    def _on_batch_model_data_changed(self) -> None:
-        if hasattr(self, "_batch_toolbar2"):
-            ids = self._batch_task_model.checked_task_ids()
-            self._batch_toolbar2.set_selected(ids)
-
     def _on_batch_status_change(self, ids: list[str], status) -> None:
-        if self._current_view == "edit":
-            reply = QMessageBox.question(
-                self,
-                "确认操作",
-                f"确认更改 {len(ids)} 个任务的状态？",
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-            )
-            if reply == QMessageBox.StandardButton.Ok:
-                self._task_service.batch_update_status(ids, status)
-                self._task_model.set_checked_ids(set())
-                self._on_data_changed()
-                self._batch_toolbar.reset_toggle()
-                self._flash_status(f"已更改 {len(ids)} 个任务状态")
-        else:
-            self._confirm_label.setText(f"确认更改 {len(ids)} 个任务的状态？")
-            self._confirm_bar.setVisible(True)
-            self._batch_pending_action = {"action": "status", "ids": ids, "status": status}
-            self._confirm_ok_btn.clicked.disconnect()
-            self._confirm_ok_btn.clicked.connect(self._execute_batch_status)
-
-    def _execute_batch_status(self) -> None:
-        action = self._batch_pending_action
-        self._task_service.batch_update_status(action["ids"], action["status"])
-        self._hide_confirm()
-        self._refresh_batch_page()
-        self._on_data_changed()
-        self._flash_status(f"已更改 {len(action['ids'])} 个任务状态")
+        """编辑视图批处理：状态变更（批量视图路径由 BatchController 自持）。"""
+        reply = QMessageBox.question(
+            self,
+            "确认操作",
+            f"确认更改 {len(ids)} 个任务的状态？",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Ok:
+            self._task_service.batch_update_status(ids, status)
+            self._task_model.set_checked_ids(set())
+            self._on_data_changed()
+            self._batch_toolbar.reset_toggle()
+            self._flash_status(f"已更改 {len(ids)} 个任务状态")
 
     def _on_batch_urgency_change(self, ids: list[str], urgency: int) -> None:
-        """Handle batch urgency change from toolbar."""
+        """编辑视图批处理：优先级变更（批量视图路径由 BatchController 自持）。"""
         self._task_service.batch_update_urgency(ids, urgency)
-        if self._current_view == "batch":
-            self._batch_task_model.deselect_all()
-            self._batch_toolbar2.reset_toggle()
-            self._refresh_batch_page()
-        else:
-            self._task_model.set_checked_ids(set())
-            self._batch_toolbar.reset_toggle()
-            current = self._edit_panel.current_task()
-            if current and current.id in ids:
-                updated = self._task_service.get_task(current.id)
-                if updated:
-                    self._edit_panel.load_task(updated)
+        self._task_model.set_checked_ids(set())
+        self._batch_toolbar.reset_toggle()
+        current = self._edit_panel.current_task()
+        if current and current.id in ids:
+            updated = self._task_service.get_task(current.id)
+            if updated:
+                self._edit_panel.load_task(updated)
         self._on_data_changed()
         self._flash_status(f"已更改 {len(ids)} 个任务优先级")
 
     def _on_batch_delete(self, ids: list[str]) -> None:
-        if self._current_view == "edit":
-            reply = QMessageBox.question(
-                self,
-                "确认删除",
-                f"确认删除 {len(ids)} 个任务？此操作不可撤销。",
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-            )
-            if reply == QMessageBox.StandardButton.Ok:
-                self._task_service.batch_delete(ids)
-                self._task_model.set_checked_ids(set())
-                self._on_data_changed()
-                self._batch_toolbar.reset_toggle()
-                self._flash_status(f"已删除 {len(ids)} 个任务")
-        else:
-            self._confirm_label.setText(f"⚠ 确认删除 {len(ids)} 个任务？此操作不可撤销。")
-            self._confirm_bar.setVisible(True)
-            self._batch_pending_action = {"action": "delete", "ids": ids}
-            self._confirm_ok_btn.clicked.disconnect()
-            self._confirm_ok_btn.clicked.connect(self._execute_batch_delete)
-
-    def _execute_batch_delete(self) -> None:
-        action = self._batch_pending_action
-        self._task_service.batch_delete(action["ids"])
-        self._hide_confirm()
-        self._refresh_batch_page()
-        self._on_data_changed()
-        self._flash_status(f"已删除 {len(action['ids'])} 个任务")
+        reply = QMessageBox.question(
+            self,
+            "确认删除",
+            f"确认删除 {len(ids)} 个任务？此操作不可撤销。",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Ok:
+            self._task_service.batch_delete(ids)
+            self._task_model.set_checked_ids(set())
+            self._on_data_changed()
+            self._batch_toolbar.reset_toggle()
+            self._flash_status(f"已删除 {len(ids)} 个任务")
 
     def _on_batch_suspend(self, ids: list[str]) -> None:
-        if self._current_view == "edit":
-            reply = QMessageBox.question(
-                self,
-                "确认操作",
-                f"确认中止 {len(ids)} 个任务？",
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-            )
-            if reply == QMessageBox.StandardButton.Ok:
-                self._task_service.batch_suspend(ids)
-                self._task_model.set_checked_ids(set())
-                self._on_data_changed()
-                self._batch_toolbar.reset_toggle()
-                self._flash_status(f"已中止 {len(ids)} 个任务")
-        else:
-            self._confirm_label.setText(f"确认中止 {len(ids)} 个任务？")
-            self._confirm_bar.setVisible(True)
-            self._batch_pending_action = {"action": "suspend", "ids": ids}
-            self._confirm_ok_btn.clicked.disconnect()
-            self._confirm_ok_btn.clicked.connect(self._execute_batch_suspend)
-
-    def _execute_batch_suspend(self) -> None:
-        action = self._batch_pending_action
-        self._task_service.batch_suspend(action["ids"])
-        self._hide_confirm()
-        self._refresh_batch_page()
-        self._on_data_changed()
-        self._flash_status(f"已中止 {len(action['ids'])} 个任务")
+        reply = QMessageBox.question(
+            self,
+            "确认操作",
+            f"确认中止 {len(ids)} 个任务？",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Ok:
+            self._task_service.batch_suspend(ids)
+            self._task_model.set_checked_ids(set())
+            self._on_data_changed()
+            self._batch_toolbar.reset_toggle()
+            self._flash_status(f"已中止 {len(ids)} 个任务")
 
     def _on_batch_restart(self, ids: list[str]) -> None:
-        if self._current_view == "edit":
-            reply = QMessageBox.question(
-                self,
-                "确认操作",
-                f"确认重启 {len(ids)} 个任务？",
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-            )
-            if reply == QMessageBox.StandardButton.Ok:
-                self._task_service.batch_restart(ids)
-                self._task_model.set_checked_ids(set())
-                self._on_data_changed()
-                self._batch_toolbar.reset_toggle()
-                self._flash_status(f"已重启 {len(ids)} 个任务")
-        else:
-            self._confirm_label.setText(f"确认重启 {len(ids)} 个任务？")
-            self._confirm_bar.setVisible(True)
-            self._batch_pending_action = {"action": "restart", "ids": ids}
-            self._confirm_ok_btn.clicked.disconnect()
-            self._confirm_ok_btn.clicked.connect(self._execute_batch_restart)
-
-    def _execute_batch_restart(self) -> None:
-        action = self._batch_pending_action
-        self._task_service.batch_restart(action["ids"])
-        self._hide_confirm()
-        self._refresh_batch_page()
-        self._on_data_changed()
-        self._flash_status(f"已重启 {len(action['ids'])} 个任务")
+        reply = QMessageBox.question(
+            self,
+            "确认操作",
+            f"确认重启 {len(ids)} 个任务？",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+        )
+        if reply == QMessageBox.StandardButton.Ok:
+            self._task_service.batch_restart(ids)
+            self._task_model.set_checked_ids(set())
+            self._on_data_changed()
+            self._batch_toolbar.reset_toggle()
+            self._flash_status(f"已重启 {len(ids)} 个任务")
 
     def _on_batch_postpone(self, ids: list[str], days: int) -> None:
         reply = QMessageBox.question(
@@ -939,11 +722,8 @@ class MainWindow(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.Ok:
             self._task_service.batch_postpone(ids, days)
-            if self._current_view == "edit":
-                self._task_model.set_checked_ids(set())
-                self._batch_toolbar.reset_toggle()
-            else:
-                self._refresh_batch_page()
+            self._task_model.set_checked_ids(set())
+            self._batch_toolbar.reset_toggle()
             self._on_data_changed()
             self._flash_status(f"已延后 {len(ids)} 个任务")
 
