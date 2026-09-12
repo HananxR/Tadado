@@ -82,6 +82,7 @@ class MainWindow(QMainWindow):
         self._page_size: int = config.get("general", "page_size", default=20)
         self._total_count: int = 0
         self._current_view: str = "edit"
+        self._current_page: str = "tasks"
         self._analysis_date_range: tuple = (None, None)
         self._selection_guard: bool = False  # prevents signal recursion from selectRow()
         self._new_task_sort_active: bool = False  # True after task creation, reset on user nav
@@ -247,35 +248,32 @@ class MainWindow(QMainWindow):
         self._refresh_title_bar_theme()
         tb.addWidget(self._title_icon_btn)
 
-        # Nav buttons (icon + text, flat style) — colors via base.qss
-        btn_style = "QPushButton { border: none; background: transparent; padding: 2px 8px; font-size: 11px; }"
-        icon_sz = QSize(18, 18)
-
-        nav_items = [
-            ("new_task", "新建单任务", self._on_menu_new_draft),
-            ("new_multi_task", "新建多任务", self._on_menu_new_multi),
-            ("heatmap", "活动分析", lambda: self._switch_view("dashboard")),
-            ("task_manage", "任务管理", lambda: self._switch_view("batch")),
-            ("settings", "设置", self._on_settings),
-        ]
-        for icon_name, text, slot in nav_items:
-            btn = QPushButton()
-            btn.setObjectName("titleBtn")
-            btn.setIcon(load_icon(icon_name))
-            btn.setIconSize(icon_sz)
-            btn.setText(text)
-            btn.setFlat(True)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(btn_style)
-            btn.clicked.connect(slot)
-            tb.addWidget(btn)
-
-        # Help/docs/about 已移入设置对话框（帮助文档 / 关于 页签）
-
-        # Store the right edge of nav buttons for hit-test (logo 36 + ~110px per button * 6)
-        self._title_nav_right = 36 + 110 * 6
+        # 全局热键提示（Phase 5 落地实际热键注册）
+        hint_label = QLabel("⌨ Ctrl+Shift+Space 随时唤起")
+        hint_label.setObjectName("titleHint")
+        hint_label.setStyleSheet("color: #9a9488; font-size: 11px; padding: 0 8px;")
+        tb.addWidget(hint_label)
 
         tb.addStretch()
+
+        # 常驻置顶按钮（TODO(phase5): WindowShell 接管）
+        from ..utils.design_tokens import get_tokens as _gt
+
+        _accent = _gt().accent
+        self._pin_btn = QPushButton()
+        self._pin_btn.setIcon(load_icon("pin"))
+        self._pin_btn.setIconSize(QSize(16, 16))
+        self._pin_btn.setFixedSize(bar_h - 6, bar_h - 6)
+        self._pin_btn.setFlat(True)
+        self._pin_btn.setCheckable(True)
+        self._pin_btn.setToolTip("常驻置顶")
+        self._pin_btn.setStyleSheet(
+            "QPushButton { border: none; background: transparent; padding: 0px; }"
+            f"QPushButton:checked {{ background: rgba({int(_accent[1:3], 16)},"
+            f"{int(_accent[3:5], 16)},{int(_accent[5:7], 16)},0.22); border-radius: 6px; }}"
+        )
+        self._pin_btn.clicked.connect(self._toggle_pin)
+        tb.addWidget(self._pin_btn)
 
         # Right-side window buttons (icon only) — colors via base.qss
         right_btn_style = "QPushButton { border: none; background: transparent; padding: 0px; }"
@@ -402,58 +400,52 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _setup_central_widget(self) -> None:
-        from .views import get_spec
+        from .nav_shell import NavShell
+        from .views import VIEW_REGISTRY, get_spec
 
+        self._page_index: dict[str, int] = {}
+        self._page_built: dict[str, bool] = {}
         self._stack = QStackedWidget()
+        for i, page_id in enumerate(VIEW_REGISTRY.keys()):
+            self._page_index[page_id] = i
+            self._stack.addWidget(QWidget())  # placeholder, replaced on first access
+            self._page_built[page_id] = False
 
-        # Page 0: Task view（构建逻辑已迁至 views/tasks_view.py）
+        # 侧边栏：分组入口 + 设置齿轮
+        self._nav_shell = NavShell(self)
+        self._nav_shell.page_requested.connect(self._switch_view)
+        self._nav_shell.settings_requested.connect(self._on_settings)
+
+        central = QWidget()
+        central_layout = QHBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self._nav_shell)
+        central_layout.addWidget(self._stack, 1)
+        self.setCentralWidget(central)
+
+        # 默认显示任务页（旧行为：page0 = edit view，随窗口构建即建）
         spec = get_spec("tasks")
         task_page = spec.factory(None, {"main_window": self})
-        self._stack.addWidget(task_page)
-
-        # Page 1 & 2 are built lazily on first access
-        self._stack.insertWidget(1, QWidget())  # placeholder for page 1
-        self._stack.insertWidget(2, QWidget())  # placeholder for page 2
-        self._page1_built = False
-        self._page2_built = False
+        idx = self._page_index["tasks"]
+        old = self._stack.widget(idx)
+        self._stack.removeWidget(old)
+        if old:
+            old.deleteLater()
+        self._stack.insertWidget(idx, task_page)
+        self._page_built["tasks"] = True
+        self._nav_shell.set_active("tasks")
 
         self._batch_page = 0
         self._batch_total_count = 0
         self._batch_pending_action: dict = {}
 
-        self.setCentralWidget(self._stack)
-
-    # ------------------------------------------------------------------
-    # Lazy page builders
-    # ------------------------------------------------------------------
-
-    def _build_page1(self) -> None:
-        """Build Activity Analysis page on first access（构建逻辑已迁至 views/analysis_view.py）."""
-        from .views import get_spec
-
-        spec = get_spec("analysis")
-        page = spec.factory(None, {"main_window": self})
-
-        old = self._stack.widget(1)
-        self._stack.removeWidget(old)
-        if old:
-            old.deleteLater()
-        self._stack.insertWidget(1, page)
-        self._page1_built = True
-
-    def _build_page2(self) -> None:
-        """Build Task Management Console page（构建逻辑已迁至 views/manage_view.py）."""
-        from .views import get_spec
-
-        spec = get_spec("manage")
-        page = spec.factory(None, {"main_window": self})
-
-        old = self._stack.widget(2)
-        self._stack.removeWidget(old)
-        if old:
-            old.deleteLater()
-        self._stack.insertWidget(2, page)
-        self._page2_built = True
+    def _toggle_pin(self) -> None:
+        """常驻置顶（Phase 1 本地实现；TODO(phase5): WindowShell 接管）。"""
+        on = self._pin_btn.isChecked()
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)
+        self.show()
+        self._flash_status("已开启常驻置顶" if on else "已取消常驻置顶")
 
     def _on_new_multi_task(self) -> None:
         if not self.isVisible() and self._edit_panel.has_unsaved_draft():
@@ -467,7 +459,7 @@ class MainWindow(QMainWindow):
                     return
             else:
                 self._splitter_stack.setCurrentIndex(0)
-        self._stack.setCurrentIndex(0)
+        self._stack.setCurrentIndex(self._page_index["tasks"])
         self.show()
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
         self.raise_()
@@ -1402,23 +1394,43 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _switch_view(self, view: str) -> None:
-        if view == self._current_view:
+        from .views import get_spec, resolve
+
+        page_id = resolve(view)
+        # 兼容旧代码读取 _current_view == "edit"/"batch"（死代码清理后移除映射）
+        old_name = {"tasks": "edit", "analysis": "dashboard", "manage": "batch"}.get(
+            page_id, page_id
+        )
+        if old_name == self._current_view:
             return
-        _log.info("View switched: %s", view)
-        self._current_view = view
+        _log.info("View switched: %s", page_id)
+        self._current_view = old_name
+        self._current_page = page_id
+
         # Cancel any pending deferred loads
         if hasattr(self, "_deferred_timer") and self._deferred_timer.isActive():
             self._deferred_timer.stop()
 
-        if view == "edit":
-            self._stack.setCurrentIndex(0)
+        # 懒构建：首次访问时经注册表工厂生成真实页面
+        if not self._page_built.get(page_id):
+            spec = get_spec(page_id)
+            page = spec.factory(None, {"main_window": self})
+            idx = self._page_index[page_id]
+            old = self._stack.widget(idx)
+            self._stack.removeWidget(old)
+            if old:
+                old.deleteLater()
+            self._stack.insertWidget(idx, page)
+            self._page_built[page_id] = True
+
+        self._stack.setCurrentIndex(self._page_index[page_id])
+        self._nav_shell.set_active(page_id)
+
+        if page_id == "tasks":
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.show()
             self._apply_splitter_sizes()
-        elif view == "dashboard":
-            if not self._page1_built:
-                self._build_page1()
-            self._stack.setCurrentIndex(1)
+        elif page_id == "analysis":
             self._heatmap_widget.nav_bar.setVisible(True)
             self._top_bar.hide()
             self._deferred_timer = QTimer(self)
@@ -1427,10 +1439,7 @@ class MainWindow(QMainWindow):
                 lambda: self._refresh_analysis(self._partition_ctrl.active_id)
             )
             self._deferred_timer.start(0)
-        elif view == "batch":
-            if not self._batch_ctrl._built:
-                self._build_page2()
-            self._stack.setCurrentIndex(2)
+        elif page_id == "manage":
             self._heatmap_widget.nav_bar.setVisible(False)
             self._top_bar.hide()
             self._apply_batch_splitter_sizes()
@@ -1685,7 +1694,7 @@ class MainWindow(QMainWindow):
                 self._partition_ctrl.unlock()
             else:
                 self._splitter_stack.setCurrentIndex(0)
-        self._stack.setCurrentIndex(0)
+        self._stack.setCurrentIndex(self._page_index["tasks"])
         self.show()
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
         self.raise_()
@@ -1705,7 +1714,7 @@ class MainWindow(QMainWindow):
                     return
             else:
                 self._splitter_stack.setCurrentIndex(0)
-        self._stack.setCurrentIndex(0)
+        self._stack.setCurrentIndex(self._page_index["tasks"])
         self.show()
         self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
         self.raise_()
