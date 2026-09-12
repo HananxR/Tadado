@@ -1876,6 +1876,9 @@ class MainWindow(QMainWindow):
     def _on_midnight_crossed(self) -> None:
         self._quick_overview.refresh()
         if self._current_view != "edit":
-            self._refresh_report()
+            # 此前调用不存在的 _refresh_report 会在午夜崩溃（AttributeError）
+            if hasattr(self, "_analysis_stats"):
+                self._refresh_analysis(self._partition_ctrl.active_id)
+            self._filter_coordinator.refresh()
         self._on_data_changed()
         self._schedule_midnight_timer()
