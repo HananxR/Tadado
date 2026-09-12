@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication
 
 from src.models.task import Task
 from src.models.task_filter import TaskFilter
@@ -11,18 +10,9 @@ from src.models.task_status import TaskStatus
 from src.services.task_service import TaskService
 from src.utils.signal_bus import SignalBus
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="session")
-def qapp():
-    """Session-scoped QApplication — needed once for SignalBus (a QObject)."""
-    app = QApplication.instance()
-    if app is None:
-        app = QApplication([])
-    return app
 
 
 @pytest.fixture
@@ -66,6 +56,7 @@ def _make_task(
 # Create
 # ---------------------------------------------------------------------------
 
+
 class TestCreateTask:
     def test_create_minimal(self, service):
         task = service.create_task("- [ ] 最小任务")
@@ -103,6 +94,7 @@ class TestCreateTask:
 # Update
 # ---------------------------------------------------------------------------
 
+
 class TestUpdateTask:
     def test_update_title(self, service):
         task = service.create_task("- [ ] 旧标题")
@@ -123,6 +115,7 @@ class TestUpdateTask:
 # ---------------------------------------------------------------------------
 # Delete
 # ---------------------------------------------------------------------------
+
 
 class TestDeleteTask:
     def test_delete_existing(self, service):
@@ -145,6 +138,7 @@ class TestDeleteTask:
 # Change status
 # ---------------------------------------------------------------------------
 
+
 class TestChangeTaskStatus:
     def test_todo_to_doing(self, service):
         task = service.create_task("- [ ] 状态测试")
@@ -160,9 +154,7 @@ class TestChangeTaskStatus:
     def test_emits_status_changed(self, service, qapp):
         task = service.create_task("- [ ] 状态信号")
         received: list[tuple] = []
-        service._bus.task_status_changed.connect(
-            lambda t, old: received.append((t.id, old))
-        )
+        service._bus.task_status_changed.connect(lambda t, old: received.append((t.id, old)))
         service.change_task_status(task, TaskStatus.DOING)
         assert len(received) == 1
         assert received[0][1] == TaskStatus.TODO
@@ -171,6 +163,7 @@ class TestChangeTaskStatus:
 # ---------------------------------------------------------------------------
 # Batch operations
 # ---------------------------------------------------------------------------
+
 
 class TestBatchOperations:
     @pytest.fixture
@@ -214,7 +207,8 @@ class TestBatchOperations:
             assert not service.get_task(tid).suspended
 
     def test_batch_postpone(self, service, three_tasks, qapp):
-        from datetime import date as _date, timedelta
+        from datetime import date as _date
+        from datetime import timedelta
 
         # Give them deadlines first
         today = _date.today()
@@ -245,6 +239,7 @@ class TestBatchOperations:
 # ---------------------------------------------------------------------------
 # Queries
 # ---------------------------------------------------------------------------
+
 
 class TestQueries:
     @pytest.fixture
@@ -288,6 +283,7 @@ class TestQueries:
 # ---------------------------------------------------------------------------
 # Partitions
 # ---------------------------------------------------------------------------
+
 
 class TestPartitions:
     def test_ensure_default(self, service):
@@ -341,6 +337,7 @@ class TestPartitions:
 # Tags
 # ---------------------------------------------------------------------------
 
+
 class TestTags:
     def test_get_all_tags(self, service):
         service.create_task("- [ ] 重构 #后端", partition_id="p1")
@@ -377,9 +374,9 @@ class TestTags:
 # Heatmap
 # ---------------------------------------------------------------------------
 
+
 class TestHeatmap:
     def test_get_heatmap_activity_data_empty(self, service):
-        from datetime import date as _date
 
         entries, tasks = service.get_heatmap_activity_data(2026)
         assert isinstance(entries, dict)
@@ -389,6 +386,7 @@ class TestHeatmap:
 # ---------------------------------------------------------------------------
 # Formatting
 # ---------------------------------------------------------------------------
+
 
 class TestFormatting:
     def test_format_task(self, service):
@@ -429,6 +427,7 @@ class TestFormatting:
 # ---------------------------------------------------------------------------
 # Signal isolation
 # ---------------------------------------------------------------------------
+
 
 class TestSignalIsolation:
     """Each service instance gets its own SignalBus — no cross-test leakage."""
