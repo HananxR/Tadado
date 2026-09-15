@@ -1,7 +1,0 @@
-SPIKE|{"name":"webview.bg","ok":true,"detail":"set_background_color(0,0,0,0) 成功"}
-SPIKE|{"name":"__rust_boot__","ok":true,"detail":"pid=36796 mode=visual"}
-SPIKE|{"name":"anim.open","ok":true,"detail":"滑入: frames=73 avg=8.3ms max=8.6ms 长帧=0 位移采样点=28"}
-SPIKE|{"name":"visual.hold","ok":true,"detail":"抽屉保持打开 40s，供外部截图"}
-SPIKE|{"name":"anim.close","ok":true,"detail":"收起: frames=105 avg=8.3ms max=8.7ms 长帧=0 位移采样点=29"}
-SPIKE|{"name":"visual.done","ok":true,"detail":"截图窗口结束"}
-SPIKE|{"name":"__exit__","ok":true,"detail":""}
