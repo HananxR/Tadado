@@ -75,6 +75,38 @@ try {
   await sleep(300);
   check("Esc 关闭抽屉", (await page.locator("#task-drawer.open").count()) === 0);
 
+  // 编辑标题（回归：标题、标签、截止曾经全是只读节点）
+  // 挑一条「待办」的：已完成的任务按设计不会被标成逾期，拿它测逾期等于测了个空
+  const todoRow = page
+    .locator(".tt-row")
+    .filter({ has: page.locator(".tt-bar.st-todo") })
+    .first();
+  await todoRow.dblclick();
+  await page.waitForSelector("#task-drawer.open");
+  await page.fill(".dr-title", "改过标题的任务");
+  await page.locator(".dr-title").press("Enter");
+  await sleep(300);
+  check(
+    "抽屉可改标题",
+    (await page.locator(".tt-label", { hasText: "改过标题的任务" }).count()) >= 1,
+  );
+
+  // 设成过去的日期 → 应被自动标为逾期
+  await page.fill(".dr-due", "2026-09-01");
+  await page.locator(".dr-due").press("Enter");
+  await sleep(300);
+  const badge = (await page.locator("#task-drawer .st").textContent()) ?? "";
+  check("截止早于今天自动标逾期", badge.includes("逾期"), badge.trim());
+
+  // 清除截止 → 退回待办
+  await page.click(".due-quick button:has-text('清除')");
+  await sleep(300);
+  const badge2 = (await page.locator("#task-drawer .st").textContent()) ?? "";
+  check("清除截止后退回待办", !badge2.includes("逾期"), badge2.trim());
+
+  await page.keyboard.press("Escape");
+  await sleep(300);
+
   // 右键菜单
   await page.locator(".tt-row").first().click({ button: "right" });
   await sleep(200);

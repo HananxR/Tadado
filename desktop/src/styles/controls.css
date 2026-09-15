@@ -239,6 +239,58 @@
   flex: none;
 }
 
+/* ============ 抽屉里的可编辑字段 ============ */
+/* 标题和标签平时看着像普通文字，悬停才浮出边框、聚焦才染色 ——
+   一进抽屉就满眼输入框，会把「看」和「改」的界限抹掉 */
+.dr-title,
+.dr-tags {
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: 600 14px var(--font);
+}
+
+.dr-tags {
+  font: 400 12px var(--mono);
+  color: var(--text-2);
+}
+
+.dr-title:hover,
+.dr-tags:hover {
+  border-color: var(--border);
+}
+
+.dr-title:focus,
+.dr-tags:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.dr-due {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: 400 12px var(--mono);
+}
+
+/* 日期选择器是系统控件，不跟着 --surface 走，得显式告诉它用哪套配色 */
+[data-theme="dark"] .dr-due {
+  color-scheme: dark;
+}
+
+.due-quick {
+  display: flex;
+  gap: 5px;
+  flex: none;
+}
+
 .searchbox .ic svg {
   width: 13px;
   height: 13px;

@@ -11,20 +11,29 @@
 
 import { taskToMarkdown } from "../data/markdown";
 import { byId } from "../data/mock";
-import { dataChanged } from "../data/store";
+import { dataChanged, onDataChange } from "../data/store";
 import type { Activity, Task, TaskStatus } from "../data/types";
 import { el } from "../shell/dom";
 import { dropdown } from "../shell/menu";
 import { toast } from "../shell/toast";
 import {
+  DAY_MS,
   STATUS_LABEL,
   TODAY,
   URGENCY_LABEL,
+  dayNumber,
   monthDayText,
   pad2,
   removeTask,
   statusVar,
+  todayMonthDay,
 } from "./shared";
+
+/** 天数 → [月, 日]，和 dayNumber 互逆。 */
+const monthDayOf = (day: number): [number, number] => {
+  const date = new Date(day * DAY_MS);
+  return [date.getUTCMonth() + 1, date.getUTCDate()];
+};
 
 // ─── 图标 ────────────────────────────────────────────────────────────────────
 
@@ -69,9 +78,9 @@ export function onTaskOpen(listener: OpenListener): () => void {
 interface Drawer {
   root: HTMLElement;
   badge: HTMLElement;
-  title: HTMLElement;
-  tags: HTMLElement;
-  due: HTMLElement;
+  title: HTMLInputElement;
+  tags: HTMLInputElement;
+  due: HTMLInputElement;
   created: HTMLElement;
   progressText: HTMLElement;
   progressRange: HTMLInputElement;
@@ -148,19 +157,16 @@ function paint(task: Task): void {
   drawer.badge.className = `st st-${task.status}`;
   drawer.badge.textContent = STATUS_LABEL[task.status];
 
-  drawer.title.textContent = task.title;
+  // 正在编辑的那个框不回写：`change` 之前模型还是旧的，
+  // 此时若被别处的 dataChanged 带着重画一遍，用户敲到一半的字就没了
+  if (document.activeElement !== drawer.title) drawer.title.value = task.title;
+  if (document.activeElement !== drawer.tags) drawer.tags.value = task.tags.join(" ");
 
-  drawer.tags.replaceChildren(
-    ...task.tags.map((tag) => el("span", { class: "tag", text: tag })),
-  );
-
-  // 截止展示把相对词落回具体日期：抽屉里是「查证」的地方，不适合再说「今天」
-  const due = task.due
-    ? `⏰ ${task.due
-        .replace("今天", monthDayText(TODAY))
-        .replace("昨天", monthDayText(TODAY - 1))}`
-    : "无截止";
-  drawer.due.textContent = due;
+  // 日期框给的是 yyyy-mm-dd。年份锚在 2026（种子数据就是按 2026 写的），
+  // 没有截止时留空 —— 填今天会让人以为这条任务定在今天结束。
+  if (document.activeElement !== drawer.due) {
+    drawer.due.value = task.due ? `2026-${monthDayText(dayNumber(task.end))}` : "";
+  }
   drawer.created.textContent = `创建于 ${pad2(task.created[0])}-${pad2(task.created[1])}`;
 
   drawer.progressText.textContent = `${task.progress}%`;
@@ -178,9 +184,81 @@ function paint(task: Task): void {
 
 function build(): Drawer {
   const badge = el("span", { class: "st" });
-  const title = el("span", { class: "t" });
-  const tags = el("div", { class: "tags" });
-  const due = el("span", { class: "mono" });
+
+  // 标题、标签、截止曾经全是只读节点：改不动的「维护抽屉」不是维护抽屉 ——
+  // 建任务时手滑打错一个字，那条任务就永远错着。这里都换成可编辑控件。
+  const title = el("input", { class: "dr-title", spellcheck: "false" });
+  title.addEventListener("change", () => {
+    if (!current) return;
+    const next = title.value.trim();
+    // 空标题不许存：时间轴上一条没有名字的色条等于不知道它是谁
+    if (!next) {
+      title.value = current.title;
+      toast("标题不能为空");
+      return;
+    }
+    current.title = next;
+    dataChanged();
+    toast(`标题已改为「${next}」`);
+  });
+
+  const tags = el("input", {
+    class: "dr-tags",
+    spellcheck: "false",
+    placeholder: "标签，空格分隔，如 #后端 #紧急",
+  });
+  tags.addEventListener("change", () => {
+    if (!current) return;
+    const next = [...tags.value.matchAll(/#[^\s#]+/g)].map((match) => match[0]);
+    current.tags = next;
+    dataChanged();
+    toast(next.length > 0 ? `标签已改为 ${next.join(" ")}` : "已清空标签");
+  });
+
+  const due = el("input", { type: "date", class: "dr-due" });
+  /** 截止落在哪一天：写 due 文案的同时必须同步 end —— 时间轴是按 end 画的。 */
+  const applyDue = (day: number | null): void => {
+    if (!current) return;
+    if (day === null) {
+      current.due = null;
+      current.at = null;
+      current.end = todayMonthDay();
+      dataChanged();
+      toast("已清除截止");
+      return;
+    }
+    const monthDay = monthDayOf(day);
+    current.due = monthDayText(day);
+    current.at = null;
+    current.end = monthDay;
+    dataChanged();
+    toast(`截止已设为 ${monthDayText(day)}`);
+  };
+
+  // 监听 input 而不是 change：从日期面板里选一个日期派发的就是 input，
+  // change 要等到失焦才来 —— 选完还得点一下别处才生效，看着像坏了
+  due.addEventListener("input", () => {
+    if (!due.value) return;
+    // <input type="date"> 给的是 yyyy-mm-dd，按 UTC 解析后换回「天数」，
+    // 与 dayNumber / monthDayText 是同一套换算
+    applyDue(Math.floor(Date.parse(`${due.value}T00:00:00Z`) / DAY_MS));
+  });
+
+  // 快捷档位。原版是「6 选项弹窗」，这里给三个最常用 + 清除就够了 ——
+  // 「下周一」「本周五」这种要先想一下再点的，直接开日期选择器更省事。
+  const quickRow = el("div", { class: "due-quick" }, [
+    ["今天", 0],
+    ["明天", 1],
+    ["下周", 7],
+  ].map(([label, offset]) => {
+    const chip = el("button", { class: "chip", type: "button", text: label as string });
+    chip.addEventListener("click", () => applyDue(TODAY + (offset as number)));
+    return chip;
+  }));
+  const clearDue = el("button", { class: "chip", type: "button", text: "清除" });
+  clearDue.addEventListener("click", () => applyDue(null));
+  quickRow.append(clearDue);
+
   const created = el("span", { class: "mono dim" });
 
   const close = el("button", { class: "icon-btn", title: "关闭 (Esc)", html: CLOSE_ICON });
@@ -191,7 +269,7 @@ function build(): Drawer {
     title,
     close,
     tags,
-    el("div", { class: "due-row" }, [due, created]),
+    el("div", { class: "due-row" }, [due, quickRow, created]),
   ]);
 
   // ── 进度 ──
@@ -377,6 +455,13 @@ export function closeTask(): void {
 }
 
 export const openedTask = (): Task | null => current;
+
+// 别处改了数据（右键菜单里的标记完成、管理页的批量操作、逾期自动标记），
+// 抽屉里显示的状态徽标、进度、循环也得跟着变 ——
+// 否则抽屉一打开就是一张过期快照，改完还得关掉重开才看得见
+onDataChange(() => {
+  if (current && drawer?.root.classList.contains("open")) paint(current);
+});
 
 // Esc 关闭。只在抽屉真的打开时拦，免得抢掉别的 Esc 用途。
 document.addEventListener("keydown", (event) => {
