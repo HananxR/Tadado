@@ -1,8 +1,13 @@
 # Tadado 待办任务
 
 > 最后更新：2026-09-15 · 2.0 界面重构（7 阶段 · 分轮执行）
-> 计划详情：[docs/architecture/README.md](docs/architecture/README.md) · UI 原型：[resources/ui-mockup/tadado-2.0.html](resources/ui-mockup/tadado-2.0.html)
+> UI 原型：[resources/ui-mockup/tadado-2.0.html](resources/ui-mockup/tadado-2.0.html)
 > 数据保全：全部阶段零 DB 变更（`PRAGMA user_version` 恒为 8）
+>
+> **2026-09-15 分支分家**：上面「2.0 界面重构」那几条线（阶段 1~7、`docs/architecture/`、
+> Python 侧 428 个用例）都随代码归档到了 **`archive/pyversion`** 分支 —— 本分支
+> 已无 `src/` `tests/` `docs/`，那几节的链接只对归档分支有效。
+> 主线继续追的是文末「🖥 桌面版（`desktop/` · Tauri）工作线」一节。
 
 ## ✅ 已完成 — 阶段 1（2026-09-12）
 
@@ -115,20 +120,28 @@
 
 ## 🖥 桌面版（`desktop/` · Tauri）工作线
 
-> 这一节不属于 Python 版：`desktop/` 是 2.0 界面的 Tauri + TypeScript 重写，与根目录
-> 的 PySide6 产品目前**零数据共享**。现状详见 `desktop/README.md`。
+> 这一节是主线在追的：`desktop/` 是 2.0 界面的 Tauri + TypeScript 重写。
+> 2026-09-15 起 PySide6 版整体归档到 `archive/pyversion`，与它**零数据共享**。
+> 现状详见 `desktop/README.md`。
 
-已完成：窗口外壳（无边框标题栏 / 置顶 / 托盘 / 全局热键 `Ctrl+Shift+Space` /
-`Ctrl+1..5`）、主题、五个页面的交互逻辑（甘特时间轴、力导向图谱、热力图、批量表格、
-标签改名合并）、删除类操作的二次确认（`shell/confirm.ts`：抽屉单条 / 管理页批量 /
-标签移除三处，默认焦点给「取消」，Esc 与点遮罩都算取消）。
+已完成：
+
+- 窗口外壳（无边框标题栏 / 置顶 / 托盘 / 全局热键 `Ctrl+Shift+Space` / `Ctrl+1..5`）、主题、五个页面的交互逻辑（甘特时间轴、图谱、热力图、批量表格、标签改名合并）
+- **修掉「双击、右键都没反应」**：`dropdown` 的 `setValue` 会回调 `onPick`，于是 `paint → setValue → onPick → paint` 无限递归 —— 抽屉节点建出来了却永远加不上 `.open`，表现就是点了没反应
+- **右键菜单**（打开维护抽屉 / 标记完成 / 删除）：删除走 `shared.removeTask`，和抽屉共用同一条确认路径与同一套措辞
+- **时间轴按数据自适应**：窗口 = 粒度下限 ∪ 数据跨度 ∪ 今天，列宽按可用宽度平分后夹在 15–34px。以前「本周」只画 7 列，跨月的任务整条消失，右边还空着一大片
+- **真实时钟**：`TODAY` 不再读 `DEMO_TODAY`（写死 09-12，害得时间轴上的「今天」指着 12 号星期六）。`DEMO_TODAY` 现在只负责排布演示数据本身
+- **快速新建搬到任务页**，替代页头「＋ 新建任务」：必须写任务名，不许造无名任务；总览页那个输入框已删
+- 删除类操作的二次确认（`shell/confirm.ts`：抽屉单条 / 管理页批量 / 标签移除，默认焦点给「取消」，Esc 与点遮罩都算取消）
+- 图谱：舞台按可用空间铺开（不再写死 900×520）、连线改弧线、节点按离中心的距离错峰入场、右上角加分区标注
+- 设置面板 **AI 助手页签已移除**：7 行没有一行接了后端，其中「专用工作区」还指向已删除的目录
 
 最大缺口 —— **业务数据仍是假的**，全站跑在 28 条硬编码演示任务上，没有任何后端调用：
 
-- [ ] **先定数据源**：Tauri 命令 / 前端直连 `sql` 插件 / 复用 Python 侧 CLI 与命名管道 —— 未决，差别在于要不要再来一份重复的查询逻辑
+- [ ] **先定数据源**：Tauri 命令 / 前端直连 `sql` 插件 / 复用归档分支上的 Python CLI 与命名管道 —— 未决，差别在于要不要再来一份重复的查询逻辑
 - [ ] 依上面的结论改造 `src/data/store.ts`（注释已标好落点），**删掉 `mock.ts`**
 - [ ] `src-tauri/src/lib.rs` 补业务命令 —— 现只有 `app_exit` 一个；`fs` / `dialog` / `sql` / `opener` 四个插件已注册但前端从未调用
-- [ ] `pages/shared.ts` 的 `DEMO_TODAY`：整个时序锚在固定的「演示今天」上（有意的设计，保证演示数据看得出相对关系），接真实数据时要换掉
+- [ ] 演示数据随真实时钟后移会「变旧」（它们是按 09-12 排的）。接真实数据时 `mock.ts` 整体删掉即可，不用单独修
 - [ ] 设置面板圈范围：现只有主题 / 置顶 / 时间轴粒度三项生真效，其余显示为 `—`
 - [ ] 清掉写死的演示口径：总览「较昨日 +2」（`overview.ts` 注明了等历史快照）、活动分析页「导出」只弹 toast「（演示）」
 - [ ] 工程化：`package.json` 没有 lint / format / test script，`desktop/` 不在 CI 覆盖内

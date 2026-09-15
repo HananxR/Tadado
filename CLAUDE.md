@@ -2,9 +2,15 @@
 
 Tadado 项目指导文件。详细设计文档见 [DESIGN.md](DESIGN.md)，更新日志见 [CHANGELOG.md](CHANGELOG.md)。
 
+> **2026-09-15 分支分家**：本工作目录只保留 **Tauri 桌面端**（`desktop/`）。
+> PySide6 版（`src/` `tests/` `pyproject.toml` …）已归档到 **`archive/pyversion`** 分支，
+> 本分支下已不存在。取回旧代码：`git checkout archive/pyversion -- <路径>`。
+> 因此本文件里涉及 Python 工具链（uv / pytest / ruff）的段落只对归档分支有效。
+
 ## 项目概览
 
-Tadado — Windows 桌面任务管理工具，Python 3.10 + PySide6，Markdown 语法定义任务，SQLite + FTS5 存储，配备日历热力图。
+Tadado — Windows 桌面任务管理工具，Markdown 语法定义任务。当前主线实现是
+**Tauri + TypeScript**（`desktop/`，Windows WebView2）；PySide6 版是上一代实现，已归档。
 
 ## 工作流程
 
@@ -16,7 +22,8 @@ Tadado — Windows 桌面任务管理工具，Python 3.10 + PySide6，Markdown �
 |------|------|
 | [DESIGN.md](DESIGN.md) | 详细设计说明，记录功能模块需求与实现方案 |
 | [CLAUDE.md](CLAUDE.md) | 项目指导文件（本文件），运行时 AI 指令 |
-| [resources/help/manual.html](resources/help/manual.html) | 用户帮助手册，面向最终用户 |
+| [desktop/README.md](desktop/README.md) | 桌面端结构、设计权威源、数据层现状 |
+| [TODO.md](TODO.md) | 剩余工作，其中「桌面版工作线」一节是主线在追的 |
 
 **提交流程**：文档更新完成后自动执行 `git add` + `git commit`（commit message 以 `docs:` 开头）。
 
@@ -41,18 +48,21 @@ Tadado — Windows 桌面任务管理工具，Python 3.10 + PySide6，Markdown �
 ## 常用命令
 
 ```bash
-# 环境
+# 桌面端（本分支，都在 desktop/ 下执行）
+npm install
+npm run dev          # 纯前端预览（无 Tauri 宿主，只能调样式）
+npm run build        # tsc + vite build
+npm run tauri dev    # 真实窗口（首次需编译 Rust）
+```
+
+<details>
+<summary>已归档的 Python 版命令（只在 <code>archive/pyversion</code> 分支上有效）</summary>
+
+```bash
 uv venv --python 3.10 .venv && uv sync --dev
-
-# 运行
-uv run python main.py                              # GUI
-uv run python main.py --cli list                   # CLI（详见 src/cli/ 与 .claude/skills/tadado/SKILL.md）
-
-# 测试
-uv run pytest                                      # 全部用例（当前 131+）
-uv run pytest -k "round_trip"                      # 关键字匹配
-
-# 代码质量
+uv run python main.py                     # GUI
+uv run python main.py --cli list          # CLI
+uv run pytest                             # 全部用例
 uv run black src/ tests/ && uv run ruff check src/ tests/
 ```
 

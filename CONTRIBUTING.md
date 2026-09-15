@@ -9,7 +9,7 @@
 请在 [Issues](https://github.com/HananxR/Tadado/issues) 中提交，包含：
 
 - 操作系统版本（Windows 10/11）
-- Python 版本（3.10+）
+- 应用版本与分支（`main` = Tauri 桌面端；`archive/pyversion` = 旧 PySide6 版）
 - 错误信息或截图
 - 复现步骤
 
@@ -17,24 +17,24 @@
 
 1. Fork 本仓库
 2. 创建功能分支：`git checkout -b feature/my-feature`
-3. 确保测试通过：`uv run pytest`
-4. 确保代码格式正确：`uv run black src/ tests/ && uv run ruff check src/ tests/`
+3. 确保构建通过：`cd desktop && npm run build`（桌面端目前只有 `tsc` 这一道自动检查）
+4. 桌面端还没有 lint / format / 测试脚本，改完请对着 `resources/ui-mockup/tadado-2.0.html` 核一遍视觉差异
 5. 提交并推送，创建 Pull Request
 
 ### 开发环境
 
 ```bash
-uv venv --python 3.10 .venv
-uv sync --dev
-uv run python main.py
+cd desktop
+npm install
+npm run dev          # 纯前端预览
+npm run tauri dev    # 真实窗口（首次需编译 Rust，约 1–2 分钟）
 ```
 
 ### 代码规范
 
-- Python 3.10+，遵循 PEP 8
-- 模块 `snake_case`，类 `PascalCase`，函数/变量 `snake_case`
-- 常量 `UPPER_SNAKE_CASE`，私有 `_prefix`
-- Qt 信号使用过去式动词
-- UI 配色通过 `design_tokens.py` 的 `get_tokens()` 引用
+- TypeScript：函数与变量 `camelCase`，类型 `PascalCase`，常量 `UPPER_SNAKE_CASE`
+- 不引框架：建节点一律走 `src/shell/dom.ts` 的 `el()`
+- 颜色与几何不从零发明 —— 色值取自 `src/styles/tokens.css`，几何对齐 `resources/ui-mockup/tadado-2.0.html`
+- 旧 Python 版（`archive/pyversion` 分支）的规范见该分支上的本文件
 
 详见 [CLAUDE.md](CLAUDE.md) 技术架构摘要。
