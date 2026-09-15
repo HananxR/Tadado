@@ -196,8 +196,9 @@
       <div class="dr-h">
         <span class="t">设置</span>
         <div class="seg" id="set-tabs" style="flex: none; width: auto">
+          <!-- 页签必须和 settings.ts 的 TABS 一一对应：多一个按钮却没有面板，
+               点上去会把所有面板的 .active 摘掉，抽屉直接空白 -->
           <button data-tab="gen" class="on">常规</button>
-          <button data-tab="ai">AI 助手</button>
           <button data-tab="part">分区</button>
           <button data-tab="about">关于</button>
         </div>

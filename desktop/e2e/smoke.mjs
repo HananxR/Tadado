@@ -269,6 +269,32 @@ try {
   await page.locator('.rail-btn[data-page="activity"]').click();
   await sleep(300);
 
+  // 设置抽屉：每个页签按钮都必须有同名面板。曾经静态骨架里多留一个「AI 助手」
+  // 按钮而 TS 只渲染三个面板，点它就把所有面板的 .active 摘掉 —— 抽屉一片空白
+  await page.click("#set-btn");
+  await page.waitForSelector("#set-drawer.open");
+  const tabs = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll("#set-tabs button")].map((b) => b.dataset.tab);
+    const panels = [...document.querySelectorAll(".set-tab")].map((p) => p.id.replace("tab-", ""));
+    return { buttons, panels };
+  });
+  check(
+    "设置页签与面板一一对应",
+    tabs.buttons.length > 0 && tabs.buttons.join() === tabs.panels.join(),
+    `按钮 ${tabs.buttons.join("/")} · 面板 ${tabs.panels.join("/")}`,
+  );
+
+  let blank = "";
+  for (const id of tabs.buttons) {
+    await page.click(`#set-tabs button[data-tab='${id}']`);
+    await sleep(150);
+    const open = await page.locator(".set-tab.active").count();
+    if (open !== 1) blank += `${id}:${open} `;
+  }
+  check("每个页签点开都有且只有一个面板", blank === "", blank.trim());
+  await page.click("#set-close");
+  await sleep(250);
+
   // 分区口令 → 切过去被挡 → 错口令不放行 → 对口令解锁。
   // 给「工作」上锁（当前停在「学习」）：给正在看的分区上锁会立刻把设置面板
   // 自己挡住 —— 那是缺陷，不是这里要测的场景。
