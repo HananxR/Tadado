@@ -7,6 +7,7 @@
 
 import { isTauri } from "@tauri-apps/api/core";
 import { bootStore } from "./data/store";
+import { bootDrawerPref } from "./shell/drawerPref";
 import { setupHotkey } from "./shell/hotkey";
 import { bootLock } from "./shell/lock";
 import { mountNav } from "./shell/nav";
@@ -29,6 +30,7 @@ async function boot(): Promise<void> {
   await bootStore().catch(() => {});
   // 分区密码与空闲锁定：要在画页面之前决定要不要先挡一层
   await bootLock().catch(() => {});
+  await bootDrawerPref().catch(() => {});
 
   mountTitlebar();
   mountNav();

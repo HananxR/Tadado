@@ -95,14 +95,34 @@ try {
   await page.fill(".dr-due", "2026-09-01");
   await page.locator(".dr-due").press("Enter");
   await sleep(300);
-  const badge = (await page.locator("#task-drawer .st").textContent()) ?? "";
+  const badge = (await page.locator("#task-drawer .dr-h .st").textContent()) ?? "";
   check("截止早于今天自动标逾期", badge.includes("逾期"), badge.trim());
 
   // 清除截止 → 退回待办
   await page.click(".due-quick button:has-text('清除')");
   await sleep(300);
-  const badge2 = (await page.locator("#task-drawer .st").textContent()) ?? "";
+  const badge2 = (await page.locator("#task-drawer .dr-h .st").textContent()) ?? "";
   check("清除截止后退回待办", !badge2.includes("逾期"), badge2.trim());
+
+  // Markdown 源：以前能打字、后面没接任何东西（敲了没反应，看着像坏了）。
+  // 现在边敲边渲染，写回要显式点按钮；状态不进 md，写回时不许被 md 改掉。
+  await page.click("#task-drawer details.md-d summary");
+  await sleep(200);
+  await page.fill("#task-drawer textarea.md", "- [ ] md 改过的名字 #md ⏰09-30 :: 60%");
+  await sleep(250);
+  check(
+    "md 预览跟着敲的字变",
+    (await page.locator(".md-prev .mdp-title").textContent() ?? "").includes("md 改过的名字"),
+  );
+
+  const badgeBeforeMd = (await page.locator("#task-drawer .dr-h .st").first().textContent()) ?? "";
+  await page.click("#task-drawer button:has-text('按 md 更新任务')");
+  await sleep(300);
+  check(
+    "按 md 更新写入，且状态不被 md 改掉",
+    (await page.locator(".tt-label", { hasText: "md 改过的名字" }).count()) === 1 &&
+      ((await page.locator("#task-drawer .dr-h .st").first().textContent()) ?? "") === badgeBeforeMd,
+  );
 
   await page.keyboard.press("Escape");
   await sleep(300);
@@ -123,6 +143,28 @@ try {
     (await page.locator(".tt-label", { hasText: "冒烟新建的任务" }).count()) === 1,
   );
 
+  // 草稿：没提交的字不是数据，但也不该因为切页 / 刷新就消失
+  await page.fill(".qc-input", "打了一半的任务");
+  await sleep(700); // 草稿是防抖写的，等它落盘
+  check("草稿条出现", await page.locator(".draft-bar").first().isVisible());
+
+  await page.reload({ waitUntil: "networkidle" });
+  await page.locator(".rail-btn").nth(1).click();
+  await page.waitForSelector(".qc-input");
+  await sleep(700);
+  check(
+    "刷新后草稿还在输入框里",
+    (await page.locator(".qc-input").inputValue()) === "打了一半的任务",
+  );
+
+  await page.click(".draft-bar button:has-text('丢弃')");
+  await sleep(250);
+  check(
+    "丢弃草稿后草稿条消失",
+    (await page.locator(".qc-input").inputValue()) === "" &&
+      !(await page.locator(".draft-bar").first().isVisible()),
+  );
+
   // 批量新建
   await page.click("button:has-text('批量')");
   await page.waitForSelector(".modal-card textarea");
@@ -140,6 +182,13 @@ try {
     (await page.locator(".tt-label", { hasText: "批量一" }).count()) === 1 &&
       (await page.locator(".tt-label", { hasText: "批量二" }).count()) === 1,
   );
+
+  // 批量提交成功后不该留着草稿 —— 下次打开又冒出上次那十行内容很吓人
+  await page.click("button:has-text('批量')");
+  await sleep(350);
+  check("批量提交后草稿已清", !(await page.locator(".modal-card .draft-bar").isVisible()));
+  await page.keyboard.press("Escape");
+  await sleep(250);
 
   // 切分区
   const before = await page.locator(".tt-row").count();

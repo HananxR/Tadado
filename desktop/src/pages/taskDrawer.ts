@@ -9,11 +9,12 @@
 // 外壳不该知道什么是「紧迫度」。
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { taskToMarkdown } from "../data/markdown";
+import { parseTasks, taskToMarkdown } from "../data/markdown";
 import { byId } from "../data/mock";
 import { dataChanged, onDataChange } from "../data/store";
 import type { Activity, Task, TaskStatus } from "../data/types";
 import { el } from "../shell/dom";
+import { shouldCloseOnSave } from "../shell/drawerPref";
 import { dropdown } from "../shell/menu";
 import { toast } from "../shell/toast";
 import {
@@ -91,6 +92,8 @@ interface Drawer {
   timelineCount: HTMLElement;
   composer: HTMLInputElement;
   markdown: HTMLTextAreaElement;
+  /** 重画 md 预览。任务被别处改了以后，框里的 md 和它渲染出来的样子都要跟上。 */
+  mdSync: () => void;
 }
 
 let drawer: Drawer | null = null;
@@ -178,7 +181,11 @@ function paint(task: Task): void {
 
   // 序列化只此一份（data/markdown.ts）—— 抽屉里这行和「导出 .md」必须是同一个
   // 方言，否则导出去的东西和这里看到的不一样
-  drawer.markdown.value = taskToMarkdown(task);
+  // md 框同理：正在改 md 的人不该被这里的重画把内容和光标一起带走
+  if (document.activeElement !== drawer.markdown) {
+    drawer.markdown.value = taskToMarkdown(task);
+    drawer.mdSync();
+  }
   renderTimeline(task);
 }
 
@@ -337,10 +344,97 @@ function build(): Drawer {
   });
 
   // ── Markdown 源 ──
+  //
+  // 这个框以前能打字、但没有接任何处理：敲半天既没有预览，也没有「按此更新」，
+  // 看上去就是坏的。现在它是一条真正的编辑路径 —— 边敲边渲染，写回要显式点按钮。
   const markdown = el("textarea", { class: "md", spellcheck: "false" });
+  const mdPreview = el("div", { class: "md-prev" });
+  const mdApply = el("button", { class: "btn sm", type: "button", text: "按 md 更新任务" });
+  const mdReset = el("button", { class: "btn sm", type: "button", text: "还原" });
+
+  /**
+   * 把框里的 md 渲染成一眼能看完的一块。
+   *
+   * 状态**不**从 md 读：方言不承载状态（DESIGN.md，见 data/markdown.ts 表头），
+   * 于是 `[x]` 在这里不生效，显示的仍是任务自己的状态 —— 否则改一下 md
+   * 会把「已完成」悄悄变回待办。反过来，md 里没写的东西（比如 `:: 40%`）
+   * 也按「会归零」如实显示：写回之前先在这里看见，比事后发现进度丢了强。
+   */
+  const renderMdPreview = (): void => {
+    const draft = parseTasks(markdown.value)[0];
+    mdPreview.replaceChildren();
+
+    if (!draft) {
+      mdPreview.classList.add("bad");
+      mdPreview.append(
+        el("div", {
+          class: "dim",
+          text: "认不出任务行。写法：- [ ] 标题 #标签 ⏰09-21 14:30 :: 40% +1w",
+        }),
+      );
+      return;
+    }
+
+    mdPreview.classList.remove("bad");
+    const status = current?.status ?? "todo";
+    mdPreview.append(
+      el("div", { class: "mdp-1" }, [
+        el("span", { class: `st st-${status}`, text: STATUS_LABEL[status] }),
+        el("span", { class: "mdp-title", text: draft.title }),
+      ]),
+    );
+
+    const facts = el("div", { class: "mdp-2" }, [
+      ...draft.tags.map((tag) => el("span", { class: "tag", text: tag })),
+      el("span", { class: "mdp-fact", text: draft.due ? `⏰ ${draft.due}` : "无截止" }),
+      el("span", { class: "mdp-fact", text: `进度 ${draft.progress}%` }),
+    ]);
+    if (draft.repeat) facts.append(el("span", { class: "mdp-fact", text: draft.repeat }));
+    mdPreview.append(facts);
+  };
+
+  markdown.addEventListener("input", renderMdPreview);
+
+  mdReset.addEventListener("click", () => {
+    if (!current) return;
+    markdown.value = taskToMarkdown(current);
+    renderMdPreview();
+  });
+
+  mdApply.addEventListener("click", () => {
+    if (!current) return;
+    const draft = parseTasks(markdown.value)[0];
+    if (!draft) {
+      toast("这一行还认不出任务 —— 先照上面的写法检查一下");
+      return;
+    }
+
+    current.title = draft.title;
+    current.tags = draft.tags;
+    current.progress = draft.progress;
+    current.repeat = draft.repeat;
+    // start 不在方言里（md 只带一个截止日）。一律填今天会把跨天任务的起点抹平，
+    // 所以起点、以及没写截止时的终点都照旧不动
+    if (draft.due) {
+      current.due = draft.due;
+      current.at = draft.at;
+      current.end = draft.end;
+    } else {
+      current.due = null;
+      current.at = null;
+    }
+
+    dataChanged();
+    paint(current);
+    toast(`已按 md 更新「${draft.title}」· 状态保持「${STATUS_LABEL[current.status]}」`);
+  });
+
   const markdownBlock = el("details", { class: "md-d" }, [
     el("summary", { text: "Markdown 源（规范数据源）" }),
+    el("div", { class: "md-note dim", text: "改这里不会立刻改任务 —— 点「按 md 更新任务」才写入；状态不进 md，写回时保留。" }),
+    mdPreview,
     markdown,
+    el("div", { class: "md-actions" }, [mdApply, mdReset]),
   ]);
 
   const body = el("div", { class: "dr-b" }, [
@@ -394,9 +488,11 @@ function build(): Drawer {
   save.addEventListener("click", () => {
     if (!current) return;
     const name = current.title;
-    closeTask();
+    // 收不收起由设置决定：连着整理好几条任务时，每改一条就被弹回表格挺烦的
+    const closing = shouldCloseOnSave();
+    if (closing) closeTask();
     dataChanged();
-    toast(`已保存「${name}」· 抽屉已自动收起`);
+    toast(closing ? `已保存「${name}」· 抽屉已自动收起` : `已保存「${name}」· 抽屉留在这里`);
   });
 
   const root = el("aside", { class: "drawer", id: "task-drawer" }, [
@@ -421,6 +517,7 @@ function build(): Drawer {
     timelineCount,
     composer,
     markdown,
+    mdSync: renderMdPreview,
   };
 }
 

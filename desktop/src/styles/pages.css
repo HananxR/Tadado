@@ -1745,6 +1745,77 @@ details.md-d .md {
   min-height: 74px;
 }
 
+/* 草稿条：不是为了好看，是为了让人知道「字还在那儿」——
+   一行悄悄自动保存的输入，跟丢了字的输入框看起来一模一样 */
+.draft-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font: 400 12px var(--font);
+  color: var(--text-2);
+}
+
+.draft-bar .draft-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 实时预览：md 是给人读的行，盯着一行 `- [ ] x #a ⏰09-21 :: 40%`
+   改完再看效果太费劲，这里把它摊开成一眼能看完的一块 */
+.md-note {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.md-prev {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 9px 11px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* 认不出任务行时不给「看起来还行」的半截渲染 —— 直接换成提示，红边走得比原样留出空间更明确 */
+.md-prev.bad {
+  border-color: var(--danger);
+}
+
+.md-prev .mdp-1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.md-prev .mdp-title {
+  font: 600 13px var(--font);
+}
+
+.md-prev .mdp-2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.md-prev .mdp-fact {
+  font: 400 11px var(--mono);
+  color: var(--text-2);
+}
+
+.md-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
 .dr-f {
   padding: 12px 18px;
   border-top: 1px solid var(--border);

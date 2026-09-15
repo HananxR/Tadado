@@ -1,0 +1,44 @@
+# 桌面端的唯一自动关卡：类型检查 + 构建 + 真浏览器冒烟。
+#
+# `tsc` 只能证明类型合法，证明不了「点下去有反应」：dropdown.setValue 回调
+# onPick 那次无限递归，构建照过、表现却是双击右键都没反应。所以 desktop/e2e
+# 必须每次都跑（它自带 vite preview，不需要另外起服务器）。
+#
+# 纯浏览器预览跑得起来，是因为前端在拿不到 Tauri 宿主时会降级到 localStorage ——
+# 这里不为 Rust/Tauri 工具链买单，那是发版打包的事。
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+  pull_request:
+    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      # npm run build 是 `tsc && vite build`：类型不过这里就红
+      - name: 类型检查与构建
+        run: npm run build
+
+      - name: 装冒烟用的 Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: 端到端冒烟
+        run: npm run e2e

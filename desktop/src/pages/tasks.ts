@@ -26,6 +26,7 @@ import {
 } from "../data/timeline";
 import type { Task } from "../data/types";
 import { el } from "../shell/dom";
+import { dropDraft, loadDraft, saveDraft } from "../shell/draft";
 import { dropdown } from "../shell/menu";
 import { subscribePages } from "../shell/router";
 import { seg } from "../shell/seg";
@@ -190,6 +191,11 @@ function openBatchCreate(): void {
   });
 
   const preview = el("div", { class: "modal-detail", text: "将创建 0 条" });
+  // 粘了十行再手滑点到遮罩就白干了 —— 对话框关掉不等于放弃，字还在这儿
+  const keptNote = el("span", { class: "draft-t", text: "上次没提交的内容还在" });
+  const restored = el("div", { class: "draft-bar", style: "display:none" });
+  const keptDrop = el("button", { class: "btn sm", type: "button", text: "丢弃草稿" });
+  restored.append(keptNote, el("span", { class: "grow" }), keptDrop);
   const cancelBtn = el("button", { class: "btn", type: "button", text: "取消" });
   const createBtn = el("button", { class: "btn primary", type: "button", text: "创建" });
 
@@ -200,6 +206,7 @@ function openBatchCreate(): void {
       text: "一行一条任务，可带 #标签 ⏰截止 :: 进度% +1w；空行和认不出的行会跳过。",
     }),
     area,
+    restored,
     preview,
     el("div", { class: "modal-actions" }, [cancelBtn, createBtn]),
   ]);
@@ -225,7 +232,27 @@ function openBatchCreate(): void {
     close();
   }
 
-  area.addEventListener("input", sync);
+  area.addEventListener("input", () => {
+    sync();
+    saveDraft("batch", area.value);
+  });
+
+  keptDrop.addEventListener("click", () => {
+    area.value = "";
+    restored.style.display = "none";
+    void dropDraft("batch");
+    sync();
+    area.focus();
+  });
+
+  // 上次写到一半的批量内容：对话框常被临时拖动窗口误点到遮罩关掉
+  void loadDraft("batch").then((text) => {
+    if (!text.trim()) return;
+    area.value = text;
+    keptNote.textContent = `上次没提交的内容还在（${drafts().length} 行）`;
+    restored.style.display = "flex";
+    sync();
+  });
   area.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
@@ -247,6 +274,8 @@ function openBatchCreate(): void {
     if (items.length === 0) return;
 
     TASKS.unshift(...items);
+    // 已经变成任务了，草稿使命结束
+    void dropDraft("batch");
     // 新建的可能在当前筛选 / 搜索词之外，先复位，否则建完一条都看不见
     statusFilter = "all";
     query = "";
@@ -458,6 +487,45 @@ export function mount(host: HTMLElement): void {
     class: "qc-input",
     placeholder: "快速新建：任务名 #标签（回车创建）",
   });
+
+  // ── 草稿条 ──
+  //
+  // 没提交的字不算数据，写在这儿纯粹是为了「打了一半被打断」这种事：
+  // 领导喊一声、窗口被临时 Fast Report 顶掉，回来输入框空空如也。
+  // 所以它跟着 kv 走而不是内存 —— 重启也还在，而且显式说清楚「玩意还在那」。
+  const draftBar = el("div", { class: "draft-bar", style: "display:none" });
+  const draftText = el("span", { class: "draft-t" });
+  const draftDrop = el("button", { class: "btn sm", type: "button", text: "丢弃" });
+  draftBar.append(draftText, el("span", { class: "grow" }), draftDrop);
+
+  const showDraftBar = (text: string): void => {
+    const value = text.trim();
+    if (!value) {
+      draftBar.style.display = "none";
+      return;
+    }
+    // 只露个开头：一行长任务会把工具条撑歪
+    const brief = value.replace(/\s+/g, " ").slice(0, 40);
+    draftText.textContent = `草稿已自动保留：「${brief}${brief.length === 40 ? "…" : ""}」· 关掉窗口也不会丢`;
+    draftBar.style.display = "flex";
+  };
+
+  draftDrop.addEventListener("click", () => {
+    quick.value = "";
+    showDraftBar("");
+    void dropDraft("quick");
+  });
+
+  quick.addEventListener("input", () => {
+    saveDraft("quick", quick.value);
+    showDraftBar(quick.value);
+  });
+
+  void loadDraft("quick").then((text) => {
+    showDraftBar(text);
+    if (!text.trim() || quick.value) return;
+    quick.value = text;
+  });
   const runQuick = (): void => {
     const raw = quick.value.trim();
     if (!raw) return;
@@ -494,6 +562,9 @@ export function mount(host: HTMLElement): void {
     });
 
     quick.value = "";
+    showDraftBar("");
+    // 已经变成任务了，就不再留草稿 —— 下次开窗口还冒出来一次很吓人
+    void dropDraft("quick");
     // 新任务可能在当前筛选/搜索词之外，先复位再定位，否则建完就消失
     statusFilter = "all";
     query = "";
@@ -540,6 +611,7 @@ export function mount(host: HTMLElement): void {
   // 它的 gap 会和 .tools 自己的 margin-bottom 叠加成 28px。
   host.append(
     el("div", {}, [
+      draftBar,
       el("div", { class: "tools" }, [
         el("span", { class: "searchbox" }, [
           el("span", { class: "ic", html: PLUS_ICON }),

@@ -1,17 +1,23 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 设置面板（右侧抽屉）。
 //
-// 骨架阶段先把**设置项清单**落下来，让外壳结构完整；取值统一显示占位符，
-// 等 AppConfig 接通后由配置层填值。
+// 这里的每一行都必须**真的**接到了什么 —— 要么开关真的能用，要么值就是代码里的
+// 真实状态。骨架阶段那种「清单先摆出来、取值统一 `—`」的做法已经废止：
+// 一排看着能配、点了什么都不会发生的开关，比没有这一页更误导人 —— 人会把时间
+// 花在反复拨开关上，然后开始怀疑整个应用是坏的。没做的要么删掉，要么老老实实
+// 写成只读值。
 //
-// 例外的几项已经真实可用 —— 它们都属于外壳自身或跨页面的共享偏好，没有它们
-// 这个面板就只是张图：
-//   · 主题         → theme.ts（light / dark / sys）
-//   · 常驻置顶     → window.ts（与标题栏图钉共享同一份状态）
+// 已经接通的几项都属于外壳自身或跨页面的共享偏好：
+//   · 主题           → theme.ts（light / dark / sys）
+//   · 常驻置顶       → window.ts（与标题栏图钉共享同一份状态）
 //   · 时间轴默认粒度 → data/timeline.ts（与任务页工具行共享同一份状态）
+//   · 分区口令 / 空闲锁定 → lock.ts
+//   · 保存后收起抽屉 → drawerPref.ts
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { TASKS } from "../data/mock";
 import { PARTITIONS, activePartitionId } from "../data/partitions";
+import { onDataChange } from "../data/store";
 import {
   TIMELINE_RANGES,
   onTimelineRangeChange,
@@ -20,7 +26,8 @@ import {
 } from "../data/timeline";
 import { confirmAction } from "./confirm";
 import { el, need } from "./dom";
-import { hasPassword, idleLimit, setIdleMinutes, setPassword } from "./lock";
+import { setCloseOnSave, shouldCloseOnSave } from "./drawerPref";
+import { hasPassword, idleLimit, isUnlocked, setIdleMinutes, setPassword } from "./lock";
 import { promptText } from "./prompt";
 import { seg } from "./seg";
 import { toast } from "./toast";
@@ -177,6 +184,58 @@ function idleLockControl(): HTMLElement {
   return control.root;
 }
 
+/** 保存之后要不要把抽屉收起来。默认收（DESIGN.md 的规定），但连续整理时不收更顺手。 */
+function closeOnSaveControl(): HTMLElement {
+  const toggle = el("span", { class: "sw", role: "switch", tabindex: "0" });
+
+  const paint = (): void => {
+    toggle.classList.toggle("on", shouldCloseOnSave());
+    toggle.setAttribute("aria-checked", String(shouldCloseOnSave()));
+  };
+
+  const flip = (): void => {
+    void setCloseOnSave(!shouldCloseOnSave()).then(paint);
+  };
+
+  toggle.addEventListener("click", flip);
+  toggle.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    flip();
+  });
+
+  paint();
+  return toggle;
+}
+
+/**
+ * 一个分区一行：条数 + 锁没锁。
+ *
+ * 上锁状态也摆在这里 —— 不然「哪几个分区要口令」只能靠一个个点过去试。
+ */
+function partitionRow(partition: (typeof PARTITIONS)[number]): SettingRow {
+  return {
+    label: partition.name,
+    control: () => {
+      const count = el("span", { class: "v mono" });
+      const lock = el("span", { class: "lock" });
+
+      const paint = (): void => {
+        count.textContent = `${TASKS.filter((task) => task.partition === partition.id).length} 条`;
+        lock.textContent = hasPassword(partition.id)
+          ? isUnlocked(partition.id)
+            ? "🔓"
+            : "🔒"
+          : "";
+      };
+
+      onDataChange(paint);
+      paint();
+      return el("span", { class: "rowctl" }, [count, lock]);
+    },
+  };
+}
+
 function pinControl(): HTMLElement {
   const toggle = el("span", { class: "sw", role: "switch", tabindex: "0" });
 
@@ -208,18 +267,17 @@ const TABS: TabSpec[] = [
       {
         title: "唤起与常驻",
         rows: [
+          // 只读值：这个组合键是 shell/hotkey.ts 里的常量，不是可配项。
+          // 摆成能改的样子、改完才发现不生效，比直接把现实摆出来更气人
           { label: "全局热键", value: "Ctrl+Shift+Space" },
           { label: "常驻置顶", control: pinControl },
-          { label: "最小化到托盘" },
-          { label: "开机自启动" },
         ],
       },
       {
         title: "任务视图",
         rows: [
           { label: "时间轴默认粒度", control: timelineRangeControl },
-          { label: "已完成任务置底" },
-          { label: "保存后自动收起抽屉" },
+          { label: "保存后收起抽屉", control: closeOnSaveControl },
         ],
       },
       {
@@ -232,11 +290,10 @@ const TABS: TabSpec[] = [
       {
         title: "自动化",
         rows: [
-          { label: "自动归档" },
-          { label: "归档阈值（天）" },
-          { label: "每日摘要" },
-          { label: "安静时段" },
-          { label: "逾期自动标记" },
+          // 逾期标记不设开关：它每次加载顺手扫一遍（store.refreshOverdue），
+          // 关掉的后果是过了截止日的任务永远停在「待办」上，比自动更正还糟。
+          // 归档 / 摘要 / 安静时段一样没做 —— 没做就不摆一排好看的开关
+          { label: "逾期自动标记", value: "每次加载时扫一遍" },
         ],
       },
     ],
@@ -248,21 +305,9 @@ const TABS: TabSpec[] = [
   {
     id: "part",
     label: "分区",
-    groups: [
-      {
-        title: "分区管理",
-        rows: [
-          { label: "工作" },
-          { label: "学习" },
-          { label: "个人" },
-          { label: "演示空间" },
-        ],
-      },
-      {
-        title: "归档",
-        rows: [{ label: "已完成任务置底" }, { label: "归档后从列表隐藏" }],
-      },
-    ],
+    // 分区里有什么（多少条、锁没锁）是活的，所以这些行自己订阅 dataChanged ——
+    // 设置面板的节点是常驻的，不订阅的话数字会停在「打开设置那一刻」
+    groups: [{ title: "分区", rows: PARTITIONS.map(partitionRow) }],
   },
   {
     id: "about",
@@ -271,9 +316,9 @@ const TABS: TabSpec[] = [
       {
         title: "关于",
         rows: [
-          { label: "版本" },
+          // 版本号与 package.json 一致（为一个版本号去开 JSON 导入不值得）
+          { label: "版本", value: "0.1.0 · Tauri 重写" },
           { label: "架构", value: "2.0 界面 · Windows 适配" },
-          { label: "帮助文档", value: "随包分发" },
         ],
       },
     ],
@@ -304,15 +349,9 @@ function renderTab(tab: TabSpec): HTMLElement {
     ]),
   );
 
-  sections.push(
-    el("div", { class: "set-sec" }, [
-      el("div", {
-        class: "ph-note dim",
-        text: "设置项由 AppConfig 驱动，当前仅主题、常驻置顶与时间轴粒度已接通",
-      }),
-    ]),
-  );
-
+  // 以前每个页签底下都压一行「仅主题 / 置顶 / 粒度已接通」的说明。
+  // 现在这一句已经不成立（安全组、保存行为都真的生效），而没接通的项目根本
+  // 不在这里了 —— 留着它等于继续替每一行道歉，不如让它别来稀释视线。
   return el("div", { class: "set-tab", id: `tab-${tab.id}` }, sections);
 }
 
