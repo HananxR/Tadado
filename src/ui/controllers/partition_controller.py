@@ -6,13 +6,7 @@ import datetime as dt
 import logging
 
 from PySide6.QtCore import QObject, QTimer, Signal
-from PySide6.QtWidgets import (
-    QInputDialog,
-    QLineEdit,
-    QMenu,
-    QMessageBox,
-    QPushButton,
-)
+from PySide6.QtWidgets import QInputDialog, QLineEdit, QMessageBox
 
 from ...services.task_service import TaskService
 
@@ -22,29 +16,28 @@ _log = logging.getLogger("runlog")
 class PartitionController(QObject):
     """Owns partition lifecycle: load, activate, lock, unlock, idle timer.
 
+    分区入口位于**侧栏底部**（原型 ``.part-wrap``），通过注入的 *selector*
+    接缝驱动，不再占用底部状态栏。
+
     Signals:
         partition_activated(pid): emitted after a partition is activated
-        status_message(msg): emitted for status-bar flash messages
     """
 
     partition_activated = Signal(str)  # partition_id (empty if locked)
-    status_message = Signal(str)
 
     def __init__(
         self,
         task_service: TaskService,
         config,  # AppConfig
         splitter_stack,  # QStackedLayout — index 1 = password mask
-        partition_btn: QPushButton,
-        partition_menu: QMenu,
+        selector,  # PartitionSelector — rail-bottom trigger + popup
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._svc = task_service
         self._config = config
         self._splitter_stack = splitter_stack
-        self._btn = partition_btn
-        self._menu = partition_menu
+        self._selector = selector
 
         # State
         self._active_id: str | None = None
@@ -59,8 +52,8 @@ class PartitionController(QObject):
         self._idle_timer.timeout.connect(self._check_idle_lock)
         self._idle_timer.start()
 
-        # Wire button
-        self._btn.clicked.connect(lambda: self._btn.showMenu())
+        # Wire rail trigger → popup → activate
+        self._selector.partition_chosen.connect(self.activate)
 
     # ------------------------------------------------------------------
     # Public API
@@ -107,29 +100,19 @@ class PartitionController(QObject):
                 self._passwords.pop(pid, None)
             self._auto_lock[pid] = p.get("auto_lock_minutes", 3)
 
-        # Rebuild menu — active partition marked with ● dot
-        self._menu.clear()
-        current_pid = self._active_id or ""
-        from ...utils.design_tokens import get_tokens
-        t = get_tokens()
+        # Rebuild the rail popup — name + task count, active entry highlighted
+        entries: list[dict] = []
         for p in partitions:
-            pid, pname = p["id"], p["name"]
-            db_pw = p.get("password", "")
-            if db_pw:
-                locked = "🔓 " if self._passwords.get(pid, "") == "" else "🔒 "
-            else:
-                locked = ""
-            dot = "● " if pid == current_pid else "   "
-            self._menu.addAction(
-                f"{dot}{locked}{pname}",
-                lambda checked=False, i=pid: self.activate(i),
+            pid = p["id"]
+            entries.append(
+                {
+                    "id": pid,
+                    "name": p["name"],
+                    "count": self._svc.count_tasks_in_partition(pid),
+                    "locked": bool(p.get("password", "")) and bool(self._passwords.get(pid, "")),
+                }
             )
-        # Match menu style to button — accent color
-        self._menu.setStyleSheet(
-            f"QMenu {{ color: {t.accent}; font-weight: bold; }}"
-        )
-
-        self._update_btn_text(name_map)
+        self._selector.set_entries(entries, self._active_id or "")
 
         # Reset if current partition was deleted
         if self._active_id and self._active_id not in name_map:
@@ -167,8 +150,8 @@ class PartitionController(QObject):
         else:
             self._splitter_stack.setCurrentIndex(0)
 
-        self._update_btn_text()
-        self.load_all()  # refresh ✓ marks in menu
+        self._update_trigger()
+        self.load_all()  # refresh popup entries
 
         # Retroactive archive: if archive_days=0, archive all existing DONE tasks
         self._archive_done_if_needed(pid)
@@ -203,7 +186,7 @@ class PartitionController(QObject):
         if has_pw:
             self._passwords[target_id] = stored
             self._splitter_stack.setCurrentIndex(1)
-            self._update_btn_text()
+            self._update_trigger()
 
     def unlock(self) -> bool:
         """Prompt for password and unlock active partition. Returns True on success."""
@@ -214,7 +197,7 @@ class PartitionController(QObject):
         if not stored:
             return False
         pw, ok = QInputDialog.getText(
-            self._btn, "解锁分区", "请输入密码：", QLineEdit.EchoMode.Password,
+            self._selector, "解锁分区", "请输入密码：", QLineEdit.EchoMode.Password,
         )
         if not ok:
             return False
@@ -224,7 +207,7 @@ class PartitionController(QObject):
             self.load_all()
             return True
         else:
-            QMessageBox.warning(self._btn, "错误", "密码不正确")
+            QMessageBox.warning(self._selector, "错误", "密码不正确")
             return False
 
     def has_password(self, pid: str | None = None) -> bool:
@@ -241,28 +224,13 @@ class PartitionController(QObject):
     # Internal
     # ------------------------------------------------------------------
 
-    def _update_btn_text(self, name_map: dict[str, str] | None = None) -> None:
+    def _update_trigger(self, name_map: dict[str, str] | None = None) -> None:
+        """Refresh the rail trigger tooltip (partition name + lock marker)."""
         pid = self._active_id or ""
         if name_map is None:
             name_map = self._svc.get_partition_name_map()
         pname = name_map.get(pid, "")
-        has_pw = bool(self._passwords.get(pid, ""))
-        if has_pw:
-            locked = "🔓" if self._passwords.get(pid, "") == "" else "🔒"
-        else:
-            locked = ""
-        if pname:
-            prefix = locked if locked else "●"
-            txt = f"{prefix} {pname}"
-        else:
-            txt = "● 切换分区"
-        self._btn.setText(txt)
-        # Style: accent color when a partition is active
-        from ...utils.design_tokens import get_tokens
-        t = get_tokens()
-        self._btn.setStyleSheet(
-            f"QPushButton {{ font-weight: bold; color: {t.accent}; border: none; padding: 2px 8px; }}"
-        )
+        self._selector.set_active_name(pname, bool(self._passwords.get(pid, "")))
 
     def _find_first_unlocked(self) -> str | None:
         parts = self._svc.get_all_partitions()

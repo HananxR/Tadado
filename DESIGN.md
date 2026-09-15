@@ -56,9 +56,23 @@ MainWindow 拆分为 3 个可独立测试的控制器（`src/ui/controllers/`）
 |--------|------|------|
 | PartitionController | `partition_controller.py` | 分区生命周期、密码缓存、空闲锁定、状态栏分区按钮和菜单 |
 | BatchController | `batch_controller.py` | 任务管理页面构建、批量操作、手动归档/清除、批量导出 |
-| FilterCoordinator | `filter_coordinator.py` | 编辑视图数据刷新、过滤器合并、分页状态、任务选择和高亮 |
 
 控制器通过构造函数注入依赖，不直接访问数据库。
+
+### 1.3.1 导航骨架（2.0）
+
+- **NavShell**（`src/ui/nav_shell.py`）：常驻左侧图标栏，按分组「工作 / 洞察 / 管理」渲染
+  `VIEW_REGISTRY` 中的页面入口，底部为设置齿轮；点击或 <kbd>Ctrl</kbd>+<kbd>1</kbd>..<kbd>5</kbd> 切换页面。
+- **视图注册表**（`src/ui/views/__init__.py`）：新增页面只需 `register(ViewSpec(...))`，
+  NavShell 自动渲染入口，`QStackedWidget` 懒构建页面。旧视图名经 `VIEW_ALIASES` 别名兼容
+  （`edit → tasks`、`dashboard → analysis`、`batch → manage`）。
+- **SelectionContext**（`src/ui/selection_context.py`）：跨视图共享的分区 / 选中任务 / 时段粒度，
+  视图之间不再互相触碰私有属性，读取状态并订阅 `changed` 即可。
+- 当前页面入口：总览、任务、任务图谱（占位）、活动分析、任务管理。
+
+数据刷新职责已收敛：SignalBus 事件由 `TimelineController` 独家订阅（含 50ms 去抖），
+MainWindow 不再持有重复的刷新管线；任务页的过滤全部由时间轴工具行承载
+（粒度 / 搜索 / 状态 / 优先级 / 排序），旧 FilterCoordinator 与分页机制已退役。
 
 ### 1.4 核心设计决策
 
@@ -86,8 +100,8 @@ MainWindow 拆分为 3 个可独立测试的控制器（`src/ui/controllers/`）
 | `date_selected` | date | CalendarHeatmapWidget | MainWindow |
 | `date_range_selected` | date, date | CalendarHeatmapWidget | MainWindow, ActivityReportPanel |
 | `heatmap_create_task` | date | CalendarHeatmapWidget | MainWindow |
-| `partitions_changed` | — | SettingsDialog, MainWindow | MainWindow |
-| `config_changed` | — | AppConfig, SettingsDialog | MainWindow, 各组件主题刷新 |
+| `partitions_changed` | — | SettingsDrawer, MainWindow | MainWindow |
+| `config_changed` | — | AppConfig, SettingsDrawer | MainWindow, 各组件主题刷新 |
 | `batch_operation_completed` | summary (dict) | TaskRepository | MainWindow |
 | `tasks_bulk_created` | count, task_ids | MultiTaskDialog, TaskEditPanel | MainWindow |
 | `application_quit` | — | app.py | SystemTrayManager |
@@ -233,7 +247,7 @@ tadado-cli <command> [args]
 - **TaskListModel** (`task_list_model.py`) — QAbstractTableModel，`_tasks: list[Task]` 数据源，`_checked_ids: set` 管理复选框。9 列常量定义。`highlighted_task_id()` public getter。支持行前插、行移动、选中状态追踪
 - **TaskListDelegate** (`task_list_delegate.py`) — QStyledItemDelegate，`paint()` 中按列分支：0 列画复选框圆，6 列画 `_paint_status_badge()`(圆角矩形 + display_color)，8 列画归档文字，3 列凸显任务红色加粗手绘。所有非复选框列调用 `_draw_urgency_bg()` 绘制整行优先级背景色（红/橙/绿/淡蓝，所有行统一绘制不跳过凸显任务）
 - **TaskListView** (`task_list_view.py`) — QTableView，`selected_task_ids()` 获取多选。右键菜单新增"更改优先级"子菜单（`_on_change_urgency`），通过 `task_updated` 信号触发列表刷新
-- **TaskListPanel** (`task_list_panel.py`) — 独立组合面板(含 TaskInputWidget+FilterBar+TaskListView)，部分场景使用
+- ~~**TaskListPanel**~~ — 已删除（2.0 阶段 3：任务页改由时间轴承载，该面板为孤儿）
 
 #### 任务凸显方案
 
@@ -372,7 +386,7 @@ tadado-cli <command> [args]
 
 #### 实现方案
 
-- QStatusBar + `addWidget(_status_msg, stretch=1)` 左对齐 + `addPermanentWidget(_status_clock)` 右对齐
+- 状态提示改由 `Toast` 浮层承载（`src/ui/toast.py`）：瞬时消息不再常驻状态栏
 - QTimer(1000ms) → `_update_status_clock()`
 - `_update_status_bar()` 调用 `TaskRepository.get_status_counts(partition_id=...)` 获取当前分区各状态计数，格式化拼接后写入 `_status_msg`
 - 统计格式：`逾期 X | 进行中 X | 待办 X | 已完成 X | 共X项`
@@ -389,9 +403,12 @@ tadado-cli <command> [args]
 
 ---
 
-### 2.4 筛选栏
+### 2.4 筛选栏（2.0 阶段 3 起已退役）
 
-**文件**：[src/ui/widgets/filter_bar.py](src/ui/widgets/filter_bar.py)
+> **已退役**：FilterBar 随任务页改由时间轴承载而删除，其搜索 / 状态 / 优先级 / 排序
+> 能力已迁入时间轴工具行。以下内容保留作历史记录。
+
+**文件**（已删除）：`src/ui/widgets/filter_bar.py`
 
 #### 需求
 
@@ -420,9 +437,12 @@ tadado-cli <command> [args]
 
 ---
 
-### 2.5 统计组件
+### 2.5 统计组件（2.0 阶段 3 起已退役）
 
-**文件**：[src/ui/widgets/status_badge_strip.py](src/ui/widgets/status_badge_strip.py)、[progress_dynamics_bar.py](src/ui/widgets/progress_dynamics_bar.py)、[quick_overview_bar.py](src/ui/widgets/quick_overview_bar.py)
+> **已退役**：StatusBadgeStrip / ProgressDynamicsBar / QuickOverviewBar 随任务页改由
+> 时间轴承载而删除（状态计数保留在状态栏）。以下内容保留作历史记录。
+
+**文件**（已删除）：`status_badge_strip.py`、`progress_dynamics_bar.py`、`quick_overview_bar.py`
 
 #### 2.5.1 StatusBadgeStrip — 状态徽章
 
@@ -481,11 +501,11 @@ tadado-cli <command> [args]
 
 ### 2.6 活动分析（Activity Analysis）
 
-**文件**：[src/ui/calendar_heatmap/](src/ui/calendar_heatmap/)、[src/ui/main_window.py](src/ui/main_window.py)（`_switch_view("dashboard")`）
+**文件**：[src/ui/calendar_heatmap/](src/ui/calendar_heatmap/)、[src/ui/main_window.py](src/ui/main_window.py)（`_switch_view("analysis")` / 侧栏「活动分析」/ <kbd>Ctrl</kbd>+<kbd>4</kbd>）
 
 #### 需求
 
-- Ctrl+2 切换，上下两区布局：「活动热力图」+「活动报告」
+- Ctrl+4 切换，上下两区布局：「活动热力图」+「活动报告」
 - 紧凑热力图（12px 单元格，4 组配色方案可选：☀️ 暖阳 / 🌱 新绿 / 🌊 海洋 / 🌸 樱花）+ 悬浮 Tooltip + 点击日期选中
 - 统计卡片同行右侧显示
 - PeriodSelectorBar：昨天/今天/上周/本周/上月/本月 + 自定义日期范围（CalendarPopup）
@@ -505,26 +525,26 @@ tadado-cli <command> [args]
 
 ### 2.7 任务管理控制台
 
-**文件**：[src/ui/main_window.py](src/ui/main_window.py)（`_switch_view("batch")`）
+**文件**：[src/ui/main_window.py](src/ui/main_window.py)（`_switch_view("manage")` / 侧栏「任务管理」/ <kbd>Ctrl</kbd>+<kbd>5</kbd>）
 
 #### 定位
 
-任务管理控制台 = 审视全局 → 定位问题 → 批量处置。区别于编辑视图(Ctrl+1)的「浏览编辑单任务」，管理视图侧重「批量审视、处置多任务」。
+任务管理控制台 = 审视全局 → 定位问题 → 批量处置。区别于任务页(Ctrl+2)的「浏览编辑单任务」，管理页侧重「批量审视、处置多任务」。
 
-与编辑视图的差异：
+与任务页的差异：
 
-| | 编辑视图 (Ctrl+1) | 管理控制台 (Ctrl+3) |
+| | 任务页 (Ctrl+2) | 任务管理 (Ctrl+5) |
 |---|---|---|
 | 核心任务 | 浏览、编辑单个任务 | 批量审视、处置多任务 |
 | 表格 | 半栏 + 编辑面板 | 全宽 9 列（含归档列） |
-| 筛选 | 完整 FilterBar (搜索+状态+排序) | 仅关键词搜索 |
+| 筛选 | 时间轴工具行 (粒度+搜索+状态+优先级+排序) | 仅关键词搜索 |
 | 批量操作 | BatchToolbar（辅助） | BatchToolbar + 导出下拉（核心） |
 | 导入导出 | 无 | 导出 MD / 导出 Excel |
 | 清理 | 无 | 手动归档 + 清除已归档 |
 
 #### 需求
 
-- Ctrl+3 切换，左右分栏：左侧管理面板(180px) + 中间任务表格 + 右侧标签管理面板(30%)
+- Ctrl+5 切换，左右分栏：左侧管理面板(180px) + 中间任务表格 + 右侧标签管理面板(30%)
 - 左侧面板：关键词搜索框 + 归档/清理操作按钮 + 筛选条件（状态/时间/进度/标签/归档状态）
 - 右侧面板：标签管理（重命名/合并），帮助快速规范化统一标签
 - 表格 9 列：复选框(36px)、序号(36px)、创建时间(100px)、任务内容(Stretch)、截止时间(105px)、进度(55px)、状态(65px)、标签(90px)、归档(55px)
@@ -603,7 +623,7 @@ tadado-cli <command> [args]
 - 合并：多选标签(Ctrl+click) → 弹窗选择合并目标 → 批量替换 + 去重
 - 右键菜单：快捷重命名 / 合并选中到此
 - 重命名/合并操作涵盖所有任务（含已归档），标签列表同步显示全部任务的标签计数
-- 操作后发射 `tag_changed` 信号 → 桥接 `SignalBus.tag_changed` → `FilterCoordinator.refresh()`（主视图）+ `BatchController.refresh_page()`（批量页面任务表格）
+- 操作后发射 `tag_changed` 信号 → 桥接 `SignalBus.tag_changed` → `TimelineController`（主视图）+ `BatchController.refresh_page()`（批量页面任务表格）
 
 **实现方案**：
 - `TagManagementPanel(QWidget)`：外层容器(bg_secondary + border-left) + QVBoxLayout
@@ -830,7 +850,7 @@ tadado-cli <command> [args]
 #### 实现方案
 
 - `UpdateChecker(QObject)`：`QNetworkAccessManager` 异步查询 GitHub API，失败时通过 `QProcess` 调 `aliyunpan ls` 解析云盘文件版本
-- `AboutDialog` 新增 `update_checker` 参数，[检查更新] 按钮禁用态、结果文字、下载渠道动态 ⭐ 标注
+- `AboutPage`（设置抽屉「关于」页签）接收 `update_checker`，[检查更新] 按钮禁用态、结果文字、下载渠道动态 ⭐ 标注
 - 版本比较：`tuple(int,int,int)` 去 `v` 前缀
 - 阿里云盘上传：`release.ps1` + `upload_aliyun.ps1`（本地脚本，不入库）通过 `aliyunpan` CLI 上传至资源库 `/Tadado/`
 
@@ -844,7 +864,7 @@ tadado-cli <command> [args]
 
 **需求**：每分钟 `refresh_overdue_status()` 自动设置/恢复 OVERDUE 状态。每天在配置时间（`daily_digest_time`，默认 09:00）发射 `daily_digest` 信号供 Notifier 发送每日摘要。
 
-**实现方案**：APScheduler `QtScheduler` + 双 job：(1) IntervalTrigger(1min) 做 overdue 刷新，(2) CronTrigger(hour, minute) 做每日摘要。提醒的主要能力已迁移到轮播栏（QuickOverviewBar / ProgressDynamicsBar）的被动信息展示。
+**实现方案**：APScheduler `QtScheduler` + 双 job：(1) IntervalTrigger(1min) 做 overdue 刷新，(2) CronTrigger(hour, minute) 做每日摘要。（2.0 阶段 3 起任务页的轮播栏 / 进度动态栏已退役，提醒能力改由状态栏统计与时间轴色条表达。）
 
 #### 2.10.2 TaskNotifier — 每日摘要
 
@@ -915,7 +935,8 @@ tadado-cli <command> [args]
 #### 需求
 
 - 无边框窗口(`FramelessWindowHint`)
-- 自定义标题栏(36px)：App 图标 + 6 个图标文字按钮（新建单任务/多任务/活动分析/任务管理/设置/帮助▾）+ 右侧图标按钮（缩小到托盘/最小化/切换全屏/关闭）
+- 自定义标题栏(36px)：App 图标（返回主界面）+ 全局热键提示 + 右侧常驻置顶按钮 + 4 个窗口按钮（缩小到托盘/最小化/切换全屏/关闭）
+- 页面导航集中到左侧 NavShell 图标栏（工作 / 洞察 / 管理三组 + 设置齿轮），标题栏不再承载页面切换按钮
 - Windows Aero Snap 支持（左右停靠、四分之一分屏、拖拽到顶部最大化、Win+方向键快捷键）
 - Win32 原生拖拽 + 边缘缩放(8px 热区边框，与 Win10/11 标准一致)
 - 固定默认尺寸：1050×680，用户可通过全屏按钮调整
@@ -925,7 +946,8 @@ tadado-cli <command> [args]
 
 #### 实现方案
 
-- `_setup_custom_title_bar()` — 固定 36px QWidget，QHBoxLayout：AppIcon → 6×图标按钮 → stretch → 4×窗口按钮
+- `_setup_custom_title_bar()` — 固定 36px QWidget，QHBoxLayout：AppIcon → 热键提示 → stretch → 置顶按钮 → 4×窗口按钮
+- `_setup_central_widget()` — `NavShell`（左）+ `QStackedWidget`（右）；页面经 `VIEW_REGISTRY` 注册表懒构建，`_switch_view()` 处理别名与侧栏高亮
 - `_ThemedIconEngine` (icon_loader.py)：运行时 QPainter 绘制，颜色自 `design_tokens`
 - `enable_window_snap()` ([src/utils/win32_theme.py](src/utils/win32_theme.py)) — 通过 `SetWindowLongW` 恢复 `WS_THICKFRAME | WS_CAPTION` 窗口样式，启用 Aero Snap；`DWMWA_NCRENDERING_DISABLED` 阻止 DWM 实际绘制原生标题栏
 - `nativeEvent()` 处理三种消息：
@@ -933,7 +955,7 @@ tadado-cli <command> [args]
   - `WM_NCCALCSIZE` (wParam 0 和 1 均处理)：扩展客户区覆盖整个窗口，防止隐形边框压缩内容
   - `WM_GETMINMAXINFO`：交给 DefWindowProc 默认处理，最大化时适配显示器工作区
 - `changeEvent()` 拦截 `WindowStateChange`：`minimize_to_tray=True` 时最小化→`hide()` 隐藏到托盘
-- 标题栏命中测试区域：右 144px（4×36px）为窗口按钮区
+- 标题栏命中测试：靠 `menuWidget().childAt()` 判定光标是否在按钮上（按钮→`HTCLIENT`，空白→`HTCAPTION`），不依赖固定宽度
 - 状态栏 `_status_partition_btn` + `_status_partition_menu` 替代原菜单栏分区项
 
 #### 启动残影防护
@@ -964,7 +986,7 @@ QApplication → AppConfig + init_tokens() + _load_theme() → StartupShield.sho
 ├──────────────────────────────────────────────────────────────┤
 │                        中央区域                               │
 ├──────────────────────────────────────────────────────────────┤
-│ 📁 工作 ▾ │ 逾期 X | 进行中 X | ...              时钟      │ ← QStatusBar
+│ 📁 工作 ▾ │ 逾期 X | 进行中 X | ...              时钟      │ ← 底部工具条（Toast 浮层承载瞬时提示，已无 QStatusBar）
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -972,7 +994,12 @@ QApplication → AppConfig + init_tokens() + _load_theme() → StartupShield.sho
 
 ### 2.13 主题系统
 
-**文件**：[src/utils/design_tokens.py](src/utils/design_tokens.py)、[resources/themes/light.qss](resources/themes/light.qss)、[resources/themes/dark.qss](resources/themes/dark.qss)
+**文件**：[src/utils/design_tokens.py](src/utils/design_tokens.py)、[resources/themes/base.qss](resources/themes/base.qss)
+
+> 亮/暗两套颜色都在 `design_tokens.py` 里（`LIGHT_TOKENS` / `DARK_TOKENS`），
+> `base.qss` 是**唯一**的 QSS 文件，颜色一律写成 `{{token}}` 占位符，加载时由
+> `expand_qss()` 按当前主题展开。早期按主题拆分的 `light.qss` / `dark.qss`
+> 已删除——两份文件 95% 内容重复，改一处要同步改两处。
 
 #### 需求
 
@@ -1000,17 +1027,18 @@ QApplication → AppConfig + init_tokens() + _load_theme() → StartupShield.sho
 - `get_tokens()` 单例, `init_tokens(config)` 绑定, `refresh_tokens()` 重新解析
 - `build_palette()` — 构造 QPalette(Window/Base/Button/Highlight/Link/ToolTip/BrightText/Disabled 等色组)
 - `heatmap_gradient(levels)` — 基于当前配色方案（`HEATMAP_SCHEMES` 注册表，4 组预设）插值生成渐变，亮/暗双主题各 8 级色阶
-- QSS 文件覆盖：全局/菜单/标题栏/工具栏/状态栏/按钮/复选框/选项卡/输入框/下拉框/文本编辑/表格/标签/热力图/报告/对话框/日期时间/分区蒙版/卡片/弹窗
+- `base.qss` 覆盖：全局字体栈/菜单/自定义标题栏/工具栏/按钮/复选框/选项卡/输入框/下拉框/文本编辑/表格/标签/热力图/对话框/日期时间/分区蒙版/卡片/弹窗
+- 圆角与控件几何直接写 px（对齐 `resources/ui-mockup/tadado-2.0.html`）：卡片 10px、按钮与输入 8px、内部元素 6–7px、胶囊 999px；颜色则**禁止**写死，必须走 `{{token}}`
 
 #### 主题切换流程
 
 ```
 AppConfig 主题变更
   → config_changed 信号
-  → MainWindow._load_theme()
+  → TadadoApp._load_theme()
   → DesignTokens.refresh_tokens()
   → build_palette() → QApplication.setPalette()
-  → 加载 QSS (替换 __ICONS__ 占位符)
+  → 加载 base.qss（expand_qss 展开 {{token}} 占位符）
   → 所有 UI 组件自动重绘
 ```
 
@@ -1026,7 +1054,10 @@ AppConfig 主题变更
 | Win10 1809+ (17763–22000) | `DWMWA_USE_IMMERSIVE_DARK_MODE` | 标题栏为系统暗灰色（接近但不完全一致） |
 | Win10 < 1809 / 非 Windows | — | 无操作，标题栏保持系统默认 |
 
-适用对话框：设置（`SettingsDialog`）、关于（`AboutDialog`）。在 `showEvent` 中根据当前主题自动调用，非 Windows 平台零副作用。
+适用窗口：设置抽屉（`SettingsDrawer`）与关于页（`AboutPage`）——二者带原生窗口边框。在 `showEvent` 中根据当前主题自动调用，非 Windows 平台零副作用。
+
+> 原先的模态 `SettingsDialog` / `AboutDialog` 已移除：设置改为右侧抽屉，
+> 关于并入抽屉的第四个页签。
 
 ---
 ### 2.14 批量操作
@@ -1047,7 +1078,7 @@ AppConfig 主题变更
 
 - BatchToolbar(QWidget) — 水平布局：全选按钮 + 更改状态下拉 + 删除/中止/重启/延后处理按钮 + 导出下拉 + 计数标签
 - 信号：`select_all_requested` / `deselect_all_requested` / `batch_status_change` / `batch_urgency_change`(list, int) / `batch_delete` / `batch_suspend` / `batch_restart` / `batch_postpone`(list, int) / `export_requested`(str)
-- 编辑视图 `_batch_toolbar` 信号连接至对应 handler（2026-06-01 修复，此前均未连接）
+- ~~编辑视图 `_batch_toolbar`~~ — 已随旧列表退役（2.0 阶段 3）；批量操作统一由管理页 BatchController 承担
 - 延后处理（2026-06-02 新增）：Repository `batch_postpone(ids, days)` 逐任务更新 deadline_date + 记录 activity_log + refresh_overdue_status()
 - 调整分区（2026-06-04 新增）：右键菜单"调整分区"，将选中任务迁移至其他分区；FROM 和 TO 分区若设有密码需依次验证；密码验证通过 + 确认弹窗后执行 `batch_move_partition(ids, to_partition_id)`；迁移后视图受底部状态栏当前分区控制（已迁移任务从当前分区消失）
 - 编辑视图和批量视图均使用 QMessageBox 确认

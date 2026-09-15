@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
+
 import pytest
 
 from src.models.task import Task
@@ -75,6 +77,31 @@ class TestCreateTask:
 
         task = service.create_task("- [ ] <2026-12-31> 年度总结")
         assert task.deadline_date == _date(2026, 12, 31)
+
+    def test_create_done_sets_completed_at(self, service):
+        """以 DONE 创建任务时补写 ``completed_at``。
+
+        否则总览页「本周完成」等基于该字段的统计会漏掉导入 / 快速新建的
+        已完成任务（分区 ``archive_days=0`` 时它们会立即归档，更不易察觉）。
+        口径与 UI 层一致：优先取截止日期，无截止则取当前时刻。
+
+        写法上有个坑：``<date>`` 紧跟状态关键字时解析成**计划日**而不是截止日
+        （见 md_parser 的单日期规则 —— 只有「无状态关键字」或「带时间」的单日期
+        才算截止）。以前这里写 ``DONE <2026-09-14>``，拿到的其实是计划日，
+        断言悄悄退化成「比对今天」，在撰写当天必然通过、次日起必然失败。
+        补上时间让这条 md 真的带上截止日，「截止优先」这条路径才被覆盖到。
+        """
+        done = service.create_task("- [ ] DONE <2026-09-14 23:59> 已完成样例 #done")
+        assert done.completed_at is not None
+        assert str(done.completed_at)[:10] == "2026-09-14"
+
+        todo = service.create_task("- [ ] TODO <2026-09-14> 待办样例 #a")
+        assert todo.completed_at is None
+
+    def test_create_done_without_deadline_uses_now(self, service):
+        """无截止日期时以当前时刻作为完成时间（不能为 None）。"""
+        task = service.create_task("- [ ] DONE 无截止完成样例")
+        assert task.completed_at is not None
 
     def test_create_with_priority(self, service):
         # Parser extracts star-count from bracket: 3 stars → urgency 0 (紧急)
@@ -431,7 +458,6 @@ class TestFormatting:
 
 class TestSignalIsolation:
     """Each service instance gets its own SignalBus — no cross-test leakage."""
-
     def test_separate_services_have_separate_buses(self, temp_db, qapp):
         from src.models.repository import TaskRepository
 
@@ -459,3 +485,319 @@ class TestSignalIsolation:
 
         repo1.close()
         repo2.close()
+
+
+# ---------------------------------------------------------------------------
+# Single write seam — save_task / create_tasks_bulk / update_tasks
+# ---------------------------------------------------------------------------
+
+
+class TestSaveTask:
+    """``save_task`` is the single write seam — one signal per call, never two."""
+
+    def test_save_new_inserts_and_emits_created(self, service, qapp):
+        created: list[Task] = []
+        updated: list[Task] = []
+        service._bus.task_created.connect(created.append)
+        service._bus.task_updated.connect(updated.append)
+
+        task = _make_task(task_id="", title="新建任务", partition_id="p1")
+        saved = service.save_task(task, is_new=True)
+
+        assert saved.id
+        assert service.get_task(saved.id) is not None
+        assert saved.raw_md.startswith("- [")
+        assert len(created) == 1
+        assert not updated
+
+    def test_save_existing_emits_updated_once(self, service, qapp):
+        task = service.create_task("- [ ] 已存在 #a", partition_id="p1")
+        updated: list[Task] = []
+        status_changed: list[tuple] = []
+        service._bus.task_updated.connect(updated.append)
+        service._bus.task_status_changed.connect(
+            lambda t, old: status_changed.append((t, old))
+        )
+
+        task.title = "改名后"
+        service.save_task(task, is_new=False, previous_status=task.status)
+
+        assert len(updated) == 1
+        assert not status_changed
+        assert service.get_task(task.id).title == "改名后"
+
+    def test_save_status_change_emits_status_only(self, service, qapp):
+        task = service.create_task("- [ ] 状态任务 #a", partition_id="p1")
+        old_status = task.status
+        updated: list[Task] = []
+        status_changed: list[tuple] = []
+        service._bus.task_updated.connect(updated.append)
+        service._bus.task_status_changed.connect(
+            lambda t, old: status_changed.append((t, old))
+        )
+
+        task.status = TaskStatus.DOING
+        service.save_task(task, is_new=False, previous_status=old_status)
+
+        assert len(status_changed) == 1
+        assert status_changed[0][1] == old_status
+        assert not updated  # never double-emits
+
+    def test_save_normalizes_raw_md(self, service, qapp):
+        task = _make_task(task_id="", title="规范化", tags=["x"], partition_id="p1")
+        saved = service.save_task(task, is_new=True)
+        assert "#x" in saved.raw_md
+
+
+class TestCreateTasksBulk:
+    def test_inserts_all_and_emits_once(self, service, qapp):
+        received: list[tuple] = []
+        service._bus.tasks_bulk_created.connect(
+            lambda count, ids: received.append((count, ids))
+        )
+        created_signal: list[Task] = []
+        service._bus.task_created.connect(created_signal.append)
+
+        tasks = [
+            _make_task(task_id="", title=f"批量{i}", tags=["t"], partition_id="p1")
+            for i in range(3)
+        ]
+        created = service.create_tasks_bulk(tasks)
+
+        assert len(created) == 3
+        assert all(service.get_task(t.id) is not None for t in created)
+        assert len(received) == 1
+        assert received[0][0] == 3
+        assert received[0][1] == [t.id for t in created]
+        # bulk path must NOT also fire per-task task_created
+        assert not created_signal
+
+    def test_empty_is_noop(self, service, qapp):
+        received: list[tuple] = []
+        service._bus.tasks_bulk_created.connect(lambda c, i: received.append((c, i)))
+        assert service.create_tasks_bulk([]) == []
+        assert not received
+
+
+class TestUpdateTasksBulk:
+    def test_updates_all_with_single_signal(self, service, qapp):
+        tasks = [
+            service.create_task(f"- [ ] 待改{i} #a", partition_id="p1")
+            for i in range(3)
+        ]
+        batch: list[dict] = []
+        per_task: list[Task] = []
+        service._bus.batch_operation_completed.connect(batch.append)
+        service._bus.task_updated.connect(per_task.append)
+
+        for t in tasks:
+            t.title = f"已改{t.title}"
+        count = service.update_tasks(tasks)
+
+        assert count == 3
+        assert all(service.get_task(t.id).title.startswith("已改") for t in tasks)
+        assert len(batch) == 1
+        assert batch[0]["count"] == 3
+        assert not per_task  # no per-task signal
+
+    def test_empty_is_noop(self, service, qapp):
+        assert service.update_tasks([]) == 0
+
+
+class TestRecalcActivityCounts:
+    def test_returns_count(self, service, qapp):
+        service.create_task("- [ ] 活动任务 #a", partition_id="p1")
+        count = service.recalc_activity_counts()
+        assert isinstance(count, int)
+        assert count >= 1
+
+
+# ---------------------------------------------------------------------------
+# 活动记录 / 统计查询（阶段 4：维护抽屉 + 总览页）
+# ---------------------------------------------------------------------------
+
+
+class TestActivityAndStats:
+    """append_activity / get_recent_activity / get_urgency_distribution / get_due_stats."""
+
+    # ---- append_activity ---------------------------------------------
+
+    def test_append_activity_returns_task_and_entry(self, service, qapp):
+        task = service.create_task("- [ ] 撰写进展 #a", partition_id="p1")
+        updated = service.append_activity(task.id, "完成初稿")
+        assert updated is not None
+        assert updated.id == task.id
+
+        fetched = service.get_task(task.id)
+        last = fetched.activity_log[-1]
+        assert last["content"] == "完成初稿"
+        assert "ts" in last
+        # 三个可选参数均为 None → 对应键不写入
+        assert "status" not in last
+        assert "progress" not in last
+        assert "urgency" not in last
+
+    def test_append_activity_optional_fields_written(self, service, qapp):
+        task = service.create_task("- [ ] 带字段 #a", partition_id="p1")
+        service.append_activity(
+            task.id, "推进中", status=TaskStatus.DOING, progress=40, urgency=1,
+        )
+        fetched = service.get_task(task.id)
+        assert fetched.status == TaskStatus.DOING
+        assert fetched.progress == 40
+        assert fetched.urgency == 1
+        last = fetched.activity_log[-1]
+        assert last["status"] == "DOING"
+        assert last["progress"] == 40
+        assert last["urgency"] == 1
+        assert fetched.raw_md  # raw_md 已重建
+
+    def test_append_activity_missing_task_returns_none(self, service):
+        assert service.append_activity("不存在的id", "x") is None
+
+    def test_append_activity_emits_updated_once(self, service, qapp):
+        task = service.create_task("- [ ] 只发一次 #a", partition_id="p1")
+        updated_sig: list = []
+        status_sig: list = []
+        service._bus.task_updated.connect(updated_sig.append)
+        service._bus.task_status_changed.connect(
+            lambda t, old: status_sig.append((t, old))
+        )
+
+        service.append_activity(task.id, "普通进展", progress=30)
+
+        assert len(updated_sig) == 1
+        assert not status_sig  # 绝不同时发两个
+        assert service.get_task(task.id).progress == 30
+
+    def test_append_activity_status_change_emits_status_once(self, service, qapp):
+        task = service.create_task("- [ ] 状态进展 #a", partition_id="p1")
+        updated_sig: list = []
+        status_sig: list = []
+        service._bus.task_updated.connect(updated_sig.append)
+        service._bus.task_status_changed.connect(
+            lambda t, old: status_sig.append((t, old))
+        )
+
+        service.append_activity(task.id, "开始动手", status=TaskStatus.DOING)
+
+        assert len(status_sig) == 1
+        assert status_sig[0][1] == TaskStatus.TODO
+        assert not updated_sig
+        assert service.get_task(task.id).status == TaskStatus.DOING
+
+    # ---- get_recent_activity -----------------------------------------
+
+    def test_get_recent_activity_order_and_fields(self, service):
+        """用显式 ts 构造，避免 Windows 时钟精度导致的并列时间戳。"""
+        t1 = service.create_task("- [ ] 活动甲 #a", partition_id="p1")
+        t2 = service.create_task("- [ ] 活动乙 #a", partition_id="p1")
+        t1.activity_log = [{"ts": "2026-01-01T09:00:00", "content": "旧"}]
+        t2.activity_log = [{"ts": "2026-01-02T09:00:00", "content": "新"}]
+        service._repo.update(t1)
+        service._repo.update(t2)
+
+        recent = service.get_recent_activity(limit=50)
+        expected_keys = {"task_id", "title", "ts", "content", "status", "progress", "urgency"}
+        assert expected_keys <= set(recent[0])
+        assert recent[0]["content"] == "新"
+        assert recent[1]["content"] == "旧"
+        assert recent[0]["title"] == "活动乙"
+
+        ts_list = [e["ts"] for e in recent]
+        assert ts_list == sorted(ts_list, reverse=True)
+
+    def test_get_recent_activity_limit_and_partition(self, service):
+        t1 = service.create_task("- [ ] 甲 #a", partition_id="p1")
+        t2 = service.create_task("- [ ] 乙 #a", partition_id="p2")
+        service.append_activity(t1.id, "甲进展")
+        service.append_activity(t2.id, "乙进展")
+
+        assert len(service.get_recent_activity(limit=1)) == 1
+
+        only_p2 = service.get_recent_activity(limit=50, partition_id="p2")
+        assert only_p2
+        assert all(e["task_id"] == t2.id for e in only_p2)
+
+    def test_get_recent_activity_includes_archived(self, service):
+        task = service.create_task("- [ ] 归档也可见 #a", partition_id="p1")
+        service.append_activity(task.id, "归档前的一条")
+        service.archive_batch([task.id])
+
+        found = service.get_recent_activity(limit=50)
+        assert any(
+            e["task_id"] == task.id and e["content"] == "归档前的一条" for e in found
+        )
+
+    # ---- get_urgency_distribution -------------------------------------
+
+    def test_get_urgency_distribution_zero_keys(self, service):
+        dist = service.get_urgency_distribution()
+        assert set(dist) == {0, 1, 2, 3}
+        assert all(v == 0 for v in dist.values())
+
+    def test_get_urgency_distribution_counts(self, service):
+        service.create_task("- [***] 紧急任务 #a", partition_id="p1")
+        service.create_task("- [ ] 普通任务 #a", partition_id="p1")
+        service.create_task("- [ ] 别的分区 #a", partition_id="p2")
+
+        dist = service.get_urgency_distribution("p1")
+        assert set(dist) == {0, 1, 2, 3}
+        assert sum(dist.values()) == 2
+        assert all(isinstance(v, int) for v in dist.values())
+
+    # ---- get_due_stats ------------------------------------------------
+
+    def test_get_due_stats(self, service, qapp):
+        from datetime import timedelta
+
+        today = date.today()
+        service.save_task(
+            _make_task(
+                task_id="", title="今日到期", deadline_date=today, partition_id="p1"
+            ),
+            is_new=True,
+        )
+        service.save_task(
+            _make_task(
+                task_id="", title="已逾期",
+                deadline_date=today - timedelta(days=3), partition_id="p1",
+            ),
+            is_new=True,
+        )
+        service.save_task(
+            _make_task(
+                task_id="", title="进行中", status=TaskStatus.DOING, partition_id="p1"
+            ),
+            is_new=True,
+        )
+        done = service.save_task(
+            _make_task(
+                task_id="", title="本周完成", status=TaskStatus.DONE, partition_id="p1"
+            ),
+            is_new=True,
+        )
+        done.completed_at = datetime.now()
+        service._repo.update(done)
+
+        # 其他分区不计入
+        service.save_task(
+            _make_task(
+                task_id="", title="别的分区", deadline_date=today, partition_id="p2"
+            ),
+            is_new=True,
+        )
+
+        stats = service.get_due_stats("p1")
+        assert set(stats) == {"due_today", "overdue", "doing", "done_this_week"}
+        assert stats["due_today"] == 1
+        assert stats["overdue"] == 1
+        assert stats["doing"] == 1
+        assert stats["done_this_week"] == 1
+
+    def test_get_due_stats_empty(self, service):
+        stats = service.get_due_stats()
+        assert stats == {
+            "due_today": 0, "overdue": 0, "doing": 0, "done_this_week": 0,
+        }
+

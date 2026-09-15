@@ -1,0 +1,1753 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   页面层：五个视图各自的部件。
+
+   几何逐条对齐 resources/ui-mockup/tadado-2.0.html，只有两处刻意改名：
+
+     .tile.tl  → .tile.clickable   原型用 .tl 既是「可点卡片」又是「活动时间线」，
+                                   一个类名两个含义，在 CSS 里必然互相踩
+     table/th/td → .tabwrap 作用域  原型直接给全局 table 写 min-width:780px，
+                                   任何一张表都会被撑到 780，无法局部豁免
+
+   颜色一律走 tokens.css 的语义变量，这里不出现任何字面量色值。
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ============ 总览：问候 + 快速新建（原型 .greet / .cap）============ */
+.greet {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.greet .g1 {
+  font: 700 20px var(--disp);
+}
+
+.greet .g2 {
+  font: 400 11.5px var(--mono);
+  color: var(--text-3);
+}
+
+.cap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 10px;
+  padding: 7px 8px 7px 14px;
+  min-width: 420px;
+  transition: all 0.15s;
+}
+
+.cap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.cap .plus {
+  color: var(--text-3);
+  flex: none;
+  width: 15px;
+  height: 15px;
+}
+
+.cap input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: none;
+  font: 400 12.5px var(--mono);
+  color: var(--text);
+}
+
+.cap .go {
+  font: 500 11px var(--font);
+  color: var(--accent);
+  border: 0;
+  background: var(--accent-soft);
+  border-radius: 7px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.cap .go:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ============ 总览：指标卡（原型 .tiles / .tile）============ */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.tile.clickable {
+  cursor: pointer;
+}
+
+.tile.clickable:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.tile .lbl {
+  font-size: 11.5px;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tile .lbl i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.tile .num {
+  font: 800 26px/1.2 var(--disp);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+
+.tile .delta {
+  font: 400 10.5px var(--mono);
+  color: var(--text-3);
+}
+
+.tile .delta b {
+  color: var(--done);
+  font-weight: 500;
+}
+
+.tile.alert .lbl i {
+  background: var(--danger);
+}
+.tile.alert .num {
+  color: var(--danger);
+}
+
+.tile.focus .lbl i {
+  background: var(--accent);
+}
+.tile.focus .num {
+  color: var(--accent);
+}
+
+/* ============ 总览：焦点时间轴（原型 .tdt）============ */
+.tdt {
+  position: relative;
+  height: 172px;
+  margin-top: 2px;
+}
+
+.tdt-axis {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: var(--border);
+  border-radius: 1px;
+}
+
+.tdt-tick {
+  position: absolute;
+  top: calc(50% + 8px);
+  transform: translateX(-50%);
+  font: 400 9.5px var(--mono);
+  color: var(--text-3);
+}
+
+.tdt-now {
+  position: absolute;
+  top: 8px;
+  bottom: 28px;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0.7;
+  z-index: 2;
+}
+
+.tdt-now span {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 500 9px var(--font);
+  color: #fff;
+  background: var(--accent);
+  padding: 0 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.tdt-p {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 5px;
+  border-radius: 9px;
+  border: 1px solid;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 216px;
+  overflow: hidden;
+  z-index: 1;
+  background: var(--surface-2);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.tdt-p:hover {
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+  z-index: 4;
+}
+
+.tdt-p.above {
+  bottom: calc(50% + 14px);
+}
+
+.tdt-p.below {
+  top: calc(50% + 14px);
+}
+
+.tdt-p.st-overdue {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.tdt-p.st-todo {
+  color: var(--todo);
+  border-color: var(--todo);
+  background: var(--todo-soft);
+}
+.tdt-p.st-doing {
+  color: var(--doing);
+  border-color: var(--doing);
+  background: var(--doing-soft);
+}
+.tdt-p.st-done {
+  color: var(--done);
+  border-color: var(--done);
+  background: var(--done-soft);
+}
+
+.tdt-p.is-done {
+  opacity: 0.55;
+}
+
+.tdt-p.is-done .tdt-tx {
+  text-decoration: line-through;
+}
+
+/* 逾期任务不落在时间点上（它们只有日期），统一钉在最左侧 */
+.tdt-p.over-pill {
+  left: 1% !important;
+}
+
+.tdt-cb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  flex: none;
+  position: relative;
+  background: transparent;
+}
+
+.tdt-p.is-done .tdt-cb {
+  background: currentColor;
+}
+
+.tdt-p.is-done .tdt-cb::after {
+  content: "✓";
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.tdt-tx {
+  font-size: 11.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tdt-tm {
+  font: 400 9.5px var(--mono);
+  opacity: 0.85;
+}
+
+/* ============ 总览：活动流 / 紧迫度分布（原型 .feed / .ubar）============ */
+.feed {
+  padding: 2px 0;
+}
+
+.feed-item {
+  display: flex;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: baseline;
+}
+
+.feed-item:last-child {
+  border-bottom: 0;
+}
+
+.feed-item .tm {
+  font: 400 10.5px var(--mono);
+  color: var(--text-3);
+  flex: none;
+}
+
+.feed-item .tx {
+  font-size: 12.5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed-item .tx b {
+  font-weight: 500;
+}
+
+.ubar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.ubar .un {
+  width: 30px;
+  font-size: 12px;
+  color: var(--text-2);
+  flex: none;
+}
+
+.ubar .tr {
+  flex: 1;
+  height: 7px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.ubar .tr > i {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.ubar .uc {
+  font: 500 10.5px var(--mono);
+  color: var(--text-3);
+  width: 22px;
+  text-align: right;
+}
+
+/* ============ 总览：甘特模式（周 / 月，原型 .fg）============ */
+.fg {
+  position: relative;
+  margin-top: 6px;
+}
+
+.fg-axis {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 26px;
+  height: 2px;
+  background: var(--border);
+  border-radius: 1px;
+}
+
+.fg-tick {
+  position: absolute;
+  top: 32px;
+  transform: translateX(-50%);
+  font: 400 9px var(--mono);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.fg-bar {
+  position: absolute;
+  height: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+
+.fg-bar:hover {
+  box-shadow: var(--shadow);
+  z-index: 3;
+}
+
+.fg-bar b {
+  font: 500 9px var(--font);
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fg-bar.st-overdue {
+  background: var(--danger);
+}
+.fg-bar.st-todo {
+  background: var(--todo);
+}
+.fg-bar.st-doing {
+  background: var(--doing);
+}
+.fg-bar.st-done {
+  background: var(--done);
+}
+
+.fg-now {
+  position: absolute;
+  top: 2px;
+  bottom: 8px;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0.7;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* ============ 任务页：时间轴表格（原型 .tt-*）============ */
+.tt-wrap {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* 视口高度减去标题栏 + 工具行 + 页头 + 图例，让表格自己滚而不是整页滚 */
+.tt-scroll {
+  overflow: auto;
+  max-height: calc(100vh - 268px);
+}
+
+.tt-grid {
+  position: relative;
+}
+
+.tt-hrow {
+  display: flex;
+  height: 36px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 6;
+}
+
+.tt-date {
+  width: 22px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 1px;
+  font: 400 9px var(--mono);
+  color: var(--text-3);
+  border-right: 1px solid var(--border);
+}
+
+.tt-date .dn {
+  font: 500 10px var(--mono);
+}
+
+.tt-date .dw {
+  font: 400 8.5px var(--font);
+  opacity: 0.75;
+}
+
+/* 表头里的任务列要压住表头的日期格和表体的所有格子 */
+.tt-hrow .tt-label {
+  z-index: 8;
+}
+
+.tt-date.wknd {
+  background: var(--bg-2);
+}
+
+.tt-date.today {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-soft);
+  border-right-color: var(--accent);
+}
+
+.tt-row {
+  display: flex;
+  height: 40px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.tt-row:last-child {
+  border-bottom: 0;
+}
+
+.tt-row:hover {
+  background: var(--hover);
+}
+
+/* 任务列横向吸附：日期轴滚到右边时左边仍看得见任务名 */
+.tt-label {
+  width: 248px;
+  flex: none;
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 5;
+  border-right: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+}
+
+.tt-row:hover .tt-label {
+  background: var(--hover);
+}
+
+.tt-label .d {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.tt-label .lt {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.tt-label .lt1 {
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tt-label .lt2 {
+  font-size: 10px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.tt-label .lt2 .tag {
+  font-size: 9.5px;
+  padding: 0 4px;
+}
+
+.tt-label .lt2 .dlt {
+  font: 400 9.5px var(--mono);
+}
+
+/* 竖向格线用 repeating-linear-gradient 画，和 22px 的日期列宽同源 */
+.tt-track {
+  position: relative;
+  flex: none;
+  background-color: var(--surface);
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0 21px,
+    var(--border) 21px 22px
+  );
+}
+
+.tt-row:hover .tt-track {
+  background-color: var(--hover);
+}
+
+.tt-row.selected .tt-label {
+  background: var(--accent-soft);
+}
+
+.tt-row.selected .tt-track {
+  background-color: var(--accent-soft);
+}
+
+.tt-bar {
+  position: absolute;
+  top: 11px;
+  height: 18px;
+  border-radius: 5px;
+  overflow: visible;
+  cursor: pointer;
+  transition: filter 0.15s, box-shadow 0.15s;
+}
+
+.tt-bar:hover {
+  filter: brightness(1.04);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.25);
+  z-index: 2;
+}
+
+.tt-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 5px 0 0 5px;
+}
+
+/* max-width 由 tasks.ts 按进度填充的宽度写进来 —— 文字不能越过填充区，
+   越过去就是白字落在浅色底上 */
+.tt-bar b {
+  position: absolute;
+  left: 7px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  font: 500 10px var(--font);
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.tt-bar .end {
+  position: absolute;
+  right: -3.5px;
+  top: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  z-index: 2;
+}
+
+.tt-bar.st-overdue {
+  background: var(--danger-soft);
+}
+.tt-bar.st-overdue i {
+  background: var(--danger);
+}
+.tt-bar.st-overdue .end {
+  background: var(--danger);
+}
+
+.tt-bar.st-todo {
+  background: var(--todo-soft);
+}
+.tt-bar.st-todo i {
+  background: var(--todo);
+}
+.tt-bar.st-todo .end {
+  background: var(--todo);
+}
+
+.tt-bar.st-doing {
+  background: var(--doing-soft);
+}
+.tt-bar.st-doing i {
+  background: var(--doing);
+}
+.tt-bar.st-doing .end {
+  background: var(--doing);
+}
+
+.tt-bar.st-done {
+  background: var(--done-soft);
+}
+.tt-bar.st-done i {
+  background: var(--done);
+}
+.tt-bar.st-done .end {
+  background: var(--done);
+}
+
+.tt-bar.sel {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 从表头下面开始画：表头那格自己已经有高亮，再压一条竖线只会显得脏 */
+.tt-today {
+  position: absolute;
+  top: 36px;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0.55;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.tt-today::before {
+  content: "今天";
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 500 9px var(--font);
+  color: #fff;
+  background: var(--accent);
+  padding: 0 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.tt-tip {
+  position: fixed;
+  z-index: 98;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+  padding: 9px 12px;
+  font-size: 12px;
+  pointer-events: none;
+  display: none;
+  max-width: 260px;
+}
+
+/* ============ 图谱（原型 .gpage / .gwrap / .node / .edges）============ */
+/* 高度要自己算：.main 是可滚动的，页面高度不会自动等于可视高度。
+   112px = .page 的上下内边距 22+32 + .ph 高度约 40 + .ph 的 margin 18。
+   给得偏小一点，宁可让页面滚一点，也不要让画布底下被切掉。 */
+.gpage {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--bar-h) - 112px);
+  min-height: 420px;
+}
+
+.gbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 2px 4px 12px;
+  flex-wrap: wrap;
+}
+
+.glegend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.glegend .it {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.glegend .d {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.gfilters {
+  display: flex;
+  gap: 5px;
+}
+
+.gwrap {
+  flex: 1;
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+  min-height: 320px;
+}
+
+/* 点阵底纹：给力导向布局一个「画布」的心理暗示 */
+.gwrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* 固定逻辑画布 900×520，居中摆放。节点用像素坐标定位，SVG 用同尺寸的
+   viewBox —— 两边 1:1 对应，连线端点不需要任何换算。缩放只改 transform:scale。
+   尺寸必须和 graph.ts 的 STAGE_W / STAGE_H 一致。 */
+.gcanvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 900px;
+  height: 520px;
+  margin: -260px 0 0 -450px;
+  transform-origin: center;
+  transition: transform 0.3s ease;
+}
+
+.edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.edges line,
+.edges path {
+  stroke: var(--border-2);
+  stroke-width: 1;
+  transition: opacity 0.2s;
+  fill: none;
+  opacity: 0.45;
+}
+
+.edges line.hi,
+.edges path.hi {
+  stroke: var(--accent);
+  stroke-width: 1.8;
+  opacity: 1;
+}
+
+.edges.dimmed line,
+.edges.dimmed path {
+  opacity: 0.06;
+}
+
+.edges.dimmed line.hi,
+.edges.dimmed path.hi {
+  opacity: 1;
+}
+
+.edges path.rel {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-dasharray: 4 4;
+  opacity: 0.8;
+}
+
+.edges path.rel.hi {
+  opacity: 1;
+  stroke-width: 2.4;
+}
+
+.node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: left 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+    top 0.65s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s;
+  display: grid;
+  place-items: center;
+}
+
+.node.partition {
+  width: 56px;
+  height: 56px;
+  background: var(--accent);
+  color: #fff;
+  font: 600 13.5px var(--font);
+  box-shadow: 0 0 0 8px var(--accent-soft);
+  z-index: 3;
+}
+
+.node.tag {
+  width: 38px;
+  height: 38px;
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  background: var(--surface-2);
+  font: 500 9.5px var(--font);
+  z-index: 2;
+}
+
+.node.task {
+  width: 13px;
+  height: 13px;
+  z-index: 1;
+}
+
+.node.task.todo {
+  background: var(--todo);
+}
+.node.task.doing {
+  background: var(--doing);
+}
+.node.task.done {
+  background: var(--done);
+}
+.node.task.overdue {
+  background: var(--danger);
+}
+
+.node.task:hover {
+  transform: translate(-50%, -50%) scale(1.9);
+}
+
+/* 拖拽期间关掉过渡，否则节点会「飘」在指针后面 */
+.node.dragging {
+  transition: none !important;
+}
+
+.node.ghost {
+  opacity: 0.13;
+}
+
+.node.selected {
+  outline: 2.5px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.node.task.hot {
+  box-shadow: 0 0 0 3px var(--danger-soft);
+}
+
+/* 紧急任务的常驻名签：不用悬停也看得出是哪个任务 */
+.node.task .nl {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  font: 400 9.5px var(--font);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 6px;
+  white-space: nowrap;
+  color: var(--text-2);
+  pointer-events: none;
+  z-index: 2;
+  line-height: 16px;
+}
+
+.gstats {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  z-index: 5;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 10px 13px;
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.85;
+  min-width: 150px;
+}
+
+.gstats b {
+  font: 600 13px var(--disp);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
+}
+
+.gdetail {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  width: 224px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  box-shadow: var(--shadow);
+  padding: 13px 14px;
+  z-index: 5;
+}
+
+.gdetail .dn {
+  font: 600 13.5px var(--font);
+}
+
+.gdetail .ds {
+  font-size: 11.5px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+.gdetail .meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.gzoom {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+}
+
+.gzoom button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.gzoom button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.gzoom svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ============ 活动分析：热力图（原型 .hm*）============ */
+/* --cell / --gap 由 activity.ts 按档位写进来（13/4 或 11/3）。月份标签要按
+   列号算绝对位置，格子尺寸放两处迟早对不上，所以这里只提供默认值。 */
+.hm-block {
+  --cell: 11px;
+  --gap: 3px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+/* 左侧周几标签。要和网格的 7 行逐行对齐，所以行高、间距、顶部留白
+   都必须和网格同源 —— 20px = .hmcols 的 14px + 6px margin。 */
+.hm-days {
+  display: grid;
+  grid-template-rows: repeat(7, var(--cell));
+  gap: var(--gap);
+  align-items: center;
+  padding-top: 20px;
+  font: 400 8.5px var(--font);
+  color: var(--text-3);
+  flex: none;
+}
+
+.hm {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, var(--cell));
+  gap: var(--gap);
+}
+
+.hm .hc {
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: 3px;
+  background: var(--h0);
+  cursor: pointer;
+  transition: outline-color 0.15s;
+}
+
+.hm .hc:hover {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.hm .h1 {
+  background: var(--h1);
+}
+.hm .h2 {
+  background: var(--h2);
+}
+.hm .h3 {
+  background: var(--h3);
+}
+.hm .h4 {
+  background: var(--h4);
+}
+
+.hmwrap {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.hmcols {
+  position: relative;
+  margin-bottom: 6px;
+  height: 14px;
+}
+
+.hmcols span {
+  position: absolute;
+  font: 400 10px var(--mono);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.hmlegend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  flex: none;
+  padding-top: 20px;
+}
+
+.hmlegend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2.5px;
+  display: inline-block;
+}
+
+.hmlegend i.l0 {
+  background: var(--h0);
+}
+.hmlegend i.l1 {
+  background: var(--h1);
+}
+.hmlegend i.l2 {
+  background: var(--h2);
+}
+.hmlegend i.l3 {
+  background: var(--h3);
+}
+.hmlegend i.l4 {
+  background: var(--h4);
+}
+
+/* ============ 活动分析：标签筛选 / 活动报告（原型 .tcb / .act-item）============ */
+.tcb {
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-2);
+  background: var(--surface-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: all 0.15s;
+}
+
+.tcb.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tcb.on::after {
+  content: "✓";
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.tcheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.tcheck:hover {
+  background: var(--hover);
+}
+
+.tcheck .cnt {
+  margin-left: auto;
+  font: 400 10.5px var(--mono);
+  color: var(--text-3);
+}
+
+.navbtn {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  flex: none;
+}
+
+.navbtn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.act-item {
+  display: flex;
+  gap: 10px;
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--border);
+  align-items: baseline;
+}
+
+.act-item:last-child {
+  border-bottom: 0;
+}
+
+.act-item .tm {
+  font: 400 10.5px var(--mono);
+  color: var(--text-3);
+  flex: none;
+}
+
+.act-item .c {
+  font-size: 12.5px;
+  min-width: 0;
+}
+
+.act-item .c b {
+  font-weight: 500;
+}
+
+/* ============ 任务管理：表格（原型 .tabwrap）============ */
+.tabwrap {
+  overflow-x: auto;
+}
+
+/* 作用域限定在 .tabwrap 内 —— 原型是全局 table 选择器 */
+.tabwrap table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 780px;
+}
+
+.tabwrap th {
+  font: 500 10.5px var(--font);
+  color: var(--text-3);
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  background: var(--surface);
+}
+
+.tabwrap td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.tabwrap td .tt {
+  font-weight: 500;
+}
+
+.tabwrap tr.mrow {
+  cursor: pointer;
+}
+
+.tabwrap tr.mrow:hover td {
+  background: var(--hover);
+}
+
+.arch-tag {
+  font-size: 10.5px;
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 5px;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 12px 4px 2px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.tagrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.tagrow:hover {
+  background: var(--hover);
+}
+
+.tagrow.on {
+  background: var(--accent-soft);
+}
+
+.tagrow .cnt {
+  margin-left: auto;
+  font: 400 10.5px var(--mono);
+  color: var(--text-3);
+}
+
+/* 表格里进度列的迷你进度条 */
+.mbar {
+  width: 62px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg-2);
+  position: relative;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.mbar i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.ckb {
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border-2);
+  background: var(--surface-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: all 0.15s;
+}
+
+.ckb.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.ckb.on::after {
+  content: "✓";
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.batchbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.batchbar .grow {
+  flex: 1;
+}
+
+/* ============ 任务维护抽屉（原型 .drawer 内容 + .tl）============ */
+/* 抽屉本体与骨架在 shell.css，这里只补它内部的东西 */
+
+.dr-h .tags {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface-2);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.kvrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.kvrow .k {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.kvrow .v {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kvrow .v .pct {
+  font: 500 11.5px var(--mono);
+  color: var(--accent);
+  width: 32px;
+  text-align: right;
+}
+
+/* 活动时间线。原型叫 .tl，和可点卡片 .tile.tl 撞名，这里改叫 .tl-list */
+.tl-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.tl-entry {
+  display: flex;
+  gap: 10px;
+}
+
+.tl-entry:last-child .tl-line {
+  background: transparent;
+}
+
+.tl-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: none;
+  padding-top: 3px;
+}
+
+.tl-ico {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  z-index: 1;
+}
+
+.tl-ico svg {
+  width: 11px;
+  height: 11px;
+}
+
+.tl-ico.cr,
+.tl-ico.pr {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.tl-ico.stdo {
+  background: var(--doing-soft);
+  color: var(--doing);
+}
+
+.tl-ico.lg {
+  background: var(--todo-soft);
+  color: var(--todo);
+}
+
+.tl-line {
+  flex: 1;
+  width: 1.5px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.tl-card {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 7px 11px;
+  margin-bottom: 8px;
+}
+
+.tl-card .t1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.tl-card .tt {
+  font-size: 12.5px;
+  font-weight: 500;
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-card .tm {
+  font: 400 10px var(--mono);
+  color: var(--text-3);
+  flex: none;
+}
+
+.tl-card .t2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+
+.tl-dbar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-2);
+  position: relative;
+  overflow: hidden;
+  width: 64px;
+  flex: none;
+}
+
+.tl-dbar i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.tl-dbar .o {
+  background: var(--border-2);
+}
+
+.tl-dbar .n {
+  background: var(--accent);
+}
+
+.tl-note {
+  color: var(--text-3);
+}
+
+.tl-note b {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.tl-compose {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  background: var(--bg-2);
+  padding: 5px 6px 5px 9px;
+  transition: all 0.15s;
+}
+
+.tl-compose:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.tl-compose input {
+  flex: 1;
+  border: 0;
+  background: none;
+  outline: none;
+  font-size: 12px;
+  color: var(--text);
+  min-width: 0;
+}
+
+.tl-compose input::placeholder {
+  color: var(--text-3);
+}
+
+.tl-send {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.tl-send:hover {
+  background: var(--accent-h);
+}
+
+.tl-send svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Markdown 源：默认折叠，避免抢了活动时间线的视线 */
+details.md-d {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 11px;
+  background: var(--bg-2);
+}
+
+details.md-d summary {
+  cursor: pointer;
+  font: 500 12px var(--font);
+  color: var(--text-2);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+details.md-d summary::-webkit-details-marker {
+  display: none;
+}
+
+details.md-d summary::after {
+  content: "▾";
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-3);
+}
+
+details.md-d[open] summary::after {
+  content: "▴";
+}
+
+details.md-d .md {
+  font: 400 12px/1.75 var(--mono);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 11px;
+  margin: 7px 0 9px;
+  color: var(--text);
+  outline: none;
+  width: 100%;
+  resize: vertical;
+  min-height: 74px;
+}
+
+.dr-f {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  background: var(--surface);
+}
+
+/* ============ 布局工具 ============ */
+/* 原型把这些宽度都写成元素上的 style="display:grid;…"，五个页面里散布着二三十处
+   重复的内联栅格。这里收成三个具名布局，改宽度只改一处。 */
+
+/* 总览下半区：活动流 + 紧迫度（右侧固定窄列） */
+.split-feed {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 14px;
+  margin-top: 14px;
+  align-items: start;
+}
+
+/* 分析页 / 管理页：左窄右宽 */
+.split-filter {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+/* 管理页：左宽右窄 */
+.split-manage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 262px;
+  gap: 14px;
+  align-items: start;
+}
+
+/* 卡片头右侧的图例 */
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+
+.legend .lg {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* 当日轴上代表「昨天的活动记录」的气泡：不属于任何状态色 */
+.tdt-p.st-plain {
+  color: var(--text-2);
+  border-color: var(--border-2);
+  background: var(--surface-2);
+}
+
+/* 表格 / 列表里的空状态 */
+.empty {
+  padding: 28px 12px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-3);
+}

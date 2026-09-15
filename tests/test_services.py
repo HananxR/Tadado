@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date as _date, datetime as _datetime, timedelta
+from datetime import date as _date
+from datetime import timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,7 +12,6 @@ from src.models.task import Task
 from src.models.task_status import TaskStatus
 from src.services.archiver import TaskArchiver
 from src.services.scheduler import TaskScheduler
-
 
 # ---------------------------------------------------------------------------
 # Fake scheduler for testing
@@ -62,8 +62,8 @@ class FakeSignalBus:
 class TestTaskScheduler:
     @pytest.fixture
     def scheduler(self, temp_db, qapp):
-        from src.models.repository import TaskRepository
         from src.config import AppConfig
+        from src.models.repository import TaskRepository
 
         repo = TaskRepository(temp_db)
         repo.open()
@@ -113,9 +113,9 @@ class TestTaskScheduler:
 
     def test_check_due_tasks_with_task_service(self, temp_db, qapp):
         """Scheduler uses TaskService for overdue refresh when available."""
+        from src.config import AppConfig
         from src.models.repository import TaskRepository
         from src.services.task_service import TaskService
-        from src.config import AppConfig
 
         repo = TaskRepository(temp_db)
         repo.open()
@@ -152,8 +152,8 @@ class TestTaskScheduler:
 class TestTaskArchiver:
     @pytest.fixture
     def archiver(self, temp_db, qapp):
-        from src.models.repository import TaskRepository
         from src.config import AppConfig
+        from src.models.repository import TaskRepository
 
         repo = TaskRepository(temp_db)
         repo.open()

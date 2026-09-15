@@ -133,3 +133,39 @@ class TestOverdueFormat:
         # Status is not in Markdown — parsed back defaults to TODO
         assert parsed.scheduled_date == date(2026, 4, 1)
         assert parsed.deadline_date == date(2026, 4, 15)
+
+
+class TestLinksRoundTrip:
+    """含 [[链接]] 的往返稳定性锁定（阶段 6）。"""
+
+    def test_round_trip_with_links(self, formatter: MarkdownTaskFormatter) -> None:
+        from src.services.md_parser import MarkdownTaskParser
+
+        parser = MarkdownTaskParser()
+        raw = "- [   ] 重构 [[认证模块]] #后端"
+        parsed = parser.parse(raw)
+        assert parsed.title == "重构 [[认证模块]]"
+        assert parsed.links == ["认证模块"]
+
+        md = formatter.format(parsed)
+        assert "[[认证模块]]" in md  # 链接字面量完整保留
+        assert md == raw
+
+        reparsed = parser.parse(md)
+        assert reparsed.title == parsed.title
+        assert reparsed.links == parsed.links
+        assert formatter.format(reparsed) == md  # 二次往返稳定
+
+    def test_round_trip_with_links_and_dates(
+        self, formatter: MarkdownTaskFormatter
+    ) -> None:
+        from src.services.md_parser import MarkdownTaskParser
+
+        parser = MarkdownTaskParser()
+        raw = "- [   ] <2026-05-10> <2026-05-20> 重构 [[认证模块]] #后端"
+        parsed = parser.parse(raw)
+
+        md = formatter.format(parsed)
+        assert md == raw
+        assert "[[认证模块]]" in md
+        assert parser.parse(md).links == ["认证模块"]

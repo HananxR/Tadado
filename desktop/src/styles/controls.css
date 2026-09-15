@@ -1,0 +1,500 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   通用控件：按钮 / 胶囊 / 分段 / 输入 / 下拉 / 卡片 / 状态 / 标签 / 开关
+
+   外壳本身只用其中一部分，其余是页面骨架的就位件 —— 先按原型落全，
+   免得各页面各自造一套长得不一样的按钮。
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ============ 卡片（原型 .card）============ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.card-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-h .t {
+  font: 600 14px var(--font);
+}
+
+.card-h .d {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.card-h .grow {
+  flex: 1;
+}
+
+.card-b {
+  padding: 14px 16px;
+}
+
+/* ============ 按钮（原型 .btn）============ */
+.btn {
+  font: 500 12.5px var(--font);
+  border-radius: 8px;
+  padding: 6.5px 14px;
+  cursor: pointer;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  color: var(--text);
+  transition: all 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn.primary:hover {
+  background: var(--accent-h);
+}
+
+.btn.danger {
+  border-color: transparent;
+  background: none;
+  color: var(--text-2);
+}
+
+.btn.danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: transparent;
+}
+
+.btn.sm {
+  padding: 4px 10px;
+  font-size: 11.5px;
+}
+
+/* ============ 胶囊筛选（原型 .chip）============ */
+.chip {
+  font-size: 12px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  cursor: pointer;
+  background: var(--surface-2);
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chip.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.chip .cn {
+  font: 500 10.5px var(--mono);
+  opacity: 0.85;
+}
+
+/* ============ 分段控件（原型 .seg）============ */
+.seg {
+  display: flex;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.seg button {
+  flex: 1;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.seg button:hover {
+  color: var(--text);
+}
+
+.seg button.on {
+  background: var(--surface-2);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ============ 输入框（原型 .inp）============ */
+.inp {
+  font: 400 12.5px var(--font);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 6.5px 12px;
+  color: var(--text);
+  outline: none;
+  width: 100%;
+}
+
+.inp:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* 带图标的紧凑搜索框。比 .inp-wrap 窄一圈，给工具行用 ——
+   工具行里它和筛选胶囊、下拉菜单并排，撑满一行会把其余控件挤下去。 */
+.searchbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+  transition: all 0.15s;
+}
+
+.searchbox:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.searchbox .ic {
+  width: 13px;
+  height: 13px;
+  color: var(--text-3);
+  flex: none;
+}
+
+.searchbox .ic svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
+.searchbox input {
+  border: 0;
+  background: none;
+  outline: none;
+  font: 400 12px var(--mono);
+  color: var(--text);
+  width: 190px;
+  min-width: 0;
+}
+
+.searchbox input::placeholder {
+  color: var(--text-3);
+}
+
+.inp-wrap {
+  position: relative;
+}
+
+.inp-wrap > svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+.inp-wrap .inp {
+  padding-left: 32px;
+}
+
+/* ============ 下拉 / 菜单（原型 .dd / .menu）============ */
+.dd {
+  position: relative;
+}
+
+.dd-btn {
+  font: 400 12.5px var(--font);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+  padding: 6px 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+
+.dd-btn:hover {
+  border-color: var(--accent);
+}
+
+.dd-btn svg {
+  width: 11px;
+  height: 11px;
+  color: var(--text-3);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 132px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 5px;
+  display: none;
+  z-index: 95;
+}
+
+.menu.open {
+  display: block;
+}
+
+/* ============ 二次确认浮层（confirm.ts）============ */
+/* 层级要压过 tooltip(98) 和 toast(99)：确认框弹出期间不该再被别的东西盖住 */
+.mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 15, 12, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  z-index: 120;
+}
+
+.mask.show {
+  opacity: 1;
+}
+
+.modal-card {
+  width: 336px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 18px 18px 16px;
+  transform: translateY(6px) scale(0.98);
+  transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mask.show .modal-card {
+  transform: none;
+}
+
+.modal-title {
+  font: 600 14px var(--font);
+  color: var(--text);
+}
+
+.modal-detail {
+  margin-top: 7px;
+  font: 400 12.5px var(--font);
+  color: var(--text-2);
+  line-height: 1.5;
+  /* 任务标题可能很长，最多三行，别把卡片撑到屏幕外 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.modal-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 确认按钮要实心红：.btn.danger 是「安静的次要危险操作」（透明底），
+   放在确认框里读不出这是唯一不可逆的那一步 */
+.btn.solid-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+
+.btn.solid-danger:hover {
+  background: var(--danger);
+  color: #fff;
+  filter: brightness(1.08);
+  border-color: var(--danger);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.menu-item:hover {
+  background: var(--hover);
+}
+
+.menu-item.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 500;
+}
+
+.menu-item .ck {
+  margin-left: auto;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+.menu-item .ck svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* ============ 状态徽标（原型 .st）============ */
+.st {
+  font: 500 11px var(--font);
+  padding: 1px 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.st::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.st-overdue {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.st-todo {
+  color: var(--todo);
+  background: var(--todo-soft);
+}
+.st-doing {
+  color: var(--doing);
+  background: var(--doing-soft);
+}
+.st-done {
+  color: var(--done);
+  background: var(--done-soft);
+}
+.st-sus {
+  color: var(--sus);
+  background: var(--sus-soft);
+}
+
+/* ============ 标签 / 文本（原型 .tag / .mono / .dim）============ */
+.tag {
+  font: 400 11px var(--font);
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 1px 7px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.dim {
+  color: var(--text-3);
+}
+
+/* ============ 开关（原型 .sw）============ */
+.sw {
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border-2);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex: none;
+}
+
+.sw::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.sw.on {
+  background: var(--accent);
+}
+
+.sw.on::after {
+  left: 16px;
+}
+
+/* ============ 进度条（原型 .prog）============ */
+.prog {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  min-width: 52px;
+}
+
+.prog > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* 可选中文本的区域：卡片正文与占位说明 */
+.card-b,
+.placeholder {
+  user-select: text;
+}

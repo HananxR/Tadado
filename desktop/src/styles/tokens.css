@@ -1,0 +1,250 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Design Tokens
+
+   ⚠️ 颜色有三个来源，优先级从高到低，**不要自造颜色**：
+
+   1. src/utils/design_tokens.py —— 语义色的权威源
+      （LIGHT_TOKENS / DARK_TOKENS / surface_color() / border_2_color()
+        / status_color() + expand_qss() 的字体栈）
+   2. resources/ui-mockup/tadado-2.0.html —— 几何权威源
+      （圆角标度、控件尺寸、阴影、动效曲线，本文件的 --bar-h 等尺寸同源）
+   3. 本文件 —— 只做「把上面两者搬进 CSS 变量」
+
+   上一版翻车的原因：自造了一套「纯白 + 冷蓝 #4f7cff + 冷灰描边」的冷色
+   token，和设计体系的「暖纸白 + 靛青 #4c56c0」是两套配色，混在一起就是
+   「不像 Web UI / 像 Fusion 默认控件」的来源。
+
+   主题由**应用配置**决定（DESIGN.md 2.13：默认浅色），不跟随系统
+   prefers-color-scheme —— 所以走 [data-theme]，媒体查询只服务 "sys"。
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── 底色与层级 ── */
+  --bg: #f4f3ef;
+  --bg-2: #ecebe5;
+  --surface: #fbfaf6; /* 面板／卡片底色，暖纸白 */
+  --surface-2: #ffffff; /* 抬起层：输入框、胶囊、选中段 */
+
+  /* ── 文字 ── */
+  --text: #38362f;
+  --text-2: #6e6a5e;
+  --text-3: #a29c8c;
+
+  /* ── 强调 ── */
+  --accent: #4c56c0;
+  --accent-h: #40499f;
+  --accent-soft: #e8e9f7;
+
+  /* ── 描边 ── */
+  --border: #e3dfd3;
+  --border-2: #d3cebf;
+
+  /* ── 语义色 ── */
+  --danger: #c24536;
+  --danger-soft: #f6e4e0;
+
+  /* ── 状态色（design_tokens.status_color）── */
+  --todo: #3d6fb5;
+  --todo-soft: #e2eaf5;
+  --doing: #c07f2d;
+  --doing-soft: #f6ead9;
+  --done: #3c8d5e;
+  --done-soft: #e0efe5;
+  --sus: #8d8675;
+  --sus-soft: #eceae3;
+
+  --hover: rgba(76, 86, 192, 0.06);
+
+  /* ── 阴影（原型 --shadow / .drawer 侧向投影）── */
+  --shadow: 0 10px 32px -8px rgba(40, 36, 28, 0.28),
+    0 2px 8px rgba(40, 36, 28, 0.1);
+  --shadow-drawer: -14px 0 44px -16px rgba(0, 0, 0, 0.35);
+
+  /* ── 几何（原型 --bar-h + .rail 宽度）── */
+  --bar-h: 38px;
+  --rail-w: 64px;
+
+  /* ── 字体栈 ──
+     刻意用 Windows 的 system-ui 等价物：拉丁走 Segoe UI，中文落
+     Microsoft YaHei UI —— 这正是浏览器在 Windows 上的回退顺序，也是
+     「web 感」的来源之一。
+
+     不要换成原型 <link> 里的 Google Fonts（Manrope / Noto Sans SC /
+     JetBrains Mono）：桌面端没打包，换台机器就露馅。 */
+  --font: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --disp: "Segoe UI Semibold", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+
+  /* ── 活动热力图色阶（默认 warm，见下方 [data-scheme]）── */
+  --h0: #ece9df;
+  --h1: #f2d7a7;
+  --h2: #e8b96a;
+  --h3: #d99a3d;
+  --h4: #c47a26;
+}
+
+/* ============ 深色 ============ */
+:root[data-theme="dark"] {
+  --bg: #1b1c26;
+  --bg-2: #181921;
+  --surface: #21222f;
+  --surface-2: #272834;
+  --text: #c9c5b7;
+  --text-2: #8b8675;
+  --text-3: #676258;
+  --accent: #7b83e8;
+  --accent-h: #939af1;
+  --accent-soft: #262a4d;
+  --border: #2e2f3e;
+  --border-2: #3b3c4c;
+  --danger: #e26b5b;
+  --danger-soft: #3a2622;
+  --todo: #6f9fe0;
+  --todo-soft: #223049;
+  --doing: #dfa24e;
+  --doing-soft: #3a2f1e;
+  --done: #78bd92;
+  --done-soft: #1f3328;
+  --sus: #8d8675;
+  --sus-soft: #2b2a24;
+  --hover: rgba(123, 131, 232, 0.12);
+  --shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-drawer: -14px 0 44px -16px rgba(0, 0, 0, 0.6);
+  --h0: #2a2a25;
+  --h1: #5c4a2c;
+  --h2: #8a6a35;
+  --h3: #b58a45;
+  --h4: #d9a55a;
+}
+
+/* 跟随系统：浅色就是上面的默认值，只有系统为深色时才需要覆盖 */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="sys"] {
+    --bg: #1b1c26;
+    --bg-2: #181921;
+    --surface: #21222f;
+    --surface-2: #272834;
+    --text: #c9c5b7;
+    --text-2: #8b8675;
+    --text-3: #676258;
+    --accent: #7b83e8;
+    --accent-h: #939af1;
+    --accent-soft: #262a4d;
+    --border: #2e2f3e;
+    --border-2: #3b3c4c;
+    --danger: #e26b5b;
+    --danger-soft: #3a2622;
+    --todo: #6f9fe0;
+    --todo-soft: #223049;
+    --doing: #dfa24e;
+    --doing-soft: #3a2f1e;
+    --done: #78bd92;
+    --done-soft: #1f3328;
+    --sus: #8d8675;
+    --sus-soft: #2b2a24;
+    --hover: rgba(123, 131, 232, 0.12);
+    --shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.5),
+      0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-drawer: -14px 0 44px -16px rgba(0, 0, 0, 0.6);
+    --h0: #2a2a25;
+    --h1: #5c4a2c;
+    --h2: #8a6a35;
+    --h3: #b58a45;
+    --h4: #d9a55a;
+  }
+}
+
+/* ============ 热力图配色方案 ============ */
+[data-scheme="warm"] {
+  --h0: #ece9df;
+  --h1: #f2d7a7;
+  --h2: #e8b96a;
+  --h3: #d99a3d;
+  --h4: #c47a26;
+}
+[data-scheme="green"] {
+  --h0: #e5ece2;
+  --h1: #c5e0b8;
+  --h2: #8fc47e;
+  --h3: #5ba04a;
+  --h4: #3c7a31;
+}
+[data-scheme="sea"] {
+  --h0: #e3e9ef;
+  --h1: #bcd6e8;
+  --h2: #8ab5d4;
+  --h3: #4f8fbd;
+  --h4: #2d6c9c;
+}
+[data-scheme="sakura"] {
+  --h0: #f2e7ea;
+  --h1: #f2c4cf;
+  --h2: #e896a8;
+  --h3: #d96b84;
+  --h4: #b84a66;
+}
+
+/* 深色下的色阶需要整体压暗，否则热力图会亮得刺眼 */
+:root[data-theme="dark"] [data-scheme="warm"],
+:root[data-theme="dark"][data-scheme="warm"] {
+  --h0: #2a2a25;
+  --h1: #5c4a2c;
+  --h2: #8a6a35;
+  --h3: #b58a45;
+  --h4: #d9a55a;
+}
+:root[data-theme="dark"] [data-scheme="green"],
+:root[data-theme="dark"][data-scheme="green"] {
+  --h0: #232a25;
+  --h1: #2f4a33;
+  --h2: #3f6b45;
+  --h3: #56925e;
+  --h4: #74b87d;
+}
+:root[data-theme="dark"] [data-scheme="sea"],
+:root[data-theme="dark"][data-scheme="sea"] {
+  --h0: #23272c;
+  --h1: #2c4252;
+  --h2: #3c6180;
+  --h3: #4f87b0;
+  --h4: #6fa9d4;
+}
+:root[data-theme="dark"] [data-scheme="sakura"],
+:root[data-theme="dark"][data-scheme="sakura"] {
+  --h0: #2c2428;
+  --h1: #5a3440;
+  --h2: #84465a;
+  --h3: #b05e7a;
+  --h4: #d97f9b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="sys"] [data-scheme="warm"] {
+    --h0: #2a2a25;
+    --h1: #5c4a2c;
+    --h2: #8a6a35;
+    --h3: #b58a45;
+    --h4: #d9a55a;
+  }
+  :root[data-theme="sys"] [data-scheme="green"] {
+    --h0: #232a25;
+    --h1: #2f4a33;
+    --h2: #3f6b45;
+    --h3: #56925e;
+    --h4: #74b87d;
+  }
+  :root[data-theme="sys"] [data-scheme="sea"] {
+    --h0: #23272c;
+    --h1: #2c4252;
+    --h2: #3c6180;
+    --h3: #4f87b0;
+    --h4: #6fa9d4;
+  }
+  :root[data-theme="sys"] [data-scheme="sakura"] {
+    --h0: #2c2428;
+    --h1: #5a3440;
+    --h2: #84465a;
+    --h3: #b05e7a;
+    --h4: #d97f9b;
+  }
+}

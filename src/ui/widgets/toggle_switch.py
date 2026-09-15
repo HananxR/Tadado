@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QPropertyAnimation, QRectF, Qt, Property
+from PySide6.QtCore import Property, QPropertyAnimation, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import QCheckBox, QWidget
 

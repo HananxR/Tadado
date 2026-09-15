@@ -56,6 +56,30 @@ def is_caption_color_supported() -> bool:
         return False
 
 
+def system_prefers_dark() -> bool:
+    """当前系统「应用模式」是否为深色（``AppsUseLightTheme`` = 0）。
+
+    对应 Windows 设置 → 个性化 → 颜色 → 选择模式。配置项
+    ``display.theme = "system"`` 依赖它把「跟随系统」解析成 light/dark。
+
+    非 Windows 或读取失败时统一返回 False（亮色），与历史默认行为一致，
+    避免在不支持的环境里突然切到深色。
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+        ) as key:
+            value, _kind = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return not bool(value)
+    except Exception:
+        return False
+
+
 def is_cloak_supported() -> bool:
     """Return True when the OS supports DWMWA_CLOAK.
 

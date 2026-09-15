@@ -1,0 +1,453 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   外壳层：应用骨架 = 标题栏 + rail + 主区 + 右侧抽屉
+
+   几何逐条对齐 resources/ui-mockup/tadado-2.0.html：
+     .titlebar / .rail / .main / .page / .drawer
+   改尺寸前先回原型核对，别在这里自由发挥。
+   ───────────────────────────────────────────────────────────────────────── */
+
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ============ 标题栏（原型 .titlebar）============ */
+.titlebar {
+  height: var(--bar-h);
+  flex: 0 0 var(--bar-h);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 8px 0 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  z-index: 90;
+  cursor: default;
+}
+
+.logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--accent);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  flex: none;
+}
+
+.logo svg {
+  width: 11px;
+  height: 11px;
+}
+
+.brand {
+  font: 700 14px var(--disp);
+  letter-spacing: 0.2px;
+}
+
+.ver {
+  font: 500 10px var(--mono);
+  color: var(--text-3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 5px;
+  line-height: 16px;
+}
+
+.tb-grow {
+  flex: 1;
+}
+
+/* 全局热键提示：虚线框，一眼看出是「提示」而不是按钮 */
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 400 11px var(--mono);
+  color: var(--text-3);
+  border: 1px dashed var(--border-2);
+  border-radius: 7px;
+  padding: 3px 10px;
+}
+
+.hint kbd {
+  font: 500 10.5px var(--mono);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--text-2);
+  line-height: 16px;
+}
+
+.tb-btn {
+  width: 30px;
+  height: 26px;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tb-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+.tb-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* 置顶按钮的激活态（原型是 .on，这里给 pin 单独一个类更好读） */
+.tb-btn.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.tb-btn.close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.tb-sep {
+  width: 2px;
+}
+
+/* ============ 侧边栏（原型 .rail）============ */
+.rail {
+  width: var(--rail-w);
+  flex: 0 0 var(--rail-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0 10px;
+  gap: 3px;
+  position: relative;
+  z-index: 80;
+}
+
+.rail-btn {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  background: none;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s, color 0.15s;
+}
+
+.rail-btn svg {
+  width: 19px;
+  height: 19px;
+}
+
+.rail-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.rail-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* 页面徽标（未读／待处理计数）*/
+.rail-btn .dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 2px solid var(--surface);
+  display: none;
+}
+
+.rail-btn .dot.show {
+  display: block;
+}
+
+.rail-grow {
+  flex: 1;
+}
+
+.rail-sep {
+  width: 26px;
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+/* ============ 分区弹层（原型 .part-pop）============ */
+.part-wrap {
+  position: relative;
+}
+
+.part-pop {
+  position: absolute;
+  left: 52px;
+  bottom: -4px;
+  width: 184px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 5px;
+  display: none;
+  z-index: 85;
+}
+
+.part-pop.open {
+  display: block;
+}
+
+.part-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.part-item:hover {
+  background: var(--hover);
+}
+
+.part-item.on {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 500;
+}
+
+.part-item .cnt {
+  margin-left: auto;
+  font: 400 10.5px var(--mono);
+  color: var(--text-3);
+}
+
+/* ============ 主区 / 页面骨架（原型 .main / .page）============ */
+.main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  position: relative;
+}
+
+.page {
+  display: none;
+  padding: 22px 28px 32px;
+}
+
+.page.active {
+  display: block;
+}
+
+.inner {
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+/* 页头：标题 + 描述 + 右侧工具位 */
+.ph {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.ph-t {
+  font: 700 21px var(--disp);
+  letter-spacing: 0.2px;
+  line-height: 1.25;
+}
+
+.ph-d {
+  font-size: 12px;
+  color: var(--text-2);
+  padding-bottom: 2px;
+}
+
+.ph-grow {
+  flex: 1;
+}
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.tools .grow {
+  flex: 1;
+}
+
+/* 工具行嵌在页头里时不要再吃一段下边距 */
+.ph .tools {
+  margin-bottom: 0;
+}
+
+/* 页面内容区。五个页面都往这里挂自己的根节点，间距由这一条统一给。
+   注意：页面里的子块不要再叠 margin-top —— 单个子节点时 gap 不生效，
+   两个子节点时就会和 margin 相加，出现 28px 的缝。 */
+.page-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 技术性说明文字统一走等宽，和日志/版本号一个调性 */
+.ph-note {
+  font: 400 10.5px var(--mono);
+}
+
+/* ============ 右侧抽屉（原型 .drawer）============ */
+/* 从标题栏下方滑出，不遮标题栏 —— 与主区共用同一条水平分隔线 */
+.drawer {
+  position: fixed;
+  top: var(--bar-h);
+  right: 0;
+  bottom: 0;
+  width: 392px;
+  z-index: 70;
+  transform: translateX(105%);
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: var(--shadow-drawer);
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer.open {
+  transform: none;
+}
+
+.dr-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.dr-h .t {
+  font: 700 15px var(--font);
+  flex: 1;
+  min-width: 0;
+}
+
+.dr-b {
+  padding: 14px 18px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dr-sec {
+  margin-bottom: 16px;
+}
+
+.dr-sec .lbl {
+  font: 500 10.5px var(--font);
+  color: var(--text-3);
+  letter-spacing: 0.8px;
+  margin-bottom: 7px;
+  display: flex;
+  align-items: center;
+}
+
+.dr-sec .lbl .grow {
+  flex: 1;
+}
+
+.icon-btn {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  background: none;
+  border-radius: 7px;
+  color: var(--text-2);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.icon-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ============ 设置面板 ============ */
+.set-sec {
+  margin-bottom: 18px;
+}
+
+.set-sec-t {
+  font: 500 10.5px var(--font);
+  color: var(--text-3);
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.set-row:last-child {
+  border-bottom: 0;
+}
+
+.set-row .v {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+.set-tab {
+  display: none;
+}
+
+.set-tab.active {
+  display: block;
+}

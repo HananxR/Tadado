@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ...config import AppConfig
-from ...models.repository import TaskRepository
+from ...services.task_service import TaskService
 from ...utils.design_tokens import get_tokens
 from ...utils.widget_utils import combo_width
 from ..widgets.dropdown import DropdownWidget
@@ -356,7 +356,7 @@ class CalendarHeatmapWidget(QWidget):
 
     def __init__(
         self,
-        repository: TaskRepository,
+        task_service: TaskService,
         config: AppConfig,
         parent: QWidget | None = None,
     ) -> None:
@@ -366,8 +366,9 @@ class CalendarHeatmapWidget(QWidget):
 
         apply_card_shadow(self)
 
-        self._model = HeatmapModel(repository)
+        self._model = HeatmapModel(task_service)
         self._config = config
+        self._pending_refresh = False  # 不可见期间的刷新请求（showEvent 回放）
         self._selected_tags: list[str] = []
 
         start_year = date.today().year
@@ -504,13 +505,32 @@ class CalendarHeatmapWidget(QWidget):
         self.refresh()
 
     def force_refresh(self) -> None:
-        """Reload data and repaint without rebuilding tag combo."""
+        """Invalidate cached data and reload — deferred while hidden.
+
+        总线事件（任务增删改 / 批量操作）每次都会调用这里；分析页不在前台时
+        跳过查询，改为标记 pending，待下次 ``showEvent`` 回放，避免后台编辑
+        为一个看不见的控件反复做全量查询。
+        """
+        self._model.invalidate()
+        if not self.isVisible():
+            self._pending_refresh = True
+            return
+        self._pending_refresh = False
+        self._reload_grid()
+
+    def _reload_grid(self) -> None:
         self._model.load_available_tags()
         self._model.load_year(self._model.current_year())
         if self._main_grid.width() > 0:
             self._main_grid.repaint()
         else:
             self._main_grid.update()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if getattr(self, "_pending_refresh", False):
+            self._pending_refresh = False
+            self._reload_grid()
 
     def highlight_range(self, d_from: date | None, d_to: date | None, label: str = "") -> None:
         self._main_grid.set_highlight_range(d_from, d_to, label)

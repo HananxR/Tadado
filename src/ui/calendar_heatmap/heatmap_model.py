@@ -1,10 +1,10 @@
-"""Data model for the calendar heatmap — loads daily task counts from repository, with tag filtering."""
+"""Data model for the calendar heatmap — loads daily task counts via TaskService, with tag filtering."""
 
 from __future__ import annotations
 
 from datetime import date, timedelta
 
-from ...models.repository import TaskRepository
+from ...services.task_service import TaskService
 
 
 class HeatmapModel:
@@ -12,8 +12,8 @@ class HeatmapModel:
 
     _NUM_LEVELS = 8  # level_0 (empty) + level_1..7 (gradient)
 
-    def __init__(self, repository: TaskRepository) -> None:
-        self._repository = repository
+    def __init__(self, task_service: TaskService) -> None:
+        self._svc = task_service
         self._data: dict[date, int] = {}
         self._task_counts: dict[date, int] = {}
         self._max_count: int = 0
@@ -22,6 +22,20 @@ class HeatmapModel:
         self._available_tags: list[str] = []
         self._per_tag_data: dict[str, dict[date, int]] = {}
         self._partition_id: str | None = None
+        # 查询缓存：(year, tags, partition) → (按日活动计数, 按日任务数)
+        self._year_cache: dict[tuple, tuple[dict[date, int], dict[date, int]]] = {}
+        self._tags_cache: dict[str | None, list[str]] = {}
+
+    # ------------------------------------------------------------------
+    # Public API — cache
+    # ------------------------------------------------------------------
+
+    def invalidate(self) -> None:
+        """丢弃全部缓存结果（总线事件后底层数据可能已变）。"""
+        self._year_cache.clear()
+        self._tags_cache.clear()
+        self._per_tag_data.clear()
+
     # ------------------------------------------------------------------
     # Public API — loading
     # ------------------------------------------------------------------
@@ -29,18 +43,30 @@ class HeatmapModel:
     def load_year(self, year: int, tags: list[str] | None = None) -> None:
         self._current_year = year
         tags = tags or self._selected_tags
-        self._data, self._task_counts = self._repository.get_heatmap_activity_data(year, tags if tags else None, self._partition_id)
+        key = (year, tuple(tags), self._partition_id)
+        cached = self._year_cache.get(key)
+        if cached is None:
+            cached = self._svc.get_heatmap_activity_data(
+                year, tags if tags else None, self._partition_id
+            )
+            self._year_cache[key] = cached
+        self._data, self._task_counts = cached
         self._max_count = max(self._data.values()) if self._data else 0
 
     def load_available_tags(self) -> None:
-        self._available_tags = self._repository.get_all_tags(self._partition_id)
+        key = self._partition_id
+        cached = self._tags_cache.get(key)
+        if cached is None:
+            cached = self._svc.get_all_tags(self._partition_id)
+            self._tags_cache[key] = cached
+        self._available_tags = list(cached)
 
     def load_per_tag(self, year: int) -> None:
-        self._available_tags = self._repository.get_all_tags(self._partition_id)
+        self._available_tags = self._svc.get_all_tags(self._partition_id)
         self._per_tag_data.clear()
         for tag in self._available_tags:
-            self._per_tag_data[tag] = self._repository.get_heatmap_activity_data(year, [tag], self._partition_id)[0]
-        self._data, self._task_counts = self._repository.get_heatmap_activity_data(year, partition_id=self._partition_id)
+            self._per_tag_data[tag] = self._svc.get_heatmap_activity_data(year, [tag], self._partition_id)[0]
+        self._data, self._task_counts = self._svc.get_heatmap_activity_data(year, partition_id=self._partition_id)
         self._max_count = max(self._data.values()) if self._data else 0
 
     # ------------------------------------------------------------------

@@ -1,10 +1,13 @@
 """Offscreen UI snapshot for design audit — saves key screens as PNGs."""
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_LOGGING_RULES"] = "qt.network.ssl.warning=false"
 from PySide6.QtCore import QTimer
 from PySide6.QtNetwork import QLocalServer
+
 from src.app import TadadoApp
 
 app = TadadoApp(sys.argv, QLocalServer())
@@ -20,6 +23,19 @@ def _save(widget, name):
 
 
 def snap():
+    """抓图入口：任何异常都要落到 finally 退出事件循环，不能空转。"""
+    try:
+        _run_snaps()
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
+        print("SNAP FAILED")
+    finally:
+        app._on_quit()
+
+
+def _run_snaps():
     w = app.main_window
     _save(w, "ui_taskview_light.png")
     try:
@@ -35,16 +51,19 @@ def snap():
     except Exception as e:
         print("VIEW ERR batch", e)
     try:
-        from src.ui.dialogs.settings_dialog import SettingsDialog
-        dlg = SettingsDialog(app._config, app._repository, task_service=app._task_service)
-        dlg.resize(640, 480)
+        w._on_settings()
         app.processEvents()
-        _save(dlg, "ui_settings_light.png")
-        dlg.close()
+        w.activateWindow()
+        app.processEvents()
+        _save(w, "ui_settings_light.png")
+        w._settings_drawer.close_drawer()
     except Exception as e:
         print("VIEW ERR settings", e)
-    app._on_quit()
 
 
+# 硬看门狗：抓图流程若卡住，也必须在 30s 内结束进程（offscreen 平台下
+# 事件循环不会自己停下来，无上限等待会直接挂住 CI / 本地终端）。
+QTimer.singleShot(30_000, lambda: (print("WATCHDOG TIMEOUT"), app.quit()))
 QTimer.singleShot(4000, snap)
-sys.exit(app.exec())
+print("EXIT", app.exec())
+sys.exit(0)

@@ -13,13 +13,11 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QPixmap
+from PySide6.QtGui import QDesktopServices, QPixmap, QShowEvent
 from PySide6.QtWidgets import (
-    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -339,66 +337,64 @@ class AboutPage(QWidget):
     def _build_ui(self) -> None:
         t = get_tokens()
 
-        body = QHBoxLayout(self)
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(0)
+        # 纵向布局：设置抽屉只有 420px，横向「品牌栏 + 内容」两列会把
+        # 最小宽度撑到 540px 从而被裁切，所以品牌块改为顶部居中。
+        content_layout = QVBoxLayout(self)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
 
-        # ── 左侧品牌栏 ──
-        side = QWidget()
-        side.setObjectName("aboutSide")
-        side.setFixedWidth(118)
-        side.setStyleSheet(
-            f"QWidget#aboutSide {{"
+        # ── 品牌块 ──
+        brand = QWidget()
+        brand.setObjectName("aboutBrand")
+        brand.setStyleSheet(
+            f"QWidget#aboutBrand {{"
             f"  background: {t.bg_secondary};"
-            f"  border-right: 1px solid {t.border_primary};"
+            f"  border-bottom: 1px solid {t.border_primary};"
             f"}}"
         )
-        side_layout = QVBoxLayout(side)
-        side_layout.setContentsMargins(0, 28, 0, 0)
-        side_layout.setSpacing(0)
+        brand_layout = QHBoxLayout(brand)
+        brand_layout.setContentsMargins(0, 16, 0, 16)
+        brand_layout.setSpacing(12)
 
         logo = QLabel()
         logo_path = self._find_icon("app_icon.svg")
         pix = QPixmap(logo_path) if logo_path else QPixmap()
         if not pix.isNull():
             pix = pix.scaled(
-                46, 46,
+                36, 36,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
             logo.setPixmap(pix)
         else:
             logo.setText("✦")
-            logo.setStyleSheet(f"font-size: 30px; color: {t.accent};")
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        side_layout.addWidget(logo)
-        side_layout.addSpacing(12)
+            logo.setStyleSheet(f"font-size: 24px; color: {t.accent};")
+        brand_layout.addStretch(1)
+        brand_layout.addWidget(logo)
 
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(1)
         name = QLabel("Tadado")
-        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        name.setStyleSheet(f"font-size: 15px; font-weight: 700; color: {t.text_primary};")
-        side_layout.addWidget(name)
-        side_layout.addSpacing(3)
-
-        ver = QLabel(get_version_display())
-        ver.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name.setStyleSheet(
+            f"font-size: 15px; font-weight: 700; color: {t.text_primary};"
+        )
+        text_col.addWidget(name)
+        ver = QLabel(f"{get_version_display()} · Less Noise, More Done")
         ver.setStyleSheet(f"font-size: 11px; color: {t.text_secondary};")
-        side_layout.addWidget(ver)
-        side_layout.addStretch()
-
-        body.addWidget(side)
-
-        # ── 右侧内容区 ──
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(22, 20, 20, 16)
-        content_layout.setSpacing(0)
+        ver.setWordWrap(True)
+        text_col.addWidget(ver)
+        brand_layout.addLayout(text_col)
+        brand_layout.addStretch(1)
+        content_layout.addWidget(brand)
+        content_layout.addSpacing(6)
 
         def _section(text: str) -> None:
             label = QLabel(text)
             label.setStyleSheet(
-                f"font-size: 12px; color: {t.text_secondary};"
-                f"padding-top: 14px; padding-bottom: 4px;"
+                f"font-size: 10.5px; font-weight: 500; letter-spacing: 1px;"
+                f"color: {t.text_secondary};"
+                f"padding-top: 12px; padding-bottom: 2px;"
             )
             content_layout.addWidget(label)
 
@@ -433,18 +429,17 @@ class AboutPage(QWidget):
             f'style="color:{t.text_secondary}; text-decoration:none;">GitHub</a>'
         )
         feedback.setOpenExternalLinks(True)
-        feedback.setStyleSheet("font-size: 11px;")
+        feedback.setStyleSheet("font-size: 11px; padding-top: 4px;")
         content_layout.addWidget(feedback)
 
-        content_layout.addStretch()
-
+        content_layout.addSpacing(10)
         copyright_label = QLabel(
             f"Copyright © {datetime.now().year} HananxR · MIT License"
         )
+        copyright_label.setWordWrap(True)
         copyright_label.setStyleSheet(f"font-size: 10px; color: {t.text_secondary};")
         content_layout.addWidget(copyright_label)
-
-        body.addWidget(content, 1)
+        content_layout.addStretch(1)
 
     def _open_changelog_browser(self) -> None:
         """生成版本记录 HTML 后用本地浏览器打开."""

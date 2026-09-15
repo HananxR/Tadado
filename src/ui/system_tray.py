@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 from ..config import AppConfig
@@ -12,9 +12,11 @@ from ..utils.icon_loader import get_icon_loader
 class SystemTrayManager:
     """Manages the system tray icon and its context menu."""
 
-    def __init__(self, main_window, config: AppConfig) -> None:
+    def __init__(self, main_window, config: AppConfig, shell=None) -> None:
         self._main_window = main_window
         self._config = config
+        # WindowShell：窗口显隐/唤醒的唯一入口（阶段 5）
+        self._shell = shell
 
         icon = get_icon_loader().app_icon()
         self._tray = QSystemTrayIcon(icon)
@@ -45,10 +47,10 @@ class SystemTrayManager:
         menu.addSeparator()
 
         new_action = menu.addAction("新建单任务")
-        new_action.triggered.connect(self._main_window._on_menu_new_draft)
+        new_action.triggered.connect(self._main_window.new_single_task)
 
         multi_action = menu.addAction("新建多任务")
-        multi_action.triggered.connect(self._main_window._on_menu_new_multi)
+        multi_action.triggered.connect(self._main_window.new_multi_task)
 
         menu.addSeparator()
 
@@ -62,7 +64,7 @@ class SystemTrayManager:
         menu.addSeparator()
 
         quit_action = menu.addAction("退出")
-        quit_action.triggered.connect(self._main_window._on_quit)
+        quit_action.triggered.connect(self._main_window.quit_app)
 
         menu.aboutToShow.connect(self._refresh_ai_action)
         self._tray.setContextMenu(menu)
@@ -89,12 +91,18 @@ class SystemTrayManager:
         session_id = self._config.get("ai_assistant", "session_id") or latest_session_id(
             provider, workspace
         )
-        if session_id:
+        if session_id and bool(
+            self._config.get("ai_assistant", "usage_alert", default=True)
+        ):
             pct = session_usage_percent(provider, workspace, session_id)
             if pct is not None and pct >= 80:
                 label = f"AI 助手（上下文 {pct:.0f}%，建议 /compact）"
         self._ai_action.setText(label)
-        self._ai_action.setToolTip("自动续接上次会话（无记录则新建），自动加载 Tadado skill")
+        if bool(self._config.get("ai_assistant", "resume", default=True)):
+            tip = "自动续接上次会话（无记录则新建），自动加载 Tadado skill"
+        else:
+            tip = "每次启动新会话，自动加载 Tadado skill"
+        self._ai_action.setToolTip(tip)
 
     def show(self) -> None:
         """Show the tray icon (called after main window appears to avoid flash)."""
@@ -119,7 +127,8 @@ class SystemTrayManager:
         if not session_id:
             return
         pct = session_usage_percent(provider, workspace, session_id)
-        if pct is not None and pct >= 80 and session_id != self._alerted_session:
+        alert_on = bool(self._config.get("ai_assistant", "usage_alert", default=True))
+        if alert_on and pct is not None and pct >= 80 and session_id != self._alerted_session:
             self._alerted_session = session_id
             self.show_message(
                 "AI 助手",
@@ -147,25 +156,27 @@ class SystemTrayManager:
             return None
 
     def _launch_ai_assistant(self) -> None:
-        """自动操作：有会话记录则续接，无记录则新建（start_session 内置回退）."""
+        """按设置启动会话：开启「自动续接」时优先续接上次，否则每次新建。"""
         from ..services.ai_assistant import start_session
 
         partition = self._main_window.active_partition_name()
-        ok, message = start_session(self._config, partition_name=partition, resume=True)
+        resume = bool(self._config.get("ai_assistant", "resume", default=True))
+        ok, message = start_session(self._config, partition_name=partition, resume=resume)
         if ok:
-            self.show_message("AI 助手", f"{message}\n已自动续接会话并加载 Tadado skill")
+            tail = "已自动续接会话并加载 Tadado skill" if resume else "已加载 Tadado skill"
+            self.show_message("AI 助手", f"{message}\n{tail}")
         else:
             self.show_message("AI 助手", message)
 
     def _toggle_window(self) -> None:
+        if self._shell is not None:
+            self._shell.toggle_visibility()
+            return
         win = self._main_window
         if win.isVisible() and not win.isMinimized():
             win.hide()
         else:
-            win.show()
-            win.setWindowState(win.windowState() & ~Qt.WindowState.WindowMinimized)
-            win.raise_()
-            win.activateWindow()
+            win.wake()
 
     # ------------------------------------------------------------------
     # Helpers

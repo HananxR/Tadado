@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from src.models.repository import TaskRepository
 from src.models.task import Task
@@ -268,3 +268,186 @@ class TestUrgencySort:
         )
         ids = [r.id for r in results]
         assert ids.index("first") < ids.index("second")
+
+
+# ---------------------------------------------------------------------------
+# 批操作回归 —— set-based SQL（单事务 executemany）改写后的行为锁定
+# ---------------------------------------------------------------------------
+
+
+class TestBatchOperationsRegression:
+    """断言返回值、字段落库、activity_log 文案、raw_md 与 FTS5 可检索。"""
+
+    @staticmethod
+    def _formatter():
+        from src.services.md_formatter import MarkdownTaskFormatter
+
+        return MarkdownTaskFormatter()
+
+    @staticmethod
+    def _fts_ids(repository: TaskRepository, term: str) -> list[str]:
+        rows = repository.conn.execute(
+            "SELECT id FROM tasks WHERE rowid IN "
+            "(SELECT rowid FROM tasks_fts WHERE tasks_fts MATCH ?)",
+            (term,),
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    def test_batch_update_status_fields_and_fts(self, repository: TaskRepository) -> None:
+        fmt = self._formatter()
+        ids = []
+        for i in range(3):
+            repository.insert(_make_task(task_id=f"s{i}", title=f"alpha{i}"))
+            ids.append(f"s{i}")
+
+        assert repository.batch_update_status(ids, TaskStatus.DOING, formatter=fmt) == 3
+
+        for i, tid in enumerate(ids):
+            t = repository.get_by_id(tid)
+            assert t is not None
+            assert t.status == TaskStatus.DOING
+            assert t.raw_md == fmt.format(t)
+            assert t.raw_md.startswith("- [   ] alpha")
+            assert len(t.activity_log) == 1
+            entry = t.activity_log[0]
+            assert entry["content"] == "[批量操作] 状态变更: 待办 -> 进行中"
+            assert entry["status"] == "DOING"
+            assert entry["progress"] == 0
+            assert self._fts_ids(repository, f"alpha{i}") == [tid]
+
+    def test_batch_update_status_done_sets_progress_and_completed_at(
+        self, repository: TaskRepository
+    ) -> None:
+        repository.insert(
+            _make_task(task_id="d1", title="收尾项", deadline_date=date(2026, 3, 1))
+        )
+        assert repository.batch_update_status(["d1"], TaskStatus.DONE) == 1
+
+        got = repository.get_by_id("d1")
+        assert got.status == TaskStatus.DONE
+        assert got.progress == 100
+        assert got.completed_at == datetime(2026, 3, 1)
+        assert got.activity_log[-1]["content"] == "[批量操作] 状态变更: 待办 -> 已完成"
+        assert got.activity_log[-1]["progress"] == 100
+
+    def test_batch_update_status_empty_and_missing(self, repository: TaskRepository) -> None:
+        assert repository.batch_update_status([], TaskStatus.DOING) == 0
+        assert repository.batch_update_status(["nope"], TaskStatus.DOING) == 0
+
+    def test_batch_update_urgency_fields_raw_md_and_fts(
+        self, repository: TaskRepository
+    ) -> None:
+        fmt = self._formatter()
+        repository.insert(_make_task(task_id="u1", title="beta1"))
+
+        assert repository.batch_update_urgency(["u1"], 0, formatter=fmt) == 1
+        got = repository.get_by_id("u1")
+        assert got.urgency == 0
+        assert got.raw_md == fmt.format(got)
+        assert "***" in got.raw_md
+        assert got.activity_log == []
+        assert self._fts_ids(repository, "beta1") == ["u1"]
+
+        assert repository.batch_update_urgency(["u1"], 2) == 1
+        assert repository.get_by_id("u1").urgency == 2
+        assert repository.batch_update_urgency(["nope"], 1) == 0
+
+    def test_batch_delete_removes_rows_and_fts(self, repository: TaskRepository) -> None:
+        repository.insert(_make_task(task_id="x1", title="gamma1"))
+        repository.insert(_make_task(task_id="x2", title="gamma2"))
+
+        assert repository.batch_delete(["x1", "x2"]) == 2
+        assert repository.get_by_id("x1") is None
+        assert repository.get_by_id("x2") is None
+        assert self._fts_ids(repository, "gamma1") == []
+        assert repository.batch_delete([]) == 0
+        assert repository.batch_delete(["x1"]) == 0
+
+    def test_batch_suspend_and_restart(self, repository: TaskRepository) -> None:
+        repository.insert(_make_task(task_id="k1", title="可中止"))
+
+        assert repository.batch_suspend(["k1"]) == 1
+        got = repository.get_by_id("k1")
+        assert got.suspended is True
+        assert len(got.activity_log) == 1
+        assert got.activity_log[-1]["content"] == "[批量操作] 任务已中止"
+        assert got.activity_log[-1]["status"] == "TODO"
+
+        assert repository.batch_restart(["k1"]) == 1
+        got = repository.get_by_id("k1")
+        assert got.suspended is False
+        assert len(got.activity_log) == 2
+        assert got.activity_log[-1]["content"] == "[批量操作] 任务已恢复"
+
+        assert repository.batch_suspend(["missing"]) == 0
+
+    def test_batch_postpone_fields_raw_md_and_fts(self, repository: TaskRepository) -> None:
+        fmt = self._formatter()
+        base = date.today() + timedelta(days=10)
+        repository.insert(_make_task(task_id="z1", title="epsilon", deadline_date=base))
+        repository.insert(_make_task(task_id="z2", title="zeta"))
+
+        assert repository.batch_postpone(["z1", "z2"], 3, formatter=fmt) == 2
+
+        got1 = repository.get_by_id("z1")
+        assert got1.deadline_date == base + timedelta(days=3)
+        assert got1.raw_md == fmt.format(got1)
+        assert got1.activity_log[-1]["content"] == (
+            f"[批量操作] 延后处理: 截止时间 {base.isoformat()} -> "
+            f"{(base + timedelta(days=3)).isoformat()}（+3天）"
+        )
+        assert self._fts_ids(repository, "epsilon") == ["z1"]
+
+        got2 = repository.get_by_id("z2")
+        assert got2.deadline_date == date.today() + timedelta(days=3)
+        assert got2.activity_log[-1]["content"].startswith(
+            "[批量操作] 延后处理: 截止时间 无 -> "
+        )
+
+    def test_archive_batch_sets_archived_and_timestamp(
+        self, repository: TaskRepository
+    ) -> None:
+        repository.insert(_make_task(task_id="a1", title="待归档", status=TaskStatus.DONE))
+
+        assert repository.archive_batch(["a1"]) == 1
+        got = repository.get_by_id("a1")
+        assert got.archived is True
+        assert got.archived_at is not None
+        assert repository.archive_batch([]) == 0
+        assert repository.archive_batch(["nope"]) == 0
+
+    def test_refresh_overdue_status_batched(self, repository: TaskRepository) -> None:
+        fmt = self._formatter()
+        past = date.today() - timedelta(days=5)
+        future = date.today() + timedelta(days=60)
+        repository.insert(_make_task(task_id="o1", title="overdue1", deadline_date=past))
+        repository.insert(
+            _make_task(
+                task_id="o2", title="revert1", status=TaskStatus.OVERDUE,
+                deadline_date=future,
+            )
+        )
+        repository.insert(
+            _make_task(
+                task_id="o3", title="done1", status=TaskStatus.DONE, deadline_date=past,
+            )
+        )
+
+        changed = repository.refresh_overdue_status(formatter=fmt)
+        old_by_id = {t.id: old for t, old in changed}
+        assert old_by_id == {"o1": TaskStatus.TODO, "o2": TaskStatus.OVERDUE}
+
+        assert repository.get_by_id("o1").status == TaskStatus.OVERDUE
+        assert repository.get_by_id("o2").status == TaskStatus.DOING
+        assert repository.get_by_id("o3").status == TaskStatus.DONE
+        assert repository.conn.execute("PRAGMA user_version").fetchone()[0] == 8
+
+    def test_recalc_all_activity_counts_batched(self, repository: TaskRepository) -> None:
+        repository.insert(_make_task(task_id="r1", title="recalc"))
+        task = repository.get_by_id("r1")
+        task.activity_log = [{"ts": datetime.now().isoformat(), "content": "手工"}]
+        repository.update(task)
+
+        assert repository.recalc_all_activity_counts() == 1
+        assert repository.get_by_id("r1").activity_today == 1
+        assert repository.conn.execute("PRAGMA user_version").fetchone()[0] == 8

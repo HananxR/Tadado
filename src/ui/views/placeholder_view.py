@@ -18,9 +18,11 @@ class PlaceholderView(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.setSpacing(8)
 
+        # 占位徽标属于展示层：此前 22px 是第六个孤立尺寸，改由字阶统一给出。
         badge = QLabel(title)
+        badge.setObjectName("placeholderBadge")
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge.setStyleSheet(f"font-size: 22px; font-weight: bold; color: {t.text_primary};")
+        badge.setStyleSheet(f"color: {t.text_primary};")
 
         hint = QLabel("开发中 — 将在后续迭代上线")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)

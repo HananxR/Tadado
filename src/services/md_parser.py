@@ -28,6 +28,12 @@ _TASK_LINE_PATTERN = re.compile(
 # Tag pattern: # must be preceded by whitespace or start-of-string (not mid-word)
 _TAG_PATTERN = re.compile(r"(?<!\S)#([\w一-鿿][\w/\-一-鿿]*)")
 
+# Link pattern: 半角双方括号 [[X]]。内容不允许再含方括号，因此：
+# - 未闭合（[[abc）不匹配 → 不收录
+# - 全角（【【a】】）不匹配 → 不收录
+# - 相邻（[[a]][[b]]）各匹配一次 → 收录两条
+_LINK_PATTERN = re.compile(r"\[\[([^\[\]]*)\]\]")
+
 _STATUS_KEYWORDS = frozenset(s.value for s in TaskStatus)
 
 
@@ -43,6 +49,7 @@ class ParsedTask:
     title: str = ""
     tags: list[str] = field(default_factory=list)
     urgency: int = 3  # 0=紧急, 1=重要, 2=关注, 3=普通
+    links: list[str] = field(default_factory=list)  # [[X]] 中的 X（去重、保序）
 
     @property
     def clean_title(self) -> str:
@@ -100,6 +107,8 @@ class MarkdownTaskParser:
         urgency = 3 - star_count if star_count > 0 else 3
         checkbox_checked = 'x' in bracket_content.lower()
 
+        links = self._extract_links(title_text)
+
         return ParsedTask(
             checkbox_checked=checkbox_checked,
             status=status,
@@ -109,6 +118,7 @@ class MarkdownTaskParser:
             title=clean_title,
             tags=tags,
             urgency=urgency,
+            links=links,
         )
 
     def parse_batch(self, md_text: str) -> list[tuple[Optional[ParsedTask], str, Optional[str]]]:
@@ -191,6 +201,8 @@ class MarkdownTaskParser:
         if not clean_title:
             clean_title = remaining or "Untitled task"
 
+        links = self._extract_links(remaining)
+
         return ParsedTask(
             checkbox_checked=checkbox or (status == TaskStatus.DONE),
             status=status,
@@ -200,6 +212,7 @@ class MarkdownTaskParser:
             title=clean_title,
             tags=tags,
             urgency=urgency,
+            links=links,
         )
 
     # ------------------------------------------------------------------
@@ -217,6 +230,19 @@ class MarkdownTaskParser:
                 seen.add(t.lower())
                 unique.append(t)
         return unique
+
+    @staticmethod
+    def _extract_links(text: str) -> list[str]:
+        """提取 ``[[X]]`` 中的 X（去重、保持出现顺序、strip 后非空才收录）。"""
+        links: list[str] = []
+        seen: set[str] = set()
+        for raw in _LINK_PATTERN.findall(text):
+            name = raw.strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            links.append(name)
+        return links
 
     @staticmethod
     def _parse_date_safe(raw: Optional[str]) -> Optional[date]:

@@ -7,13 +7,10 @@ formatter, and signal bus so that callers only need one dependency.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from datetime import date, datetime, timedelta
-from typing import Optional
 
-from ..models.partition import Partition
 from ..models.task import Task
 from ..models.task_filter import TaskFilter
 from ..models.task_status import TaskStatus
@@ -47,8 +44,26 @@ class TaskService:
         self._parser = MarkdownTaskParser()
         self._formatter = MarkdownTaskFormatter()
         # Handle immediate archiving when archive_days=0
-        self._bus.task_status_changed.connect(self._on_status_changed_for_archive)
-        self._bus.task_created.connect(self._on_task_created_for_archive)
+        self._bus_connections: list[tuple] = [
+            (self._bus.task_status_changed, self._on_status_changed_for_archive),
+            (self._bus.task_created, self._on_task_created_for_archive),
+        ]
+        for _signal, _slot in self._bus_connections:
+            _signal.connect(_slot)
+
+    def dispose(self) -> None:
+        """断开与 ``SignalBus`` 的连接（窗口 / 服务销毁时调用）。
+
+        ``TaskService`` 是普通 Python 对象而非 ``QObject``，Qt 不会在它被
+        回收时自动断连：信号会一直持有实例引用（内存泄漏），并在 repository
+        关闭后继续回调（表现为 ``Repository not opened``）。
+        """
+        for signal, slot in self._bus_connections:
+            try:
+                signal.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
+        self._bus_connections.clear()
 
     # ------------------------------------------------------------------
     # Task CRUD
@@ -71,6 +86,12 @@ class TaskService:
             urgency=parsed.urgency,
             created_at=now,
             updated_at=now,
+            # 直接以 DONE 创建（md 导入 / 总览页快速新建）时补上完成时间。
+            # 否则 completed_at 为 None，总览页「本周完成」等基于该字段的统计会漏掉。
+            # 口径与 UI 层保持一致：优先取截止日期，无截止则取当前时刻。
+            completed_at=(
+                (parsed.deadline_date or now) if parsed.status == TaskStatus.DONE else None
+            ),
             activity_log=[{
                 "ts": now.isoformat(),
                 "content": "创建任务",
@@ -84,12 +105,65 @@ class TaskService:
         _log.info("TaskService: created task id=%s title=%r", task.id, task.title)
         return task
 
+    def create_tasks_bulk(self, tasks: list[Task]) -> list[Task]:
+        """Insert many tasks in one go → emit ``tasks_bulk_created`` exactly once.
+
+        Each task's ``raw_md`` is normalized before persisting so callers can
+        hand over partially-populated ``Task`` objects.  Returns the persisted
+        tasks in input order.
+        """
+        if not tasks:
+            return []
+        created: list[Task] = []
+        for task in tasks:
+            task.raw_md = self._formatter.format(task)
+            created.append(self._repo.insert(task))
+        self._bus.tasks_bulk_created.emit(len(created), [t.id for t in created])
+        _log.info("TaskService: bulk created %d tasks", len(created))
+        return created
+
     def update_task(self, task: Task) -> Task:
         """Update task → rebuild raw_md → emit task_updated → return updated task."""
         task.raw_md = self._formatter.format(task)
         task = self._repo.update(task)
         self._bus.task_updated.emit(task)
         _log.info("TaskService: updated task id=%s title=%r", task.id, task.title)
+        return task
+
+    def save_task(
+        self,
+        task: Task,
+        *,
+        is_new: bool = False,
+        previous_status: TaskStatus | None = None,
+    ) -> Task:
+        """Persist a task — insert or update — emitting **exactly one** signal.
+
+        This is the single write seam for the edit panel / dialogs, replacing
+        the old ``service._repo.update()`` + ``service._bus.*.emit()`` private
+        channel pairs.  Signal selection:
+
+        - ``is_new=True``                        → ``task_created``
+        - ``previous_status`` differs from task  → ``task_status_changed``
+        - otherwise                              → ``task_updated``
+        """
+        task.raw_md = self._formatter.format(task)
+        if is_new:
+            task = self._repo.insert(task)
+            self._bus.task_created.emit(task)
+            _log.info("TaskService: created task id=%s title=%r", task.id, task.title)
+            return task
+
+        task = self._repo.update(task)
+        if previous_status is not None and previous_status != task.status:
+            self._bus.task_status_changed.emit(task, previous_status)
+            _log.info(
+                "TaskService: saved task id=%s %s→%s",
+                task.id, previous_status.value, task.status.value,
+            )
+        else:
+            self._bus.task_updated.emit(task)
+            _log.info("TaskService: updated task id=%s title=%r", task.id, task.title)
         return task
 
     def delete_task(self, task_id: str) -> bool:
@@ -273,6 +347,31 @@ class TaskService:
         _log.info("TaskService: batch_move_partition %d tasks", count)
         return count
 
+    def update_tasks(self, tasks: list[Task], *, emit_signal: bool = True) -> int:
+        """Persist many existing tasks with a **single** batch signal.
+
+        Used by bulk editors (tag rename/merge) so a 200-task rewrite emits one
+        refresh instead of 200 per-task signals.  ``raw_md`` is regenerated for
+        each task; no per-task signal is emitted.
+
+        Set ``emit_signal=False`` when the caller owns its own notification
+        (e.g. ``TagManagementPanel.tag_changed``) to avoid a redundant refresh.
+        """
+        if not tasks:
+            return 0
+        count = 0
+        for task in tasks:
+            task.raw_md = self._formatter.format(task)
+            self._repo.update(task)
+            count += 1
+        if emit_signal:
+            self._bus.batch_operation_completed.emit({
+                "action": "update_tasks",
+                "count": count,
+            })
+        _log.info("TaskService: updated %d tasks (bulk)", count)
+        return count
+
     def archive_batch(self, task_ids: list[str]) -> int:
         """Archive completed tasks → emit archive_completed → return count."""
         if not task_ids:
@@ -357,6 +456,21 @@ class TaskService:
         """Return (has_password, password_hash_or_empty)."""
         return self._repo.check_partition_password(partition_id)
 
+    def set_partition_archive_days(self, partition_id: str, days: int) -> None:
+        """Set the archive-after-completion threshold (days) for a partition."""
+        self._repo.update_partition_archive_days(partition_id, int(days))
+        _log.info("TaskService: partition archive_days=%s id=%s", days, partition_id)
+
+    def set_partition_auto_lock(self, partition_id: str, minutes: int) -> None:
+        """Set the auto-lock idle timeout (minutes) for a partition."""
+        self._repo.update_partition_auto_lock(partition_id, int(minutes))
+        _log.info("TaskService: partition auto_lock=%s id=%s", minutes, partition_id)
+
+    def set_partition_archive_enabled(self, partition_id: str, enabled: bool) -> None:
+        """Enable/disable auto-archive for a partition."""
+        self._repo.update_partition_archive_enabled(partition_id, int(bool(enabled)))
+        _log.info("TaskService: partition archive_enabled=%s id=%s", enabled, partition_id)
+
     def count_tasks_in_partition(self, partition_id: str) -> int:
         """Return number of tasks in a partition."""
         return self._repo.count_tasks_in_partition(partition_id)
@@ -402,6 +516,161 @@ class TaskService:
         """Scan tasks and auto-set/revert OVERDUE → emit task_status_changed per task."""
         return self._repo.refresh_overdue_status(formatter=self._formatter)
 
+    def recalc_activity_counts(self) -> int:
+        """Recalculate ``activity_*`` columns for all tasks → return count.
+
+        Called by the progress-dynamics bar once per day; previously reached
+        through ``service._repo`` from the UI layer.
+        """
+        count = self._repo.recalc_all_activity_counts()
+        _log.info("TaskService: recalculated activity counts for %d tasks", count)
+        return count
+
+    # ------------------------------------------------------------------
+    # Activity timeline / stats (overview page + task drawer)
+    # ------------------------------------------------------------------
+
+    def append_activity(
+        self,
+        task_id: str,
+        content: str,
+        *,
+        status: TaskStatus | str | None = None,
+        progress: int | None = None,
+        urgency: int | None = None,
+    ) -> Task | None:
+        """Append one activity entry to a task → emit **exactly one** signal.
+
+        ``status`` / ``progress`` / ``urgency`` are written (to both the entry
+        and the task) only when not ``None``.  Returns ``None`` when the task
+        does not exist.
+        """
+        task = self._repo.get_by_id(task_id)
+        if task is None:
+            return None
+
+        old_status = task.status
+        entry: dict = {"ts": datetime.now().isoformat(), "content": content}
+        if status is not None:
+            new_status = (
+                status if isinstance(status, TaskStatus) else TaskStatus.from_string(status)
+            )
+            task.status = new_status
+            entry["status"] = new_status.value
+        if progress is not None:
+            task.progress = progress
+            entry["progress"] = progress
+        if urgency is not None:
+            task.urgency = urgency
+            entry["urgency"] = urgency
+
+        task.activity_log = list(task.activity_log) + [entry]
+        task.raw_md = self._formatter.format(task)
+        task = self._repo.update(task)
+
+        if task.status != old_status:
+            self._bus.task_status_changed.emit(task, old_status)
+            _log.info(
+                "TaskService: activity+status id=%s %s→%s",
+                task.id, old_status.value, task.status.value,
+            )
+        else:
+            self._bus.task_updated.emit(task)
+            _log.info("TaskService: activity appended id=%s", task.id)
+        return task
+
+    def get_recent_activity(
+        self,
+        limit: int = 20,
+        partition_id: str | None = None,
+    ) -> list[dict]:
+        """Return the newest activity entries across tasks, newest first.
+
+        Each entry: ``{"task_id","title","ts","content","status","progress",
+        "urgency"}``.  Includes archived tasks.
+        """
+        entries: list[dict] = []
+        for task in self._repo.get_all():
+            if partition_id is not None and task.partition_id != partition_id:
+                continue
+            for e in task.activity_log or []:
+                entries.append({
+                    "task_id": task.id,
+                    "title": task.title,
+                    "ts": str(e.get("ts", "")),
+                    "content": e.get("content", ""),
+                    "status": e.get("status", ""),
+                    "progress": e.get("progress", 0),
+                    "urgency": e.get("urgency", 3),
+                })
+        entries.sort(key=lambda e: e["ts"], reverse=True)
+        if limit is not None:
+            entries = entries[: max(0, int(limit))]
+        return entries
+
+    def get_urgency_distribution(self, partition_id: str | None = None) -> dict[int, int]:
+        """Count non-archived tasks per urgency level (0..3, zero-filled)."""
+        result: dict[int, int] = {0: 0, 1: 0, 2: 0, 3: 0}
+        clauses = ["archived = 0"]
+        params: list = []
+        if partition_id is not None:
+            clauses.append("partition_id = ?")
+            params.append(partition_id)
+        rows = self._repo.conn.execute(
+            f"SELECT urgency, COUNT(*) FROM tasks WHERE {' AND '.join(clauses)} "
+            "GROUP BY urgency",
+            params,
+        ).fetchall()
+        for urgency, cnt in rows:
+            key = int(urgency) if urgency is not None else 3
+            result[key] = result.get(key, 0) + cnt
+        return result
+
+    def get_due_stats(self, partition_id: str | None = None) -> dict:
+        """Return ``{"due_today","overdue","doing","done_this_week"}``.
+
+        Week runs Monday–Sunday (same rule as ``compute_activity_counts``).
+        ``done_this_week`` intentionally includes archived tasks — with
+        ``archive_days=0`` finished tasks are archived immediately.
+        """
+        today = date.today()
+        today_iso = today.isoformat()
+        pid_sql = ""
+        pid_params: list = []
+        if partition_id is not None:
+            pid_sql = " AND partition_id = ?"
+            pid_params = [partition_id]
+
+        def _scalar(where_sql: str, params: list) -> int:
+            row = self._repo.conn.execute(
+                f"SELECT COUNT(*) FROM tasks WHERE {where_sql}", params
+            ).fetchone()
+            return row[0] if row else 0
+
+        due_today = _scalar(
+            "archived = 0 AND status != 'DONE' AND deadline_date = ?" + pid_sql,
+            [today_iso] + list(pid_params),
+        )
+        overdue = _scalar(
+            "archived = 0 AND (status = 'OVERDUE' OR (deadline_date IS NOT NULL "
+            "AND deadline_date < ? AND status != 'DONE'))" + pid_sql,
+            [today_iso] + list(pid_params),
+        )
+        doing = _scalar("archived = 0 AND status = 'DOING'" + pid_sql, list(pid_params))
+        monday = today - timedelta(days=today.isoweekday() - 1)
+        next_monday = monday + timedelta(days=7)
+        done_this_week = _scalar(
+            "status = 'DONE' AND completed_at IS NOT NULL "
+            "AND completed_at >= ? AND completed_at < ?" + pid_sql,
+            [monday.isoformat(), next_monday.isoformat()] + list(pid_params),
+        )
+        return {
+            "due_today": due_today,
+            "overdue": overdue,
+            "doing": doing,
+            "done_this_week": done_this_week,
+        }
+
     # ------------------------------------------------------------------
     # Formatting (convenience)
     # ------------------------------------------------------------------
@@ -409,6 +678,19 @@ class TaskService:
     def format_task(self, task: Task) -> str:
         """Return the canonical Markdown line for a task."""
         return self._formatter.format(task)
+
+    # ------------------------------------------------------------------
+    # Repository options (proxied so UI never touches ``service._repo``)
+    # ------------------------------------------------------------------
+
+    @property
+    def completed_last(self) -> bool:
+        """Sort flag: completed tasks are pinned to the bottom."""
+        return self._repo.completed_last
+
+    @completed_last.setter
+    def completed_last(self, value: bool) -> None:
+        self._repo.completed_last = value
 
     def parse_markdown(self, raw_md: str) -> ParsedTask:
         """Parse a Markdown line into a ParsedTask."""

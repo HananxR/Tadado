@@ -16,11 +16,14 @@ class TaskNotifier:
     """Listens to daily_digest and shows a single merged tray notification
     summarizing today's due tasks, respecting quiet hours."""
 
-    def __init__(self, tray_manager, config: AppConfig, repository: TaskRepository) -> None:
+    def __init__(
+        self, tray_manager, config: AppConfig, repository: TaskRepository,
+        signal_bus=None,
+    ) -> None:
         self._tray = tray_manager
         self._config = config
         self._repository = repository
-        self._signal_bus = get_signal_bus()
+        self._signal_bus = signal_bus or get_signal_bus()
         self._signal_bus.daily_digest.connect(self._on_daily_digest)
 
     # ------------------------------------------------------------------

@@ -14,12 +14,14 @@ class _StatCard(QWidget):
         layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(6)
 
+        # 字号走 base.qss 字阶。原型的紧凑指标一律用等宽字体（--mono），
+        # 只有 .tile .num 那种主数字才用展示字体，这里对齐该约定。
         self._desc_label = QLabel(label)
-        self._desc_label.setStyleSheet("font-size: 10px;")
+        self._desc_label.setObjectName("statCardLabel")
         layout.addWidget(self._desc_label)
 
         self._value_label = QLabel("--")
-        self._value_label.setStyleSheet("font-weight: bold; font-size: 15px;")
+        self._value_label.setObjectName("statCardValue")
         layout.addWidget(self._value_label)
 
         layout.addStretch()

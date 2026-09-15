@@ -20,13 +20,14 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QVBoxLayout,
     QWidget,
 )
 
-from ...utils.design_tokens import get_tokens
+from ...utils.design_tokens import apply_elevation, elevation_pad, get_tokens
 
 _WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"]
 _CELL = 30  # day cell size (w × h)
@@ -142,7 +143,9 @@ class CalendarPopup(QDialog):
         self.setWindowFlags(
             Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint
         )
-        self.setObjectName("calendarPopup")
+        # 顶层无边框窗口会把投影裁在自己的矩形内，所以底色/描边/圆角/投影
+        # 全部下沉到内层卡片，窗口本身透明、只用来承载投影所需的留白。
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
         if isinstance(initial, QDate):
             initial = date(initial.year(), initial.month(), initial.day())
@@ -157,7 +160,17 @@ class CalendarPopup(QDialog):
 
     # ── UI construction ──────────────────────────────────────────────
     def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
+        # 外层只负责留出投影余量并挂第 3 档投影；原有内容布局原样搬到
+        # 内层卡片上（变量名仍是 ``root``，因此下方所有 add* 无需改动）。
+        win = QVBoxLayout(self)
+        pad = elevation_pad(3)
+        win.setContentsMargins(pad, pad, pad, pad)
+        self._card = QFrame()
+        self._card.setObjectName("calendarPopup")
+        win.addWidget(self._card)
+        apply_elevation(self._card, 3)
+
+        root = QVBoxLayout(self._card)
         root.setContentsMargins(8, 6, 8, 8)
         root.setSpacing(2)
 

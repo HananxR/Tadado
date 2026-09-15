@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Optional
-
-import logging
 
 from PySide6.QtCore import QObject, Signal
 
@@ -23,9 +22,13 @@ DEFAULT_CONFIG: dict = {
         "page_size": 20,
         "default_sort": "urgency",
         "sort_completed_last": True,
+        "hotkey": "Ctrl+Shift+Space",  # 全局唤醒热键（阶段 5）
+        "pin_on_top": False,  # 常驻置顶（阶段 5）
+        "timeline_range": "week",  # 时间轴默认粒度 week / month / 30d
+        "auto_collapse_drawer": True,  # 维护抽屉保存后自动收起
     },
     "display": {
-        "theme": "light",
+        "theme": "light",  # light / dark / system（跟随系统应用模式）
         "heatmap_start_year": 2026,
         "heatmap_color_scheme": "sunbeam",
     },
@@ -45,6 +48,9 @@ DEFAULT_CONFIG: dict = {
         "initial_prompt": "/tadado 你好，我正在使用 Tadado AI 助手，请等待我的指令",
         "workspace": "",  # 空 = 数据目录下 ai_workspace/
         "session_id": "",  # 上次会话 ID，托盘「继续上次会话」续接
+        "resume": True,  # 启动助手时自动续接上次会话
+        "usage_alert": True,  # 会话上下文超 80% 时提醒 /compact
+        "inject_env": True,  # 注入 TADADO_EXE / TADADO_PARTITION 环境变量
     },
 }
 
@@ -133,8 +139,38 @@ class AppConfig(QObject):
     # ------------------------------------------------------------------
 
     @property
+    def theme_mode(self) -> str:
+        """配置里的原始取值：``"light"`` / ``"dark"`` / ``"system"``。
+
+        设置面板的「主题」分段控件绑定的是它——三段都要能回显，
+        不能用下面已解析过的 :attr:`theme`。
+        """
+        return self._get("display", "theme") or "light"
+
+    @property
     def theme(self) -> str:
-        return self._get("display", "theme")
+        """当前**生效**的主题：``"light"`` 或 ``"dark"``。
+
+        ``display.theme = "system"`` 时按 Windows「应用模式」即时解析，
+        因此所有既有消费方（design_tokens / 标题栏 / QSS）无需改动，
+        只认 light/dark 即可。
+        """
+        mode = self.theme_mode
+        if mode == "system":
+            from .utils.win32_theme import system_prefers_dark
+
+            return "dark" if system_prefers_dark() else "light"
+        return mode
+
+    @property
+    def auto_collapse_drawer(self) -> bool:
+        """维护抽屉保存后是否自动收起。"""
+        return bool(self._get("general", "auto_collapse_drawer"))
+
+    @property
+    def timeline_range(self) -> str:
+        """时间轴默认粒度：``week`` / ``month`` / ``30d``。"""
+        return self._get("general", "timeline_range") or "week"
 
     @property
     def minimize_to_tray(self) -> bool:

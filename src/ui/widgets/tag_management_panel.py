@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor
 from PySide6.QtWidgets import (
@@ -18,11 +20,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import logging
-
 from ...config import AppConfig
-from ...models.repository import TaskRepository
 from ...services.md_formatter import MarkdownTaskFormatter
+from ...services.task_service import TaskService
 from ...utils.design_tokens import get_tokens
 
 _log = logging.getLogger("runlog")
@@ -39,18 +39,14 @@ class TagManagementPanel(QWidget):
     tag_clicked = Signal(str)  # emitted with tag name when a tag item is clicked
 
     def __init__(
-        self, repository: TaskRepository, config: AppConfig | None = None,
-        task_service=None, parent: QWidget | None = None,
+        self, task_service: TaskService, config: AppConfig | None = None,
+        parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._repository = repository
         self._task_service = task_service
         self._config = config
         self._partition_id: str | None = None
-        self._formatter = (
-            task_service._formatter if task_service
-            else MarkdownTaskFormatter()
-        )
+        self._formatter = MarkdownTaskFormatter()
         self._all_tags: list[tuple[str, int]] = []  # full list before search filter
         self._highlighted_tags: set[str] = set()  # tag names to bold-emphasize
         self._tag_page = 0
@@ -342,6 +338,7 @@ class TagManagementPanel(QWidget):
             return
 
         count = 0
+        changed: list = []
         for task in tasks:
             if old_tag in task.tags:
                 task.tags = [
@@ -351,11 +348,12 @@ class TagManagementPanel(QWidget):
                 # Deduplicate (case-insensitive)
                 task.tags = self._dedup_tags(task.tags)
                 task.raw_md = self._formatter.format(task)
-                if self._task_service:
-                    self._task_service._repo.update(task)
-                else:
-                    self._repository.update(task)
+                changed.append(task)
                 count += 1
+
+        if changed:
+            # Persist in one pass; this panel owns the tag_changed notification
+            self._task_service.update_tasks(changed, emit_signal=False)
 
         self.tag_changed.emit()
         self.refresh()
@@ -433,6 +431,7 @@ class TagManagementPanel(QWidget):
             return
 
         count = 0
+        changed: list = []
         for task in tasks:
             original = list(task.tags)
             new_tags: list[str] = []
@@ -445,11 +444,12 @@ class TagManagementPanel(QWidget):
             task.tags = self._dedup_tags(new_tags)
             if task.tags != original:
                 task.raw_md = self._formatter.format(task)
-                if self._task_service:
-                    self._task_service._repo.update(task)
-                else:
-                    self._repository.update(task)
+                changed.append(task)
                 count += 1
+
+        if changed:
+            # Persist in one pass; this panel owns the tag_changed notification
+            self._task_service.update_tasks(changed, emit_signal=False)
 
         self.tag_changed.emit()
         self.refresh()

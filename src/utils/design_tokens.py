@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QFont, QPalette
 
 
 @dataclass(frozen=True)
@@ -229,33 +229,33 @@ def _compute_heatmap_gradient(
 # ── Light palette ──────────────────────────────────────────────────────────
 
 LIGHT_TOKENS = DesignTokens(
-    bg_primary="#f6f4ef",
-    bg_secondary="#fcfbf7",
-    bg_tertiary="#efece3",
+    bg_primary="#f4f3ef",
+    bg_secondary="#ecebe5",
+    bg_tertiary="#e6e4dc",
     bg_welcome_fallback="#fdf9ef",
-    surface_raised="#fdfcf8",
-    text_primary="#3a3832",
-    text_secondary="#6f6a5f",
-    text_disabled="#b8b3a6",
+    surface_raised="#ffffff",
+    text_primary="#38362f",
+    text_secondary="#6e6a5e",
+    text_disabled="#a29c8c",
     text_welcome_accent="#c0392b",
     text_welcome_sub="#eee",
     text_on_accent="#ffffff",
-    border_primary="#e3dfd4",
-    border_focus="#4d57c3",
-    accent="#4d57c3",
-    accent_hover="#3f48b0",
-    danger="#c4453c",
-    danger_hover="#b03a32",
-    danger_bg="#f9efed",
-    success="#2f9e63",
-    warning="#d97f26",
+    border_primary="#e3dfd3",
+    border_focus="#4c56c0",
+    accent="#4c56c0",
+    accent_hover="#40499f",
+    danger="#c24536",
+    danger_hover="#b03a2c",
+    danger_bg="#f6e4e0",
+    success="#3c8d5e",
+    warning="#c07f2d",
     heatmap_empty="#e4dfd3",
     separator="#ece8de",
-    timeline_dot="#d97f26",
-    timeline_done="#2f9e63",
-    urgency_urgent="#c4453c",
-    urgency_high="#d97f26",
-    urgency_medium="#2f9e63",
+    timeline_dot="#c07f2d",
+    timeline_done="#3c8d5e",
+    urgency_urgent="#c24536",
+    urgency_high="#c07f2d",
+    urgency_medium="#3c8d5e",
     urgency_normal="#8ba0c0",
 )
 
@@ -263,32 +263,32 @@ LIGHT_TOKENS = DesignTokens(
 
 DARK_TOKENS = DesignTokens(
     bg_primary="#1b1c26",
-    bg_secondary="#232430",
-    bg_tertiary="#2d2e3c",
+    bg_secondary="#181921",
+    bg_tertiary="#212230",
     bg_welcome_fallback="#1b1c26",
-    surface_raised="#272835",
-    text_primary="#d8d5c9",
-    text_secondary="#9d988b",
-    text_disabled="#6e6a60",
+    surface_raised="#272834",
+    text_primary="#c9c5b7",
+    text_secondary="#8b8675",
+    text_disabled="#676258",
     text_welcome_accent="#ff7675",
     text_welcome_sub="#a0a4b0",
     text_on_accent="#eceaf4",
-    border_primary="#32333f",
-    border_focus="#7c83ea",
-    accent="#7c83ea",
-    accent_hover="#8a90f0",
-    danger="#e06c63",
+    border_primary="#2e2f3e",
+    border_focus="#7b83e8",
+    accent="#7b83e8",
+    accent_hover="#939af1",
+    danger="#e26b5b",
     danger_hover="#ec8078",
-    danger_bg="#3a252a",
-    success="#3fae7c",
-    warning="#e0963f",
+    danger_bg="#3a2622",
+    success="#78bd92",
+    warning="#dfa24e",
     heatmap_empty="#2c2d3a",
     separator="#2c2d3a",
-    timeline_dot="#e0963f",
-    timeline_done="#3fae7c",
-    urgency_urgent="#e06c63",
-    urgency_high="#e0963f",
-    urgency_medium="#3fae7c",
+    timeline_dot="#dfa24e",
+    timeline_done="#78bd92",
+    urgency_urgent="#e26b5b",
+    urgency_high="#dfa24e",
+    urgency_medium="#78bd92",
     urgency_normal="#5d7399",
 )
 
@@ -308,6 +308,57 @@ def get_tokens() -> DesignTokens:
     if _tokens is None:
         _tokens = LIGHT_TOKENS
     return _tokens
+
+
+def surface_color(dark: bool) -> str:
+    """卡片底色（原型 ``--surface``）。
+
+    ``DesignTokens`` 数据类里**没有**这个字段——它是派生色，而 QSS（通过
+    ``{{surface}}``）和 QPalette（``AlternateBase``）都要用，所以在这里
+    单点定义，避免两处各写一份十六进制字面量后走样。
+    """
+    return "#21222f" if dark else "#fbfaf6"
+
+
+def border_2_color(dark: bool) -> str:
+    """控件描边色（原型 ``--border-2``）；同 :func:`surface_color` 的理由。"""
+    return "#3b3c4c" if dark else "#d3cebf"
+
+
+def apply_display_font(
+    label,
+    *,
+    tracking: Optional[float] = None,
+    tabular: bool = False,
+) -> None:
+    """给展示层文字补上 QSS **表达不了**的两个排版属性。
+
+    Qt QSS 的字体属性只有 ``font-family / font-size / font-style /
+    font-weight`` 这四项。原型里的
+
+      * ``letter-spacing:1px``（``.set-sec-t`` / ``.rail-group`` eyebrow 小标签）
+      * ``font-variant-numeric: tabular-nums``（``.tile .num`` 统计数字，
+        让「1」和「8」等宽，数值刷新时不会左右抖动）
+      * ``line-height:1.6``
+
+    **都不在支持列表内**，写进 QSS 会被静默丢弃——这解释了为什么字距一直
+    没生效。它们只能落到 ``QFont``：``setLetterSpacing`` 与 OpenType
+    feature ``tnum``。
+
+    :param tracking: 字距，单位 px（原型 eyebrow 用 1、页面标题用 .2）
+    :param tabular: 是否启用等宽数字（统计数字 / 时长列）
+    """
+    font = QFont(label.font())
+    if tracking is not None:
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, tracking)
+    if tabular:
+        # QFont.setFeature 与 QFont.Tag 需要 Qt 6.7+；低版本静默跳过，
+        # 只是数字不等宽，不影响正确性。
+        set_feature = getattr(font, "setFeature", None)
+        tag_factory = getattr(QFont, "Tag", None)
+        if set_feature is not None and tag_factory is not None:
+            set_feature(tag_factory("tnum"), 1)
+    label.setFont(font)
 
 
 def expand_qss(template: str) -> str:
@@ -334,7 +385,6 @@ def expand_qss(template: str) -> str:
         "success": t.success,
         "white": "#ffffff",
         # Surface / structural
-        "surface_raised": "#272835" if dark else "#fdfcf8",
         "surface_alt": "#232430" if dark else "#fcfbf7",
         "surface_dark": "#2d2e3c" if dark else "#efece3",
         "surface_hover": "#272835" if dark else "#f3f1ea",
@@ -359,6 +409,33 @@ def expand_qss(template: str) -> str:
         "accent_alpha_13": "rgba(124,131,234,0.14)" if dark else "rgba(77,87,195,0.13)",
         "bg_primary_alpha_235": "rgba(27,28,38,235)" if dark else "rgba(246,244,239,235)",
         "border_alpha_25": "rgba(50,51,63,0.3)" if dark else "rgba(227,223,212,0.3)",
+        # ── 2.0 原型令牌（`tadado-2.0.html` 的 --surface / --border-2 / 语义软色）──
+        # 原型把「卡片底色」与「页面底色」分成 --surface / --surface-2 两层，
+        # 我们此前只有一层 surface_raised，这里补齐以免卡片与页面糊成一片。
+        "surface": surface_color(dark),
+        "border_2": border_2_color(dark),
+        "hover": "rgba(123,131,232,0.12)" if dark else "rgba(76,86,192,0.06)",
+        "accent_soft": "#262a4d" if dark else "#e8e9f7",
+        "danger_soft": "#3a2622" if dark else "#f6e4e0",
+        "todo": "#6f9fe0" if dark else "#3d6fb5",
+        "todo_soft": "#223049" if dark else "#e2eaf5",
+        "doing": "#dfa24e" if dark else "#c07f2d",
+        "doing_soft": "#3a2f1e" if dark else "#f6ead9",
+        "done": "#78bd92" if dark else "#3c8d5e",
+        "done_soft": "#1f3328" if dark else "#e0efe5",
+        "sus": "#8d8675",
+        "sus_soft": "#2b2a24" if dark else "#eceae3",
+        # ── 字体栈 ──────────────────────────────────────────────────────
+        # 仅适配 Windows，因此不再把 ``Noto Sans SC`` 放在首位（本机恰好
+        # 装了才没露馅，换台机器就会掉回默认字体）。改为 Windows 的
+        # ``system-ui`` 等价物：拉丁字母走 Segoe UI，中文落到 Microsoft
+        # YaHei UI——这正是浏览器在 Windows 上的回退顺序，也是「web 感」
+        # 的来源之一。YaHei UI 比 YaHei 行高更紧，更适合 UI。
+        "font_body": '"Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif',
+        # 展示层：Windows 上 Segoe UI 的粗体是**独立字族**（Semibold/Bold），
+        # 用它可拿到真实的半粗字形，而不是 Regular 的合成伪粗。
+        "font_disp": '"Segoe UI Semibold", "Segoe UI", "Microsoft YaHei UI", sans-serif',
+        "font_mono": '"Cascadia Code", "Cascadia Mono", Consolas, monospace',
     }
     result = template
     for name, value in expansions.items():
@@ -378,16 +455,80 @@ def status_color(status_value: str) -> str:
     return mapping.get(str(status_value).upper(), t.text_secondary)
 
 
-def apply_card_shadow(widget) -> None:
-    """Soft elevation shadow for card containers (theme-aware)."""
+# ── 高度 / 投影 ─────────────────────────────────────────────────
+# 原型靠 ``--shadow`` 建立层次，而 **QSS 没有 box-shadow**，Qt 只能用
+# ``QGraphicsDropShadowEffect`` 逐部件施加。原型是两段式
+# （``0 10px 32px -8px`` 大范围柔光 + ``0 2px 8px`` 近距接触影），
+# 一个部件却只能挂一个效果，这里用单段近似：blur 取原型外层的量级，
+# dy 取内层的克制值，避免小部件被大投影糊住。
+#
+# 阴影色刻意用**暖黑** ``rgb(40,36,28)`` 而不是纯黑——纯黑落在暖灰纸底
+# （``bg_primary #f4f3ef``）上会发脏、发青；暖黑才是原型的观感。
+
+#: 三档高度：``{blur, dy, alpha}``；``alpha`` 为 ``(亮色, 暗色)``
+ELEVATION: dict[int, dict] = {
+    0: {"blur": 0, "dy": 0, "alpha": (0, 0)},          # 无投影
+    1: {"blur": 16, "dy": 2, "alpha": (26, 88)},       # 卡片 / 热力图
+    2: {"blur": 26, "dy": 6, "alpha": (40, 110)},      # hover 浮起 / 浮层
+    3: {"blur": 36, "dy": 10, "alpha": (58, 132)},     # 弹层 / 抽屉
+}
+
+#: 记录档位的动态属性名（供 :func:`refresh_elevation` 在换主题后重放）
+ELEVATION_PROP = "elevationLevel"
+
+#: 阴影投影在部件外所需的留白（≈ blur 的一半），布局要留出这个余量
+def elevation_pad(level: int) -> int:
+    """该档位投影需要向外预留的像素（blur/2 向上取整）。"""
+    spec = ELEVATION.get(int(level), ELEVATION[0])
+    return -(-spec["blur"] // 2)
+
+
+def elevation_params(level: int) -> dict:
+    """当前主题下该档位的投影参数 ``{blur, dy, color}``。"""
     from PySide6.QtGui import QColor
+
+    dark = is_dark()
+    spec = ELEVATION.get(int(level), ELEVATION[0])
+    alpha = spec["alpha"][1] if dark else spec["alpha"][0]
+    return {
+        "blur": spec["blur"],
+        "dy": spec["dy"],
+        "color": QColor(0, 0, 0, alpha) if dark else QColor(40, 36, 28, alpha),
+    }
+
+
+def apply_elevation(widget, level: int = 1) -> None:
+    """给 ``widget`` 挂上第 ``level`` 档投影（``0`` = 清除）。
+
+    注意：投影画在部件边界**之外**，需要所在布局留出
+    :func:`elevation_pad` 的余量，否则会被父部件裁掉。
+    """
     from PySide6.QtWidgets import QGraphicsDropShadowEffect
 
+    widget.setProperty(ELEVATION_PROP, int(level))
+    if int(level) <= 0:
+        widget.setGraphicsEffect(None)
+        return
+
+    p = elevation_params(level)
     effect = QGraphicsDropShadowEffect(widget)
-    effect.setBlurRadius(12)
-    effect.setOffset(0, 1)
-    effect.setColor(QColor(0, 0, 0, 45 if is_dark() else 28))
+    effect.setBlurRadius(p["blur"])
+    effect.setOffset(0, p["dy"])
+    effect.setColor(p["color"])
     widget.setGraphicsEffect(effect)
+
+
+def refresh_elevation(widget) -> None:
+    """换主题后按 ``ELEVATION_PROP`` 重放投影（阴影色随明暗变化）。"""
+    level = widget.property(ELEVATION_PROP)
+    if level is None:
+        return
+    apply_elevation(widget, int(level))
+
+
+def apply_card_shadow(widget) -> None:
+    """卡片默认投影——等价 :func:`apply_elevation` 第 1 档（保留旧入口名）。"""
+    apply_elevation(widget, 1)
 
 
 def is_dark() -> bool:
@@ -451,13 +592,17 @@ def build_palette() -> QPalette:
     p.setColor(QPalette.ColorRole.Window, QColor(t.bg_primary))
     p.setColor(QPalette.ColorRole.WindowText, QColor(t.text_primary))
 
-    # Base (text edits, table cells, etc.)
-    p.setColor(QPalette.ColorRole.Base, QColor(t.bg_secondary))
-    p.setColor(QPalette.ColorRole.AlternateBase, QColor(t.bg_tertiary))
+    # Base（文本编辑、表格/列表视口等）
+    # 注意：bg_secondary/bg_tertiary 在原型里是**凹槽色**，只用于分段控件
+    # 轨道。把它们当通用底色会让所有没被 QSS 覆盖的部件（表头、viewport、
+    # 交替行、单选框）发灰发暗——这是"总有一层蒙版"的第二来源。
+    # 通用表面一律用 surface_raised（纯白）/ surface（卡片）。
+    p.setColor(QPalette.ColorRole.Base, QColor(t.surface_raised))
+    p.setColor(QPalette.ColorRole.AlternateBase, QColor(surface_color(is_dark())))
     p.setColor(QPalette.ColorRole.Text, QColor(t.text_primary))
 
     # Buttons
-    p.setColor(QPalette.ColorRole.Button, QColor(t.bg_tertiary))
+    p.setColor(QPalette.ColorRole.Button, QColor(t.surface_raised))
     p.setColor(QPalette.ColorRole.ButtonText, QColor(t.text_primary))
 
     # Highlights (selection)
@@ -469,8 +614,31 @@ def build_palette() -> QPalette:
     p.setColor(QPalette.ColorRole.LinkVisited, QColor(t.accent_hover))
 
     # Tooltip
-    p.setColor(QPalette.ColorRole.ToolTipBase, QColor(t.bg_secondary))
+    p.setColor(QPalette.ColorRole.ToolTipBase, QColor(t.surface_raised))
     p.setColor(QPalette.ColorRole.ToolTipText, QColor(t.text_primary))
+
+    # ── 压平 Fusion 的斜面 / 渐变 ──────────────────────────────────────
+    # Fusion 是**调色板驱动**的风格：按钮与面板上的高光、阴影不是画死的
+    # 位图，而是拿 Light / Midlight / Mid / Dark / Shadow 这几个角色与
+    # Button 做明暗插值算出来的。QPalette() 默认构造留给它们的是一套冷灰
+    # 值，结果每个「没被 QSS 完全接管」的控件——工具按钮、SpinBox 上下
+    # 箭头、滚动条、进度条槽、GroupBox、表头、Splitter——都自带一层由上
+    # 到下的渐变。这才是那股「蒙版感 / 发灰」的真正来源：
+    # 它不来自我们的配色，而是来自 Fusion 内置的第二套明暗。
+    #
+    # 把这几个角色对齐到 Button 同色，插值两端相等，渐变在源头塌成纯色。
+    # 相比逐个 widget 补 QSS，这是一次生效且覆盖全部控件的做法。
+    # 立体感改由 Shadow 提供 1px 描边——与原型「用 border 而非斜面
+    # 表达层级」（.card 只有 border 没有 box-shadow）的语言一致。
+    flat = QColor(t.surface_raised)
+    for _role in (
+        QPalette.ColorRole.Light,
+        QPalette.ColorRole.Midlight,
+        QPalette.ColorRole.Mid,
+        QPalette.ColorRole.Dark,
+    ):
+        p.setColor(_role, flat)
+    p.setColor(QPalette.ColorRole.Shadow, QColor(t.border_primary))
 
     # BrightText (used for e.g. selected tab text on Windows)
     p.setColor(QPalette.ColorRole.BrightText, QColor(t.danger))

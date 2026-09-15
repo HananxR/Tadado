@@ -11,10 +11,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...models.task_status import TaskStatus
 from ...services.md_formatter import MarkdownTaskFormatter
+from ...services.task_service import TaskService
 from ...utils.signal_bus import get_signal_bus
 from ..dialogs.task_dialog import TaskDialog
 from .task_list_delegate import TaskListDelegate
@@ -38,12 +38,10 @@ class TaskListView(QTableView):
     batch_move_partition = Signal(list)         # list[task_id]
 
     def __init__(
-        self, repository: TaskRepository,
-        task_service=None,
+        self, task_service: TaskService,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._repository = repository
         self._task_service = task_service
         self._signal_bus = get_signal_bus()
         self._formatter = (
@@ -258,8 +256,7 @@ class TaskListView(QTableView):
 
     def _on_edit_task(self, task: Task) -> None:
         dialog = TaskDialog(
-            self._repository, task=task,
-            task_service=self._task_service, parent=self,
+            self._task_service, task=task, parent=self,
         )
         if dialog.exec() == TaskDialog.DialogCode.Accepted:
             pass

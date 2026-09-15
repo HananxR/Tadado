@@ -45,10 +45,18 @@ target-version = ["py310"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+# 用 extend-exclude 而不是 exclude —— 后者会覆写 ruff 的默认排除列表，
+# 那样 .venv / __pycache__ / target 都会被拉进来 lint。
+# fastapi-alembic-demo 是第三方教程副本，不是本项目代码，不参与检查。
+extend-exclude = ["docs/fastapi-alembic-demo"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
+
+# 打包脚本必须先 sys.path.insert 才能 import 本项目模块，E402 在这里是刻意的
+[tool.ruff.lint.per-file-ignores]
+"scripts/create_package_db.py" = ["E402"]
 
 # PyPI 镜像（国内用户可取消注释加速下载）
 # [[tool.uv.index]]
@@ -61,8 +69,10 @@ addopts = "-v --tb=short"
 
 [dependency-groups]
 dev = [
+    "black>=23.0.0",
     "pyinstaller>=6.0.0",
     "pytest>=9.0.3",
     "pytest-mock>=3.15.1",
     "pytest-qt>=4.5.0",
+    "ruff>=0.1.0",
 ]

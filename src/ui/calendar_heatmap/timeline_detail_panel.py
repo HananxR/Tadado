@@ -19,6 +19,7 @@ from ...models.task import Task
 from ...utils.design_tokens import get_tokens
 from .report_exporter import export_excel, export_markdown
 
+
 def _status_color(value: str) -> str:
     from ...utils.design_tokens import status_color
     return status_color(value)

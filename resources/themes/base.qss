@@ -1,44 +1,74 @@
-/* ── Tadado Dark Theme ───────────────────────────────────── */
-/* Palette: deep charcoal base, soft blue accent.                 */
+/* ── Tadado Base Theme ─────────────────────────────────────────── */
+/* 明暗共享骨架：字体栈、圆角、控件几何。颜色一律用双花括号占位符，   */
+/* 由 expand_qss() 按当前主题展开；新增颜色请复用既有令牌，不要写死。  */
+/* 圆角对齐原型 resources/ui-mockup/tadado-2.0.html：                 */
+/*   卡片 10px · 按钮 / 输入 / 分段 8px · 内部元素 6–7px · 胶囊 999px  */
 
 /* ── Global ──────────────────────────────────────────────────── */
 * {
-    font-family: "Microsoft YaHei", "Segoe UI", "Noto Sans SC", sans-serif;
+    font-family: {{font_body}};
 }
 QMainWindow {
     background-color: {{bg_primary}};
 }
 QSplitter::handle {
-    background-color: {{bg_tertiary}};
+    background-color: {{border_primary}};
 }
 QSplitter::handle:hover {
     background-color: {{hover_strong}};
 }
 
+/* ── 展示层字阶（Type Scale · Display Tier）───────────────────────
+   原型是**双层**字阶，这是它「看着像设计过」的关键，而不是靠配色：
+
+     正文层  10.5 / 11 / 11.5 / 12 / 12.5 / 13   ← 各控件就地声明
+     展示层  14 / 15 / 20 / 21 / 26              ← 本区块集中声明
+
+   此前展示层是散的：统计数字 22、问候语 17、卡片标题 15、抽屉标题 14、
+   页面标题 21、占位徽标 22 —— 六处互不成比例，于是整屏「处处差一点」。
+   现统一走 objectName；**Python 里不要再写 font-size >= 14px**。
+
+   注意：``letter-spacing`` 不在 Qt QSS 支持列表内（只认 font-family /
+   font-size / font-style / font-weight），写在 QSS 里会被静默忽略。
+   字距与等宽数字必须落到 QFont，见 design_tokens.apply_display_font()。
+   ──────────────────────────────────────────────────────────────── */
+QLabel#pageTitle      { font-size: 21px; font-weight: 700; }
+QLabel#pageDesc       { font-size: 12px; color: {{text_secondary}}; }
+QLabel#statTileValue  { font-size: 26px; font-weight: 800; }
+QLabel#statTileLabel  { font-size: 11.5px; color: {{text_secondary}}; }
+QLabel#statTileHint   { font-size: 10.5px; color: {{text_disabled}}; }
+QLabel#greetTitle     { font-size: 20px; font-weight: 700; }
+QLabel#greetSub       { font-family: {{font_mono}}; font-size: 11.5px; color: {{text_disabled}}; }
+QLabel#cardTitle      { font-size: 14px; font-weight: 600; }
+QLabel#drawerTitle    { font-size: 15px; font-weight: 700; }
+QLabel#emptyStateTitle{ font-size: 16px; font-weight: 600; color: {{text_primary}}; }
+QLabel#placeholderBadge{ font-size: 26px; font-weight: 800; }
+QLabel#statCardLabel   { font-size: 10.5px; color: {{text_disabled}}; }
+QLabel#statCardValue   { font-family: {{font_mono}}; font-size: 14px; font-weight: 500; }
+
 /* ── Menus ───────────────────────────────────────────────────── */
 QMenuBar {
     background-color: {{surface_raised}};
-    border-bottom: 1px solid {{bg_tertiary}};
+    border-bottom: 1px solid {{border_primary}};
     padding: 2px 4px;
     font-size: 12px;
     color: {{text_primary}};
 }
 QMenuBar::item:selected {
     background-color: {{selection_bg}};
-    border-radius: 4px;
+    border-radius: 6px;
     color: {{text_primary}};
 }
 QMenu {
     background-color: {{surface_raised}};
-    border: 1px solid {{bg_tertiary}};
-    border-radius: 6px;
-    padding: 4px;
+    border: 1px solid {{border_2}};
+    border-radius: 10px;
+    padding: 5px;
 }
 QMenu::item {
-    padding: 7px 28px 7px 14px;
-    border-radius: 4px;
-    font-size: 12px;
-    
+    padding: 7px 28px 7px 10px;
+    border-radius: 7px;
+    font-size: 12.5px;
 }
 QMenu::item:selected {
     background-color: {{accent}};
@@ -46,7 +76,7 @@ QMenu::item:selected {
 }
 QMenu::separator {
     height: 1px;
-    background: {{bg_tertiary}};
+    background: {{border_primary}};
     margin: 4px 8px;
 }
 
@@ -54,7 +84,7 @@ QMenu::separator {
 /* ── Custom Title Bar ──────────────────────────────────────────── */
 QWidget#customTitleBar {
     background-color: {{surface_raised}};
-    border-bottom: 1px solid {{bg_tertiary}};
+    border-bottom: 1px solid {{border_primary}};
 }
 QWidget#customTitleBar QMenuBar {
     background: transparent;
@@ -86,51 +116,35 @@ QWidget#customTitleBar QPushButton#closeBtn:hover {
 
 QToolBar {
     background-color: {{surface_raised}};
-    border-bottom: 1px solid {{bg_tertiary}};
+    border-bottom: 1px solid {{border_primary}};
     padding: 4px 8px;
     spacing: 4px;
 }
 QToolBar QToolButton {
-    border: 1px solid {{border_primary}};
-    border-radius: 4px;
-    padding: 4px 10px;
-    font-size: 12px;
+    border: 1px solid {{border_2}};
+    border-radius: 8px;
+    padding: 5px 12px;
+    font-size: 12.5px;
     color: {{text_primary}};
-    background-color: {{bg_tertiary}};
-}
-QToolBar QToolButton#partitionBtn {
-    color: {{accent}};
-    font-weight: bold;
+    background-color: {{surface}};
 }
 QToolBar QToolButton:hover {
-    background-color: {{hover_bg}};
+    background-color: {{hover}};
     border-color: {{accent}};
+    color: {{accent}};
 }
 QToolBar QToolButton:pressed {
     background-color: {{pressed_bg}};
 }
-/* ── Status Bar ──────────────────────────────────────────────── */
-QStatusBar {
-    background-color: {{surface_raised}};
-    border-top: 1px solid {{bg_tertiary}};
-    padding: 4px 10px;
-    font-size: 12px;
-    
-    min-height: 28px;
-}
-QStatusBar QLabel {
-    color: {{text_secondary}};
-    font-size: 12px;
-    padding: 0 6px;
-}
 
 /* ── Buttons ─────────────────────────────────────────────────── */
 QPushButton {
-    background-color: {{bg_tertiary}};
-    border: 1px solid {{border_primary}};
-    border-radius: 4px;
-    padding: 5px 10px;
-    font-size: 12px;
+    background-color: {{surface}};
+    border: 1px solid {{border_2}};
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12.5px;
+    font-weight: 500;
     color: {{text_primary}};
     min-height: 22px;
 }
@@ -141,11 +155,17 @@ QPushButton#navBtn {
     min-height: 24px;
 }
 QPushButton:hover {
-    background-color: {{hover_bg}};
-    border-color: {{text_muted}};
+    background-color: {{hover}};
+    border-color: {{accent}};
+    color: {{accent}};
 }
 QPushButton:pressed {
-    background-color: {{surface_dark}};
+    background-color: {{pressed_bg}};
+}
+QPushButton:disabled {
+    background-color: {{surface}};
+    border-color: {{border_primary}};
+    color: {{text_disabled}};
 }
 QPushButton#saveBtn {
     background-color: {{accent}};
@@ -157,7 +177,7 @@ QPushButton#saveBtn:hover {
     background-color: {{accent_hover}};
 }
 QPushButton#saveBtn:disabled {
-    background-color: {{bg_tertiary}};
+    background-color: {{surface}};
     border-color: {{border_primary}};
     color: {{disabled_text}};
 }
@@ -179,34 +199,38 @@ QCheckBox {
 }
 /* ── Tab Widget ───────────────────────────────────────────────── */
 QTabWidget::pane {
-    border: 1px solid {{border_primary}};
-    background-color: {{bg_secondary}};
+    border: 1px solid {{border_2}};
+    border-radius: 10px;
+    background-color: {{surface}};
+    top: -1px;
 }
 QTabBar::tab {
-    background-color: {{bg_tertiary}};
-    border: 1px solid {{border_primary}};
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
     padding: 6px 14px;
+    margin-right: 2px;
     color: {{text_secondary}};
-    font-size: 12px;
+    font-size: 12.5px;
 }
 QTabBar::tab:selected {
     background-color: {{accent}};
     color: {{text_on_accent}};
-    font-weight: bold;
+    font-weight: 600;
     border-bottom: none;
 }
 QTabBar::tab:hover:!selected {
-    background-color: {{hover_bg}};
-    color: {{text_primary}};
+    background-color: {{hover}};
+    color: {{accent}};
 }
 
 /* ── Input Fields ────────────────────────────────────────────── */
 QLineEdit {
-    background-color: {{bg_secondary}};
-    border: 1px solid {{border_primary}};
-    border-radius: 6px;
-    padding: 6px 10px;
-    font-size: 13px;
+    background-color: {{surface}};
+    border: 1px solid {{border_2}};
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12.5px;
     color: {{text_primary}};
     selection-background-color: {{selection_alt}};
 }
@@ -214,11 +238,12 @@ QLineEdit:focus {
     border-color: {{accent}};
 }
 QLineEdit#taskInput {
-    font-family: "Consolas", "Cascadia Code", "Courier New", monospace;
+    font-family: {{font_mono}};
     font-size: 13px;
     padding: 7px 12px;
+    border-radius: 8px;
     color: {{text_primary}};
-    background-color: {{bg_secondary}};
+    background-color: {{surface}};
 }
 QLineEdit#searchInput {
     padding-left: 22px;
@@ -227,37 +252,34 @@ QLineEdit#searchInput {
 
 /* ── Combo Boxes ─────────────────────────────────────────────── */
 QComboBox {
-    background-color: {{bg_secondary}};
-    border: 1px solid {{border_primary}};
-    border-radius: 6px;
-    padding: 4px 8px;
-    font-size: 12px;
+    background-color: {{surface}};
+    border: 1px solid {{border_2}};
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 12.5px;
     color: {{text_primary}};
     min-width: 60px;
 }
 QComboBox:hover {
-    border-color: {{text_muted}};
+    border-color: {{accent}};
 }
 QComboBox:focus {
     border-color: {{accent}};
 }
-/* Compact Combo Boxes */
-QComboBox#pageSizeCombo              { min-width: 60px; max-width: 60px; }
-QComboBox#sortCombo                  { min-width: 84px; max-width: 84px; }
-QComboBox#timelineStatusCombo        { min-width: 90px; max-width: 90px; }
-QComboBox#settingsSortCombo          { min-width: 84px; max-width: 84px; }
-QComboBox#settingsThemeCombo         { min-width: 84px; max-width: 84px; }
-QComboBox#settingsPartitionCombo     { min-width: 96px; }
-QComboBox#calcTypeCombo              { min-width: 60px; max-width: 60px; }
 QComboBox QAbstractItemView {
     background-color: {{surface_raised}};
-    border: 1px solid {{bg_tertiary}};
-    border-radius: 4px;
-    padding: 2px;
+    border: 1px solid {{border_2}};
+    border-radius: 10px;
+    padding: 4px;
     selection-background-color: {{selection_bg}};
     selection-color: {{text_primary}};
     outline: none;
     color: {{text_primary}};
+}
+QComboBox QAbstractItemView::item {
+    min-height: 26px;
+    padding: 5px 10px;
+    border-radius: 7px;
 }
 
 /* ── Status Badge Strip ─────────────────────────────────────── */
@@ -268,29 +290,28 @@ QPushButton#statusBadge {
 
 /* ── Text Edit ───────────────────────────────────────────────── */
 QTextEdit {
-    background-color: {{bg_secondary}};
-    border: 1px solid {{border_primary}};
-    border-radius: 6px;
-    padding: 8px;
-    font-size: 13px;
-    
+    background-color: {{surface}};
+    border: 1px solid {{border_2}};
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12.5px;
     selection-background-color: {{selection_alt}};
 }
 QTextEdit:focus {
     border-color: {{accent}};
 }
 QTextEdit#mdEditor {
-    font-family: "Consolas", "Cascadia Code", "Courier New", monospace;
+    font-family: {{font_mono}};
     font-size: 13px;
-    padding: 7px 12px;
+    padding: 8px 12px;
     color: {{text_primary}};
-    background-color: {{bg_secondary}};
+    background-color: {{surface}};
 }
 
 /* ── Table View (Task List) ──────────────────────────────────── */
 QTableView {
-    background-color: {{bg_secondary}};
-    alternate-background-color: {{surface_alt}};
+    background-color: {{surface_raised}};
+    alternate-background-color: {{surface}};
     border: none;
     gridline-color: {{border_primary}};
     selection-background-color: transparent;
@@ -320,17 +341,22 @@ QLabel {
 
 /* ── Filter presets (quick filter buttons) ──────────────────── */
 QPushButton[preset="true"] {
-    background-color: {{bg_tertiary}};
-    border: 1px solid {{border_primary}};
-    border-radius: 14px;
-    padding: 3px 8px;
-    font-size: 11px;
-    
+    background-color: transparent;
+    border: 1px solid {{border_2}};
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    color: {{text_secondary}};
 }
 QPushButton[preset="true"]:hover {
-    background-color: {{hover_bg}};
-    border-color: {{text_muted}};
-    
+    background-color: {{hover}};
+    border-color: {{accent}};
+    color: {{accent}};
+}
+QPushButton[preset="true"]:checked {
+    background-color: {{accent}};
+    border-color: {{accent}};
+    color: {{text_on_accent}};
 }
 
 /* ── Dialogs ─────────────────────────────────────────────────── */
@@ -338,7 +364,7 @@ QDialog {
     background-color: {{bg_primary}};
 }
 QDialog QTabWidget::pane {
-    background-color: {{bg_secondary}};
+    background-color: {{surface}};
 }
 QDialog QScrollArea {
     background-color: {{bg_primary}};
@@ -363,26 +389,19 @@ QDialog#heatmapTooltip {
     border-radius: 6px;
 }
 
-/* ── Activity Report Panel ──────────────────────────────────── */
-QWidget#activityReportPanel {
-    background-color: transparent;
-}
-
-QWidget#reportHeader {
-    background-color: {{report_header}};
-    border-bottom: 1px solid {{bg_tertiary}};
-}
-
+/* ── Export Button ──────────────────────────────────────────── */
 QPushButton#exportBtn {
-    background-color: {{bg_tertiary}};
-    border: 1px solid {{border_primary}};
-    border-radius: 5px;
-    padding: 5px 10px;
-    font-size: 12px;
+    background-color: {{surface}};
+    border: 1px solid {{border_2}};
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 12.5px;
     color: {{text_primary}};
 }
 QPushButton#exportBtn:hover {
-    background-color: {{border_primary}};
+    background-color: {{hover}};
+    border-color: {{accent}};
+    color: {{accent}};
 }
 
 /* ── Analysis Page ────────────────────────────────────────────── */
@@ -392,7 +411,7 @@ QLabel#analysisSectionLabel {
     padding: 2px 0 4px 0;
     border-bottom: 1px solid {{border_primary}};
 }
-QLabel#reportHeaderMeta { color: {{text_secondary}}; font-size: 9px; }
+
 
 /* ── Activity Content View ────────────────────────────────────── */
 QLabel#activitySep { color: {{border_primary}}; font-size: 10px; }
@@ -404,13 +423,13 @@ QTextBrowser#activityView {
 }
 
 QTreeWidget {
-    background-color: {{bg_secondary}};
+    background-color: {{surface_raised}};
     border: none;
     color: {{text_primary}};
     font-size: 11px;
 }
 QTreeWidget::item:selected {
-    background-color: {{bg_tertiary}};
+    background-color: {{selection_bg}};
     color: {{accent}};
 }
 
@@ -436,11 +455,11 @@ QLineEdit#mdPreview {
 /* ── Date / Time pickers ─────────────────────────────────────── */
 QDateEdit, QTimeEdit, QDateTimeEdit {
     color: {{text_primary}};
-    background-color: {{bg_secondary}};
-    border: 1px solid {{border_primary}};
-    border-radius: 5px;
-    padding: 3px 6px;
-    font-size: 12px;
+    background-color: {{surface}};
+    border: 1px solid {{border_2}};
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-size: 12.5px;
     min-height: 22px;
 }
 QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
@@ -451,9 +470,8 @@ QDateEdit:focus, QTimeEdit:focus, QDateTimeEdit:focus {
 
 QCalendarWidget {
     background-color: {{surface_raised}};
-    border: 1px solid {{bg_tertiary}};
-    border-radius: 6px;
-    
+    border: 1px solid {{border_2}};
+    border-radius: 10px;
 }
 QCalendarWidget QToolButton {
     
@@ -463,7 +481,8 @@ QCalendarWidget QToolButton {
     font-size: 12px;
 }
 QCalendarWidget QToolButton:hover {
-    background-color: {{bg_tertiary}};
+    background-color: {{hover}};
+    color: {{accent}};
     border-radius: 4px;
 }
 QCalendarWidget QMenu {
@@ -520,7 +539,7 @@ QWidget#timelineCard {
 }
 QWidget#entryCard {
     background: {{surface_alt}};
-    border: 1px solid {{bg_tertiary}};
+    border: 1px solid {{border_primary}};
     border-radius: 6px;
 }
 QWidget#entryCard:hover {
@@ -533,10 +552,12 @@ QWidget#entryCard[selected="true"] {
 }
 
 /* ── Calendar Popup ─────────────────────────────────────────────── */
-QDialog#calendarPopup {
+/* 视觉由内层 QFrame 承载（顶层窗口透明以留出投影），故用 QWidget# 而非
+   QDialog# —— 投影走 apply_elevation(…, 3)，不在这里。 */
+QWidget#calendarPopup {
     background-color: {{surface_raised}};
-    border: 1px solid {{bg_tertiary}};
-    border-radius: 8px;
+    border: 1px solid {{border_2}};
+    border-radius: 10px;
 }
 QLabel#calNavBtn {
     color: {{nav_secondary}};
@@ -561,10 +582,11 @@ QLabel#calWeekday {
 }
 
 /* ── Time Popup ─────────────────────────────────────────────────── */
-QDialog#timePopup {
+/* 同 calendarPopup：视觉由内层 QFrame 承载，投影走 apply_elevation(…, 3)。 */
+QWidget#timePopup {
     background-color: {{surface_raised}};
-    border: 1px solid {{bg_tertiary}};
-    border-radius: 8px;
+    border: 1px solid {{border_2}};
+    border-radius: 10px;
 }
 QLabel#timePopupTitle {
     color: {{text_primary}};
@@ -577,14 +599,14 @@ QLabel#timeColLabel {
     font-weight: bold;
 }
 QScrollArea#timeColScroll {
-    background-color: {{bg_secondary}};
-    border: 1px solid {{bg_tertiary}};
+    background-color: {{surface_raised}};
+    border: 1px solid {{border_primary}};
     border-radius: 6px;
 }
 /* ── Sidebar ─────────────────────────────────────────────────── */
 QWidget#sidebar {
     background-color: {{surface_alt}};
-    border-right: 1px solid {{bg_tertiary}};
+    border-right: 1px solid {{border_primary}};
 }
 
 /* ── Scroll Bars ─────────────────────────────────────────────── */
@@ -607,24 +629,24 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 
 /* ── Tooltips ────────────────────────────────────────────────── */
 QToolTip {
-    background-color: {{bg_tertiary}}; color: {{text_primary}};
-    border: 1px solid {{border_primary}}; border-radius: 4px;
-    padding: 4px 8px; font-size: 11px;
+    background-color: {{surface_raised}}; color: {{text_primary}};
+    border: 1px solid {{border_2}}; border-radius: 6px;
+    padding: 5px 9px; font-size: 11.5px;
 }
 
 /* ── Spin Box ────────────────────────────────────────────────── */
 QSpinBox, QDoubleSpinBox {
-    background-color: {{bg_secondary}}; color: {{text_primary}};
-    border: 1px solid {{border_primary}}; border-radius: 4px;
-    padding: 3px 6px; font-size: 12px;
+    background-color: {{surface}}; color: {{text_primary}};
+    border: 1px solid {{border_2}}; border-radius: 8px;
+    padding: 4px 8px; font-size: 12.5px;
 }
 QSpinBox:focus, QDoubleSpinBox:focus { border-color: {{accent}}; }
 
 /* ── Checkbox Indicator ──────────────────────────────────────── */
 QCheckBox::indicator {
     width: 16px; height: 16px;
-    border: 1px solid {{border_primary}}; border-radius: 3px;
-    background: {{bg_secondary}};
+    border: 1px solid {{border_2}}; border-radius: 4px;
+    background: {{surface}};
 }
 QCheckBox::indicator:checked {
     background: {{accent}}; border-color: {{accent}};
@@ -634,15 +656,15 @@ QCheckBox::indicator:hover { border-color: {{accent}}; }
 /* ── Batch Sidebar ───────────────────────────────────────────── */
 QWidget#manageSidebar {
     background-color: {{surface_alt}};
-    border-right: 1px solid {{bg_tertiary}};
+    border-right: 1px solid {{border_primary}};
 }
-QWidget#sidebarSep { background-color: {{bg_tertiary}}; border: none; }
+QWidget#sidebarSep { background-color: {{border_primary}}; border: none; }
 QPushButton#sidebarClearBtn { color: {{text_secondary}}; font-size: 10px; padding: 0; border: none; }
 QPushButton#sidebarHomeBtn:hover { background: {{accent_alpha_13}}; }
 
 /* ── Tag Management Panel ─────────────────────────────────────── */
 QWidget#tagPanelContainer {
-    background: {{bg_secondary}};
+    background: {{surface}};
     border-left: 1px solid {{border_primary}};
 }
 QLineEdit#tagSearchInput {
@@ -658,13 +680,13 @@ QListWidget#tagList {
 }
 QListWidget#tagList::item { padding: 3px 6px; border-bottom: 1px solid {{border_primary}}; }
 QListWidget#tagList::item:selected { background: {{accent}}; color: {{text_on_accent}}; }
-QListWidget#tagList::item:hover { background: {{bg_tertiary}}; }
+QListWidget#tagList::item:hover { background: {{hover}}; }
 QPushButton#tagActionBtn {
     font-size: 10px; padding: 4px 8px;
     border: 1px solid {{border_primary}}; border-radius: 4px;
     background: {{bg_primary}}; color: {{text_primary}};
 }
-QPushButton#tagActionBtn:hover { background: {{bg_tertiary}}; }
+QPushButton#tagActionBtn:hover { background: {{hover}}; }
 QPushButton#tagActionBtn:disabled { color: {{text_disabled}}; }
 QLabel#batchCountLabel { font-size: 10px; color: {{text_secondary}}; }
 
@@ -703,11 +725,57 @@ QPushButton#overviewPresetBtn:checked {
 
 /* ── Multi-Task Editor ────────────────────────────────────────── */
 QTextEdit#multiTaskEditor {
-    font-family: "Consolas", "Cascadia Code", "Courier New", monospace;
+    font-family: {{font_mono}};
     font-size: 13px;
     color: {{text_primary}};
-    background-color: {{bg_secondary}};
-    border: 1px solid {{border_primary}};
-    border-radius: 6px;
+    background-color: {{surface_raised}};
+    border: 1px solid {{border_2}};
+    border-radius: 8px;
     padding: 7px 12px;
 }
+
+/* ── Fusion 残留接管（QSS 覆盖得了的部分）──────────────────────────
+   先统计了实际用量：QGroupBox / QSlider / QSpinBox 在代码里**零使用**，
+   写样式也看不见，所以不为它们写。下面三处是真正在屏上、此前裸用 Fusion 的：
+     · QProgressBar  —— 原型 .ubar .tr 是 7px 细槽，不是 Fusion 的厚凹槽
+     · QRadioButton  —— 原型是「描边圆环 + 实心点」
+   焦点虚框与下拉箭头这两件 QSS 改不动的，见 src/ui/web_style.py。
+
+   注意**不要**在这里写 QComboBox::down-arrow：实测套了 QSS 后箭头走
+   PE_IndicatorArrowDown，由 WebStyle.drawPrimitive 描边绘制；若 QSS 再用
+   image 指定位图就会把自绘覆盖掉，且位图无法跟随主题变色。
+   同时也不要写 ::drop-down（会带上 Fusion 的凹槽按钮盒）。
+   ───────────────────────────────────────────────────────────────── */
+QProgressBar {
+    background-color: {{bg_secondary}};
+    border: none;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 11px;
+    color: {{text_secondary}};
+    min-height: 8px;
+}
+QProgressBar::chunk {
+    background-color: {{accent}};
+    border-radius: 4px;
+}
+
+QRadioButton::indicator {
+    width: 14px; height: 14px; border-radius: 7px;
+    border: 1.5px solid {{border_2}};
+    background-color: {{surface}};
+}
+QRadioButton::indicator:hover {
+    border-color: {{accent}};
+}
+QRadioButton::indicator:checked {
+    border: 1.5px solid {{accent}};
+    background: qradialgradient(
+        cx: 0.5, cy: 0.5, radius: 0.5, fx: 0.5, fy: 0.5,
+        stop: 0 {{accent}},
+        stop: 0.45 {{accent}},
+        stop: 0.5 {{surface}},
+        stop: 1 {{surface}}
+    );
+}
+

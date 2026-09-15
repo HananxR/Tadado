@@ -135,6 +135,18 @@ def _build_manage(parent=None, deps=None):
     return build(deps["main_window"])
 
 
+def _build_graph(parent=None, deps=None):
+    from .graph_page import build
+
+    return build(deps["main_window"])
+
+
+def _build_overview(parent=None, deps=None):
+    from .overview_view import build
+
+    return build(deps["main_window"])
+
+
 register(
     ViewSpec(
         id="tasks",
@@ -163,5 +175,25 @@ register(
         icon="task_manage",
         factory=_build_manage,
         description="批量审视与处置",
+    )
+)
+register(
+    ViewSpec(
+        id="graph",
+        title="任务图谱",
+        group="洞察",
+        icon="graph",
+        factory=_build_graph,
+        description="任务 × 标签 × 分区 × [[链接]] 关系网络",
+    )
+)
+register(
+    ViewSpec(
+        id="overview",
+        title="总览",
+        group="工作",
+        icon="overview",
+        factory=_build_overview,
+        description="今日焦点、统计瓦片与近期活动",
     )
 )

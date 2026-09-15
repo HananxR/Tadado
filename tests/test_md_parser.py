@@ -170,3 +170,41 @@ class TestOverdue:
 
         result = parser.parse("- [ ] LATER 稍后做")
         assert result.status == TaskStatus.TODO
+
+
+class TestLinks:
+    """[[任务名]] 链接提取与边界（阶段 6）。"""
+
+    def test_link_extracted_and_title_literal(self, parser: MarkdownTaskParser) -> None:
+        result = parser.parse("- [ ] 重构 [[认证模块]] #后端")
+        assert result.links == ["认证模块"]
+        # 标题保留字面量，不得剥离/替换 [[...]]
+        assert result.title == "重构 [[认证模块]]"
+        assert result.clean_title == "重构 [[认证模块]]"
+        assert result.tags == ["后端"]
+
+    def test_empty_link_ignored(self, parser: MarkdownTaskParser) -> None:
+        assert parser.parse("- [ ] 任务 [[ ]]").links == []
+
+    def test_unclosed_link_ignored(self, parser: MarkdownTaskParser) -> None:
+        assert parser.parse("- [ ] 任务 [[abc").links == []
+
+    def test_adjacent_links(self, parser: MarkdownTaskParser) -> None:
+        assert parser.parse("- [ ] 任务 [[a]][[b]]").links == ["a", "b"]
+
+    def test_fullwidth_brackets_ignored(self, parser: MarkdownTaskParser) -> None:
+        assert parser.parse("- [ ] 任务 【【a】】").links == []
+
+    def test_dedup_preserve_order(self, parser: MarkdownTaskParser) -> None:
+        assert parser.parse("- [ ] [[a]] [[b]] [[a]]").links == ["a", "b"]
+
+    def test_content_stripped(self, parser: MarkdownTaskParser) -> None:
+        assert parser.parse("- [ ] [[  x  ]]").links == ["x"]
+
+    def test_fallback_path_links(self, parser: MarkdownTaskParser) -> None:
+        result = parser.parse("随便写 [[x]]")
+        assert result.links == ["x"]
+        assert "[[x]]" in result.title
+
+    def test_default_links_empty(self, parser: MarkdownTaskParser) -> None:
+        assert parser.parse("- [ ] 无链接任务 #tag").links == []

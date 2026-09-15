@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tadado</title>
+    <script>
+      // 首帧前落主题。模块脚本要等 CSS 之后才执行，暗色用户会先看到一帧白底；
+      // 这个内联片段是唯一的规避手段，取值逻辑与 src/shell/theme.ts 保持一致。
+      (function () {
+        try {
+          var mode = localStorage.getItem("tadado-theme");
+          if (mode !== "dark" && mode !== "light" && mode !== "sys") mode = "light";
+          document.documentElement.dataset.theme = mode;
+        } catch (error) {
+          document.documentElement.dataset.theme = "light";
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <div class="app">
+      <!-- ============ 标题栏 ============ -->
+      <!-- 无边框窗口（decorations:false），靠 Tauri 的拖拽区域拖动。
+           必须是 "deep"：裸属性只认「直接点在 header 上」，点在品牌文字或 logo
+           上就拖不动了；deep 让整条标题栏可拖，而 button/input 等可点击元素由
+           Tauri 自己排除（见 tauri 2.x window/scripts/drag.js）。
+           双击标题栏 = 最大化，同样由它接管。 -->
+      <header class="titlebar" id="titlebar" data-tauri-drag-region="deep">
+        <div class="logo" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M4.5 12.5l4.8 4.8L19.5 7" />
+          </svg>
+        </div>
+        <span class="brand">Tadado</span>
+        <span class="ver" id="tb-ver">—</span>
+
+        <div class="tb-grow"></div>
+
+        <div class="hint">
+          <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>随时唤起
+        </div>
+
+        <button class="tb-btn" id="tb-pin" title="常驻置顶">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M9 3.5h6l-1 5.5 2 2.2v2.2H8v-2.2l2-2.2-1-5.5z" />
+            <path d="M12 13.4V21" />
+          </svg>
+        </button>
+
+        <button class="tb-btn" id="tb-theme" title="切换主题">
+          <svg
+            class="i-sun"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          >
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19"
+            />
+          </svg>
+          <svg
+            class="i-moon"
+            style="display: none"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M20 13.5A8.5 8.5 0 1110.5 4a7 7 0 009.5 9.5z" />
+          </svg>
+        </button>
+
+        <span class="tb-sep"></span>
+
+        <button class="tb-btn" id="tb-min" title="最小化">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          >
+            <path d="M5 12h14" />
+          </svg>
+        </button>
+
+        <button class="tb-btn" id="tb-max" title="最大化">
+          <svg
+            class="i-max"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+          >
+            <rect x="6" y="6" width="12" height="12" rx="1.5" />
+          </svg>
+          <svg
+            class="i-restore"
+            style="display: none"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+          >
+            <rect x="8" y="4.5" width="11" height="11" rx="1.5" />
+            <path d="M16 15.5v2a1.5 1.5 0 01-1.5 1.5H5.5A1.5 1.5 0 014 17.5v-9A1.5 1.5 0 015.5 7h2" />
+          </svg>
+        </button>
+
+        <button class="tb-btn close" id="tb-close" title="最小化到托盘">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          >
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </header>
+
+      <div class="app-body">
+        <!-- ============ 侧边栏 ============ -->
+        <!-- 页面入口由 src/pages/registry.ts 驱动渲染（见 nav.ts） -->
+        <nav class="rail" id="rail">
+          <div class="rail-grow"></div>
+          <div class="rail-sep"></div>
+
+          <div class="part-wrap">
+            <button class="rail-btn" id="part-btn" title="分区">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M3.5 7.5A2 2 0 015.5 5.5h4l2 2h7a2 2 0 012 2v7a2 2 0 01-2 2h-13a2 2 0 01-2-2z"
+                />
+              </svg>
+            </button>
+            <div class="part-pop" id="part-pop"></div>
+          </div>
+
+          <!-- 用了带齿的齿轮，不是「圆 + 8 根放射线」：后者在 19px 下和顶栏的
+               主题太阳图标几乎一模一样，两个按钮长得像才是真正让人犹豫的地方 -->
+          <button class="rail-btn" id="set-btn" title="设置">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <circle cx="12" cy="12" r="3.1" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+              />
+            </svg>
+          </button>
+        </nav>
+
+        <!-- ============ 主区 ============ -->
+        <main class="main" id="main"></main>
+      </div>
+    </div>
+
+    <!-- 设置面板（骨架） -->
+    <aside class="drawer" id="set-drawer" style="width: 420px">
+      <div class="dr-h">
+        <span class="t">设置</span>
+        <div class="seg" id="set-tabs" style="flex: none; width: auto">
+          <button data-tab="gen" class="on">常规</button>
+          <button data-tab="ai">AI 助手</button>
+          <button data-tab="part">分区</button>
+          <button data-tab="about">关于</button>
+        </div>
+        <button class="icon-btn" id="set-close" title="关闭 (Esc)">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+          >
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+      <div class="dr-b" id="set-body"></div>
+    </aside>
+
+    <div id="toast"></div>
+  </body>
+</html>

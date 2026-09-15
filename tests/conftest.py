@@ -55,3 +55,30 @@ def repository(temp_db: str) -> TaskRepository:
 def sample_tasks_dir(tmp_path: Path) -> Path:
     """Create a temp directory for export/import tests."""
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def _no_blocking_dialogs(monkeypatch):
+    """无头兜底：模态对话框会永久阻塞，统一短路为默认返回值。
+
+    ``QMessageBox.exec()`` / ``QFileDialog.get*()`` 在 offscreen 平台无人可点，
+    会让用例挂死（曾导致全量 ``pytest`` 300s 超时）。这里把常见入口替换为
+    「确定 / 取消」结果，只让被测代码路径继续跑通，不做任何真实交互。
+    """
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    _ok = QMessageBox.StandardButton.Ok
+    _no = QMessageBox.StandardButton.No
+    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **k: _ok))
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a, **k: _ok))
+    monkeypatch.setattr(QMessageBox, "critical", staticmethod(lambda *a, **k: _ok))
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: _no))
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: ("", ""))
+    )
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: ("", ""))
+    )
+    monkeypatch.setattr(
+        QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: "")
+    )

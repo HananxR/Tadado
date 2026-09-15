@@ -3,39 +3,31 @@
 from __future__ import annotations
 
 import ctypes
-import datetime as dt
-import json
 import logging
 from ctypes import wintypes
-from datetime import date
 
 from PySide6.QtCore import QDateTime, QEvent, QPoint, QSize, Qt, QTime, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
-    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QMenu,
-    QMessageBox,
     QPushButton,
     QStackedWidget,
-    QStatusBar,
     QWidget,
 )
 
 from ..config import AppConfig
 from ..models.repository import TaskRepository
-from ..models.task import Task
-from ..models.task_filter import TaskFilter
-from ..models.task_status import TaskStatus
 from ..services.update_checker import UpdateChecker
 from ..utils.icon_loader import load_icon
 from ..utils.signal_bus import get_signal_bus
+from .controllers.analysis_controller import AnalysisController
 from .controllers.batch_controller import BatchController
-from .controllers.filter_coordinator import FilterCoordinator
 from .controllers.partition_controller import PartitionController
-from .dialogs.settings_dialog import SettingsDialog
+from .selection_context import SelectionContext
+from .toast import Toast
+from .window_shell import WindowShell
 
 _log = logging.getLogger("runlog")
 
@@ -73,30 +65,26 @@ class MainWindow(QMainWindow):
         self._repository = repository
         self._task_service = task_service
         self._signal_bus = get_signal_bus()
-        self._carousel_filter: TaskFilter | None = None
-        self._page: int = 0
-        self._page_size: int = config.get("general", "page_size", default=20)
-        self._total_count: int = 0
+        # 跨视图共享选中上下文（阶段 1 引入，阶段 3 时间轴首次真正接入）
+        self._selection = SelectionContext(self)
         self._current_view: str = "edit"
         self._current_page: str = "tasks"
-        self._analysis_date_range: tuple = (None, None)
-        self._selection_guard: bool = False  # prevents signal recursion from selectRow()
-        self._new_task_sort_active: bool = False  # True after task creation, reset on user nav
-        self._setting_sort_internally: bool = False  # guard against self-triggered filter change
         self._update_checker = UpdateChecker(self)
+        # 窗口生命周期收敛层：唤醒 / 置顶 / 全局热键（阶段 5）
+        self._window_shell = WindowShell(self, config, self)
 
         self.setWindowTitle("Tadado")
 
         self._setup_custom_title_bar()
-        self._setup_status_bar()
         self._setup_central_widget()
+        # 反馈浮层（原型 #toast）——取代 1.0 的底部状态栏
+        self._toast = Toast(self)
         # PartitionController — owns partition lifecycle, replaces _setup_idle_lock + _load_partitions
         self._partition_ctrl = PartitionController(
             self._task_service,
             self._config,
             self._splitter_stack,
-            self._status_partition_btn,
-            self._status_partition_menu,
+            self._nav_shell.partition_selector,
             self,
         )
         self._partition_ctrl.partition_activated.connect(self._on_partition_activated)
@@ -104,31 +92,17 @@ class MainWindow(QMainWindow):
         self._batch_ctrl = BatchController(
             self._task_service,
             self._config,
-            self._repository,
             self._partition_ctrl,
             self,
         )
-        self._batch_ctrl.data_changed.connect(self._on_data_changed)
         self._batch_ctrl.status_message.connect(self._flash_status)
-        # FilterCoordinator — data refresh core for edit view
-        self._filter_coordinator = FilterCoordinator(
-            self._task_service,
-            self._filter_bar,
-            self._quick_overview,
-            self._task_model,
-            self._task_view,
-            self._progress_bar,
-            self._status_badge,
-            self._edit_panel,
-            self._status_msg,
-            self._config,
-            self,
-        )
-        self._filter_coordinator.status_message.connect(self._flash_status)
+        # AnalysisController — 活动分析页槽与导出（页面部件懒构建后 attach）
+        self._analysis_ctrl = AnalysisController(self._task_service, self)
+        self._analysis_ctrl.set_partition(self._partition_ctrl.active_id)
         self._connect_signals()
         self._setup_midnight_timer()
         self._partition_ctrl.load_all()
-        self._apply_splitter_sizes()
+        self._window_shell.apply_configured_pin()
 
     # ------------------------------------------------------------------
     # Adaptive sizing
@@ -148,20 +122,17 @@ class MainWindow(QMainWindow):
             (geom.width() - w) // 2 + geom.x(),
             (geom.height() - h) // 2 + geom.y(),
         )
-        QTimer.singleShot(100, self._sync_header_alignment)
-
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
-        self._apply_splitter_sizes()
         self._apply_batch_splitter_sizes()
-        self._sync_header_alignment()
-
-    def _apply_splitter_sizes(self) -> None:
-        if self._splitter is None:
-            return
-        total = self._splitter.width()
-        if total > 100:
-            self._splitter.setSizes([int(total * 0.50), int(total * 0.50)])
+        toast = getattr(self, "_toast", None)
+        if toast is not None:
+            toast.reposition()
+        # 抽屉是自由浮动的子部件（不在布局里），窗口缩放时要手动重新贴右
+        for attr in ("_task_drawer", "_settings_drawer"):
+            drawer = getattr(self, attr, None)
+            if drawer is not None and drawer.is_open:
+                drawer.reposition()
 
     def _apply_batch_splitter_sizes(self) -> None:
         """Set batch page splitter to 70:30 (existing content : tag panel)."""
@@ -172,22 +143,18 @@ class MainWindow(QMainWindow):
         if total > 100:
             splitter.setSizes([int(total * 0.80), int(total * 0.20)])
 
-    def _sync_header_alignment(self) -> None:
-        """Sync editor header height to match table header for vertical alignment."""
-        hh = self._task_view.horizontalHeader()
-        if hh:
-            h = hh.height()
-            if h > 0:
-                self._edit_panel.set_header_height(h)
-
     def refresh_theme(self) -> None:
-        self._edit_panel.refresh_theme()
-        if hasattr(self, "_analysis_content_view"):
-            self._analysis_content_view.refresh_theme()
+        # 标题栏 / 侧栏 / 浮层样式由 MainWindow 自己持有，不参与注册表
         if hasattr(self, "_title_icon_btn"):
             self._refresh_title_bar_theme()
-        if hasattr(self, "_status_partition_btn"):
-            self._refresh_status_partition_style()
+        if hasattr(self, "_nav_shell"):
+            self._nav_shell.refresh_theme()
+        if hasattr(self, "_toast"):
+            self._toast.refresh_theme()
+        # 其余部件在构造时自助登记，这里统一广播（弱引用，销毁自动摘除）
+        from ..utils.theme_registry import refresh_theme_all
+
+        refresh_theme_all()
 
     def _refresh_title_bar_theme(self) -> None:
         """Re-apply inline QSS on the title-bar logo button after theme switch."""
@@ -202,22 +169,35 @@ class MainWindow(QMainWindow):
     def active_partition_name(self) -> str:
         """当前激活分区的名称（供托盘 AI 助手注入 TADADO_PARTITION）."""
         pid = self._partition_ctrl.active_id or ""
-        return self._repository.get_partition_name_map().get(pid, "")
+        return self._task_service.get_partition_name_map().get(pid, "")
 
-    def _refresh_status_partition_style(self) -> None:
-        """Re-apply inline QSS on the status-bar partition button after theme switch."""
-        from ..utils.design_tokens import get_tokens as _gt
+    # ------------------------------------------------------------------
+    # Public API — 供托盘 / app 调用（不再触碰私有槽）
+    # ------------------------------------------------------------------
 
-        t = _gt()
-        accent = t.accent if t else "#4d57c3"
-        r, g, b = int(accent[1:3], 16), int(accent[3:5], 16), int(accent[5:7], 16)
-        self._status_partition_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-left: 3px solid {accent}; "
-            f"background: rgba({r},{g},{b},0.15); border-radius: 4px; "
-            f"padding: 2px 8px 2px 6px; font-size: 11px; "
-            f"font-weight: bold; color: {accent}; }}"
-            f"QPushButton:hover {{ background: rgba({r},{g},{b},0.25); }}"
-        )
+    @property
+    def window_shell(self) -> WindowShell:
+        return self._window_shell
+
+    def wake(self, switch_to: str | None = None) -> None:
+        """显示并聚焦窗口（可选同时切页）。"""
+        self._window_shell.wake(switch_to=switch_to)
+
+    def toggle_visibility(self) -> None:
+        """托盘「显示/隐藏窗口」。"""
+        self._window_shell.toggle_visibility()
+
+    def new_single_task(self) -> None:
+        """托盘「新建单任务」。"""
+        self._on_menu_new_draft()
+
+    def new_multi_task(self) -> None:
+        """托盘「新建多任务」。"""
+        self._on_menu_new_multi()
+
+    def quit_app(self) -> None:
+        """托盘「退出」。"""
+        self._on_quit()
 
     # ------------------------------------------------------------------
     # Custom title bar — VS Code style: icon + menu + window buttons
@@ -247,7 +227,13 @@ class MainWindow(QMainWindow):
         # 全局热键提示（Phase 5 落地实际热键注册）
         hint_label = QLabel("⌨ Ctrl+Shift+Space 随时唤起")
         hint_label.setObjectName("titleHint")
-        hint_label.setStyleSheet("color: #9a9488; font-size: 11px; padding: 0 8px;")
+        from ..utils.design_tokens import get_tokens as _get_tokens
+
+        _tokens = _get_tokens()
+        _hint_color = _tokens.text_secondary if _tokens else "#9a9488"
+        hint_label.setStyleSheet(
+            f"color: {_hint_color}; font-size: 11px; padding: 0 8px;"
+        )
         tb.addWidget(hint_label)
 
         tb.addStretch()
@@ -430,70 +416,22 @@ class MainWindow(QMainWindow):
             old.deleteLater()
         self._stack.insertWidget(idx, task_page)
         self._page_built["tasks"] = True
+        # 必须显式切到任务页：insertWidget 不会改变 currentIndex，
+        # 否则启动后主区域停留在 overview 的空占位（且 _switch_view 因
+        # `_current_view` 初值 "edit" 会被 early-return 拦下，无法补救）。
+        self._stack.setCurrentIndex(idx)
         self._nav_shell.set_active("tasks")
 
     def _toggle_pin(self) -> None:
-        """常驻置顶（Phase 1 本地实现；TODO(phase5): WindowShell 接管）。"""
+        """常驻置顶（阶段 5：交由 WindowShell 统一管理）。"""
         on = self._pin_btn.isChecked()
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)
-        self.show()
+        self._window_shell.set_pinned(on)
         self._flash_status("已开启常驻置顶" if on else "已取消常驻置顶")
 
     def _on_new_multi_task(self) -> None:
-        if not self.isVisible() and self._edit_panel.has_unsaved_draft():
-            self._edit_panel.discard_draft()
-        elif not self._guard_draft():
-            return
-        if self._splitter_stack.currentIndex() == 1:
-            if self._partition_ctrl.passwords.get(self._partition_ctrl.active_id, ""):
-                self._partition_ctrl.unlock()
-                if self._splitter_stack.currentIndex() == 1:
-                    return
-            else:
-                self._splitter_stack.setCurrentIndex(0)
-        self._stack.setCurrentIndex(self._page_index["tasks"])
-        self.show()
-        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
-        self.raise_()
-        self.activateWindow()
-        self._edit_panel.set_active_partition(self._partition_ctrl.active_id)
-        self._edit_panel.create_draft_multi()
-        self._apply_splitter_sizes()
-
-    # ------------------------------------------------------------------
-    # Status bar
-    # ------------------------------------------------------------------
-
-    def _setup_status_bar(self) -> None:
-        self._status_bar = QStatusBar()
-        self._status_bar.setSizeGripEnabled(True)
-
-        # Partition selector button (prominent, left side)
-        self._status_partition_btn = QPushButton("● 切换分区")
-        self._status_partition_btn.setFlat(True)
-        self._status_partition_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._refresh_status_partition_style()
-        self._status_partition_menu = QMenu(self._status_partition_btn)
-        self._status_partition_btn.setMenu(self._status_partition_menu)
-        self._status_partition_btn.clicked.connect(lambda: self._status_partition_btn.showMenu())
-        self._status_bar.addWidget(self._status_partition_btn)
-
-        # Stats + motd text
-        self._status_msg = QLabel("就绪")
-        self._status_bar.addWidget(self._status_msg, 1)
-
-        # Right: clock
-        self._status_clock = QLabel()
-        self._status_clock.setStyleSheet("QLabel { margin-right: 4px; }")
-        self._status_bar.addPermanentWidget(self._status_clock)
-        self._update_status_clock()
-        self._clock_timer = QTimer(self)
-        self._clock_timer.timeout.connect(self._update_status_clock)
-        self._clock_timer.start(1000)
-        self.setStatusBar(self._status_bar)
-
-    def _update_status_clock(self) -> None:
-        self._status_clock.setText(dt.datetime.now().strftime("%Y年%m月%d日 %I:%M:%S %p"))
+        """批量新建（托盘 / 菜单入口）。"""
+        self._ensure_window_ready()
+        self._open_multi_task_dialog()
 
     # ------------------------------------------------------------------
     # Signals
@@ -501,20 +439,6 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self) -> None:
         bus = self._signal_bus
-        fc = self._filter_coordinator
-
-        # Data refresh → FilterCoordinator (ignore signal args to keep defaults)
-        bus.scan_completed.connect(lambda *_: fc.refresh())
-        bus.task_updated.connect(lambda *_: fc.refresh())
-        bus.task_deleted.connect(lambda *_: fc.refresh())
-        bus.task_status_changed.connect(lambda *_: fc.refresh())
-        bus.batch_operation_completed.connect(lambda *_: fc.refresh())
-        bus.archive_completed.connect(lambda *_: fc.refresh())
-        bus.tag_changed.connect(lambda *_: fc.refresh())
-
-        # Task creation (special sort) → FilterCoordinator
-        bus.task_created.connect(fc.handle_new_task_sort)
-        bus.tasks_bulk_created.connect(fc.handle_tasks_bulk_created)
 
         # Partitions → PartitionController
         bus.partitions_changed.connect(self._partition_ctrl.load_all)
@@ -529,280 +453,30 @@ class MainWindow(QMainWindow):
         bus.task_status_changed.connect(self._on_heatmap_data_changed)
         bus.batch_operation_completed.connect(self._on_heatmap_data_changed)
 
-        # Edit-view toolbar (still in MainWindow for now)
-        self._batch_toolbar.select_all_requested.connect(
-            lambda: self._task_model.set_checked_ids(set(t.id for t in self._task_model.tasks))
+        # 状态 chips 计数（原型「全部 28」形式）
+        for signal in (
+            bus.task_created,
+            bus.task_updated,
+            bus.task_deleted,
+            bus.task_status_changed,
+            bus.batch_operation_completed,
+            bus.archive_completed,
+            bus.scan_completed,
+        ):
+            signal.connect(self._on_bus_refresh_chips)
+
+        # Timeline：选中 / 双击 / 搜索 / 状态 / 排序 / 粒度
+        self._timeline_ctl.task_selected.connect(self._on_timeline_selected)
+        self._timeline_ctl.task_activated.connect(self._on_timeline_activated)
+        self._timeline_search.textChanged.connect(self._apply_timeline_filters)
+        self._timeline_sort_combo.currentIndexChanged.connect(
+            self._on_timeline_sort_changed
         )
-        self._batch_toolbar.deselect_all_requested.connect(
-            lambda: self._task_model.set_checked_ids(set())
-        )
+        self._timeline_range_seg.changed.connect(self._on_timeline_range_changed)
+        self._status_chip_group.buttonClicked.connect(self._apply_timeline_filters)
 
-    # ------------------------------------------------------------------
-    # Slots: data refresh
-    # ------------------------------------------------------------------
-
-    def _on_data_changed(self, *args) -> None:
-        if hasattr(self, "_splitter_stack") and self._splitter_stack.currentIndex() == 1:
-            return
-        if hasattr(self, "_progress_bar"):
-            self._progress_bar.reset_to_unclicked()
-        _sizes = self._splitter.sizes() if hasattr(self, "_splitter") and self._splitter else None
-        f = self._build_filter_with_sort()
-        self._refresh_all_views(f, reset_page=False)
-        if _sizes:
-            self._splitter.setSizes(_sizes)
-        # Re-select task if triggered by a task update signal (keep current task open)
-        if args and hasattr(args[0], "id"):
-            self._select_and_load_task(args[0].id)
-
-    def _build_filter_with_sort(self) -> TaskFilter:
-        """Build filter with FilterBar's sort as base, overlay scope from quick-overview + partition."""
-        f = self._filter_bar.build_filter()  # preserves sort + search + urgencies
-        # 从速览栏当前预设直接获取时间窗口和状态过滤（不受 _carousel_filter 覆写影响）
-        if hasattr(self, "_quick_overview"):
-            overview_f = self._quick_overview.build_filter()
-            f.created_to = overview_f.created_to
-            f.statuses = overview_f.statuses
-        if self._carousel_filter is not None:
-            f.date_from = self._carousel_filter.date_from
-            f.date_to = self._carousel_filter.date_to
-            f.activity_field = self._carousel_filter.activity_field
-            f.activity_min = self._carousel_filter.activity_min
-            f.partition_id = (
-                self._carousel_filter.partition_id or self._partition_ctrl.active_id or None
-            )  # "" → None
-        else:
-            f.partition_id = self._partition_ctrl.active_id or None  # "" → None
-        return f
-
-    def _refresh_all_views(self, filter_: TaskFilter, reset_page: bool = True) -> None:
-        if reset_page:
-            self._reset_pagination()
-        filter_.partition_id = (
-            filter_.partition_id or self._partition_ctrl.active_id or None
-        )  # "" → None
-        all_tasks, self._total_count = self._task_service.search_with_total(filter_)
-        # Paginate table display — full list still passed to overview / progress bar
-        start = self._page * self._page_size
-        page_tasks = all_tasks[start : start + self._page_size]
-        self._task_model.set_offset(start)
-        self._task_model.load_tasks(page_tasks)
-        self._quick_overview.set_items(all_tasks)
-        self._update_page_label()
-        self._update_status_bar(filter_)
-        self._status_badge.refresh(filter_.date_from, filter_.date_to)
-        self._progress_bar.set_items(all_tasks)
-
-    def _select_and_load_task(self, task_id: str) -> None:
-        """Find task by ID and delegate to _on_task_selected (unified凸显 entry)."""
-        for row in range(self._task_model.rowCount()):
-            if self._task_model.tasks[row].id == task_id:
-                self._on_task_selected(self._task_model.tasks[row])
-                return
-
-    def _on_batch_status_change(self, ids: list[str], status) -> None:
-        """编辑视图批处理：状态变更（批量视图路径由 BatchController 自持）。"""
-        reply = QMessageBox.question(
-            self,
-            "确认操作",
-            f"确认更改 {len(ids)} 个任务的状态？",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-        )
-        if reply == QMessageBox.StandardButton.Ok:
-            self._task_service.batch_update_status(ids, status)
-            self._task_model.set_checked_ids(set())
-            self._on_data_changed()
-            self._batch_toolbar.reset_toggle()
-            self._flash_status(f"已更改 {len(ids)} 个任务状态")
-
-    def _on_batch_urgency_change(self, ids: list[str], urgency: int) -> None:
-        """编辑视图批处理：优先级变更（批量视图路径由 BatchController 自持）。"""
-        self._task_service.batch_update_urgency(ids, urgency)
-        self._task_model.set_checked_ids(set())
-        self._batch_toolbar.reset_toggle()
-        current = self._edit_panel.current_task()
-        if current and current.id in ids:
-            updated = self._task_service.get_task(current.id)
-            if updated:
-                self._edit_panel.load_task(updated)
-        self._on_data_changed()
-        self._flash_status(f"已更改 {len(ids)} 个任务优先级")
-
-    def _on_batch_delete(self, ids: list[str]) -> None:
-        reply = QMessageBox.question(
-            self,
-            "确认删除",
-            f"确认删除 {len(ids)} 个任务？此操作不可撤销。",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-        )
-        if reply == QMessageBox.StandardButton.Ok:
-            self._task_service.batch_delete(ids)
-            self._task_model.set_checked_ids(set())
-            self._on_data_changed()
-            self._batch_toolbar.reset_toggle()
-            self._flash_status(f"已删除 {len(ids)} 个任务")
-
-    def _on_batch_suspend(self, ids: list[str]) -> None:
-        reply = QMessageBox.question(
-            self,
-            "确认操作",
-            f"确认中止 {len(ids)} 个任务？",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-        )
-        if reply == QMessageBox.StandardButton.Ok:
-            self._task_service.batch_suspend(ids)
-            self._task_model.set_checked_ids(set())
-            self._on_data_changed()
-            self._batch_toolbar.reset_toggle()
-            self._flash_status(f"已中止 {len(ids)} 个任务")
-
-    def _on_batch_restart(self, ids: list[str]) -> None:
-        reply = QMessageBox.question(
-            self,
-            "确认操作",
-            f"确认重启 {len(ids)} 个任务？",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-        )
-        if reply == QMessageBox.StandardButton.Ok:
-            self._task_service.batch_restart(ids)
-            self._task_model.set_checked_ids(set())
-            self._on_data_changed()
-            self._batch_toolbar.reset_toggle()
-            self._flash_status(f"已重启 {len(ids)} 个任务")
-
-    def _on_batch_postpone(self, ids: list[str], days: int) -> None:
-        reply = QMessageBox.question(
-            self,
-            "确认操作",
-            f"确认将 {len(ids)} 个任务的截止时间延后 {days} 天？",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-        )
-        if reply == QMessageBox.StandardButton.Ok:
-            self._task_service.batch_postpone(ids, days)
-            self._task_model.set_checked_ids(set())
-            self._batch_toolbar.reset_toggle()
-            self._on_data_changed()
-            self._flash_status(f"已延后 {len(ids)} 个任务")
-
-    def _on_batch_move_partition(self, ids: list[str]) -> None:
-        """编辑视图右键迁移分区 — 委托 BatchController（同一套密码校验与确认流）。"""
-        self._batch_ctrl.batch_move_partition(ids)
-
-    def _on_filter_changed(self, filter_: TaskFilter) -> None:
-        if self._setting_sort_internally:
-            pass  # internal set_sort() call — keep new_task_sort_active
-        elif self._new_task_sort_active:
-            self._new_task_sort_active = False
-            self._setting_sort_internally = True
-            self._filter_bar.set_sort(self._config.default_sort)
-            self._setting_sort_internally = False
-            return  # set_sort triggers another _on_filter_changed with default
-        self._carousel_filter = filter_
-        self._refresh_all_views(filter_)
-
-    def _on_quick_preset(self, preset: str) -> None:
-        if self._new_task_sort_active:
-            self._new_task_sort_active = False
-            self._setting_sort_internally = True
-            self._filter_bar.set_sort(self._config.default_sort)
-            self._setting_sort_internally = False
-        f = self._filter_bar.build_filter()  # preserve sort
-        # 速览栏按创建时间过滤，排除已完成已归档（仓库层默认 archived=0 已排除已归档）
-        if preset == "all":
-            pass
-        elif preset == "today":
-            f.created_to = date.today()
-        elif preset == "yesterday":
-            f.created_to = date.today() - dt.timedelta(days=1)
-        elif preset == "last_week":
-            today = date.today()
-            f.created_to = today - dt.timedelta(days=today.isoweekday())
-        elif preset == "week":
-            today = date.today()
-            f.created_to = today + dt.timedelta(days=7 - today.isoweekday())
-        elif preset == "last_month":
-            today = date.today()
-            f.created_to = today.replace(day=1) - dt.timedelta(days=1)
-        elif preset == "month":
-            import calendar as _cal
-
-            today = date.today()
-            _, last = _cal.monthrange(today.year, today.month)
-            f.created_to = today.replace(day=last)
-        elif "days" in preset:
-            try:
-                int(preset.split("_")[0])
-                f.created_to = date.today()
-            except ValueError:
-                pass
-        self._carousel_filter = f
-        self._refresh_all_views(f)
-        self._progress_bar.reset_to_unclicked()
-        if hasattr(self, "_task_model") and self._task_model.rowCount() > 0:
-            self._on_task_selected(self._task_model.tasks[0])
-        if self._current_view != "edit":
-            self._heatmap_widget.highlight_range(f.date_from, f.date_to, preset)
-
-    def _on_status_clicked(self, status: TaskStatus) -> None:
-        f = self._filter_bar.build_filter()
-        f.statuses = [status] if status else None
-        if self._carousel_filter:
-            f.tags = list(self._carousel_filter.tags)
-        self._carousel_filter = f
-        self._refresh_all_views(f)
-
-    def _on_progress_filter(self, filter_: TaskFilter) -> None:
-        self._carousel_filter = filter_
-        # 通过 _build_filter_with_sort() 合并速览栏 scope
-        merged = self._build_filter_with_sort()
-        self._refresh_all_views(merged)
-        # 进度栏: 对任务列表额外做 activity_log 活动过滤
-        if self._progress_bar._active_period:
-            active_tasks = self._progress_bar.filter_tasks_by_activity(self._task_model.tasks)
-            if len(active_tasks) < len(self._task_model.tasks):
-                self._total_count = len(active_tasks)
-                self._task_model.set_offset(0)
-                self._task_model.load_tasks(active_tasks[: self._page_size])
-                self._update_page_label()
-        # 同步轮播数据到过滤后的列表，确保点击定位一致
-        self._progress_bar.set_items(list(self._task_model.tasks))
-        if self._task_model.tasks:
-            self._on_task_selected(self._task_model.tasks[0])
-
-    def _on_view_task_selected(self, task: Task) -> None:
-        """Guard against signal recursion from selectRow() inside _on_task_selected."""
-        if self._selection_guard:
-            return
-        self._on_task_selected(task)
-
-    def _on_task_selected(self, task: Task) -> None:
-        """统一任务凸显入口：模型凸显 + 编辑器加载 + 视图定位滚动。"""
-        self._task_model.set_highlighted_task(task.id)
-        self._edit_panel.load_task(task)
-        self._last_activity = dt.datetime.now()
-        # 在列表中定位并滚动到该任务
-        for row in range(self._task_model.rowCount()):
-            if self._task_model.tasks[row].id == task.id:
-                self._selection_guard = True
-                self._task_view.selectRow(row)
-                self._task_view.scrollTo(self._task_model.index(row, 0))
-                self._selection_guard = False
-                break
-
-    def _on_detail_requested(self, task: Task) -> None:
-        self._edit_panel.load_task(task)
-
-    def _on_task_selection_changed(self) -> None:
-        selected = self._task_view.selected_task_ids()
-        self._batch_toolbar.setVisible(len(selected) >= 1)
-
-    def _on_model_data_changed(self) -> None:
-        if hasattr(self, "_batch_toolbar"):
-            ids = self._task_model.checked_task_ids()
-            self._batch_toolbar.set_selected(ids)
-
-    def _on_carousel_clicked(self, task_id: str) -> None:
-        self._select_and_load_task(task_id)
+        # 页头「＋ 新建任务」
+        self._new_task_btn.clicked.connect(self._on_new_task)
 
     def _on_heatmap_data_changed(self, *args) -> None:
         if hasattr(self, "_heatmap_widget"):
@@ -811,67 +485,153 @@ class MainWindow(QMainWindow):
     def _on_go_home(self) -> None:
         if self._current_view != "edit":
             self._switch_view("edit")
-        self._filter_coordinator.go_home()
-
-    def _on_escape(self) -> None:
-        if self._current_view != "edit":
-            self._switch_view("edit")
-        else:
-            self._on_go_home()
+        # 回到首页 = 工具行过滤全部复位 + 时间轴回到「默认粒度」
+        default_range = self._config.timeline_range
+        self._timeline_search.clear()
+        self._timeline_status_chips["all"].setChecked(True)
+        self._timeline_range_seg.set_current_value(default_range)
+        self._timeline_ctl.set_range(default_range)
+        self._apply_timeline_filters()
 
     # ------------------------------------------------------------------
-    # Pagination
+    # Timeline (阶段 3)
     # ------------------------------------------------------------------
 
-    def _update_page_label(self) -> None:
-        if self._page_size <= 0:
-            self._page_label.setText("全部")
+    def _on_timeline_selected(self, task_id: str) -> None:
+        """时间轴单击 → 仅选中（高亮与 SelectionContext 由 TimelineController 负责）。"""
+
+    def _on_timeline_activated(self, task_id: str) -> None:
+        """双击时间轴 → 打开维护抽屉（阶段 4）。"""
+        self._on_timeline_selected(task_id)
+        self._ensure_drawer().open_task(task_id)
+
+    # ------------------------------------------------------------------
+    # TaskDrawer (阶段 4)
+    # ------------------------------------------------------------------
+
+    def _ensure_drawer(self):
+        """惰性创建维护抽屉（首次双击时才构建）。"""
+        drawer = getattr(self, "_task_drawer", None)
+        if drawer is None:
+            from .drawer import TaskDrawer
+
+            parent = self.centralWidget() or self
+            drawer = TaskDrawer(self._task_service, parent, animate=True)
+            drawer.saved.connect(self._on_drawer_saved)
+            self._task_drawer = drawer
+        return drawer
+
+    def _on_drawer_saved(self, task_id: str) -> None:
+        """抽屉保存后的即时反馈；按设置决定是否顺带收起抽屉。"""
+        self._flash_status("已保存")
+        if not self._config.auto_collapse_drawer:
             return
-        total_pages = max(1, (self._total_count + self._page_size - 1) // self._page_size)
-        self._page_label.setText(f"{self._page + 1} / {total_pages}")
+        drawer = getattr(self, "_task_drawer", None)
+        if drawer is not None and drawer.is_open:
+            drawer.close_drawer()
 
-    def _on_page_prev(self) -> None:
-        if self._page > 0:
-            self._page -= 1
-            self._refresh_all_views(self._build_filter_with_sort(), reset_page=False)
-            if self._task_model.rowCount() > 0:
-                self._on_task_selected(self._task_model.tasks[0])
+    def _on_timeline_range_changed(self, key) -> None:
+        if key:
+            self._timeline_ctl.set_range(key)
+            # 记住用户的选择，作为下次启动 / 回到首页的默认粒度
+            if key != self._config.timeline_range:
+                self._config.set("general", "timeline_range", value=key)
+                self._config.save()
 
-    def _on_page_next(self) -> None:
-        total_pages = max(1, (self._total_count + self._page_size - 1) // self._page_size)
-        if self._page < total_pages - 1:
-            self._page += 1
-            self._refresh_all_views(self._build_filter_with_sort(), reset_page=False)
-            if self._task_model.rowCount() > 0:
-                self._on_task_selected(self._task_model.tasks[0])
+    def _on_timeline_sort_changed(self, index: int) -> None:
+        key = self._timeline_sort_combo.itemData(index)
+        if key:
+            self._timeline_ctl.set_sort(key)
 
-    def _on_page_size_changed(self, index: int) -> None:
-        widget = self.sender()
-        if widget:
-            self._page_size = widget.itemData(index)
-            self._page = 0
-            self._refresh_all_views(self._build_filter_with_sort(), reset_page=False)
+    def _apply_timeline_filters(self, *_args) -> None:
+        """工具行 → 时间轴过滤的唯一入口。"""
+        status = self._selected_status_filter()
+        self._timeline_ctl.set_filters(
+            statuses={status} if status is not None else None,
+            search_text=self._timeline_search.text(),
+            urgencies=None,
+        )
 
-    def _reset_pagination(self) -> None:
-        self._page = 0
+    def _selected_status_filter(self):
+        """当前状态 chip 对应的 :class:`TaskStatus`；「全部」返回 ``None``。"""
+        from .views.tasks_view import STATUS_FILTERS
+
+        for key, _label, status in STATUS_FILTERS:
+            chip = self._timeline_status_chips.get(key)
+            if chip is not None and chip.isChecked():
+                return status
+        return None
+
+    def _on_bus_refresh_chips(self, *_args) -> None:
+        """总线事件 → 刷新状态 chips 计数。
+
+        用绑定方法而非 lambda：MainWindow 销毁时 Qt 会自动断连；lambda 不会，
+        残留回调会在数据库关闭后仍被触发，并因持有 ``self`` 造成泄漏。
+        """
+        self._refresh_status_chip_counts()
+
+    def _refresh_status_chip_counts(self) -> None:
+        """把状态计数写回 chips 文案（原型「全部 28」形式）。
+
+        口径与时间轴一致：**包含已归档任务**——分区 ``archive_days=0`` 时任务
+        完成即归档，若这里排除归档，会出现「已完成 0」却有时间轴绿色色条的矛盾。
+        中止（suspended）任务不计入，与 ``get_status_counts`` 的口径保持一致。
+        """
+        from ..models.task_filter import TaskFilter
+        from ..models.task_status import TaskStatus
+        from .views.tasks_view import STATUS_FILTERS
+
+        if not hasattr(self, "_timeline_status_chips"):
+            return
+
+        filter_ = TaskFilter(partition_id=self._partition_ctrl.active_id or None)
+        filter_.show_archived = True
+        counts: dict = {}
+        for task in self._task_service.search(filter_):
+            if task.suspended:
+                continue
+            counts[task.status] = counts.get(task.status, 0) + 1
+
+        mapping = {
+            "all": sum(counts.values()),
+            "overdue": counts.get(TaskStatus.OVERDUE, 0),
+            "todo": counts.get(TaskStatus.TODO, 0),
+            "doing": counts.get(TaskStatus.DOING, 0),
+            "done": counts.get(TaskStatus.DONE, 0),
+        }
+        for key, label, _status in STATUS_FILTERS:
+            chip = self._timeline_status_chips.get(key)
+            if chip is not None:
+                chip.setText(f"{label} {mapping.get(key, 0)}")
+
+    def _select_first_timeline_task(self) -> None:
+        """把时间轴首行载入编辑器。"""
+        model = self._timeline_view.table_model
+        if model.rowCount() == 0:
+            return
+        row = model.row_at(0)
+        if row is not None:
+            self._on_timeline_selected(row.task_id)
 
     # ------------------------------------------------------------------
-    # Status bar helpers
+    # Task graph (阶段 6)
     # ------------------------------------------------------------------
 
-    def _update_status_bar(self, filter_: TaskFilter) -> None:
-        counts = self._task_service.get_status_counts(partition_id=self._partition_ctrl.active_id)
-        overdue = counts.get(TaskStatus.OVERDUE, 0)
-        doing = counts.get(TaskStatus.DOING, 0)
-        todo = counts.get(TaskStatus.TODO, 0)
-        done = counts.get(TaskStatus.DONE, 0)
-        total = sum(counts.values())
-        breakdown = f"逾期 {overdue} | 进行中 {doing} | 待办 {todo} | 已完成 {done} | 共{total}项"
-        self._status_msg.setText(breakdown)
+    def _on_graph_task_activated(self, task_id: str) -> None:
+        """双击图谱任务节点 → 切到任务页并打开维护抽屉。"""
+        self._switch_view("tasks")
+        task = self._task_service.get_task(task_id)
+        if task is not None:
+            self._selection.select_task(task_id)
+            self._ensure_drawer().open_task(task_id)
+
+    # ------------------------------------------------------------------
+    # Feedback
+    # ------------------------------------------------------------------
 
     def _flash_status(self, msg: str) -> None:
-        self._status_msg.setText(msg)
-        QTimer.singleShot(3000, lambda: self._status_msg.setText("就绪"))
+        """Transient feedback (原型 ``toast()``）——底部居中浮层，自动淡出。"""
+        self._toast.show_message(msg)
 
     # ------------------------------------------------------------------
     # Partition management
@@ -882,23 +642,23 @@ class MainWindow(QMainWindow):
     def _on_partition_activated(self, pid: str) -> None:
         """Update all partition-aware widgets after a partition is activated."""
         self._heatmap_widget.set_partition_id(pid or None)
-        self._status_badge.set_partition_id(pid or None)
-        self._progress_bar.set_partition_id(pid or None)
-        self._quick_overview.set_partition_id(pid or None)
-        self._filter_coordinator._progress_active = False
-        self._filter_coordinator._carousel_filter = self._quick_overview.build_filter()
-        self._filter_coordinator.set_partition(pid)
-        self._filter_coordinator.refresh()
+        if hasattr(self, "_timeline_ctl"):
+            self._timeline_ctl.set_partition(pid or None)
+            self._timeline_ctl.refresh()
+        if hasattr(self, "_graph_ctl"):
+            self._graph_ctl.set_partition(pid or None)
+            self._graph_ctl.refresh()
+        if hasattr(self, "_overview_page"):
+            self._overview_page.set_partition(pid or None)
+            self._overview_page.refresh()
         self._batch_ctrl.refresh_page()
         self._batch_ctrl.set_active_partition(pid or None)
         self._heatmap_widget.force_refresh()
+        self._analysis_ctrl.set_partition(pid)
         if self._current_view == "dashboard":
-            self._refresh_analysis(pid)
-        if self._task_model.rowCount() > 0:
-            self._filter_coordinator._on_task_selected(self._task_model.tasks[0])
-        else:
-            self._edit_panel.set_active_partition(pid)
-            self._edit_panel.show_empty()
+            self._analysis_ctrl.refresh()
+        if self._timeline_view.table_model.rowCount() > 0:
+            self._select_first_timeline_task()
 
     # ------------------------------------------------------------------
     # View switching
@@ -937,264 +697,54 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(self._page_index[page_id])
         self._nav_shell.set_active(page_id)
 
+        # 阶段 7：任务页不在前台时时间轴只标记 dirty，切回时回放
+        if hasattr(self, "_timeline_ctl"):
+            self._timeline_ctl.set_visible(page_id == "tasks")
+
         if page_id == "tasks":
             self._heatmap_widget.nav_bar.setVisible(False)
-            self._top_bar.show()
-            self._apply_splitter_sizes()
         elif page_id == "analysis":
             self._heatmap_widget.nav_bar.setVisible(True)
-            self._top_bar.hide()
             self._deferred_timer = QTimer(self)
             self._deferred_timer.setSingleShot(True)
             self._deferred_timer.timeout.connect(
-                lambda: self._refresh_analysis(self._partition_ctrl.active_id)
+                lambda: self._analysis_ctrl.refresh()
             )
             self._deferred_timer.start(0)
         elif page_id == "manage":
             self._heatmap_widget.nav_bar.setVisible(False)
-            self._top_bar.hide()
             self._apply_batch_splitter_sizes()
             self._batch_ctrl.refresh_page()
             self._batch_ctrl.set_active_partition(self._partition_ctrl.active_id or None)
 
-        # Reset filter bar sort to config default on view switch
-        self._new_task_sort_active = False
-        self._filter_bar.set_sort(self._config.default_sort)
 
-    # ------------------------------------------------------------------
-    # Activity analysis slots
-    # ------------------------------------------------------------------
 
-    def _refresh_analysis(self, partition_id: str | None = None) -> None:
-        """Refresh analysis page: heatmap stats + task tree."""
-        if hasattr(self, "_analysis_stats") and hasattr(self, "_heatmap_widget"):
-            model = self._heatmap_widget._model
-            self._analysis_stats.refresh(
-                total=model.total_count(),
-                active_days=model.active_days(),
-                longest_streak=model.longest_streak(),
-                daily_avg=model.daily_average(),
-            )
-        d_from, d_to = getattr(self, "_analysis_date_range", (None, None))
-        if hasattr(self, "_analysis_task_tree"):
-            self._analysis_task_tree.refresh(d_from, d_to, partition_id)
-
-    def _on_analysis_period_changed(self, d_from, d_to, label: str) -> None:
-        """Period change → highlight heatmap + refresh task tree + select first task."""
-        self._analysis_date_range = (d_from, d_to)
-        if d_from is not None and d_to is not None:
-            self._heatmap_widget.highlight_range(d_from, d_to, label)
-        else:
-            self._heatmap_widget.highlight_range(None, None, "")
-        if hasattr(self, "_analysis_task_tree"):
-            self._analysis_task_tree.refresh(d_from, d_to, self._partition_ctrl.active_id)
-
-    def _on_analysis_tag_selected(self, tag: str) -> None:
-        if not tag or not hasattr(self, "_analysis_content_view"):
-            if hasattr(self, "_analysis_content_view"):
-                self._analysis_content_view.show_hint()
-            return
-        tasks = self._analysis_task_tree.get_tasks_for_tag(tag)
-        d_from, d_to = getattr(self, "_analysis_date_range", (None, None))
-        checked = self._analysis_task_tree.get_checked_tags()
-        if tag in checked:
-            pos = checked.index(tag) + 1
-        else:
-            pos = 0
-        self._analysis_content_view.set_current_tag(tag, pos, len(checked))
-        self._analysis_content_view.show_tag_activity(tag, tasks, d_from, d_to)
-
-    def _on_analysis_prev(self) -> None:
-        if hasattr(self, "_analysis_task_tree"):
-            self._analysis_task_tree.select_prev()
-
-    def _on_analysis_next(self) -> None:
-        if hasattr(self, "_analysis_task_tree"):
-            self._analysis_task_tree.select_next()
-
-    def _on_heatmap_date_clicked(self, d: date) -> None:
-        """Handle date click on heatmap grid."""
-        if hasattr(self, "_analysis_period_selector"):
-            self._analysis_period_selector.set_custom_range(d, d)
-
-    def _on_analysis_search_changed(self, text: str) -> None:
-        """Filter activity content by search text."""
-        if hasattr(self, "_analysis_content_view"):
-            self._analysis_content_view.set_search_text(text)
-
-    def _on_export_analysis_md(self) -> None:
-        self._export_analysis("md")
-
-    def _on_export_analysis_xlsx(self) -> None:
-        self._export_analysis("xlsx")
-
-    def _on_export_analysis_txt(self) -> None:
-        self._export_analysis("txt")
-
-    def _export_analysis(self, fmt: str) -> None:
-        """Export analysis content for all checked tags to file."""
-        d_from, d_to = getattr(self, "_analysis_date_range", (None, None))
-
-        # Collect plain text from all checked tags
-        texts: list[str] = []
-        if hasattr(self, "_analysis_task_tree") and hasattr(self, "_analysis_content_view"):
-            checked_tags = self._analysis_task_tree.get_checked_tags()
-            for tag in checked_tags:
-                tasks = self._analysis_task_tree.get_tasks_for_tag(tag)
-                self._analysis_content_view.show_tag_activity(tag, tasks, d_from, d_to)
-                t = self._analysis_content_view.get_plain_text()
-                if t:
-                    texts.append(t)
-            # Restore current view
-            current_tag = self._analysis_task_tree.get_active_tag()
-            if current_tag:
-                tasks = self._analysis_task_tree.get_tasks_for_tag(current_tag)
-                self._analysis_content_view.show_tag_activity(current_tag, tasks, d_from, d_to)
-
-        text = "\n".join(texts)
-        if not text:
-            return
-
-        # Build default filename with tag count
-        def_name = self._build_export_filename(
-            fmt, len(checked_tags) if hasattr(self, "_analysis_task_tree") else 0
-        )
-        filters = {"md": "Markdown (*.md)", "xlsx": "Excel (*.xlsx)", "txt": "文本文件 (*.txt)"}
-        filepath, _ = QFileDialog.getSaveFileName(self, "导出报告", def_name, filters.get(fmt, ""))
-        if not filepath:
-            return
-
-        if fmt == "xlsx":
-            self._export_xlsx_file(filepath, text)
-        elif fmt == "md":
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(text)
-        else:
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(text)
-
-    def _build_export_filename(self, fmt: str, tag_count: int = 0) -> str:
-        """Build default export filename: 分区名_时间范围_n个标签.ext"""
-        name_map = self._task_service.get_partition_name_map()
-        pname = name_map.get(self._partition_ctrl.active_id or "", "默认分区")
-        d_from, d_to = getattr(self, "_analysis_date_range", (None, None))
-        date_str = ""
-        if d_from and d_to:
-            date_str = (
-                f"{d_from.isoformat()}"
-                if d_from == d_to
-                else f"{d_from.isoformat()}~{d_to.isoformat()}"
-            )
-        tag_suffix = f"_{tag_count}个标签" if tag_count > 0 else ""
-        return f"{pname}_{date_str}{tag_suffix}.{fmt}"
-
-    def _export_xlsx_file(self, filepath: str, text: str = "") -> None:
-        """Export as Excel with split columns: 序号, 任务, 状态变更, 进度变更, 活动信息."""
-        try:
-            import openpyxl
-            from openpyxl.styles import Font
-
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "活动报告"
-            headers = ["序号", "任务", "状态变更", "进度变更", "活动信息"]
-            for col, h in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col, value=h)
-                cell.font = Font(bold=True)
-            rows = self._parse_export_rows(text)
-            for r, row_data in enumerate(rows, 2):
-                for c, val in enumerate(row_data, 1):
-                    ws.cell(row=r, column=c, value=val)
-            ws.column_dimensions["A"].width = 6
-            ws.column_dimensions["B"].width = 30
-            ws.column_dimensions["C"].width = 14
-            ws.column_dimensions["D"].width = 12
-            ws.column_dimensions["E"].width = 60
-            wb.save(filepath)
-        except ImportError:
-            QMessageBox.warning(self, "错误", "需要安装 openpyxl 库才能导出 Excel")
-
-    def _parse_export_rows(self, text: str) -> list[tuple]:
-        """Parse plain text format into Excel rows.
-        Format:
-            #tag
-            1. title [status, prog]:
-                entry line 1
-                entry line 2
-        """
-        rows = []
-        current_num = ""
-        current_title = ""
-        current_status = ""
-        current_prog = ""
-        current_entries: list[str] = []
-
-        def _flush():
-            if current_num and current_entries:
-                rows.append(
-                    (
-                        int(current_num),
-                        current_title,
-                        current_status,
-                        current_prog,
-                        "\n".join(current_entries),
-                    )
-                )
-
-        for line in text.split("\n"):
-            stripped = line.strip()
-            if not stripped or stripped.startswith("#"):
-                continue
-            # Ordered list item: "1. title [status, prog]:"
-            if stripped[0].isdigit() and ". " in stripped:
-                _flush()
-                current_entries = []
-                parts = stripped.split(". ", 1)
-                current_num = parts[0]
-                rest = parts[1]
-                if " [" in rest and "]:" in rest:
-                    current_title = rest.split(" [", 1)[0]
-                    bracket = rest.split("[", 1)[1].split("]", 1)[0]
-                    if ", " in bracket:
-                        current_status, current_prog = bracket.split(", ", 1)
-                    else:
-                        current_status, current_prog = bracket, ""
-                else:
-                    current_title = rest.rstrip(":")
-            elif line.startswith("    ") and current_num:
-                current_entries.append(stripped)
-
-        _flush()
-        return rows
 
     # ------------------------------------------------------------------
     # Task operations
     # ------------------------------------------------------------------
 
     def _on_new_task(self) -> None:
-        self._on_new_draft()
+        """新建任务（公开入口）。"""
+        self._ensure_window_ready()
+        self._open_new_task_dialog()
 
     def _on_menu_new_draft(self) -> None:
-        """Menu bar: show window, discard any draft silently, create new."""
-        if self._edit_panel.has_unsaved_draft():
-            self._edit_panel.discard_draft()
+        """菜单栏：唤起窗口并打开单任务编辑对话框。"""
         self._ensure_window_ready()
-        self._edit_panel.create_draft_single()
-        self._apply_splitter_sizes()
+        self._open_new_task_dialog()
 
     def _on_menu_new_multi(self) -> None:
-        """Menu bar: show window, discard any draft silently, create multi."""
-        if self._edit_panel.has_unsaved_draft():
-            self._edit_panel.discard_draft()
+        """菜单栏：唤起窗口并打开批量新建对话框。"""
         self._ensure_window_ready()
-        self._edit_panel.create_draft_multi()
-        self._apply_splitter_sizes()
+        self._open_multi_task_dialog()
 
     def _ensure_window_ready(self) -> None:
-        """Show, raise, and switch to edit view. Updates _current_view so
-        subsequent view switches work correctly."""
+        """Show, raise and switch to the task view.
+
+        Updates ``_current_view`` so subsequent view switches work correctly.
+        """
         self._current_view = "edit"
-        self._top_bar.show()
         self._heatmap_widget.nav_bar.setVisible(False)
         if self._splitter_stack.currentIndex() == 1:
             if self._partition_ctrl.passwords.get(self._partition_ctrl.active_id, ""):
@@ -1202,99 +752,77 @@ class MainWindow(QMainWindow):
             else:
                 self._splitter_stack.setCurrentIndex(0)
         self._stack.setCurrentIndex(self._page_index["tasks"])
-        self.show()
-        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
-        self.raise_()
-        self.activateWindow()
-        self._edit_panel.set_active_partition(self._partition_ctrl.active_id)
+        self._window_shell.wake()
 
-    def _on_new_draft(self) -> None:
-        # From tray (window hidden): silently discard draft, no popup
-        if not self.isVisible() and self._edit_panel.has_unsaved_draft():
-            self._edit_panel.discard_draft()
-        elif not self._guard_draft():
-            return
-        if self._splitter_stack.currentIndex() == 1:
-            if self._partition_ctrl.passwords.get(self._partition_ctrl.active_id, ""):
-                self._partition_ctrl.unlock()
-                if self._splitter_stack.currentIndex() == 1:
-                    return
-            else:
-                self._splitter_stack.setCurrentIndex(0)
-        self._stack.setCurrentIndex(self._page_index["tasks"])
-        self.show()
-        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
-        self.raise_()
-        self.activateWindow()
-        self._edit_panel.set_active_partition(self._partition_ctrl.active_id)
-        self._edit_panel.create_draft()
-        self._apply_splitter_sizes()
+    def _open_new_task_dialog(self) -> None:
+        """单任务 Markdown 编辑对话框（新建）。"""
+        from .dialogs.task_dialog import TaskDialog
 
-    def _guard_draft(self) -> bool:
-        if not self._edit_panel.has_unsaved_draft():
-            return True
-        msg = QMessageBox(self)
-        msg.setWindowTitle("未保存的草稿")
-        msg.setText("当前有未保存的新建任务，是否保存？")
-        save_btn = msg.addButton("保存", QMessageBox.ButtonRole.AcceptRole)
-        discard_btn = msg.addButton("放弃", QMessageBox.ButtonRole.DestructiveRole)
-        msg.addButton("取消", QMessageBox.ButtonRole.RejectRole)
-        msg.exec()
-        clicked = msg.clickedButton()
-        if clicked == save_btn:
-            self._edit_panel._on_save()
-            return True
-        if clicked == discard_btn:
-            self._edit_panel.discard_draft()
-            return True
-        return False
-
-    def _on_settings(self) -> None:
-        _before = json.dumps(self._config.to_dict(), sort_keys=True)
-        dlg = SettingsDialog(
-            self._config,
-            self._repository,
-            task_service=self._task_service,
-            update_checker=self._update_checker,
+        dialog = TaskDialog(
+            self._task_service,
+            None,
             parent=self,
         )
-        if dlg.exec() == SettingsDialog.DialogCode.Accepted:
-            _after = json.dumps(self._config.to_dict(), sort_keys=True)
-            if _before == _after:
-                return  # 零变更，跳过全部刷新
-            # 设置保存后强制激活默认分区
-            self._partition_ctrl.load_all()
-            self._signal_bus.config_changed.emit()
+        if dialog.exec() == TaskDialog.DialogCode.Accepted:
+            self._flash_status("已创建任务")
+
+    def _open_multi_task_dialog(self) -> None:
+        """批量新建：多行 Markdown 一次性创建。"""
+        from .dialogs.multi_task_dialog import MultiTaskDialog
+
+        dialog = MultiTaskDialog(
+            self._task_service,
+            partition_id=self._partition_ctrl.active_id or None,
+            parent=self,
+        )
+        dialog.tasks_created.connect(
+            lambda count: self._flash_status(f"已创建 {count} 个任务")
+        )
+        dialog.exec()
+
+    def _on_settings(self) -> None:
+        """打开设置抽屉（原型 ``#setDrawer``，不是模态弹窗）。
+
+        抽屉内每项改动都会立即 ``config.save()`` 并广播 ``config_changed``，
+        所以这里不需要「确认/取消」与变更比对。
+        """
+        self._ensure_settings_drawer().open_drawer()
+
+    def _ensure_settings_drawer(self):
+        """惰性创建设置抽屉（首次点齿轮时才构建）。"""
+        drawer = getattr(self, "_settings_drawer", None)
+        if drawer is None:
+            from .drawer.settings_drawer import SettingsDrawer
+
+            parent = self.centralWidget() or self
+            drawer = SettingsDrawer(
+                self._config,
+                self._task_service,
+                update_checker=self._update_checker,
+                parent=parent,
+            )
+            self._settings_drawer = drawer
+        return drawer
 
     def _on_quit(self) -> None:
         self._signal_bus.application_quit.emit()
 
     def _on_refresh(self) -> None:
-        self._filter_coordinator.refresh()
+        self._timeline_ctl.refresh()
 
     def _on_config_changed(self) -> None:
         data_changed = False
         theme_changed = self._config.theme != self._last_applied_theme
 
-        self._filter_bar.set_sort(self._config.default_sort)
-
         # Only refresh theme-dependent widgets when the theme actually changed
         if theme_changed:
-            if hasattr(self, "_status_badge"):
-                self._status_badge.refresh_theme()
             tag_panel = self._batch_ctrl.tag_panel
             if tag_panel is not None:
                 tag_panel.refresh_theme()
             self._last_applied_theme = self._config.theme
 
-        # Re-read page_size from config and sync all pagination controls
+        # 管理页标签面板仍按配置的分页大小展示（任务页已无分页）
         new_page_size = self._config.get("general", "page_size", default=20)
-        if self._page_size != new_page_size:
-            self._page_size = new_page_size
-            self._page = 0
-            data_changed = True
-            if hasattr(self, "_page_size_combo"):
-                self._page_size_combo.setCurrentText(str(new_page_size))
         tag_panel = self._batch_ctrl.tag_panel
         if tag_panel is not None:
             tag_panel.set_page_size(new_page_size)
@@ -1304,13 +832,21 @@ class MainWindow(QMainWindow):
             self._heatmap_widget.force_refresh()
 
         # Sync completed-last sort setting to repository
-        if self._task_service._repo.completed_last != self._config.sort_completed_last:
-            self._task_service._repo.completed_last = self._config.sort_completed_last
+        if self._task_service.completed_last != self._config.sort_completed_last:
+            self._task_service.completed_last = self._config.sort_completed_last
             data_changed = True
 
-        # Only reload task data when sort/pagination actually changed
+        # 阶段 5：置顶随配置即时生效；热键仅在已注册时重注册（避免测试占用系统热键）
+        pinned = bool(self._config.get("general", "pin_on_top", default=False))
+        self._window_shell.set_pinned(pinned)
+        if hasattr(self, "_pin_btn"):
+            self._pin_btn.setChecked(pinned)
+        if self._window_shell.hotkey_registered:
+            self._window_shell.install_hotkey()
+
+        # Only reload task data when the sort order actually changed
         if data_changed:
-            self._on_data_changed()
+            self._timeline_ctl.refresh()
 
         # 仅当默认分区的值真正发生变化时才切换（任何配置变更都跳回
         # 默认分区是错误行为——如切换主题/分页大小会无故丢失当前分区）
@@ -1341,11 +877,10 @@ class MainWindow(QMainWindow):
         self._midnight_timer.start(ms)
 
     def _on_midnight_crossed(self) -> None:
-        self._quick_overview.refresh()
         if self._current_view != "edit":
             # 此前调用不存在的 _refresh_report 会在午夜崩溃（AttributeError）
             if hasattr(self, "_analysis_stats"):
-                self._refresh_analysis(self._partition_ctrl.active_id)
-            self._filter_coordinator.refresh()
-        self._on_data_changed()
+                self._analysis_ctrl.refresh()
+        if hasattr(self, "_timeline_ctl"):
+            self._timeline_ctl.refresh()
         self._schedule_midnight_timer()

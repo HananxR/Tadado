@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...models.repository import TaskRepository
 from ...models.task import Task
+from ...services.task_service import TaskService
 from ...utils.design_tokens import get_tokens
 
 
@@ -96,9 +96,9 @@ class TaskTreePanel(QWidget):
     tag_selected = Signal(str)
     checked_tags_changed = Signal()
 
-    def __init__(self, repository: TaskRepository, parent: QWidget | None = None) -> None:
+    def __init__(self, task_service: TaskService, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._repository = repository
+        self._svc = task_service
         self._tag_task_map: dict[str, list[Task]] = {}
         self._checked_tags: set[str] = set()
         self._active_tag: str | None = None
@@ -189,7 +189,7 @@ class TaskTreePanel(QWidget):
         self._last_partition_id = partition_id
 
         f = TaskFilter(partition_id=partition_id, show_archived=True)
-        tasks = self._repository.search(f)
+        tasks = self._svc.search(f)
 
         tag_data: dict[str, tuple[int, list[Task]]] = {}
         for task in tasks:

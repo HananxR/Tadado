@@ -312,6 +312,7 @@ def main() -> None:
     # Phase 5: Generate clean package config.json
     # ------------------------------------------------------------------
     import json as _json
+
     from src.config import DEFAULT_CONFIG
 
     pkg_config = _json.loads(_json.dumps(DEFAULT_CONFIG))  # deep copy

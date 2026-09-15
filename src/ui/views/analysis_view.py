@@ -1,6 +1,7 @@
 """活动分析页（page1）构建 — 纯移动自 MainWindow._build_page1（Phase 1）。
 
-TODO(phase4): 槽函数迁入 AnalysisController，替换孤儿 DashboardController。
+槽函数与导出逻辑由 :class:`AnalysisController` 持有；本模块只负责搭建控件，
+构建完成后经 ``ctrl.attach(...)`` 把部件注入控制器。
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ from ..calendar_heatmap.task_tree_panel import TaskTreePanel
 def build(mw) -> QWidget:
     """Build the Activity Analysis page exactly as MainWindow._build_page1 did."""
     from ..calendar_heatmap.heatmap_stats_panel import HeatmapStatsPanel
+
+    ctrl = mw._analysis_ctrl
 
     page = QWidget()
     layout = QVBoxLayout(page)
@@ -69,14 +72,14 @@ def build(mw) -> QWidget:
     period_layout.setSpacing(6)
 
     mw._analysis_period_selector = PeriodSelectorBar()
-    mw._analysis_period_selector.period_changed.connect(mw._on_analysis_period_changed)
+    mw._analysis_period_selector.period_changed.connect(ctrl.on_period_changed)
     period_layout.addWidget(mw._analysis_period_selector, 1)
 
     mw._analysis_search = QLineEdit()
     mw._analysis_search.setPlaceholderText("搜索活动内容...")
     mw._analysis_search.setFixedWidth(150)
     mw._analysis_search.setFixedHeight(28)
-    mw._analysis_search.textChanged.connect(mw._on_analysis_search_changed)
+    mw._analysis_search.textChanged.connect(ctrl.on_search_changed)
     period_layout.addWidget(mw._analysis_search)
 
     export_btn = QPushButton("导出")
@@ -84,9 +87,9 @@ def build(mw) -> QWidget:
     export_btn.setFixedHeight(28)
     export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
     export_menu = QMenu(export_btn)
-    export_menu.addAction("导出 Markdown", mw._on_export_analysis_md)
-    export_menu.addAction("导出 Excel", mw._on_export_analysis_xlsx)
-    export_menu.addAction("导出 TXT", mw._on_export_analysis_txt)
+    export_menu.addAction("导出 Markdown", lambda: ctrl.export("md"))
+    export_menu.addAction("导出 Excel", lambda: ctrl.export("xlsx"))
+    export_menu.addAction("导出 TXT", lambda: ctrl.export("txt"))
     export_btn.setMenu(export_menu)
     export_btn.clicked.connect(lambda: export_btn.showMenu())
     period_layout.addWidget(export_btn)
@@ -96,19 +99,32 @@ def build(mw) -> QWidget:
     mw._analysis_splitter.setHandleWidth(1)
     mw._analysis_splitter.setChildrenCollapsible(False)
 
-    mw._analysis_task_tree = TaskTreePanel(mw._repository)
-    mw._analysis_task_tree.tag_selected.connect(mw._on_analysis_tag_selected)
+    mw._analysis_task_tree = TaskTreePanel(mw._task_service)
+    mw._analysis_task_tree.tag_selected.connect(ctrl.on_tag_selected)
     mw._analysis_splitter.addWidget(mw._analysis_task_tree)
 
+    from ...utils.theme_registry import register_theme_aware
+
     mw._analysis_content_view = ActivityContentView()
-    mw._analysis_content_view.prev_requested.connect(mw._on_analysis_prev)
-    mw._analysis_content_view.next_requested.connect(mw._on_analysis_next)
+    register_theme_aware(mw._analysis_content_view)
+    mw._analysis_content_view.prev_requested.connect(ctrl.on_prev)
+    mw._analysis_content_view.next_requested.connect(ctrl.on_next)
     mw._analysis_splitter.addWidget(mw._analysis_content_view)
 
     mw._analysis_splitter.setStretchFactor(0, 1)
     mw._analysis_splitter.setStretchFactor(1, 3)
     layout.addWidget(mw._analysis_splitter, 1)
 
-    mw._heatmap_widget.grid.date_clicked.connect(mw._on_heatmap_date_clicked)
+    mw._heatmap_widget.grid.date_clicked.connect(ctrl.on_date_clicked)
+
+    # 部件构建完毕 → 注入控制器（此前各槽均为空值短路）
+    ctrl.attach(
+        heatmap=mw._heatmap_widget,
+        stats=mw._analysis_stats,
+        period_selector=mw._analysis_period_selector,
+        search=mw._analysis_search,
+        tree=mw._analysis_task_tree,
+        content=mw._analysis_content_view,
+    )
 
     return page

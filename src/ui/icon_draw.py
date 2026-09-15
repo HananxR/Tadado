@@ -435,6 +435,38 @@ def draw_home(p: QPainter, r: QRectF, color: QColor) -> None:
 # Registry
 # ═══════════════════════════════════════════════════════════════
 
+def draw_folder(p: QPainter, r: QRectF, color: QColor) -> None:
+    """Filled folder with a tab + white inner sheet (used by the partition rail button)."""
+    m = r.width() * 0.08
+    body_top = r.y() + r.height() * 0.30
+    body = QRectF(r.x() + m, body_top, r.width() - 2 * m, r.bottom() - m - body_top)
+    radius = r.width() * 0.09
+
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QBrush(PRIMARY))
+
+    # Tab sticking out of the top-left corner
+    tab = QPainterPath()
+    tab.moveTo(r.x() + m, body_top)
+    tab.lineTo(r.x() + m + r.width() * 0.26, body_top)
+    tab.lineTo(r.x() + m + r.width() * 0.34, r.y() + r.height() * 0.20)
+    tab.lineTo(r.x() + m, r.y() + r.height() * 0.20)
+    tab.closeSubpath()
+    p.drawPath(tab)
+
+    p.drawRoundedRect(body, radius, radius)
+
+    # White sheet peeking out of the pocket
+    sheet = QRectF(
+        body.x() + body.width() * 0.16,
+        body.y() + body.height() * 0.30,
+        body.width() * 0.68,
+        body.height() * 0.42,
+    )
+    p.setBrush(QBrush(WHITE))
+    p.drawRoundedRect(sheet, radius * 0.5, radius * 0.5)
+
+
 ICON_DRAW_FUNCS = {
     "app": draw_app,
     "tray_normal": draw_tray,
@@ -453,4 +485,5 @@ ICON_DRAW_FUNCS = {
     "fullscreen_toggle": draw_fullscreen_toggle,
     "window_close": draw_window_close,
     "home": draw_home,
+    "folder": draw_folder,
 }

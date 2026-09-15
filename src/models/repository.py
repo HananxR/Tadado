@@ -126,6 +126,16 @@ def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
         return None
 
 
+#: SQLite 变量数上限 999，留出余量用于 id 分块 IN 查询
+_SQL_CHUNK = 900
+
+
+def _iter_chunks(items: list, size: int = _SQL_CHUNK):
+    """把长 id 列表切块，避免一次绑定超过 SQLite 变量上限。"""
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
+
+
 class TaskRepository:
     """SQLite-backed repository for Task CRUD and queries."""
 
@@ -204,26 +214,20 @@ class TaskRepository:
          task.activity_last_month) = compute_activity_counts(log_json)
 
     def recalc_all_activity_counts(self) -> int:
-        """Recalculate activity counts for all tasks. Returns number of tasks updated."""
-        cols = ", ".join(_TASK_COLUMNS)
-        rows = self.conn.execute(
-            f"SELECT {cols} FROM tasks"
-        ).fetchall()
-        count = 0
-        for row in rows:
-            task = _row_to_task(tuple(row))
-            log_json = json.dumps(task.activity_log, ensure_ascii=False) if task.activity_log else "[]"
-            (ay, at, aw, am, alw, alm) = compute_activity_counts(log_json)
-            self.conn.execute(
-                "UPDATE tasks SET activity_yesterday=?, activity_today=?, "
-                "activity_last_week=?, activity_week=?, "
-                "activity_last_month=?, activity_month=? WHERE id=?",
-                (ay, at, alw, aw, alm, am, task.id),
-            )
-            count += 1
-        self.conn.commit()
-        _log.info("Recalculated activity counts for %s tasks", count)
-        return count
+        """Recalculate activity counts for all tasks. Returns number of tasks updated.
+
+        单事务 executemany；只读 ``id`` + ``activity_log`` 两列。
+        """
+        rows = self.conn.execute("SELECT id, activity_log FROM tasks").fetchall()
+        params: list[tuple] = []
+        for task_id, log_json in rows:
+            (ay, at, aw, am, alw, alm) = compute_activity_counts(log_json or "[]")
+            params.append((ay, at, alw, aw, alm, am, task_id))
+        with self.conn:
+            if params:
+                self.conn.executemany(self._ACTIVITY_UPDATE_SQL, params)
+        _log.info("Recalculated activity counts for %s tasks", len(params))
+        return len(params)
 
     def delete(self, task_id: str) -> bool:
         """Delete a task by id. Returns True if a row was removed."""
@@ -848,6 +852,54 @@ class TaskRepository:
         return {TaskStatus.from_string(r[0]): r[1] for r in rows}
 
     # ------------------------------------------------------------------
+    # Batch helpers — 单事务 + 集合式 SQL 的公共部分
+    # ------------------------------------------------------------------
+
+    # activity_* 六列的固定列序（与 _ACTIVITY_UPDATE_SQL 一一对应）
+    _ACTIVITY_UPDATE_SQL = (
+        "UPDATE tasks SET activity_yesterday=?, activity_today=?, "
+        "activity_last_week=?, activity_week=?, "
+        "activity_last_month=?, activity_month=? WHERE id=?"
+    )
+
+    @staticmethod
+    def _activity_params(task: Task) -> tuple:
+        """按 _ACTIVITY_UPDATE_SQL 的列序返回 activity_* 参数（末尾带 id）。"""
+        return (
+            task.activity_yesterday, task.activity_today, task.activity_last_week,
+            task.activity_week, task.activity_last_month, task.activity_month,
+            task.id,
+        )
+
+    def _load_tasks_by_ids(self, task_ids: list[str]) -> dict[str, Task]:
+        """批量读取任务（分块 IN 查询）→ {id: Task}。
+
+        只发生一次 DB 往返；循环内对同一 Task 对象的原地修改复刻了原实现
+        「逐条读-改-写」的顺序语义。
+        """
+        cols = ", ".join(_TASK_COLUMNS)
+        result: dict[str, Task] = {}
+        for chunk in _iter_chunks(task_ids):
+            placeholders = ", ".join("?" for _ in chunk)
+            rows = self.conn.execute(
+                f"SELECT {cols} FROM tasks WHERE id IN ({placeholders})", chunk
+            ).fetchall()
+            for row in rows:
+                task = _row_to_task(tuple(row))
+                result[task.id] = task
+        return result
+
+    def _update_fts_many(self, task_ids: list[str]) -> None:
+        """批量同步 FTS5 索引（executemany，与 _update_fts 等价）。"""
+        if not task_ids:
+            return
+        self.conn.executemany(
+            "INSERT OR REPLACE INTO tasks_fts(rowid, raw_md, title, notes, tags) "
+            "SELECT rowid, raw_md, title, notes, tags FROM tasks WHERE id=?",
+            [(tid,) for tid in task_ids],
+        )
+
+    # ------------------------------------------------------------------
     # Batch operations
     # ------------------------------------------------------------------
 
@@ -856,14 +908,23 @@ class TaskRepository:
     ) -> int:
         """Bulk update status for multiple tasks, recording activity_log entries.
 
+        单事务 + executemany：批量读 → 逐条生成参数批 → 统一写回（异常回滚）。
         If *formatter* is provided, ``raw_md`` is regenerated and FTS re-indexed.
         """
+        if not task_ids:
+            return 0
         now = datetime.now().isoformat()
         status_value = new_status.value
+        tasks = self._load_tasks_by_ids(task_ids)
+
+        main_params: list[tuple] = []
+        raw_params: list[tuple] = []
+        fts_ids: list[str] = []
+        activity_params: list[tuple] = []
         count = 0
 
         for task_id in task_ids:
-            task = self.get_by_id(task_id)
+            task = tasks.get(task_id)
             if task is None:
                 continue
             old_status = task.status.display_name
@@ -877,31 +938,38 @@ class TaskRepository:
                 "progress": task.progress,
             }
             log = list(task.activity_log) + [entry]
-            self.conn.execute(
-                "UPDATE tasks SET status=?, activity_log=?, updated_at=?, progress=?, completed_at=? WHERE id=?",
-                (status_value, json.dumps(log, ensure_ascii=False), now,
-                 task.progress,
-                 task.completed_at.isoformat() if task.completed_at else None,
-                 task_id),
-            )
+            main_params.append((
+                status_value, json.dumps(log, ensure_ascii=False), now,
+                task.progress,
+                task.completed_at.isoformat() if task.completed_at else None,
+                task_id,
+            ))
             task.status = new_status
             task.activity_log = log
             task.updated_at = _parse_datetime(now)
             if formatter is not None:
                 task.raw_md = formatter.format(task)
-                self.conn.execute(
-                    "UPDATE tasks SET raw_md=? WHERE id=?",
-                    (task.raw_md, task_id),
-                )
-                self._update_fts(task)
+                raw_params.append((task.raw_md, task_id))
+                fts_ids.append(task_id)
             self._recalc_activity_counts(task)
-            self.conn.execute(
-                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
-                (task.activity_yesterday, task.activity_today, task.activity_last_week, task.activity_week, task.activity_last_month, task.activity_month, task_id),
-            )
+            activity_params.append(self._activity_params(task))
             count += 1
 
-        self.conn.commit()
+        with self.conn:
+            if main_params:
+                self.conn.executemany(
+                    "UPDATE tasks SET status=?, activity_log=?, updated_at=?, "
+                    "progress=?, completed_at=? WHERE id=?",
+                    main_params,
+                )
+            if raw_params:
+                self.conn.executemany(
+                    "UPDATE tasks SET raw_md=? WHERE id=?", raw_params
+                )
+                self._update_fts_many(fts_ids)
+            if activity_params:
+                self.conn.executemany(self._ACTIVITY_UPDATE_SQL, activity_params)
+
         _log.info("Batch status update: %s tasks -> %s", count, new_status.value)
         return count
 
@@ -910,53 +978,77 @@ class TaskRepository:
     ) -> int:
         """Bulk update urgency for multiple tasks.
 
-        If *formatter* is provided, ``raw_md`` is regenerated and FTS re-indexed.
+        单事务 + executemany；提供 *formatter* 时重新生成 ``raw_md`` 并同步 FTS5。
         """
+        if not task_ids:
+            return 0
         now = datetime.now().isoformat()
+        tasks = self._load_tasks_by_ids(task_ids)
+
+        with_raw: list[tuple] = []
+        plain: list[tuple] = []
+        fts_ids: list[str] = []
         count = 0
+
         for task_id in task_ids:
-            task = self.get_by_id(task_id)
+            task = tasks.get(task_id)
             if task is None:
                 continue
             task.urgency = urgency
             task.updated_at = _parse_datetime(now)
             if formatter is not None:
                 task.raw_md = formatter.format(task)
-                self.conn.execute(
-                    "UPDATE tasks SET urgency=?, raw_md=?, updated_at=? WHERE id=?",
-                    (urgency, task.raw_md, now, task_id),
-                )
-                self._update_fts(task)
+                with_raw.append((urgency, task.raw_md, now, task_id))
+                fts_ids.append(task_id)
             else:
-                self.conn.execute(
-                    "UPDATE tasks SET urgency=?, updated_at=? WHERE id=?",
-                    (urgency, now, task_id),
-                )
+                plain.append((urgency, now, task_id))
             count += 1
-        self.conn.commit()
+
+        with self.conn:
+            if with_raw:
+                self.conn.executemany(
+                    "UPDATE tasks SET urgency=?, raw_md=?, updated_at=? WHERE id=?",
+                    with_raw,
+                )
+                self._update_fts_many(fts_ids)
+            elif plain:
+                self.conn.executemany(
+                    "UPDATE tasks SET urgency=?, updated_at=? WHERE id=?", plain
+                )
+
         _log.info("Batch urgency update: %s tasks -> %s", count, urgency)
         return count
 
     def batch_delete(self, task_ids: list[str]) -> int:
         """Permanently delete multiple tasks and their FTS entries."""
+        if not task_ids:
+            return 0
         placeholders = ", ".join("?" for _ in task_ids)
-        self.conn.execute(
-            f"DELETE FROM tasks_fts WHERE rowid IN (SELECT rowid FROM tasks WHERE id IN ({placeholders}))",
-            task_ids,
-        )
-        cursor = self.conn.execute(
-            f"DELETE FROM tasks WHERE id IN ({placeholders})", task_ids
-        )
-        self.conn.commit()
+        with self.conn:
+            self.conn.execute(
+                f"DELETE FROM tasks_fts WHERE rowid IN (SELECT rowid FROM tasks WHERE id IN ({placeholders}))",
+                task_ids,
+            )
+            cursor = self.conn.execute(
+                f"DELETE FROM tasks WHERE id IN ({placeholders})", task_ids
+            )
         _log.info("Batch delete: %s tasks", cursor.rowcount)
         return cursor.rowcount
 
     def batch_suspend(self, task_ids: list[str]) -> int:
         """Suspend multiple tasks (exclude from statistics)."""
+        if not task_ids:
+            return 0
         now = datetime.now().isoformat()
+        tasks = self._load_tasks_by_ids(task_ids)
+
+        main_params: list[tuple] = []
+        fts_ids: list[str] = []
+        activity_params: list[tuple] = []
         count = 0
+
         for task_id in task_ids:
-            task = self.get_by_id(task_id)
+            task = tasks.get(task_id)
             if task is None:
                 continue
             entry = {
@@ -966,28 +1058,39 @@ class TaskRepository:
                 "progress": task.progress,
             }
             log = list(task.activity_log) + [entry]
-            self.conn.execute(
-                "UPDATE tasks SET suspended=1, activity_log=?, updated_at=? WHERE id=?",
-                (json.dumps(log, ensure_ascii=False), now, task_id),
-            )
+            main_params.append((json.dumps(log, ensure_ascii=False), now, task_id))
             task.activity_log = log
-            self._update_fts(task)
+            fts_ids.append(task_id)
             self._recalc_activity_counts(task)
-            self.conn.execute(
-                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
-                (task.activity_yesterday, task.activity_today, task.activity_last_week, task.activity_week, task.activity_last_month, task.activity_month, task_id),
-            )
+            activity_params.append(self._activity_params(task))
             count += 1
-        self.conn.commit()
+
+        with self.conn:
+            if main_params:
+                self.conn.executemany(
+                    "UPDATE tasks SET suspended=1, activity_log=?, updated_at=? WHERE id=?",
+                    main_params,
+                )
+                self._update_fts_many(fts_ids)
+                self.conn.executemany(self._ACTIVITY_UPDATE_SQL, activity_params)
+
         _log.info("Batch suspend: %s tasks", count)
         return count
 
     def batch_restart(self, task_ids: list[str]) -> int:
         """Restart multiple suspended tasks (re-include in statistics)."""
+        if not task_ids:
+            return 0
         now = datetime.now().isoformat()
+        tasks = self._load_tasks_by_ids(task_ids)
+
+        main_params: list[tuple] = []
+        fts_ids: list[str] = []
+        activity_params: list[tuple] = []
         count = 0
+
         for task_id in task_ids:
-            task = self.get_by_id(task_id)
+            task = tasks.get(task_id)
             if task is None:
                 continue
             entry = {
@@ -997,19 +1100,22 @@ class TaskRepository:
                 "progress": task.progress,
             }
             log = list(task.activity_log) + [entry]
-            self.conn.execute(
-                "UPDATE tasks SET suspended=0, activity_log=?, updated_at=? WHERE id=?",
-                (json.dumps(log, ensure_ascii=False), now, task_id),
-            )
+            main_params.append((json.dumps(log, ensure_ascii=False), now, task_id))
             task.activity_log = log
-            self._update_fts(task)
+            fts_ids.append(task_id)
             self._recalc_activity_counts(task)
-            self.conn.execute(
-                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
-                (task.activity_yesterday, task.activity_today, task.activity_last_week, task.activity_week, task.activity_last_month, task.activity_month, task_id),
-            )
+            activity_params.append(self._activity_params(task))
             count += 1
-        self.conn.commit()
+
+        with self.conn:
+            if main_params:
+                self.conn.executemany(
+                    "UPDATE tasks SET suspended=0, activity_log=?, updated_at=? WHERE id=?",
+                    main_params,
+                )
+                self._update_fts_many(fts_ids)
+                self.conn.executemany(self._ACTIVITY_UPDATE_SQL, activity_params)
+
         _log.info("Batch restart: %s tasks", count)
         return count
 
@@ -1018,15 +1124,24 @@ class TaskRepository:
     ) -> int:
         """Postpone deadline for multiple tasks by N days, recording activity_log.
 
+        单事务 + executemany；提交后再刷新逾期状态。
         If *formatter* is provided, ``raw_md`` is regenerated and FTS re-indexed.
         """
         from datetime import timedelta
 
+        if not task_ids:
+            return 0
         now = datetime.now().isoformat()
+        tasks = self._load_tasks_by_ids(task_ids)
+
+        main_params: list[tuple] = []
+        raw_params: list[tuple] = []
+        fts_ids: list[str] = []
+        activity_params: list[tuple] = []
         count = 0
 
         for task_id in task_ids:
-            task = self.get_by_id(task_id)
+            task = tasks.get(task_id)
             if task is None:
                 continue
 
@@ -1045,27 +1160,34 @@ class TaskRepository:
             }
             log = list(task.activity_log) + [entry]
 
-            self.conn.execute(
-                "UPDATE tasks SET deadline_date=?, activity_log=?, updated_at=? WHERE id=?",
-                (new_deadline, json.dumps(log, ensure_ascii=False), now, task_id),
-            )
+            main_params.append((
+                new_deadline, json.dumps(log, ensure_ascii=False), now, task_id
+            ))
             task.deadline_date = new_date
             task.activity_log = log
             task.updated_at = _parse_datetime(now)
             if formatter is not None:
                 task.raw_md = formatter.format(task)
-                self.conn.execute(
-                    "UPDATE tasks SET raw_md=? WHERE id=?", (task.raw_md, task_id)
-                )
-                self._update_fts(task)
+                raw_params.append((task.raw_md, task_id))
+                fts_ids.append(task_id)
             self._recalc_activity_counts(task)
-            self.conn.execute(
-                "UPDATE tasks SET activity_yesterday=?, activity_today=?, activity_last_week=?, activity_week=?, activity_last_month=?, activity_month=? WHERE id=?",
-                (task.activity_yesterday, task.activity_today, task.activity_last_week, task.activity_week, task.activity_last_month, task.activity_month, task_id),
-            )
+            activity_params.append(self._activity_params(task))
             count += 1
 
-        self.conn.commit()
+        with self.conn:
+            if main_params:
+                self.conn.executemany(
+                    "UPDATE tasks SET deadline_date=?, activity_log=?, updated_at=? WHERE id=?",
+                    main_params,
+                )
+            if raw_params:
+                self.conn.executemany(
+                    "UPDATE tasks SET raw_md=? WHERE id=?", raw_params
+                )
+                self._update_fts_many(fts_ids)
+            if activity_params:
+                self.conn.executemany(self._ACTIVITY_UPDATE_SQL, activity_params)
+
         # Refresh overdue status after postponing deadlines
         self.refresh_overdue_status(formatter=formatter)
         _log.info("Batch postpone: %s tasks +%sd", count, days)
@@ -1178,6 +1300,19 @@ class TaskRepository:
         changed: list[tuple[Task, TaskStatus]] = []
         today_iso = date.today().isoformat()
         cols = ", ".join(_TASK_COLUMNS)
+        set_clause = ", ".join(f"{col}=?" for col in _TASK_COLUMNS)
+        full_row_sql = f"UPDATE tasks SET {set_clause} WHERE id=?"
+        reverted = 0
+
+        def _flush(batch: list[Task]) -> None:
+            """把一批已改好的任务（含 raw_md/FTS/activity_*）写回。"""
+            if not batch:
+                return
+            with self.conn:
+                self.conn.executemany(
+                    full_row_sql, [_task_to_row(t) + (t.id,) for t in batch]
+                )
+                self._update_fts_many([t.id for t in batch])
 
         # Tasks past deadline that are not yet OVERDUE or DONE → OVERDUE
         rows = self.conn.execute(
@@ -1186,14 +1321,18 @@ class TaskRepository:
             "AND status NOT IN ('DONE', 'OVERDUE')",
             (today_iso,),
         ).fetchall()
+        batch: list[Task] = []
         for row in rows:
             task = _row_to_task(tuple(row))
             old_status = task.status
             task.status = TaskStatus.OVERDUE
             if formatter is not None:
                 task.raw_md = formatter.format(task)
-            self.update(task)
+            task.updated_at = datetime.now()
+            self._recalc_activity_counts(task)
+            batch.append(task)
             changed.append((task, old_status))
+        _flush(batch)
 
         # OVERDUE tasks whose deadline is now in the future → revert to DOING
         rows = self.conn.execute(
@@ -1201,16 +1340,19 @@ class TaskRepository:
             "AND (deadline_date >= ? OR deadline_date IS NULL)",
             (today_iso,),
         ).fetchall()
-        reverted = 0
+        batch = []
         for row in rows:
             task = _row_to_task(tuple(row))
             old_status = task.status
             task.status = TaskStatus.DOING
             if formatter is not None:
                 task.raw_md = formatter.format(task)
-            self.update(task)
+            task.updated_at = datetime.now()
+            self._recalc_activity_counts(task)
+            batch.append(task)
             changed.append((task, old_status))
             reverted += 1
+        _flush(batch)
 
         promoted = len(changed) - reverted
         if changed:
@@ -1237,13 +1379,15 @@ class TaskRepository:
         return [_row_to_task(tuple(r)) for r in rows]
 
     def archive_batch(self, task_ids: list[str]) -> int:
+        if not task_ids:
+            return 0
         now = datetime.now().isoformat()
         placeholders = ", ".join("?" for _ in task_ids)
-        cursor = self.conn.execute(
-            f"UPDATE tasks SET archived=1, archived_at=? WHERE id IN ({placeholders})",
-            [now] + task_ids,
-        )
-        self.conn.commit()
+        with self.conn:
+            cursor = self.conn.execute(
+                f"UPDATE tasks SET archived=1, archived_at=? WHERE id IN ({placeholders})",
+                [now] + task_ids,
+            )
         _log.info("Archive batch: %s tasks", cursor.rowcount)
         return cursor.rowcount
 

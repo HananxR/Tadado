@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from src.config import DEFAULT_CONFIG, AppConfig
 
 
@@ -23,3 +25,25 @@ def test_instances_are_independent(tmp_path):
     c1.set("display", "theme", value="dark")
     assert c2.theme == "light"
     assert c1.theme == "dark"
+
+
+def test_general_hotkey_and_pin_on_top_defaults(tmp_path):
+    """新增默认键 hotkey / pin_on_top 应存在且取值正确（阶段 5）."""
+    assert DEFAULT_CONFIG["general"]["hotkey"] == "Ctrl+Shift+Space"
+    assert DEFAULT_CONFIG["general"]["pin_on_top"] is False
+
+    c = AppConfig(tmp_path)
+    assert c.get("general", "hotkey") == "Ctrl+Shift+Space"
+    assert c.get("general", "pin_on_top") is False
+
+
+def test_legacy_config_backfilled_by_deep_merge(tmp_path):
+    """缺少新键的旧配置文件加载后应被自动补齐默认值."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    legacy = {"general": {"page_size": 50}}  # 旧配置没有 hotkey / pin_on_top
+    (tmp_path / "config.json").write_text(json.dumps(legacy), encoding="utf-8")
+
+    c = AppConfig(tmp_path)
+    assert c.get("general", "hotkey") == "Ctrl+Shift+Space"
+    assert c.get("general", "pin_on_top") is False
+    assert c.get("general", "page_size") == 50  # 旧值保留

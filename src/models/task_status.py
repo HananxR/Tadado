@@ -42,10 +42,10 @@ class TaskStatus(Enum):
     def display_color(self) -> str:
         """Hex color for status badges."""
         _color_map = {
-            TaskStatus.OVERDUE: "#c0392b",
-            TaskStatus.DOING: "#f39c12",
-            TaskStatus.TODO: "#3498db",
-            TaskStatus.DONE: "#2ecc71",
+            TaskStatus.OVERDUE: "#c24536",
+            TaskStatus.DOING: "#c07f2d",
+            TaskStatus.TODO: "#3d6fb5",
+            TaskStatus.DONE: "#3c8d5e",
         }
         return _color_map[self]
 

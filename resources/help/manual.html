@@ -149,9 +149,9 @@
   <nav class="toc-nav" id="tocNav">
     <ol>
       <li><a href="#quickstart">快速入门</a></li>
-      <li><a href="#task-view">任务视图</a></li>
+      <li><a href="#task-view">任务</a></li>
       <li><a href="#dashboard">活动分析</a></li>
-      <li><a href="#batch-view">任务管理控制台</a></li>
+      <li><a href="#batch-view">任务管理</a></li>
       <li><a href="#partitions">分区管理</a></li>
       <li><a href="#tray">系统托盘与提醒</a></li>
       <li><a href="#settings">设置</a></li>
@@ -170,7 +170,7 @@
 <p>Tadado 提供 Windows 安装包（<code>.exe</code>）和便携压缩包（<code>.zip</code> / <code>linux.tar.gz</code>）。启动后程序常驻系统托盘，主窗口同步打开。所有数据存储在本地 SQLite 文件，无需联网、无需注册。</p>
 
 <h3>1.2 创建任务</h3>
-<p>在任务视图顶部的输入框中输入 Markdown 格式的任务：</p>
+<p>在任务页右侧编辑器的 Markdown 输入框中输入 Markdown 格式的任务：</p>
 <pre><code>- [   ] &lt;2026-06-15 14:30&gt; 完成使用手册编写 #文档</code></pre>
 
 <p>格式说明：</p>
@@ -185,22 +185,24 @@
 <div class="tip"><strong>提示</strong>优先级通过 <code>- [   ]</code> 中 <code>*</code> 的数量表示：<code>[   ]</code>=普通、<code>[*  ]</code>=关注、<code>[** ]</code>=重要、<code>[***]</code>=紧急。日期、时间均为可选——不写截止日期也可以创建任务。状态（待办/进行中/已完成/逾期）由软件自动管理，无需在 Markdown 中标记。</div>
 
 <h3>1.3 界面概览</h3>
-<p>Tadado 有三个视图，通过标题栏按钮切换：</p>
+<p>Tadado 采用左侧图标栏导航，共 5 个页面，点击侧栏图标或按 <kbd>Ctrl</kbd>+<kbd>1</kbd>..<kbd>5</kbd> 切换：</p>
 <table>
-  <tr><th>视图</th><th>用途</th></tr>
-  <tr><td>任务视图</td><td>日常任务的增删改查</td></tr>
-  <tr><td>活动分析</td><td>日历热力图、活动统计</td></tr>
-  <tr><td>任务管理</td><td>批量操作、标签管理、归档</td></tr>
+  <tr><th>页面</th><th>分组</th><th>用途</th></tr>
+  <tr><td>总览</td><td>工作</td><td>今日焦点与总览统计（开发中）</td></tr>
+  <tr><td>任务</td><td>工作</td><td>日常任务的增删改查</td></tr>
+  <tr><td>任务图谱</td><td>洞察</td><td>任务关系网络（开发中）</td></tr>
+  <tr><td>活动分析</td><td>洞察</td><td>日历热力图、活动统计</td></tr>
+  <tr><td>任务管理</td><td>管理</td><td>批量操作、标签管理、归档</td></tr>
 </table>
-<p>窗口为无边框设计，整条标题栏空白区域均可拖拽移动。支持 Windows 窗口贴靠（Aero Snap）：拖拽到屏幕左右边缘自动半屏停靠、拖拽到顶部最大化、<kbd>Win</kbd>+<kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> 快捷键分屏。边缘 8px 区域可拖拽缩放窗口。标题栏左侧 App 图标点击可返回任务视图并清空筛选。</p>
+<p>侧栏底部齿轮按钮打开设置。窗口为无边框设计，整条标题栏空白区域均可拖拽移动。支持 Windows 窗口贴靠（Aero Snap）：拖拽到屏幕左右边缘自动半屏停靠、拖拽到顶部最大化、<kbd>Win</kbd>+<kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> 快捷键分屏。边缘 8px 区域可拖拽缩放窗口。标题栏左侧 App 图标点击可返回任务视图并清空筛选；右侧依次为常驻置顶、缩小到托盘、最小化、切换全屏、关闭按钮。</p>
 
 <!-- ===== 2. Task View ===== -->
-<h2 id="task-view">2. 任务视图</h2>
+<h2 id="task-view">2. 任务</h2>
 
 <h3>2.1 新建任务</h3>
 <ul>
-  <li><strong>新建单任务</strong> — 输入框输入 Markdown 后按 <kbd>Enter</kbd>，或点击标题栏 <code>新建单任务</code></li>
-  <li><strong>新建多任务</strong> — 点击标题栏 <code>新建多任务</code>，编辑器生成 3 行模板任务</li>
+  <li><strong>新建单任务</strong> — 托盘菜单「新建单任务」，或在任务页右侧编辑器的 Markdown 输入框写入内容后保存</li>
+  <li><strong>新建多任务</strong> — 托盘菜单「新建多任务」，编辑器生成 3 行模板任务；也可在编辑器中直接粘贴多行 Markdown 一次性创建</li>
   <li><strong>草稿模式</strong> — 新建时输入框蓝色高亮，未保存的草稿可丢弃</li>
 </ul>
 
@@ -275,7 +277,7 @@
 <p>导出当前标签的活动记录为 Markdown / Excel / TXT。</p>
 
 <!-- ===== 4. Batch View ===== -->
-<h2 id="batch-view">4. 任务管理控制台</h2>
+<h2 id="batch-view">4. 任务管理</h2>
 
 <h3>4.1 筛选面板</h3>
 <p>左侧面板提供：关键词搜索 / 状态过滤 / 优先级过滤。</p>
@@ -430,7 +432,7 @@
 <h3>Q: 窗口显示异常（空白、错位、无法拖动或贴靠失效）</h3>
 <ol>
   <li>关闭并重启应用</li>
-  <li>切换全屏再退出（标题栏右侧 ⛶ 按钮），窗口会重置到屏幕中央</li>
+  <li>切换全屏再退出（标题栏右侧「切换全屏」按钮），窗口会重置到屏幕中央</li>
   <li>若贴靠（Snap）功能失效，可点击全屏按钮再还原，刷新窗口样式状态</li>
 </ol>
 

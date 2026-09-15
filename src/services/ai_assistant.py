@@ -281,8 +281,16 @@ def _launch_in_terminal(command: str, cwd: str) -> tuple[bool, str]:
 
 
 def _session_env(config, partition_name: str) -> dict:
-    """会话环境：注入同版本 tadado-cli.exe 与当前分区兜底."""
+    """会话环境：注入同版本 tadado-cli.exe 与当前分区兜底.
+
+    设置面板的「注入分区环境变量」关闭时直接返回父进程环境——
+    用于宿主里已存在同名变量、或希望会话完全跑在默认环境的情况。
+    """
     env = os.environ.copy()
+    if config is not None and not bool(
+        config.get("ai_assistant", "inject_env", default=True)
+    ):
+        return env
     cli_exe = _tadado_cli_path()
     if cli_exe:
         env["TADADO_EXE"] = cli_exe  # skill 定位同版本 tadado-cli.exe

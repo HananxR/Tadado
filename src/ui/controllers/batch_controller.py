@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
-from datetime import date as _date, datetime as _datetime
+from datetime import date as _date
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -23,12 +22,10 @@ from PySide6.QtWidgets import (
 )
 
 from ...config import AppConfig
-from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...models.task_filter import TaskFilter
 from ...models.task_status import TaskStatus
 from ...services.task_service import TaskService
-
 from ...utils.signal_bus import get_signal_bus
 from ...utils.widget_utils import combo_width
 
@@ -39,26 +36,26 @@ class BatchController(QObject):
     """Manages batch operations and the task management console page.
 
     Signals:
-        data_changed(): trigger external data refresh
         status_message(msg): flash message on status bar
         view_switch_requested(view): request MainWindow to switch views
+
+    Data refresh needs no signal here: every mutation goes through
+    ``TaskService``, which emits ``batch_operation_completed`` /
+    ``archive_completed`` on the bus, and the timeline refreshes once.
     """
 
-    data_changed = Signal()
     status_message = Signal(str)
 
     def __init__(
         self,
         task_service: TaskService,
         config: AppConfig,
-        repository: TaskRepository,
         partition_ctrl,  # PartitionController
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._svc = task_service
         self._config = config
-        self._repo = repository
         self._part = partition_ctrl
         self._bus = get_signal_bus()
 
@@ -103,9 +100,8 @@ class BatchController(QObject):
         self._built = True
 
         from ..task_list.batch_toolbar import BatchToolbar
-        from ..task_list.task_list_model import COL_ARCHIVED, TaskListModel
+        from ..task_list.task_list_model import TaskListModel
         from ..task_list.task_list_view import TaskListView
-        from ..widgets.calendar_popup import CalendarPopup
         from ..widgets.dropdown import DropdownWidget
         from ..widgets.tag_management_panel import TagManagementPanel
 
@@ -248,7 +244,7 @@ class BatchController(QObject):
         batch_layout.addWidget(self._batch_toolbar2)
 
         self._batch_task_model = TaskListModel()
-        self._batch_task_view = TaskListView(self._repo, task_service=self._svc)
+        self._batch_task_view = TaskListView(self._svc)
         self._batch_task_view.set_model(self._batch_task_model)
         self._batch_task_view.setSelectionBehavior(
             self._batch_task_view.SelectionBehavior.SelectRows
@@ -321,7 +317,7 @@ class BatchController(QObject):
         batch_left_layout.addWidget(batch_main, 1)
         self._batch_splitter.addWidget(batch_left)
         self._batch_tag_panel = TagManagementPanel(
-            self._repo, config=self._config, task_service=self._svc,
+            self._svc, config=self._config,
         )
         self._batch_splitter.addWidget(self._batch_tag_panel)
         # Sync the tag panel to the currently active partition
@@ -332,12 +328,13 @@ class BatchController(QObject):
 
         batch_page_layout.addWidget(self._batch_splitter)
 
-        # Tag panel signal connections
-        self._batch_tag_panel.tag_changed.connect(lambda: self._bus.tag_changed.emit())
-        self._bus.task_created.connect(lambda *_: self._batch_tag_panel.refresh())
-        self._bus.task_updated.connect(lambda *_: self._batch_tag_panel.refresh())
-        self._bus.task_deleted.connect(lambda *_: self._batch_tag_panel.refresh())
-        self._bus.tag_changed.connect(lambda *_: self.refresh_page())
+        # Tag panel signal connections — bound methods so Qt auto-disconnects
+        # them when this controller is destroyed (no stale bus subscriptions).
+        self._batch_tag_panel.tag_changed.connect(self._on_tag_panel_changed)
+        self._bus.task_created.connect(self._on_bus_tag_panel_refresh)
+        self._bus.task_updated.connect(self._on_bus_tag_panel_refresh)
+        self._bus.task_deleted.connect(self._on_bus_tag_panel_refresh)
+        self._bus.tag_changed.connect(self._on_bus_tag_panel_changed)
 
         # Bidirectional task list <-> tag panel interaction
         self._batch_task_view.selection_cleared.connect(self._on_batch_selection_cleared)
@@ -345,6 +342,18 @@ class BatchController(QObject):
 
         self._page_widget = batch_page
         return batch_page
+
+    def _on_tag_panel_changed(self) -> None:
+        """TagManagementPanel changed → broadcast on the bus."""
+        self._bus.tag_changed.emit()
+
+    def _on_bus_tag_panel_refresh(self, *_args) -> None:
+        """Task mutated → refresh the tag panel."""
+        self._batch_tag_panel.refresh()
+
+    def _on_bus_tag_panel_changed(self, *_args) -> None:
+        """Tag changed → refresh the manage page."""
+        self.refresh_page()
 
     def refresh_page(self) -> None:
         """Refresh batch page applying all sidebar filters."""
@@ -427,7 +436,6 @@ class BatchController(QObject):
         if reply == QMessageBox.StandardButton.Ok:
             self._svc.batch_update_status(ids, status)
             self._batch_task_model.set_checked_ids(set())
-            self.data_changed.emit()
             self._batch_toolbar2.reset_toggle()
             self.status_message.emit(f"已更改 {len(ids)} 个任务状态")
         # Note: batch-view confirm bar path is simplified for now
@@ -439,7 +447,6 @@ class BatchController(QObject):
         updated = self._svc.get_task(ids[0])
         if updated and hasattr(self, '_batch_toolbar2'):
             self._batch_toolbar2.reset_toggle()
-        self.data_changed.emit()
         self.status_message.emit(f"已更改 {len(ids)} 个任务的优先级")
 
     def batch_delete(self, ids: list[str]) -> None:
@@ -452,28 +459,24 @@ class BatchController(QObject):
         )
         if reply == QMessageBox.StandardButton.Ok:
             self._svc.batch_delete(ids)
-            self.data_changed.emit()
             self.status_message.emit(f"已删除 {len(ids)} 个任务")
 
     def batch_suspend(self, ids: list[str]) -> None:
         if not ids:
             return
         self._svc.batch_suspend(ids)
-        self.data_changed.emit()
         self.status_message.emit(f"已中止 {len(ids)} 个任务")
 
     def batch_restart(self, ids: list[str]) -> None:
         if not ids:
             return
         self._svc.batch_restart(ids)
-        self.data_changed.emit()
         self.status_message.emit(f"已重启 {len(ids)} 个任务")
 
     def batch_postpone(self, ids: list[str], days: int) -> None:
         if not ids:
             return
         self._svc.batch_postpone(ids, days)
-        self.data_changed.emit()
         self.status_message.emit(f"已延后 {len(ids)} 个任务 +{days}天")
 
     def batch_move_partition(self, ids: list[str]) -> None:
@@ -485,7 +488,7 @@ class BatchController(QObject):
         if from_pw:
             pw, ok = QInputDialog.getText(
                 self._batch_task_view, "密码验证",
-                f"当前分区设有密码，请输入密码：",
+                "当前分区设有密码，请输入密码：",
                 QLineEdit.EchoMode.Password,
             )
             if not ok or pw.strip() != from_pw:
@@ -524,7 +527,7 @@ class BatchController(QObject):
         if to_pw:
             pw2, ok2 = QInputDialog.getText(
                 self._batch_task_view, "目标分区密码",
-                f"目标分区设有密码，请输入密码：",
+                "目标分区设有密码，请输入密码：",
                 QLineEdit.EchoMode.Password,
             )
             if not ok2 or pw2.strip() != to_pw:
@@ -539,7 +542,6 @@ class BatchController(QObject):
         )
         if reply == QMessageBox.StandardButton.Ok:
             moved = self._svc.batch_move_partition(ids, to_partition_id)
-            self.data_changed.emit()
             self.status_message.emit(f"已迁移 {moved} 个任务")
 
     def manual_archive(self) -> None:
@@ -561,7 +563,6 @@ class BatchController(QObject):
         if q == QMessageBox.StandardButton.Ok:
             self._svc.archive_batch(ids)
             self.refresh_page()
-            self.data_changed.emit()
             self.status_message.emit(f"已归档 {len(ids)} 个任务")
 
     def clear_archived(self) -> None:
@@ -583,7 +584,6 @@ class BatchController(QObject):
         if q == QMessageBox.StandardButton.Yes:
             self._svc.batch_delete(archived_ids)
             self.refresh_page()
-            self.data_changed.emit()
             self.status_message.emit(f"已清除 {len(archived_ids)} 个已归档任务")
 
     def select_all(self) -> None:

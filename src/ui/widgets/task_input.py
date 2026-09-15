@@ -5,7 +5,6 @@ from __future__ import annotations
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QWidget
 
-from ...models.task import Task
 from ...services.task_service import TaskService
 
 

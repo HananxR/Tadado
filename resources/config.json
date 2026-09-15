@@ -1,0 +1,41 @@
+{
+  "general": {
+    "minimize_to_tray": true,
+    "auto_start": false,
+    "default_partition": "92bff30f-11e6-41fb-9948-5cc30d33459a",
+    "hidden_partitions": [],
+    "last_partition_id": "a1220119-0e30-463d-b3c8-47eeb38a09ba",
+    "page_size": 20,
+    "default_sort": "urgency",
+    "sort_completed_last": true,
+    "hotkey": "Ctrl+Shift+Space",
+    "pin_on_top": false,
+    "timeline_range": "week",
+    "auto_collapse_drawer": true
+  },
+  "display": {
+    "theme": "light",
+    "heatmap_start_year": 2026,
+    "heatmap_color_scheme": "sunbeam"
+  },
+  "reminders": {
+    "enabled": false,
+    "daily_digest_time": "09:00",
+    "quiet_hours_start": "22:00",
+    "quiet_hours_end": "08:00"
+  },
+  "archive": {
+    "enabled": false
+  },
+  "ai_assistant": {
+    "provider": "",
+    "claude_cmd": "claude",
+    "codex_cmd": "codex",
+    "initial_prompt": "/tadado 你好，我正在使用 Tadado AI 助手，请等待我的指令",
+    "workspace": "",
+    "session_id": "",
+    "resume": true,
+    "usage_alert": true,
+    "inject_env": true
+  }
+}

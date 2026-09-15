@@ -1,0 +1,109 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   基础层：reset、排版、滚动条、焦点环、提示条
+   ───────────────────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* 原型 body：400 13px/1.6 */
+  font: 400 13px/1.6 var(--font);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  /* 应用外壳不是可选中文本的页面：默认禁止选中，内容区再单独放开，
+     否则拖拽窗口时会顺手选中一堆文字。 */
+  user-select: none;
+}
+
+button {
+  font-family: var(--font);
+  color: inherit;
+}
+
+input,
+textarea {
+  font-family: var(--font);
+}
+
+svg {
+  display: block;
+}
+
+/* 原型 :focus-visible —— 键盘焦点环，替掉浏览器默认那圈灰虚框 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 5px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ============ 提示条 ============ */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 16px);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12.5px;
+  padding: 9px 16px;
+  border-radius: 9px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.25s ease;
+  z-index: 99;
+  box-shadow: var(--shadow);
+  max-width: 70vw;
+}
+
+#toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ============ 动画 ============ */
+@keyframes fadeup {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fadeup {
+  animation: fadeup 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}

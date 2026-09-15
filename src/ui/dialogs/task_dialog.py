@@ -15,11 +15,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...models.repository import TaskRepository
 from ...models.task import Task
 from ...models.task_status import TaskStatus
-from ...services.md_formatter import MarkdownTaskFormatter
-from ...services.md_parser import MarkdownTaskParser
 from ...services.task_service import TaskService
 from ..widgets.timeline_view import TimelineView
 
@@ -29,17 +26,15 @@ class TaskDialog(QDialog):
 
     def __init__(
         self,
-        repository: TaskRepository,
+        task_service: TaskService,
         task: Task | None = None,
-        task_service: TaskService | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self._repository = repository
         self._task_service = task_service
         self._task = task
-        self._parser = task_service._parser if task_service else MarkdownTaskParser()
-        self._formatter = task_service._formatter if task_service else MarkdownTaskFormatter()
+        self._parser = task_service._parser
+        self._formatter = task_service._formatter
         self._editing = task is not None
 
         self.setWindowTitle("编辑任务" if self._editing else "新建任务")
@@ -208,21 +203,10 @@ class TaskDialog(QDialog):
                         f"不能晚于截止时间({dl_str})，请调整后再保存。"
                     )
                     return
-            # Normalize to canonical Markdown (mirrors TaskEditPanel._on_save)
-            self._task.raw_md = self._formatter.format(self._task)
-            if self._task_service:
-                if self._task.status != old_status:
-                    self._task_service.change_task_status(self._task, self._task.status)
-                else:
-                    self._task_service.update_task(self._task)
-            else:
-                self._repository.update(self._task)
-                if self._task.status != old_status:
-                    from ...utils.signal_bus import get_signal_bus
-                    get_signal_bus().task_status_changed.emit(self._task, old_status)
-                else:
-                    from ...utils.signal_bus import get_signal_bus
-                    get_signal_bus().task_updated.emit(self._task)
+            # Persist through the single write seam (one signal per save)
+            self._task_service.save_task(
+                self._task, is_new=False, previous_status=old_status
+            )
         else:
             now = datetime.now()
             task = Task(
@@ -244,15 +228,7 @@ class TaskDialog(QDialog):
                     "progress": 100 if parsed.status == TaskStatus.DONE else 0,
                 }],
             )
-            # Normalize to canonical Markdown
-            task.raw_md = self._formatter.format(task)
-            if self._task_service:
-                self._task_service._repo.insert(task)
-                self._task_service._bus.task_created.emit(task)
-            else:
-                self._repository.insert(task)
-                from ...utils.signal_bus import get_signal_bus
-                get_signal_bus().task_created.emit(task)
-            self._signal_bus.task_created.emit(task)
+            # Persist through the single write seam (one signal per save)
+            self._task_service.save_task(task, is_new=True)
 
         self.accept()

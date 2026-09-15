@@ -12,7 +12,7 @@ Usage::
 
 from __future__ import annotations
 
-from ._version_data import __version__, _RELEASE_HIGHLIGHTS  # noqa: F401
+from ._version_data import _RELEASE_HIGHLIGHTS, __version__  # noqa: F401
 
 
 def get_version() -> str:

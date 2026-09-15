@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont, QFontDatabase
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtNetwork import QLocalServer
 from PySide6.QtWidgets import QApplication
 
@@ -23,6 +23,7 @@ from .services.recurrence import TaskRecurrence
 from .services.scheduler import TaskScheduler
 from .ui.main_window import MainWindow
 from .ui.system_tray import SystemTrayManager
+from .ui.web_style import WebStyle
 from .utils.design_tokens import init_tokens, refresh_tokens
 from .utils.icon_loader import get_icon_loader
 from .utils.log_manager import setup_logging
@@ -295,6 +296,18 @@ class TadadoApp(QApplication):
     def __init__(self, argv: list[str], local_server: QLocalServer) -> None:
         super().__init__(argv)
 
+        # ── Widget style: WebStyle over Fusion ────────────────────────────
+        # 不指定时 Qt 会用 windows11/windowsvista 风格：它自带渐变、偏蓝灰
+        # 的底色，且下拉箭头、滚动条、SpinBox 按钮等子控件**不受 QSS 控制**。
+        # Fusion 是纯 Qt 自绘风格，完全听从 QSS 与调色板，是唯一可控的底座。
+        #
+        # 但 Fusion 自带两件「不像 web」的招牌：1px 黑色虚线焦点框、以及实心
+        # 三角下拉箭头（QSS 的 ::down-arrow 只能换位图，无法描边/跟随主题）。
+        # 这两处由 WebStyle（Fusion 之上的 QProxyStyle）接管，见 web_style.py。
+        # 注意：必须在 setStyleSheet 之前设置，Qt 才会用 QStyleSheetStyle 把
+        # 代理再包一层，QSS 与代理才能同时生效。
+        self.setStyle(WebStyle("Fusion"))
+
         # ── Logging — MUST be first, before any other initialization ──────
         self._log = setup_logging()
         from .version import get_version
@@ -375,7 +388,9 @@ class TadadoApp(QApplication):
         self._main_window = MainWindow(
             self._config, self._repository, task_service=self._task_service,
         )
-        self._tray = SystemTrayManager(self._main_window, self._config)
+        self._tray = SystemTrayManager(
+            self._main_window, self._config, shell=self._main_window.window_shell,
+        )
 
         # Background services
         self._scheduler = TaskScheduler(
@@ -403,7 +418,7 @@ class TadadoApp(QApplication):
 
     def _refresh_overdue_on_startup(self) -> None:
         """Scan all tasks and auto-set/revert OVERDUE status after startup."""
-        changed = self._task_service.refresh_overdue_status()
+        self._task_service.refresh_overdue_status()
 
     def _finish_startup(self) -> None:
         """Uncloak main window so DWM composites it for the first time.
@@ -426,6 +441,11 @@ class TadadoApp(QApplication):
             self._shield = None
         self.restoreOverrideCursor()  # restore cursor after init
         self._tray.show()
+        # 全局热键：窗口完全就绪后再注册（非 Windows 自动跳过）
+        if self._main_window.window_shell.install_hotkey():
+            self._log.info(
+                "Global hotkey active: %s", self._main_window.window_shell.hotkey_accel
+            )
         self._log.info("Startup complete — main window visible")
         QTimer.singleShot(200, self._refresh_overdue_on_startup)
 
@@ -599,8 +619,12 @@ class TadadoApp(QApplication):
     # ------------------------------------------------------------------
 
     def _on_quit(self) -> None:
+        self._log.info("Shutdown: releasing global hotkey")
+        self._main_window.window_shell.shutdown()
         self._log.info("Shutdown: stopping scheduler")
         self._scheduler.stop()
+        self._log.info("Shutdown: disposing task service bus subscriptions")
+        self._task_service.dispose()
         self._log.info("Shutdown: stopping archiver")
         self._archiver.stop()
         self._log.info("Shutdown: closing database")
