@@ -239,6 +239,64 @@
   flex: none;
 }
 
+/* ============ 单行输入浮层（prompt.ts）与锁屏 ============ */
+.pr-input {
+  width: 100%;
+  margin-top: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: 400 13px var(--font);
+}
+
+.pr-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* 设置行里「先挑一个分区，再点按钮」这种两段式控件 */
+.rowctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* 锁屏盖住整个应用：它不是对话框（对话框能 Esc 掉、点遮罩关掉，
+   那就不是锁了），所以没有关闭按钮也不响应遮罩点击 */
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+}
+
+.lock-screen.show {
+  display: flex;
+}
+
+.lock-card {
+  width: 320px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.lock-hint {
+  min-height: 16px;
+  margin-top: 8px;
+  font: 400 12px var(--font);
+  color: var(--danger);
+}
+
 /* ============ 抽屉里的可编辑字段 ============ */
 /* 标题和标签平时看着像普通文字，悬停才浮出边框、聚焦才染色 ——
    一进抽屉就满眼输入框，会把「看」和「改」的界限抹掉 */

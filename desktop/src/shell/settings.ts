@@ -11,14 +11,19 @@
 //   · 时间轴默认粒度 → data/timeline.ts（与任务页工具行共享同一份状态）
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { PARTITIONS, activePartitionId } from "../data/partitions";
 import {
   TIMELINE_RANGES,
   onTimelineRangeChange,
   setTimelineRange,
   timelineRange,
 } from "../data/timeline";
+import { confirmAction } from "./confirm";
 import { el, need } from "./dom";
+import { hasPassword, idleLimit, setIdleMinutes, setPassword } from "./lock";
+import { promptText } from "./prompt";
 import { seg } from "./seg";
+import { toast } from "./toast";
 import { getThemeMode, setThemeMode, type ThemeMode } from "./theme";
 import { onPinChange, togglePinned } from "./window";
 
@@ -85,6 +90,93 @@ function timelineRangeControl(): HTMLElement {
   return control.root;
 }
 
+/**
+ * 分区口令：先挑分区，再设 / 清。
+ *
+ * 不做「找回」这一步：单机应用里加安全问题或邮箱找回，只会把「防君子」变成
+ * 「防自己」。忘了就是忘了 —— 所以设置时把这句话摆在浮层里，而不是等忘了才说。
+ */
+function passwordControl(): HTMLElement {
+  let target = activePartitionId();
+
+  const picker = seg(
+    PARTITIONS.map((partition) => ({ value: partition.id, label: partition.name })),
+    target,
+    (value) => {
+      target = value;
+      sync();
+    },
+  );
+  picker.root.style.flex = "none";
+  picker.root.style.width = "auto";
+
+  const button = el("button", { class: "btn sm", type: "button" });
+
+  const sync = (): void => {
+    button.textContent = hasPassword(target) ? "清除口令" : "设置口令";
+  };
+
+  button.addEventListener("click", () => {
+    void (async () => {
+      const name = PARTITIONS.find((partition) => partition.id === target)?.name ?? target;
+
+      if (hasPassword(target)) {
+        const ok = await confirmAction({
+          title: `清除「${name}」的口令？`,
+          detail: "之后进入这个分区不再需要口令。",
+          confirmText: "清除",
+        });
+        if (!ok) return;
+        await setPassword(target, "");
+        toast(`已清除「${name}」的口令`);
+        sync();
+        return;
+      }
+
+      const password = await promptText({
+        title: `给「${name}」设口令`,
+        detail: "这是防路过的人瞄一眼，不是加密存储 —— 而且忘了没法找回，请自己记牢。",
+        placeholder: "口令",
+        password: true,
+        confirmText: "设置",
+      });
+      if (password === null) return;
+      if (!password.trim()) {
+        toast("口令不能为空");
+        return;
+      }
+
+      await setPassword(target, password);
+      toast(`已为「${name}」设置口令`);
+      sync();
+    })();
+  });
+
+  sync();
+  return el("div", { class: "rowctl" }, [picker.root, button]);
+}
+
+/** 空闲多久自动上锁。0 = 不自动锁（默认）。 */
+function idleLockControl(): HTMLElement {
+  const control = seg(
+    [
+      { value: "0", label: "关" },
+      { value: "5", label: "5 分" },
+      { value: "10", label: "10 分" },
+      { value: "30", label: "30 分" },
+    ],
+    String(idleLimit()),
+    (value) => {
+      void setIdleMinutes(Number(value)).then(() => {
+        toast(value === "0" ? "已关闭空闲锁定" : `空闲 ${value} 分钟后自动上锁`);
+      });
+    },
+  );
+  control.root.style.flex = "none";
+  control.root.style.width = "auto";
+  return control.root;
+}
+
 function pinControl(): HTMLElement {
   const toggle = el("span", { class: "sw", role: "switch", tabindex: "0" });
 
@@ -128,6 +220,13 @@ const TABS: TabSpec[] = [
           { label: "时间轴默认粒度", control: timelineRangeControl },
           { label: "已完成任务置底" },
           { label: "保存后自动收起抽屉" },
+        ],
+      },
+      {
+        title: "安全",
+        rows: [
+          { label: "分区口令", control: passwordControl },
+          { label: "空闲锁定", control: idleLockControl },
         ],
       },
       {

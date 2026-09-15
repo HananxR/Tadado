@@ -159,6 +159,41 @@ try {
   const filtered = await page.locator(".act-item").count();
   check("活动报告搜索能过滤", all > 0 && filtered === 0, `${all} -> ${filtered}`);
 
+  // 分区口令 → 切过去被挡 → 错口令不放行 → 对口令解锁。
+  // 给「工作」上锁（当前停在「学习」）：给正在看的分区上锁会立刻把设置面板
+  // 自己挡住 —— 那是缺陷，不是这里要测的场景。
+  await page.click("#set-btn");
+  await page.waitForSelector("#set-drawer.open");
+  await page.click("#set-drawer .rowctl .seg button:has-text('工作')");
+  await page.click("#set-drawer .rowctl button:has-text('设置口令')");
+  await page.waitForSelector(".mask .pr-input");
+  await page.fill(".mask .pr-input", "1234");
+  await page.click(".modal-actions button:has-text('设置')");
+  await sleep(400);
+  await page.click("#set-close");
+  await sleep(250);
+
+  await page.click("#part-btn");
+  await sleep(150);
+  await page.click(".part-item[data-part='work']");
+  await sleep(400);
+  check("切到上锁分区会挡一层", (await page.locator(".lock-screen.show").count()) === 1);
+
+  await page.fill(".lock-screen .pr-input", "0000");
+  await page.keyboard.press("Enter");
+  await sleep(250);
+  const hint = (await page.locator(".lock-hint").textContent()) ?? "";
+  check(
+    "错误口令不放行",
+    (await page.locator(".lock-screen.show").count()) === 1 && hint.includes("不对"),
+    hint.trim(),
+  );
+
+  await page.fill(".lock-screen .pr-input", "1234");
+  await page.keyboard.press("Enter");
+  await sleep(400);
+  check("正确口令解锁", (await page.locator(".lock-screen.show").count()) === 0);
+
   check("无 console 报错", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 } finally {
   await browser.close();

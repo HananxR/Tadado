@@ -8,6 +8,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { bootStore } from "./data/store";
 import { setupHotkey } from "./shell/hotkey";
+import { bootLock } from "./shell/lock";
 import { mountNav } from "./shell/nav";
 import { mountPartition } from "./shell/partition";
 import { mountSettings } from "./shell/settings";
@@ -26,6 +27,8 @@ async function boot(): Promise<void> {
   // 数据先装好再画页面：否则第一帧画的是种子数据，存档一到位整屏跳一次。
   // 读档失败不该让外壳起不来（读的是样例数据，不是关键路径）。
   await bootStore().catch(() => {});
+  // 分区密码与空闲锁定：要在画页面之前决定要不要先挡一层
+  await bootLock().catch(() => {});
 
   mountTitlebar();
   mountNav();

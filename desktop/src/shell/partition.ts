@@ -8,6 +8,7 @@
 
 import { PARTITIONS, activePartition, setPartition } from "../data/partitions";
 import { dataChanged } from "../data/store";
+import { hasPassword, isUnlocked, syncScreen } from "./lock";
 import { el, need } from "./dom";
 import { toast } from "./toast";
 
@@ -31,13 +32,20 @@ export function mountPartition(): void {
   const pop = need("#part-pop");
 
   const items = PARTITIONS.map((partition) => {
+    const locked = hasPassword(partition.id);
     const node = el("div", {
       class: partition.id === activePartition().id ? "part-item on" : "part-item",
       "data-part": partition.id,
-    }, [el("span", { text: partition.name })]);
+    }, [
+      el("span", { text: partition.name }),
+      // 上锁的分区标出来：不然只能靠点了才知道要口令
+      ...(locked ? [el("span", { class: "lock", text: isUnlocked(partition.id) ? "🔓" : "🔒" })] : []),
+    ]);
 
     node.addEventListener("click", () => {
       select(partition);
+      // 锁屏跟着这次切换走：切到上锁的分区就挡一层
+      syncScreen();
       for (const other of pop.querySelectorAll(".part-item")) {
         other.classList.toggle("on", other === node);
       }
