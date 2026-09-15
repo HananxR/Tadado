@@ -97,9 +97,17 @@ npm run tauri dev      # 真实窗口（首次需编译 Rust，约 1–2 分钟�
 `npm run dev` 下 `@tauri-apps/api` 的窗口调用会走本地状态降级，页面与样式都能看，
 只有窗口行为（置顶、托盘、热键）不可用。
 
-还没有 lint / format / test：`npm run build` 里的 `tsc` 是唯一一道检查，`package.json`
-里没有对应 script，`desktop/` 也不在 CI 覆盖范围内。加自动化测试之前，改完记得对着
-`resources/ui-mockup/tadado-2.0.html` 手动核一遍视觉差异。
+```bash
+npm run e2e             # 真浏览器冒烟（自起预览服务器，约 20s）
+```
+
+`npm run e2e` 会真开一个 Chromium 点一遍：开抽屉、右键菜单、新建、批量新建、切分区、
+活动报告搜索，最后还要「没有 console 报错」。它存在的理由是 `tsc` 看不出运行时故障 ——
+曾经 `dropdown.setValue` 回调 onPick 造成无限递归，抽屉建出来了却永远打不开，
+类型完全合法、构建照过，只有真点一遍才暴露。
+
+还没有 lint / format，也没有 CI（`.github/` 随 Python 版一起归档了）。改完样式记得
+对着 `resources/ui-mockup/tadado-2.0.html` 核一遍视觉差异 —— 那部分自动化还做不到。
 
 ## 窗口形态
 

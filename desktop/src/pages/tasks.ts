@@ -13,6 +13,7 @@
 // 光标和输入法组合状态都会断。
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { parseTasks } from "../data/markdown";
 import { TASKS, activeTasks } from "../data/mock";
 import { activePartitionId } from "../data/partitions";
 import { dataChanged, onDataChange } from "../data/store";
@@ -169,6 +170,99 @@ document.addEventListener("pointerdown", (event) => {
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeCtxMenu();
 });
+
+// ─── 批量新建 ────────────────────────────────────────────────────────────────
+
+/**
+ * 一次粘贴多行、每行一条任务，方言和 md 导入完全一致（data/markdown.ts）。
+ *
+ * 两个刻意的设计：
+ *   1. 预览实时更新 —— 解析出几条要在点「创建」**之前**就看见，而不是建完才发现
+ *      少了一半；
+ *   2. 提交用 Ctrl+Enter —— 多行文本里单独的 Enter 是换行，抢走它会让
+ *      「想换行结果提交了」。
+ */
+function openBatchCreate(): void {
+  const area = el("textarea", {
+    class: "md",
+    spellcheck: "false",
+    placeholder: "- [ ] 任务名 #标签 ⏰09-20 14:30 :: 30%\n- [x] 已完成的活 #工作",
+  });
+
+  const preview = el("div", { class: "modal-detail", text: "将创建 0 条" });
+  const cancelBtn = el("button", { class: "btn", type: "button", text: "取消" });
+  const createBtn = el("button", { class: "btn primary", type: "button", text: "创建" });
+
+  const card = el("div", { class: "modal-card" }, [
+    el("div", { class: "modal-title", text: "批量新建" }),
+    el("div", {
+      class: "modal-detail",
+      text: "一行一条任务，可带 #标签 ⏰截止 :: 进度% +1w；空行和认不出的行会跳过。",
+    }),
+    area,
+    preview,
+    el("div", { class: "modal-actions" }, [cancelBtn, createBtn]),
+  ]);
+  const mask = el("div", { class: "mask" }, [card]);
+
+  const drafts = (): Omit<Task, "partition">[] => parseTasks(area.value);
+
+  const sync = (): void => {
+    const total = drafts().length;
+    preview.textContent = total > 0 ? `将创建 ${total} 条` : "还没解析出任务行";
+    createBtn.disabled = total === 0;
+  };
+
+  function close(): void {
+    mask.classList.remove("show");
+    window.removeEventListener("keydown", onKey, true);
+    window.setTimeout(() => mask.remove(), 180);
+  }
+
+  function onKey(event: KeyboardEvent): void {
+    if (event.key !== "Escape") return;
+    event.stopPropagation();
+    close();
+  }
+
+  area.addEventListener("input", sync);
+  area.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      createBtn.click();
+    }
+  });
+
+  cancelBtn.addEventListener("click", close);
+  mask.addEventListener("click", (event) => {
+    if (event.target === mask) close();
+  });
+
+  createBtn.addEventListener("click", () => {
+    const items = drafts().map((draft) => ({
+      ...draft,
+      id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      partition: activePartitionId(),
+    }));
+    if (items.length === 0) return;
+
+    TASKS.unshift(...items);
+    // 新建的可能在当前筛选 / 搜索词之外，先复位，否则建完一条都看不见
+    statusFilter = "all";
+    query = "";
+    dataChanged();
+    close();
+    toast(`已新建 ${items.length} 条任务`);
+  });
+
+  document.body.append(mask);
+  window.addEventListener("keydown", onKey, true);
+  requestAnimationFrame(() => {
+    mask.classList.add("show");
+    area.focus();
+  });
+  sync();
+}
 
 // ─── 页面状态 ────────────────────────────────────────────────────────────────
 
@@ -412,6 +506,12 @@ export function mount(host: HTMLElement): void {
     if (event.key === "Enter") runQuick();
   });
 
+  // 批量新建：一次粘贴多行，走的是同一套 Markdown 方言（data/markdown.ts）。
+  // 原版有「多任务创建对话框」，桌面端只有单行快速新建 —— 一次录十条的时候
+  // 单行框要来回十趟。
+  const batchBtn = el("button", { class: "btn sm", type: "button", text: "批量" });
+  batchBtn.addEventListener("click", () => openBatchCreate());
+
   const chips = el("div", { class: "chips" });
   const count = el("span", { class: "dim mono" });
 
@@ -449,6 +549,7 @@ export function mount(host: HTMLElement): void {
           el("span", { class: "ic", html: SEARCH_ICON }),
           search,
         ]),
+        batchBtn,
         chips,
         el("span", { class: "grow" }),
         count,

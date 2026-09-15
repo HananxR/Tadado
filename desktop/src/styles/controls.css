@@ -73,6 +73,22 @@
   background: var(--accent-h);
 }
 
+/* 禁用态（批量新建里「解析不出任务」时）：不只是变淡，
+   悬停也不能再染色 —— 否则看着像还能点 */
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn:disabled:hover {
+  border-color: var(--border-2);
+  color: var(--text);
+}
+
+.btn.primary:disabled:hover {
+  background: var(--accent);
+}
+
 .btn.danger {
   border-color: transparent;
   background: none;

@@ -45,6 +45,16 @@ let weeks = 26;
 let reportCursor = 0;
 let checked: Set<string> | null = null;
 
+/**
+ * 活动报告的搜索词，以及那个输入框本身。
+ *
+ * 两者都必须是模块级的：这个页面一有变化就 `remount()` 整页重建，
+ * 搜索词跟着页面状态一起没了的话，勾一个标签就清空一次搜索条件；
+ * 输入框跟着重建的话，每敲一个字焦点就掉一次。
+ */
+let reportQuery = "";
+let searchInput: HTMLInputElement | null = null;
+
 // 刷新后 checked 可能指向已经不存在的标签（比如任务被删掉了）
 function checkedTags(): Set<string> {
   const existing = new Set(TASKS.flatMap((task) => task.tags));
@@ -277,34 +287,83 @@ export function mount(target: HTMLElement): void {
   const next = el("button", { class: "navbtn", type: "button", text: "▶", title: "下一个标签" });
   next.addEventListener("click", () => step(1));
 
+  // 搜索框是模块级单实例：整页 remount 会把它连焦点一起重建，
+  // 「每敲一个字光标就跳一下」的搜索框等于不能用。所以它只建一次，
+  // 输入时只重画列表，不 remount。
+  if (!searchInput) {
+    // 不用 .qc-input（那是任务页「快速新建」的类名）：两个页面都挂同一个类，
+    // 选择器就会挑到另一个页面上那个已经隐藏的输入框
+    searchInput = el("input", {
+      class: "act-search",
+      placeholder: "在报告里搜索任务名或内容…",
+      style: "width:190px",
+    });
+    searchInput.value = reportQuery;
+  }
+  // 收窄：模块级 let 在 if 之后会被 TS 判定为仍可能是 null
+  const searchBox = searchInput;
+
   const exportButton = el("button", { class: "btn sm", type: "button", text: "导出" });
   exportButton.addEventListener("click", () =>
     toast(current ? `已导出「${current}」的 ${reportRows.length} 条活动（演示）` : "先勾选标签再导出"),
   );
 
   const list = el("div");
-  if (reportRows.length === 0) {
-    list.append(el("div", { class: "empty", text: current ? `${current} 暂无活动记录` : "左侧勾选标签后显示活动" }));
-  } else {
-    for (const row of reportRows) {
-      const item = el("div", { class: "act-item" }, [
-        el("span", { class: "tm", text: row.at }),
-        el("span", { class: "c" }, [el("b", { text: row.task.title }), ` · ${row.text}`]),
-      ]);
-      item.title = "点击打开维护抽屉";
-      item.addEventListener("click", () => jumpToTask(row.task.id));
-      list.append(item);
+  const countText = el("span", { class: "d" });
+
+  const renderList = (): void => {
+    const needle = reportQuery.trim().toLowerCase();
+    const rows = needle
+      ? reportRows.filter((row) =>
+          `${row.task.title} ${row.text}`.toLowerCase().includes(needle),
+        )
+      : reportRows;
+
+    list.replaceChildren();
+    if (rows.length === 0) {
+      list.append(
+        el("div", {
+          class: "empty",
+          text: !current
+            ? "左侧勾选标签后显示活动"
+            : needle
+              ? `没有含「${reportQuery.trim()}」的活动`
+              : `${current} 暂无活动记录`,
+        }),
+      );
+    } else {
+      for (const row of rows) {
+        const item = el("div", { class: "act-item" }, [
+          el("span", { class: "tm", text: row.at }),
+          el("span", { class: "c" }, [el("b", { text: row.task.title }), ` · ${row.text}`]),
+        ]);
+        item.title = "点击打开维护抽屉";
+        item.addEventListener("click", () => jumpToTask(row.task.id));
+        list.append(item);
+      }
     }
-  }
+
+    // 过滤时把「筛剩几条 / 一共几条」都写出来，否则看不出是没数据还是被筛掉了
+    countText.textContent = current
+      ? `${rows.length} 条活动${needle ? `（共 ${reportRows.length}）` : ""}`
+      : "未选择标签";
+  };
+
+  searchBox.oninput = (): void => {
+    reportQuery = searchBox.value;
+    renderList();
+  };
+  renderList();
 
   const reportCard = el("div", { class: "card" }, [
     el("div", { class: "card-h" }, [
       el("span", { class: "t", text: "活动报告" }),
-      el("span", { class: "d", text: current ? `${reportRows.length} 条活动` : "未选择标签" }),
+      countText,
       el("span", { class: "grow" }),
       prev,
       el("span", { class: "mono", style: "font-weight:600", text: current ?? "—" }),
       next,
+      searchBox,
       exportButton,
     ]),
     el("div", { class: "card-b" }, [list]),
