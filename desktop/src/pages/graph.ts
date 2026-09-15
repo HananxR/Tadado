@@ -27,9 +27,6 @@ import { STATUS_LABEL, dayNumber, monthDayText, statusVar } from "./shared";
 /** 组内任务的角间距。0.125 是「7 个任务不出组」的上界附近。 */
 const TASK_SPREAD = 0.125;
 
-/** 标题栏 + 工具行 + 页头 + 图例占掉的高度，量舞台高度时要扣掉。 */
-const CHROME_H = 268;
-
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const ICON = {
@@ -90,18 +87,55 @@ let host: HTMLElement | null = null;
 export function mount(target: HTMLElement): void {
   host = target;
 
-  // 舞台按量出来的可用空间铺开。以前写死 900×520：窗口再宽，一圈任务也只占据
-  // 中间一小块，四周是空的点阵底纹，图看着又小又偏。现在宽高都跟着容器走，
-  // 两个半径按比例取 —— 舞台变大时节点会一起散开，而不是继续挤在中心。
-  // 页面隐藏时 clientWidth 量不到（display:none 下是 0），兜一个够用的宽度，
-  // 切回前台会重画一次（见文件末尾的 subscribePages）。
-  const stageW = Math.max(720, (target.clientWidth || 1080) - 24);
-  const stageH = Math.max(420, window.innerHeight - CHROME_H);
+  // 舞台要先落地再量：可用高度是 CSS 排出来的（#page-graph 吃掉主区剩余高度，
+  // .gwrap 是 flex:1），没进 DOM 之前量到的只有 0。以前拿 window.innerHeight
+  // 减一个写死的 chrome 常量去估 —— 估错的代价是画布比容器高，而 .gwrap 是
+  // overflow:hidden，底下半张图就这么没了。
+  // 页面隐藏时量不到（display:none 下是 0），兜一组够用的尺寸，切回前台会重画
+  // 一次（见文件末尾的 subscribePages）。
+  //
+  // 工具行必须比舞台先落地：它在舞台上方占一段高度（约 34px + 14px 间距），
+  // 先量后加工具行的话，量到的高度里有它的份，画布就会比容器高一截，底下照旧被切。
+  const nodeCount = el("span", { class: "dim mono" });
+  const toolbar = el("div", { class: "gbar" }, [
+    el("div", { class: "glegend" }, [
+      el("span", { class: "it" }, [legendDot("var(--accent)"), "分区"]),
+      el("span", { class: "it" }, [legendDot("transparent", "1.5px solid var(--accent)"), "标签"]),
+      el("span", { class: "it" }, [legendDot("var(--doing)"), "任务（色 = 状态）"]),
+    ]),
+    el("span", { class: "grow" }),
+    el("div", { class: "gfilters" }, FILTERS.map((value) => {
+      const chip = el("button", {
+        class: `chip ${filter === value ? "on" : ""}`,
+        type: "button",
+        text: value,
+      });
+      chip.addEventListener("click", () => {
+        if (filter === value) return;
+        filter = value;
+        remount();
+      });
+      return chip;
+    })),
+    // 计数要等节点数出来才写得出来，那时工具行已经在 DOM 里了（只改文字，不再影响布局）
+    nodeCount,
+  ]);
+
+  const stage = el("div", { class: "gwrap" });
+  target.append(toolbar, stage);
+  const stageW = Math.max(720, (stage.clientWidth || 1080) - 24);
+  const stageH = Math.max(360, (stage.clientHeight || 420) - 14);
   const centerX = stageW / 2;
   const centerY = stageH / 2;
-  const span = Math.min(stageW, stageH);
-  const tagRadius = span * 0.21;
-  const taskRadius = span * 0.34;
+
+  // 半径横竖分开取 —— 铺的是一圈椭圆，不是正圆。舞台是横长的，只按短边算半径的
+  // 话，节点会挤在中间那三分之一宽度里，两侧全是空的点阵底纹：图「看着小」就是
+  // 这么来的。x 方向还得给紧急任务的常驻名签留 90px —— 它挂在节点右侧，会往外
+  // 伸出去一截。
+  const tagRadiusX = stageW * 0.19;
+  const tagRadiusY = Math.min(stageH * 0.25, stageH / 2 - 30);
+  const taskRadiusX = Math.min(stageW * 0.35, stageW / 2 - 90);
+  const taskRadiusY = Math.min(stageH * 0.42, stageH / 2 - 24);
 
   const tasks = activeTasks().filter(passesFilter);
 
@@ -125,8 +159,8 @@ export function mount(target: HTMLElement): void {
     const angle = (index / liveTags.length) * Math.PI * 2 - Math.PI / 2;
     nodes.push({ id: tag, kind: "tag", label: tag });
     layout.set(tag, {
-      x: centerX + Math.cos(angle) * tagRadius,
-      y: centerY + Math.sin(angle) * tagRadius,
+      x: centerX + Math.cos(angle) * tagRadiusX,
+      y: centerY + Math.sin(angle) * tagRadiusY,
     });
 
     const group = byTag.get(tag) ?? [];
@@ -134,8 +168,8 @@ export function mount(target: HTMLElement): void {
       const taskAngle = angle + (order - (group.length - 1) / 2) * TASK_SPREAD;
       nodes.push({ id: task.id, kind: "task", label: task.title, task });
       layout.set(task.id, {
-        x: centerX + Math.cos(taskAngle) * taskRadius,
-        y: centerY + Math.sin(taskAngle) * taskRadius,
+        x: centerX + Math.cos(taskAngle) * taskRadiusX,
+        y: centerY + Math.sin(taskAngle) * taskRadiusY,
       });
     });
   });
@@ -364,31 +398,7 @@ export function mount(target: HTMLElement): void {
     return button;
   };
 
-  const toolbar = el("div", { class: "gbar" }, [
-    el("div", { class: "glegend" }, [
-      el("span", { class: "it" }, [legendDot("var(--accent)"), "分区"]),
-      el("span", { class: "it" }, [
-        legendDot("transparent", "1.5px solid var(--accent)"),
-        "标签",
-      ]),
-      el("span", { class: "it" }, [legendDot("var(--doing)"), "任务（色 = 状态）"]),
-    ]),
-    el("span", { class: "grow" }),
-    el("div", { class: "gfilters" }, FILTERS.map((value) => {
-      const chip = el("button", {
-        class: `chip ${filter === value ? "on" : ""}`,
-        type: "button",
-        text: value,
-      });
-      chip.addEventListener("click", () => {
-        if (filter === value) return;
-        filter = value;
-        remount();
-      });
-      return chip;
-    })),
-    el("span", { class: "dim mono", text: `节点 ${nodes.length} · 关联 ${edges.length}` }),
-  ]);
+  nodeCount.textContent = `节点 ${nodes.length} · 关联 ${edges.length}`;
 
   const doneCount = tasks.filter((task) => task.status === "done").length;
   stats.append(
@@ -397,7 +407,8 @@ export function mount(target: HTMLElement): void {
     el("div", {}, ["已完成 ", el("b", { text: String(doneCount) })]),
   );
 
-  const stage = el("div", { class: "gwrap" }, [
+  // 尺寸量的是这个容器自己，所以这里不能重新建一个 —— 用上面已经落地的那个
+  stage.append(
     canvas,
     // 整张图都按分区铺开的，所以分区标注只写一次，放在右上角；
     // 给每个节点都挂一个「属于哪个分区」的标签，在只有一个分区的时候纯属噪音
@@ -431,11 +442,9 @@ export function mount(target: HTMLElement): void {
         toast("布局已复位");
       }),
     ]),
-  ]);
+  );
 
   paintEdges();
-
-  host.append(toolbar, stage);
 }
 
 function remount(): void {

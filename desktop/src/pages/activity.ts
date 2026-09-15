@@ -25,9 +25,9 @@ import {
   weekdayOf,
 } from "./shared";
 
-/** 热力图跨度，单位是周。 */
+/** 热力图跨度，单位是周。标签按周数说话 —— 12 周是三个月，写成「近一月」等于骗人。 */
 const RANGES = [
-  { value: 12, label: "近一月" },
+  { value: 5, label: "近一月" },
   { value: 26, label: "近半年" },
   { value: 52, label: "近一年" },
 ] as const;
@@ -142,13 +142,20 @@ function buildHeatmap(wide: boolean): HTMLElement {
     }
   }
 
-  // 月份标签：只在月份第一次出现的那一列标一次
+  // 月份标签：落在「这个月 1 号所在的那一列」上。
+  //
+  // 只看每列第一天（周日）是哪种做法最容易错：月初几乎从不在周日，于是标签被推到
+  // 下一列 —— 08-01 明明在 07-26~08-01 这一列，标却打到了 08-02 开头那一列，
+  // 每个月都偏一格。所以判定的时候要把整列七天都看进去，跨了月就算这一列换月。
+  // 唯一的例外是最左那一列：它前面没有东西可比，按它自己的日子标
   const months = el("div", { class: "hmcols" });
   // 标签是绝对定位的，.hmcols 自己不随网格变宽，靠显式宽度把滚动区域撑到位
   months.style.width = `${weeks * (cell + gap)}px`;
   let lastMonth = -1;
   for (let week = 0; week < weeks; week += 1) {
-    const month = new Date((firstDay + week * 7) * 86400000).getUTCMonth();
+    const first = firstDay + week * 7;
+    const monthOf = (day: number): number => new Date(day * 86400000).getUTCMonth();
+    const month = week === 0 ? monthOf(first) : monthOf(first + 6);
     if (month === lastMonth) continue;
     lastMonth = month;
     const label = el("span", { text: `${month + 1} 月` });

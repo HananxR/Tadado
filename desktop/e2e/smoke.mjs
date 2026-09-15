@@ -208,6 +208,67 @@ try {
   const filtered = await page.locator(".act-item").count();
   check("活动报告搜索能过滤", all > 0 && filtered === 0, `${all} -> ${filtered}`);
 
+  // 热力图：月份标签必须落在「当月 1 号所在的那一列」。这类错位不报错、编译照过，
+  // 只有把量出来的像素对照日历算一遍才看得出来（曾经每个月都偏一格）。
+  const heat = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll(".hm .hc")].map((node) => {
+      const box = node.getBoundingClientRect();
+      return { title: node.title, x: Math.round(box.x), y: Math.round(box.y) };
+    });
+    const xs = [...new Set(cells.map((c) => c.x))].sort((a, b) => a - b);
+    const pitch = xs[1] - xs[0];
+    const cols = xs.map((x) => {
+      const titles = cells
+        .filter((c) => c.x === x)
+        .sort((a, b) => a.y - b.y)
+        .map((c) => c.title)
+        .filter(Boolean);
+      return { first: titles[0]?.slice(0, 5), last: titles[titles.length - 1]?.slice(0, 5) };
+    });
+    const want = [];
+    let prev = null;
+    cols.forEach((col, index) => {
+      const month = Number((index === 0 ? col.first : col.last).slice(0, 2));
+      if (month !== prev) {
+        want.push(`${month} 月@${index}`);
+        prev = month;
+      }
+    });
+    const got = [...document.querySelectorAll(".hmcols span")].map(
+      (node) => `${node.textContent}@${Math.round(parseFloat(node.style.left) / pitch)}`,
+    );
+    return { want: want.join(" "), got: got.join(" "), pitch };
+  });
+  check("热力图月份标签落在正确的那一列", heat.want === heat.got, `${heat.pitch}px pitch · 应 ${heat.want} · 实 ${heat.got}`);
+
+  // 图谱：画布按量出来的容器排布，不能高过容器 —— .gwrap 是 overflow:hidden，
+  // 画布一高就把底下一排节点剪掉（曾经就差 36px，是工具行插入后才占的高度）
+  await page.locator('.rail-btn[data-page="graph"]').click();
+  await page.waitForSelector(".gcanvas");
+  await sleep(600);
+  const frame = await page.evaluate(() => {
+    const wrap = document.querySelector(".gwrap").getBoundingClientRect();
+    const canvas = document.querySelector(".gcanvas").getBoundingClientRect();
+    const nodes = [...document.querySelectorAll(".gcanvas .node")].map((n) => n.getBoundingClientRect());
+    return {
+      wrap: [Math.round(wrap.width), Math.round(wrap.height)],
+      canvas: [Math.round(canvas.width), Math.round(canvas.height)],
+      allInside: nodes.every(
+        (r) => r.top >= wrap.top - 1 && r.bottom <= wrap.bottom + 1 && r.left >= wrap.left - 1 && r.right <= wrap.right + 1,
+      ),
+      nodes: nodes.length,
+    };
+  });
+  check(
+    "图谱画布贴合容器且节点都在框内",
+    // 节点数不写死：这时停在「学习」分区（上一条测的就是切分区），只有几个任务
+    frame.canvas[0] <= frame.wrap[0] && frame.canvas[1] <= frame.wrap[1] && frame.allInside && frame.nodes >= 3,
+    `容器 ${frame.wrap.join("x")} · 画布 ${frame.canvas.join("x")} · ${frame.nodes} 节点`,
+  );
+
+  await page.locator('.rail-btn[data-page="activity"]').click();
+  await sleep(300);
+
   // 分区口令 → 切过去被挡 → 错口令不放行 → 对口令解锁。
   // 给「工作」上锁（当前停在「学习」）：给正在看的分区上锁会立刻把设置面板
   // 自己挡住 —— 那是缺陷，不是这里要测的场景。

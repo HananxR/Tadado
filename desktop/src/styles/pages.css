@@ -749,14 +749,30 @@
 }
 
 /* ============ 图谱（原型 .gpage / .gwrap / .node / .edges）============ */
-/* 高度要自己算：.main 是可滚动的，页面高度不会自动等于可视高度。
-   112px = .page 的上下内边距 22+32 + .ph 高度约 40 + .ph 的 margin 18。
-   给得偏小一点，宁可让页面滚一点，也不要让画布底下被切掉。 */
-.gpage {
+/* 舞台要「主区剩下多高就吃多高」。这条规则必须挂在 #page-graph 上 —— 骨架里
+   页面的根节点是 nav.ts 建的 `.page`，不是某个自定义类名；从前那版 .gpage 从来
+   没命中过任何节点，于是 .gwrap 永远退回 min-height 那 320px，而画布却按估算的
+   632px 高去画，底下一半被 overflow:hidden 直接切掉。
+   注意每一层都得给 min-height:0 —— flex 子项默认不被压矮，漏一层就传不下来。 */
+#page-graph {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--bar-h) - 112px);
-  min-height: 420px;
+}
+
+#page-graph > .inner {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* width 不能省：.inner 本来靠 margin:0 auto 居中，一旦成了 flex 子项，
+     交叉轴上的 auto margin 会顶掉默认的 stretch，宽度就塌成内容的宽度 */
+  width: 100%;
+}
+
+#page-graph .page-body {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .gbar {
@@ -813,9 +829,9 @@
   pointer-events: none;
 }
 
-/* 固定逻辑画布 900×520，居中摆放。节点用像素坐标定位，SVG 用同尺寸的
-   viewBox —— 两边 1:1 对应，连线端点不需要任何换算。缩放只改 transform:scale。
-   尺寸必须和 graph.ts 的 STAGE_W / STAGE_H 一致。 */
+/* 逻辑画布居中摆放，尺寸由 graph.ts 量出 .gwrap 之后写进内联样式 —— 这里的
+   900×520 只是 JS 没跑时的兜底。节点用像素坐标定位，SVG 用同尺寸的 viewBox，
+   两边 1:1 对应，连线端点不需要任何换算。缩放只改 transform:scale。 */
 .gcanvas {
   position: absolute;
   left: 50%;
@@ -1133,6 +1149,11 @@
 .hm {
   display: grid;
   grid-auto-flow: column;
+  /* 列宽必须写死：不给 grid-auto-columns 的话，隐式列是 auto —— 而 .hm 是块级
+     网格，宽度等于容器宽度，auto 列在默认的 justify-content: stretch 下会被拉到
+     平分容器（实测列距从 17px 变成 45px）。格子疏成一盘散沙还是小事，月份标签按
+     (--cell + --gap) 算绝对位置，于是整个月份刻度都压在左边那一小段上。 */
+  grid-auto-columns: var(--cell);
   grid-template-rows: repeat(7, var(--cell));
   gap: var(--gap);
 }
