@@ -99,7 +99,7 @@
 
 ## 🧩 其他
 
-- [ ] 真机（有显示器）GUI 冒烟：侧栏 5 页切换、置顶按钮、设置齿轮、托盘、主题
+- 真机（有显示器）GUI 冒烟 —— 从清单里撤了：它需要一台带显示器的人和几分钟手点，放在自动化够不着的清单里只会一直挂着。发布前自行过一遍：侧栏 5 页切换、置顶按钮、设置齿轮、托盘、主题
 - [x] **UI 层 repository 直连归零**：只读部件（HeatmapModel / TaskTreePanel / CalendarHeatmapWidget / TagManagementPanel）与写路径（TaskDialog / SettingsDialog）全部改依赖 `TaskService`；透传宿主（BatchController / TaskListView）移除 `repository` 参数；删除孤儿 TaskEditPanel / StatusStatsBar / ActivityReportPanel；`MainWindow` 成为唯一持有 repository 的位置（**76 处 → 0 处**，`docs/architecture/repository-calls-analysis.md` 已重写）
 - [x] **`#5 Service 去 Qt 耦合`**：4 个后台服务（`TaskScheduler` / `TaskArchiver` / `TaskRecurrence` / `TaskNotifier`）此前构造时硬编码 `QtScheduler()`、直连 `SignalBus` 单例 → 零测试。现全部支持构造注入（`TaskNotifier` 补 `signal_bus` 参数），新增 `tests/test_background_services.py` **21 用例**覆盖调度注册 / 归档阈值（0 与 9999 边界）/ 循环克隆（`+1d/+3d/+1w`）/ 摘要通知（启用开关、静默时段、逾期合并）
 - [x] **dev 依赖补全**：`black` / `ruff` 加入 `[dependency-groups].dev`（此前只在 `[project.optional-dependencies].dev`，`uv sync --dev` 拿不到）；`uv sync --dev` 已验证可用。顺带用 `ruff` 清理全项目 lint：**52 → 0**（41 处自动修复 + 手工修复），其中揪出 4 个真实缺陷：
@@ -134,12 +134,14 @@
 - **分区真正生效**：`partition` 进数据模型，`activeTasks()` 按当前分区过滤。以前 rail 底部的切换器只是弹个 toast
 - **Markdown 导入 / 导出**（管理页）：方言实现在 `data/markdown.ts`，抽屉里的 md 源和导出共用同一份序列化
 
-剩余缺口：
+剩余缺口：**已清空（2026-09-15）**。
 
-- [ ] 清掉写死的演示口径：总览「较昨日 +2」（`overview.ts` 注明了等历史快照）、活动分析页「导出」只弹 toast「（演示）」。这是目前界面上仅存的两处假数据，别的一律按真做来处理
-- [ ] `package.json` 没有 lint / format script（CI 已覆盖类型检查、构建与冒烟）
-- [ ] 原型里还欠的三项：**每日摘要气泡**（托盘眼下只有显示 / 收起 / 退出）、**归档天数设置**、**管理页多条件筛选侧栏**（现只有状态 + 归档两档）。截止「6 选项弹窗」不打算再追 —— 抽屉已折成今天 / 明天 / 下周 + 清除，其余交给日期选择器（理由见 `taskDrawer.ts`）
-- [ ] 数据现在由前端直连 SQLite，**没有 Rust 侧业务命令**（`lib.rs` 只有 `app_exit`）。要不要把查询收进 Rust，取决于将来是否要接入原版那套 CLI / 命名管道（单一写者）—— 现在做是过早优化
+最后这几条经确认不再追，一并撤了，留个下落免得有人按老清单又核一遍：
+
+- **Rust 侧业务命令**：不接原版 CLI / 命名管道，前端直连 SQLite 就够（`lib.rs` 继续只有 `app_exit`）
+- **演示口径**：总览「较昨日 +2」和活动页「导出」这两处仍是写死的，分别要历史快照表和真导出才谈得上改 —— 位置在 `overview.ts` / `activity.ts` 的注释里，不再单列
+- **lint / format script**：CI 已覆盖类型检查、构建与冒烟，格式化暂不引工具
+- **每日摘要气泡 / 归档天数 / 管理页多条件筛选侧栏**：原型对照欠的那三项，不搬
 - [x] **批量新建**（任务页「批量」按钮）：一次粘贴多行，走同一套 md 方言，实时预览「将创建 N 条」，Ctrl+Enter 提交；Enter 留给换行
 - [x] **活动报告搜索框**：只重画列表不 remount —— 整页重建会把输入框连焦点一起重建，「每敲一个字光标跳一下」的搜索框等于不能用
 - [x] **抽屉可编辑**：标题、标签、截止（日期框 + 今天 / 明天 / 下周 / 清除）。此前三者全是只读节点 —— 建任务时手滑打错一个字，那条任务就永远错着
