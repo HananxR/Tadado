@@ -112,7 +112,7 @@ npm run e2e             # 真浏览器冒烟（自起预览服务器，约 20s�
 
 CI（`.github/workflows/desktop.yml`）跑的就是 `npm run build` + `npm run e2e`。
 
-还没有 lint / format，也没有 CI（`.github/` 随 Python 版一起归档了）。改完样式记得
+还没有 lint / format script（CI 已覆盖类型检查、构建与冒烟）。改完样式记得
 对着 `resources/ui-mockup/tadado-2.0.html` 核一遍视觉差异 —— 那部分自动化还做不到。
 
 ## 窗口形态
