@@ -11,7 +11,7 @@ PySide6 + QSS 迁到 Web 技术栈，**去掉「用 QSS 把 Fusion 掰成 Web �
 
 | 内容 | 权威源 |
 |------|--------|
-| 语义色、字体栈 | [`src/utils/design_tokens.py`](../src/utils/design_tokens.py) |
+| 语义色、字体栈 | `src/utils/design_tokens.py`（已随 Python 版归档到 **`archive/pyversion`** 分支，改色值时对着它改：`git show archive/pyversion:src/utils/design_tokens.py`） |
 | 圆角、控件尺寸、阴影、动效曲线 | [`resources/ui-mockup/tadado-2.0.html`](../resources/ui-mockup/tadado-2.0.html) |
 | 窗口形态、导航骨架 | [DESIGN.md](../DESIGN.md) 2.12 / 1.3.1 |
 
@@ -111,5 +111,21 @@ npm run tauri dev      # 真实窗口（首次需编译 Rust，约 1–2 分钟�
 
 ## 与 Python 版的关系
 
-Python 版（仓库根目录）仍是可用产品，本次迁移不影响它。桌面端完成度对齐后再
-切换主入口，届时 DESIGN.md 需要新增 Tauri 章节。
+**2026-09-15 起两支分家**：这一支（`main`）只保留桌面端；PySide6 版连同它自己的
+`src/` `tests/` `resources/themes/` `scripts/` `pyproject.toml` 全部归档到
+**`archive/pyversion`** 分支，本工作目录里已经没有它。
+
+拿东西回来的两条常用命令：
+
+```bash
+git checkout archive/pyversion -- src/ tests/          # 单文件或整目录搬回来
+git show archive/pyversion:src/utils/design_tokens.py  # 只看某一文件的旧版内容
+```
+
+归档分支上完整保留了：2.0 阶段 2~7 的全部在制品、当时那 106 项未提交改动，以及几个
+被 gitignore 但不可再生的资产（`resources/tadado.data` / `config.json` / `pack_scripts/` /
+`Tadado.spec` / `RELEASE.md`） —— 这些是真删了就再也拿不回来的，所以特意
+ `git add -f` 强塞进了归档提交。
+
+语义色权威源 `design_tokens.py` 现在只在归档分支上（见「设计来源」表）。桌面端的数据
+层一旦接通（见「数据层」），色值就该在这里落一份，别总回头去抄 Python 版。

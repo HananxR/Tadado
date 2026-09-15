@@ -4,6 +4,12 @@
 
 <h1 align="center">Tadado</h1>
 
+> **2026-09-15 仓库分家**：本文描述的是 PySide6 版（最后形态 v0.2.7 之后、2.0 阶段
+> 2~7 的在制品）。它已归档到 **`archive/pyversion`** 分支 —— `src/` `tests/` `scripts/`
+> `resources/themes/` `pyproject.toml` 等不再存在于本工作目录。
+> 主线 `main` 现在只推进 Tauri 桌面端，见 [`desktop/README.md`](desktop/README.md)。
+> 需要旧代码：`git checkout archive/pyversion -- <路径>`。
+
 <p align="center">
   <b>Less Noise, More Done.</b><br>
   用 Markdown 管理你的每一天。
