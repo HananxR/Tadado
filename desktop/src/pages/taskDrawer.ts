@@ -9,6 +9,7 @@
 // 外壳不该知道什么是「紧迫度」。
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { taskToMarkdown } from "../data/markdown";
 import { byId } from "../data/mock";
 import { dataChanged } from "../data/store";
 import type { Activity, Task, TaskStatus } from "../data/types";
@@ -85,24 +86,6 @@ interface Drawer {
 
 let drawer: Drawer | null = null;
 let current: Task | null = null;
-
-/** Markdown 源。真实实现里它才是规范数据源，其余字段都是解析结果。 */
-function toMarkdown(task: Task): string {
-  const box = task.status === "done" ? "x" : task.status === "doing" ? "~" : " ";
-
-  let due = "";
-  if (task.due) {
-    // 「今天 / 昨天」要落回具体日期：md 是规范数据源，里面不该留相对词。
-    // 以前这两处写死成 09-11 / 09-12（演示数据的锚点），改成读真实时钟后立刻对不上。
-    if (task.due.includes("今天")) due = ` ⏰2026-${monthDayText(TODAY)} ${task.at ?? ""}`;
-    else if (task.due.includes("昨天")) due = ` ⏰2026-${monthDayText(TODAY - 1)}`;
-    else due = ` ⏰2026-${task.due}`;
-  }
-
-  const progress = task.progress ? ` :: ${task.progress}%` : "";
-  const repeat = task.repeat ? ` ${task.repeat}` : "";
-  return `- [${box}] ${task.title} ${task.tags.join(" ")}${due}${progress}${repeat}`;
-}
 
 function renderTimeline(task: Task): void {
   if (!drawer) return;
@@ -187,7 +170,9 @@ function paint(task: Task): void {
   drawer.urgencyPick.setValue(String(task.urgency) as "0" | "1" | "2" | "3");
   drawer.repeat.textContent = task.repeat || "无循环";
 
-  drawer.markdown.value = toMarkdown(task);
+  // 序列化只此一份（data/markdown.ts）—— 抽屉里这行和「导出 .md」必须是同一个
+  // 方言，否则导出去的东西和这里看到的不一样
+  drawer.markdown.value = taskToMarkdown(task);
   renderTimeline(task);
 }
 

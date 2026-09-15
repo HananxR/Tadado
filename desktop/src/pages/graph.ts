@@ -14,7 +14,8 @@
 // 重建还多。代价是缩放和拖动会被重置 —— 数据都变了，布局本来就该重排。
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { DEMO_PARTITION, TAG_NAMES, activeTasks } from "../data/mock";
+import { TAG_NAMES, activeTasks } from "../data/mock";
+import { activePartition } from "../data/partitions";
 import { onDataChange } from "../data/store";
 import type { Task } from "../data/types";
 import { el } from "../shell/dom";
@@ -114,7 +115,9 @@ export function mount(target: HTMLElement): void {
   const liveTags = TAG_NAMES.filter((tag) => (byTag.get(tag)?.length ?? 0) > 0);
 
   // ── 1. 确定性布局 ─────────────────────────────────────────────────────────
-  const nodes: GraphNode[] = [{ id: "core", kind: "partition", label: DEMO_PARTITION }];
+  const nodes: GraphNode[] = [
+    { id: "core", kind: "partition", label: activePartition().name },
+  ];
   const layout = new Map<string, Point>();
   layout.set("core", { x: centerX, y: centerY });
 
@@ -400,7 +403,7 @@ export function mount(target: HTMLElement): void {
     // 给每个节点都挂一个「属于哪个分区」的标签，在只有一个分区的时候纯属噪音
     el("div", { class: "gpart" }, [
       el("span", { text: "当前分区" }),
-      el("b", { text: DEMO_PARTITION }),
+      el("b", { text: activePartition().name }),
     ]),
     stats,
     detail,

@@ -9,14 +9,16 @@
 // 而结果和改名完全一样。所以这里只做改名，并在目标已存在时把话说清楚。
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { parseTasks, tasksToMarkdown } from "../data/markdown";
 import { TASKS } from "../data/mock";
+import { activePartition, activePartitionId } from "../data/partitions";
 import { dataChanged, onDataChange } from "../data/store";
 import type { Task, TaskStatus } from "../data/types";
 import { el } from "../shell/dom";
 import { confirmAction } from "../shell/confirm";
 import { toast } from "../shell/toast";
 import { jumpToTask } from "./focus";
-import { STATUS_LABEL, dayNumber, pad2 } from "./shared";
+import { STATUS_LABEL, TODAY, dayNumber, monthDayText, pad2 } from "./shared";
 
 const PAGE_SIZE = 12;
 
@@ -435,6 +437,56 @@ function renderTagCard(): HTMLElement {
 export function mount(host: HTMLElement): void {
   const tableCard = el("div", { class: "card" });
 
+  // ── 导入 / 导出（Markdown 方言）────────────────────────────────────────
+  // 这两个按钮处理的都是「当前分区」的任务：分区是数据的隔离边界，
+  // 导出别的分区会让人以为导出来的是自己这份。
+  const importInput = el("input", {
+    type: "file",
+    accept: ".md,.txt,text/markdown",
+    style: "display:none",
+  });
+  importInput.addEventListener("change", () => {
+    const file = importInput.files?.[0];
+    if (!file) return;
+    void file.text().then((text) => {
+      const drafts = parseTasks(text);
+      const imported = drafts.map((draft) => ({
+        ...draft,
+        // id 必须唯一，分区必须落在当前分区 —— 否则导入完一条都看不见
+        id: `imp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        partition: activePartitionId(),
+      }));
+      TASKS.unshift(...imported);
+      dataChanged();
+      toast(
+        imported.length > 0
+          ? `已导入 ${imported.length} 条到「${activePartition().name}」分区`
+          : "这个文件里没有解析出任务行",
+      );
+      importInput.value = "";
+    });
+  });
+
+  const exportBtn = el("button", { class: "btn sm", type: "button", text: "导出 .md" });
+  exportBtn.addEventListener("click", () => {
+    const rows = TASKS.filter((task) => task.partition === activePartitionId());
+    const md = tasksToMarkdown(rows, activePartition().name);
+
+    const url = URL.createObjectURL(new Blob([md], { type: "text/markdown;charset=utf-8" }));
+    const link = el("a", {
+      href: url,
+      download: `tadado-${activePartitionId()}-${monthDayText(TODAY)}.md`,
+    });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast(`已导出 ${rows.length} 条任务`);
+  });
+
+  const importBtn = el("button", { class: "btn sm", type: "button", text: "导入 .md" });
+  importBtn.addEventListener("click", () => importInput.click());
+
   const render = (): void => {
     const batch = renderBatchBar();
     tableCard.replaceChildren(
@@ -452,6 +504,9 @@ export function mount(host: HTMLElement): void {
           page = 0;
           refreshTable?.();
         }),
+        exportBtn,
+        importBtn,
+        importInput,
       ]),
       el("div", { class: "card-b" }, [...(batch ? [batch] : []), renderTable()]),
     );

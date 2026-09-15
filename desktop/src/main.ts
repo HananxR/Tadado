@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { isTauri } from "@tauri-apps/api/core";
+import { bootStore } from "./data/store";
 import { setupHotkey } from "./shell/hotkey";
 import { mountNav } from "./shell/nav";
 import { mountPartition } from "./shell/partition";
@@ -21,6 +22,10 @@ const describe = (error: unknown): string =>
 
 async function boot(): Promise<void> {
   initTheme();
+
+  // 数据先装好再画页面：否则第一帧画的是种子数据，存档一到位整屏跳一次。
+  // 读档失败不该让外壳起不来（读的是样例数据，不是关键路径）。
+  await bootStore().catch(() => {});
 
   mountTitlebar();
   mountNav();

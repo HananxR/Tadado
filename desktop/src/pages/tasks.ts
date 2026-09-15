@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { TASKS, activeTasks } from "../data/mock";
+import { activePartitionId } from "../data/partitions";
 import { dataChanged, onDataChange } from "../data/store";
 import {
   TIMELINE_RANGES,
@@ -392,6 +393,8 @@ export function mount(host: HTMLElement): void {
       repeat: "",
       created: today,
       archived: false,
+      // 建在当前分区下 —— 切了分区再建，它出现在别的分区里会像凭空消失
+      partition: activePartitionId(),
       related: [],
       activities: [{ at: "刚刚", text: "创建任务", kind: "create" }],
     });

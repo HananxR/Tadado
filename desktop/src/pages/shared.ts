@@ -7,11 +7,24 @@
 import { TASKS } from "../data/mock";
 import { dataChanged } from "../data/store";
 import type { TimelineRange } from "../data/timeline";
-import type { MonthDay, Task, TaskStatus } from "../data/types";
+import type { Task, TaskStatus } from "../data/types";
 import { confirmAction } from "../shell/confirm";
 import { toast } from "../shell/toast";
 
-export const DAY_MS = 86400000;
+// 时间基准住在 data/time.ts（data/markdown.ts 也要用，数据层不该反向依赖页面层），
+// 这里取进来再原样转出，各页面继续从 shared 拿，import 一行都不用改。
+// 只把本文件自己要用的取进作用域，其余纯转发（都 import 进来会触发 unused 报错）
+import { DAY_MS, TODAY, dayNumber } from "../data/time";
+
+export {
+  DAY_MS,
+  TODAY,
+  dayNumber,
+  isWeekend,
+  monthDayText,
+  todayMonthDay,
+  weekdayOf,
+} from "../data/time";
 
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   overdue: "逾期",
@@ -26,49 +39,7 @@ export const URGENCY_LABEL = ["紧急", "重要", "关注", "普通"];
 export const statusVar = (status: TaskStatus): string =>
   status === "overdue" ? "var(--danger)" : `var(--${status})`;
 
-export const pad2 = (value: number): string => String(value).padStart(2, "0");
-
-/** [月, 日] → 绝对天数。年份锚在 2026：样例数据就是按 2026 写的（见 mock.ts）。 */
-export const dayNumber = ([month, day]: MonthDay): number =>
-  Date.UTC(2026, month - 1, day) / DAY_MS;
-
-/**
- * 「今天」的天数。
- *
- * 以前这里取的是 mock 的 DEMO_TODAY（写死 09-12）—— 那是给**演示数据**排布用的
- * 锚点，好让样例里的「今天 15:00」和甘特图上的那一天对得上。但演示归演示：
- * 真把应用拿来用的时候，时间轴上的「今天」必须指着墙上那一天，否则会看到
- * 「12 星期六」这么一列，而日历上明明是 15 号星期二。
- *
- * 现在按本地日历日算（UTC 型 anchor，与 dayNumber 同一套换算），
- * 演示数据仍然留在它自己写的那些日期上。
- */
-const now = new Date();
-export const TODAY = Math.floor(
-  Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / DAY_MS,
-);
-
-/** 今天对应的 [月, 日]，新建任务时拿来当起点。 */
-export const todayMonthDay = (): MonthDay => {
-  const date = new Date(TODAY * DAY_MS);
-  return [date.getUTCMonth() + 1, date.getUTCDate()];
-};
-
-const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-
-const utcDayOf = (day: number): number => new Date(day * DAY_MS).getUTCDay();
-
-export const weekdayOf = (day: number): string => WEEKDAYS[utcDayOf(day)];
-
-export const isWeekend = (day: number): boolean => {
-  const weekday = utcDayOf(day);
-  return weekday === 0 || weekday === 6;
-};
-
-export const monthDayText = (day: number): string => {
-  const date = new Date(day * DAY_MS);
-  return `${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
-};
+export { pad2 } from "../data/time";
 
 /**
  * 活动时间的排序键。

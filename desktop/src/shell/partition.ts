@@ -1,39 +1,25 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 分区切换（rail 底部）。
 //
-// 分区列表将来由 AppConfig 提供（DESIGN.md 2.13 配置驱动），当前是内置常量：
-// 这一步只打通「选中 → 广播」的通道，页面接入后订阅 onPartitionChange 即可。
+// 列表与当前值都在 data/partitions.ts：分区是数据的隔离边界，
+// mock.activeTasks() 按它过滤，所以外壳不能自己另存一份。
+// 将来由 AppConfig 提供（DESIGN.md 2.13 配置驱动），那时候只换那个模块的取值方式。
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { PARTITIONS, activePartition, setPartition } from "../data/partitions";
+import { dataChanged } from "../data/store";
 import { el, need } from "./dom";
 import { toast } from "./toast";
 
-export interface Partition {
-  id: string;
-  name: string;
-}
+export type { Partition } from "../data/partitions";
 
-const PARTITIONS: Partition[] = [
-  { id: "work", name: "工作" },
-  { id: "study", name: "学习" },
-  { id: "personal", name: "个人" },
-  { id: "demo", name: "演示空间" },
-];
-
-let active = PARTITIONS[0];
-
-const listeners = new Set<(partition: Partition) => void>();
-
-export const activePartition = (): Partition => active;
-
-export function onPartitionChange(listener: (partition: Partition) => void): void {
-  listeners.add(listener);
-}
-
-function select(partition: Partition): void {
-  if (partition.id === active.id) return;
-  active = partition;
-  for (const listener of listeners) listener(partition);
+function select(partition: { id: string; name: string }): void {
+  const before = activePartition().id;
+  setPartition(partition.id);
+  if (before === partition.id) return;
+  // 分区不是任务数据，但各页面都要按它重画一遍，所以走同一个广播 ——
+  // 让页面再去订阅一个「分区变更」事件，等于多一条必须记得订阅的通知。
+  dataChanged();
 }
 
 function close(pop: HTMLElement): void {
@@ -46,7 +32,7 @@ export function mountPartition(): void {
 
   const items = PARTITIONS.map((partition) => {
     const node = el("div", {
-      class: partition.id === active.id ? "part-item on" : "part-item",
+      class: partition.id === activePartition().id ? "part-item on" : "part-item",
       "data-part": partition.id,
     }, [el("span", { text: partition.name })]);
 
@@ -64,7 +50,7 @@ export function mountPartition(): void {
   });
 
   pop.replaceChildren(...items);
-  button.title = `分区：${active.name}`;
+  button.title = `分区：${activePartition().name}`;
 
   button.addEventListener("click", (event) => {
     // 阻止冒泡，否则会立刻被下面的 document 监听关掉

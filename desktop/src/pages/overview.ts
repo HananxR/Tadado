@@ -11,9 +11,9 @@
 // 逐处做增量更新的收益在这个规模上不如「一眼看出渲染结果 = 数据」。
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { activePartition } from "../data/partitions";
 import {
   DEMO_NOW_MINUTES,
-  DEMO_PARTITION,
   DEMO_USER,
   TASKS,
   activeTasks,
@@ -461,7 +461,7 @@ function renderGreet(): HTMLElement {
       el("div", { class: "g1", text: `早上好，${DEMO_USER}` }),
       el("div", {
         class: "g2",
-        text: `2026-${monthDayText(TODAY)} · ${weekdayOf(TODAY)} · ${DEMO_PARTITION} 分区 · ${activeTasks().length} 个未归档任务`,
+        text: `2026-${monthDayText(TODAY)} · ${weekdayOf(TODAY)} · ${activePartition().name} 分区 · ${activeTasks().length} 个未归档任务`,
       }),
     ]),
   ]);
