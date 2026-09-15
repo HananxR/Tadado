@@ -18,20 +18,16 @@ import { DEMO_PARTITION, TAG_NAMES, activeTasks } from "../data/mock";
 import { onDataChange } from "../data/store";
 import type { Task } from "../data/types";
 import { el } from "../shell/dom";
+import { subscribePages } from "../shell/router";
 import { toast } from "../shell/toast";
 import { jumpToTask } from "./focus";
 import { STATUS_LABEL, dayNumber, monthDayText, statusVar } from "./shared";
 
-// 画布比典型可视区略矮（520 而不是 560）：窗口只有 700px 高时，
-// 560 的舞台会让最外圈的节点被 .gwrap 的 overflow:hidden 切掉。
-const STAGE_W = 900;
-const STAGE_H = 520;
-const CENTER_X = STAGE_W / 2;
-const CENTER_Y = STAGE_H / 2;
-const TAG_RADIUS = 148;
-const TASK_RADIUS = 210;
 /** 组内任务的角间距。0.125 是「7 个任务不出组」的上界附近。 */
 const TASK_SPREAD = 0.125;
+
+/** 标题栏 + 工具行 + 页头 + 图例占掉的高度，量舞台高度时要扣掉。 */
+const CHROME_H = 268;
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -60,7 +56,7 @@ interface Point {
 interface Edge {
   a: string;
   b: string;
-  line: SVGLineElement;
+  line: SVGPathElement;
 }
 
 const FILTERS = ["全部", "紧急与重要", "进行中"] as const;
@@ -93,6 +89,19 @@ let host: HTMLElement | null = null;
 export function mount(target: HTMLElement): void {
   host = target;
 
+  // 舞台按量出来的可用空间铺开。以前写死 900×520：窗口再宽，一圈任务也只占据
+  // 中间一小块，四周是空的点阵底纹，图看着又小又偏。现在宽高都跟着容器走，
+  // 两个半径按比例取 —— 舞台变大时节点会一起散开，而不是继续挤在中心。
+  // 页面隐藏时 clientWidth 量不到（display:none 下是 0），兜一个够用的宽度，
+  // 切回前台会重画一次（见文件末尾的 subscribePages）。
+  const stageW = Math.max(720, (target.clientWidth || 1080) - 24);
+  const stageH = Math.max(420, window.innerHeight - CHROME_H);
+  const centerX = stageW / 2;
+  const centerY = stageH / 2;
+  const span = Math.min(stageW, stageH);
+  const tagRadius = span * 0.21;
+  const taskRadius = span * 0.34;
+
   const tasks = activeTasks().filter(passesFilter);
 
   const byTag = new Map<string, Task[]>();
@@ -107,14 +116,14 @@ export function mount(target: HTMLElement): void {
   // ── 1. 确定性布局 ─────────────────────────────────────────────────────────
   const nodes: GraphNode[] = [{ id: "core", kind: "partition", label: DEMO_PARTITION }];
   const layout = new Map<string, Point>();
-  layout.set("core", { x: CENTER_X, y: CENTER_Y });
+  layout.set("core", { x: centerX, y: centerY });
 
   liveTags.forEach((tag, index) => {
     const angle = (index / liveTags.length) * Math.PI * 2 - Math.PI / 2;
     nodes.push({ id: tag, kind: "tag", label: tag });
     layout.set(tag, {
-      x: CENTER_X + Math.cos(angle) * TAG_RADIUS,
-      y: CENTER_Y + Math.sin(angle) * TAG_RADIUS,
+      x: centerX + Math.cos(angle) * tagRadius,
+      y: centerY + Math.sin(angle) * tagRadius,
     });
 
     const group = byTag.get(tag) ?? [];
@@ -122,8 +131,8 @@ export function mount(target: HTMLElement): void {
       const taskAngle = angle + (order - (group.length - 1) / 2) * TASK_SPREAD;
       nodes.push({ id: task.id, kind: "task", label: task.title, task });
       layout.set(task.id, {
-        x: CENTER_X + Math.cos(taskAngle) * TASK_RADIUS,
-        y: CENTER_Y + Math.sin(taskAngle) * TASK_RADIUS,
+        x: centerX + Math.cos(taskAngle) * taskRadius,
+        y: centerY + Math.sin(taskAngle) * taskRadius,
       });
     });
   });
@@ -134,11 +143,11 @@ export function mount(target: HTMLElement): void {
   // ── 2. 连线 ───────────────────────────────────────────────────────────────
   const svg = document.createElementNS(SVG_NS, "svg");
   svg.setAttribute("class", "edges");
-  svg.setAttribute("viewBox", `0 0 ${STAGE_W} ${STAGE_H}`);
+  svg.setAttribute("viewBox", `0 0 ${stageW} ${stageH}`);
 
   const edges: Edge[] = [];
   const link = (a: string, b: string): void => {
-    const line = document.createElementNS(SVG_NS, "line");
+    const line = document.createElementNS(SVG_NS, "path");
     svg.append(line);
     edges.push({ a, b, line });
   };
@@ -161,15 +170,27 @@ export function mount(target: HTMLElement): void {
     }
   }
 
+  /**
+   * 连线走弧线而不是直线。二十来个任务连十几条线时，直线会在中间那段互相重叠，
+   * 根本分不清哪条通向哪个任务；拉出一点弧度，每条线各自走一条能认的路径。
+   * 弧的方向由法向量（dx/dy 交换取反）决定，凸起量随线长按比例、上限 52px。
+   */
+  const bowLine = (from: Point, to: Point): string => {
+    const midX = (from.x + to.x) / 2;
+    const midY = (from.y + to.y) / 2;
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const bow = Math.min(len * 0.18, 52);
+    return `M${from.x} ${from.y} Q${midX - (dy / len) * bow} ${midY + (dx / len) * bow} ${to.x} ${to.y}`;
+  };
+
   const paintEdges = (): void => {
     for (const edge of edges) {
       const from = position.get(edge.a);
       const to = position.get(edge.b);
       if (!from || !to) continue;
-      edge.line.setAttribute("x1", String(from.x));
-      edge.line.setAttribute("y1", String(from.y));
-      edge.line.setAttribute("x2", String(to.x));
-      edge.line.setAttribute("y2", String(to.y));
+      edge.line.setAttribute("d", bowLine(from, to));
     }
   };
 
@@ -177,6 +198,12 @@ export function mount(target: HTMLElement): void {
   let zoom = 1;
 
   const canvas = el("div", { class: "gcanvas" }, [svg]);
+  // 尺寸由上面量出来的值写进内联样式：CSS 里那份 900×520 只是没有 JS 时的兜底
+  canvas.style.width = `${stageW}px`;
+  canvas.style.height = `${stageH}px`;
+  canvas.style.marginLeft = `${-stageW / 2}px`;
+  canvas.style.marginTop = `${-stageH / 2}px`;
+
   const elements = new Map<string, HTMLElement>();
 
   const highlight = (focusId: string | null): void => {
@@ -196,7 +223,7 @@ export function mount(target: HTMLElement): void {
       if (event.button !== 0) return;
       event.preventDefault();
 
-      const base = { ...(position.get(id) ?? { x: CENTER_X, y: CENTER_Y }) };
+      const base = { ...(position.get(id) ?? { x: centerX, y: centerY }) };
       const originX = event.clientX;
       const originY = event.clientY;
       element.classList.add("dragging");
@@ -234,6 +261,11 @@ export function mount(target: HTMLElement): void {
     const element = el("div", { class: classes.join(" "), "data-id": node.id });
     element.style.left = `${point.x}px`;
     element.style.top = `${point.y}px`;
+    // 入场按「离中心多远」错峰：一圈铺开时注意力自然从中心的分区往外的任务上走，
+    // 比整版一起闪现更容易看清结构
+    const reach = Math.hypot(point.x - centerX, point.y - centerY);
+    element.classList.add("enter");
+    element.style.animationDelay = `${Math.min(reach / 1200, 0.34).toFixed(3)}s`;
 
     if (node.kind === "task" && node.task) {
       element.style.background = statusVar(node.task.status);
@@ -364,6 +396,12 @@ export function mount(target: HTMLElement): void {
 
   const stage = el("div", { class: "gwrap" }, [
     canvas,
+    // 整张图都按分区铺开的，所以分区标注只写一次，放在右上角；
+    // 给每个节点都挂一个「属于哪个分区」的标签，在只有一个分区的时候纯属噪音
+    el("div", { class: "gpart" }, [
+      el("span", { text: "当前分区" }),
+      el("b", { text: DEMO_PARTITION }),
+    ]),
     stats,
     detail,
     el("div", { class: "gzoom" }, [
@@ -405,3 +443,16 @@ function remount(): void {
 
 // 抽屉里改了状态或进度，节点颜色和统计要跟着变
 onDataChange(remount);
+
+// 页面隐藏时量不到宽度（display:none 下 clientWidth 是 0），切回前台重新量一次；
+// 顺带让入场动画重播 —— 布局确实变了，闪一下反而是对的
+subscribePages((id) => {
+  if (id === "graph") remount();
+});
+
+// 窗口宽窄变了要重排：舞台尺寸是按视口算的，不重算就会留一圈空点阵
+let resizeTimer: number | undefined;
+window.addEventListener("resize", () => {
+  window.clearTimeout(resizeTimer);
+  resizeTimer = window.setTimeout(remount, 160);
+});

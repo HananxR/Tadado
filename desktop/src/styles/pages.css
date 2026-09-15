@@ -474,7 +474,9 @@
 }
 
 .tt-date {
-  width: 22px;
+  /* 列宽由 JS 按可用宽度算出来写在 --tt-col 上（见 tasks.ts 的 columnWidth）。
+     写死 22px 时数据跨度小，右边会留一大片空白列。 */
+  width: var(--tt-col, 22px);
   flex: none;
   display: flex;
   align-items: center;
@@ -594,8 +596,8 @@
   background-color: var(--surface);
   background-image: repeating-linear-gradient(
     to right,
-    transparent 0 21px,
-    var(--border) 21px 22px
+    transparent 0 calc(var(--tt-col, 22px) - 1px),
+    var(--border) calc(var(--tt-col, 22px) - 1px) var(--tt-col, 22px)
   );
 }
 
@@ -854,9 +856,19 @@
   opacity: 0.06;
 }
 
+/* 悬停时高亮的连线走流动虚线 —— 光靠加粗区分不出「这条是活的」，
+   尤其在 27 个节点的密度下；动起来一眼就知道当前焦点连到哪几条。 */
+@keyframes edge-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
 .edges.dimmed line.hi,
 .edges.dimmed path.hi {
   opacity: 1;
+  stroke-dasharray: 5 5;
+  animation: edge-flow 0.85s linear infinite;
 }
 
 .edges path.rel {
@@ -880,6 +892,54 @@
     top 0.65s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s;
   display: grid;
   place-items: center;
+}
+
+/* 节点入场：错峰弹入。整版瞬间出现很难看出谁是主节点，逐环铺开时
+   注意力自然从中心的分区往外的任务上走。 */
+@keyframes node-pop {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.72);
+  }
+  60% {
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.node.enter {
+  animation: node-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+
+/* 悬停给一圈光环而不是只加粗边框：圆形节点上边框变化最难察觉 */
+.node:not(.dragging):hover {
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+/* 分区标注：整张图都按分区呈现，写在右上角一次就好，
+   比给每个节点都挂一个「属于哪个分区」的标签省事，也不会变成文字地毯 */
+.gpart {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border: 1px dashed var(--border-2);
+  border-radius: 999px;
+  background: var(--surface);
+  font: 500 11.5px var(--font);
+  color: var(--text-2);
+}
+
+.gpart b {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .node.partition {

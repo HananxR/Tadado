@@ -14,7 +14,6 @@
 import {
   DEMO_NOW_MINUTES,
   DEMO_PARTITION,
-  DEMO_TODAY,
   DEMO_USER,
   TASKS,
   activeTasks,
@@ -27,19 +26,18 @@ import { seg } from "../shell/seg";
 import { toast } from "../shell/toast";
 import { jumpToTask, showTasksWithFilter } from "./focus";
 import {
+  DAY_MS,
   RELATIVE_DAYS,
+  TODAY,
   URGENCY_LABEL,
   activitySortKey,
   dayNumber,
   monthDayText,
   pad2,
   statusVar,
-  TODAY,
+  todayMonthDay,
   weekdayOf,
 } from "./shared";
-
-const PLUS_ICON =
-  '<svg class="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 
 /** 六档时段。前两档走当日轴，后四档走甘特。 */
 const FOCUS_MODES = ["昨天", "今天", "上周", "本周", "上月", "本月"] as const;
@@ -337,11 +335,14 @@ function renderTiles(): HTMLElement {
 
   // 今日到期 = 今天结束且未完成。判断用「结束日」而不是截止文案：
   // 「今天 15:00」和「今天」都得算进来，文案会变，日期不会。
+  // 比对的是**真实的今天**（DEMO_TODAY 是演示数据的排布锚点，不是日期）
+  const today = todayMonthDay();
   const dueToday = activeTasks().filter(
-    (task) => task.end[0] === DEMO_TODAY[0] && task.end[1] === DEMO_TODAY[1] && task.status !== "done",
+    (task) => task.end[0] === today[0] && task.end[1] === today[1] && task.status !== "done",
   ).length;
 
-  const weekStart = dayNumber([9, 7]);
+  // 本周从真实今天往前退到周一，而不是写死某一周的起止
+  const weekStart = TODAY - ((new Date(TODAY * DAY_MS).getUTCDay() + 6) % 7);
   const doneThisWeek = TASKS.filter(
     (task) => task.status === "done" && dayNumber(task.end) >= weekStart && dayNumber(task.end) <= weekStart + 6,
   ).length;
@@ -445,56 +446,24 @@ function renderUrgency(): HTMLElement {
 
 // ─── 问候与快速新建 ──────────────────────────────────────────────────────────
 
+/**
+ * 问候条。这里只问候，不建东西 ——
+ *
+ * 快速新建以前挂在这一管澡页面的输入框上，但总览没有任何「按天 × 任务」的追踪
+ * 手段：建完就沉进列表底部，回头找只能靠搜索。任务页有一整条时间轴，建完立刻
+ * 出现在今天那一列上，能接着往下追 —— 所以那个输入框整个搬过去了（见 tasks.ts）。
+ * 顺带把这里挪走的日期也算成了真实的今天：以前它读 DEMO_TODAY，日历上说今天是
+ * 9 月 12 号星期六，而墙上挂着的是 9 月 15 号星期二。
+ */
 function renderGreet(): HTMLElement {
-  const input = el("input", { placeholder: "快速新建：任务名 #标签（回车创建）" });
-
-  const submit = (): void => {
-    const raw = input.value.trim();
-    if (!raw) return;
-
-    const tags = [...raw.matchAll(/#\S+/g)].map((match) => match[0]);
-    const title = raw.replace(/#\S+/g, "").trim();
-    if (!title) return;
-
-    TASKS.unshift({
-      id: `quick-${Date.now()}`,
-      title,
-      status: "todo",
-      tags: tags.length > 0 ? tags : ["#工作"],
-      due: null,
-      at: null,
-      start: DEMO_TODAY,
-      end: DEMO_TODAY,
-      progress: 0,
-      urgency: 3,
-      repeat: "",
-      created: DEMO_TODAY,
-      archived: false,
-      related: [],
-      activities: [{ at: "刚刚", text: "创建任务", kind: "create" }],
-    });
-
-    input.value = "";
-    dataChanged();
-    toast(`已新建「${title}」· 已并入今天这一行`);
-  };
-
-  const button = el("button", { class: "go", type: "button", text: "创建" });
-  button.addEventListener("click", submit);
-  input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") submit();
-  });
-
   return el("div", { class: "greet" }, [
     el("div", {}, [
       el("div", { class: "g1", text: `早上好，${DEMO_USER}` }),
       el("div", {
         class: "g2",
-        text: `2026-${pad2(DEMO_TODAY[0])}-${pad2(DEMO_TODAY[1])} · ${weekdayOf(TODAY)} · ${DEMO_PARTITION} 分区 · ${TASKS.length} 个任务`,
+        text: `2026-${monthDayText(TODAY)} · ${weekdayOf(TODAY)} · ${DEMO_PARTITION} 分区 · ${activeTasks().length} 个未归档任务`,
       }),
     ]),
-    el("span", { class: "grow" }),
-    el("div", { class: "cap" }, [el("span", { html: PLUS_ICON }), input, button]),
   ]);
 }
 

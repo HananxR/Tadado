@@ -9,14 +9,21 @@
 // 外壳不该知道什么是「紧迫度」。
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { TASKS, byId } from "../data/mock";
+import { byId } from "../data/mock";
 import { dataChanged } from "../data/store";
 import type { Activity, Task, TaskStatus } from "../data/types";
 import { el } from "../shell/dom";
-import { confirmAction } from "../shell/confirm";
 import { dropdown } from "../shell/menu";
 import { toast } from "../shell/toast";
-import { STATUS_LABEL, URGENCY_LABEL, pad2, statusVar } from "./shared";
+import {
+  STATUS_LABEL,
+  TODAY,
+  URGENCY_LABEL,
+  monthDayText,
+  pad2,
+  removeTask,
+  statusVar,
+} from "./shared";
 
 // ─── 图标 ────────────────────────────────────────────────────────────────────
 
@@ -85,8 +92,10 @@ function toMarkdown(task: Task): string {
 
   let due = "";
   if (task.due) {
-    if (task.due.includes("今天")) due = ` ⏰2026-09-12 ${task.at ?? ""}`;
-    else if (task.due.includes("昨天")) due = " ⏰2026-09-11";
+    // 「今天 / 昨天」要落回具体日期：md 是规范数据源，里面不该留相对词。
+    // 以前这两处写死成 09-11 / 09-12（演示数据的锚点），改成读真实时钟后立刻对不上。
+    if (task.due.includes("今天")) due = ` ⏰2026-${monthDayText(TODAY)} ${task.at ?? ""}`;
+    else if (task.due.includes("昨天")) due = ` ⏰2026-${monthDayText(TODAY - 1)}`;
     else due = ` ⏰2026-${task.due}`;
   }
 
@@ -164,7 +173,9 @@ function paint(task: Task): void {
 
   // 截止展示把相对词落回具体日期：抽屉里是「查证」的地方，不适合再说「今天」
   const due = task.due
-    ? `⏰ ${task.due.replace("今天", "09-12").replace("昨天", "09-11")}`
+    ? `⏰ ${task.due
+        .replace("今天", monthDayText(TODAY))
+        .replace("昨天", monthDayText(TODAY - 1))}`
     : "无截止";
   drawer.due.textContent = due;
   drawer.created.textContent = `创建于 ${pad2(task.created[0])}-${pad2(task.created[1])}`;
@@ -310,18 +321,10 @@ function build(): Drawer {
   remove.addEventListener("click", async () => {
     if (!current) return;
     const task = current;
-    const ok = await confirmAction({
-      title: "删除这个任务？",
-      detail: `「${task.title}」和它名下的活动时间线会一并移除，删除后无法恢复。`,
-      confirmText: "删除任务",
-    });
-    if (!ok) return;
-
-    const index = TASKS.findIndex((item) => item.id === task.id);
-    if (index >= 0) TASKS.splice(index, 1);
+    // 删除（含二次确认）和任务页右键共用 shared.removeTask ——
+    // 同一个动作在两处不该有不同的措辞和确认条件
+    if (!(await removeTask(task))) return;
     closeTask();
-    dataChanged();
-    toast(`已删除「${task.title}」`);
   });
 
   const save = el("button", { class: "btn primary", text: "保存" });

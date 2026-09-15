@@ -195,6 +195,34 @@
   flex: none;
 }
 
+/* ============ 右键菜单（任务表的行菜单）============ */
+.ctx-menu {
+  position: fixed;
+  min-width: 150px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 5px;
+  z-index: 118;
+}
+
+/* 行外观复用 .menu-item，这里只补语义色 */
+.ctx-menu .menu-item.danger {
+  color: var(--danger);
+}
+
+.ctx-menu .menu-item.danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* 任务页工具行里的快速新建框 */
+.qc-input {
+  width: 244px;
+  flex: none;
+}
+
 .searchbox .ic svg {
   width: 13px;
   height: 13px;

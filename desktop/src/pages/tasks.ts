@@ -20,6 +20,7 @@ import {
   onTimelineRangeChange,
   setTimelineRange,
   timelineRange,
+  type TimelineRange,
 } from "../data/timeline";
 import type { Task } from "../data/types";
 import { el } from "../shell/dom";
@@ -34,19 +35,28 @@ import {
   TODAY,
   dayNumber,
   monthDayText,
+  removeTask,
   statusVar,
   timelineWindow,
+  todayMonthDay,
 } from "./shared";
 import { onTaskOpen, openTask } from "./taskDrawer";
 
 /** 时间轴的日期窗口：起点天数 + 列数。 */
 type TimelineWin = ReturnType<typeof timelineWindow>;
 
-/** 日期列宽（px）。必须和 pages.css 里 .tt-track 的格线周期一致。 */
-const COL_W = 22;
-
 /** 左侧任务列宽（px）。同上，pages.css 里 .tt-label 也写着 248。 */
 const LABEL_W = 248;
+
+/** 列宽自适应区间（px）：数据少时不至于胖成一列上百像素，多时不至于挤成一根线。 */
+const COL_MIN = 15;
+const COL_MAX = 34;
+
+/** 竖向滚动条的宽度余量。不留的话铺满之后右边会溢出第二条滚动条。 */
+const SCROLL_GUTTER = 16;
+
+/** 窗口左右各留的白边天数。0 会让首尾两条色条贴着表格边界。 */
+const WIN_PAD = 2;
 
 const SORTS = [
   { value: "due", label: "按截止日期" },
@@ -67,7 +77,97 @@ const FILTERS: { value: StatusFilter; label: string }[] = [
 const SEARCH_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>';
 
+const PLUS_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+
 const WEEKDAY_SHORT = ["日", "一", "二", "三", "四", "五", "六"];
+
+// ─── 日期窗口与列宽 ──────────────────────────────────────────────────────────
+
+/**
+ * 真正拿来画表的窗口 = 粒度给的最小窗口 ∪ 数据自身的跨度 ∪ 今天。
+ *
+ * 只按粒度算（以前就是这样）有两个后果：跨出窗口的任务整条消失 —— 数据里写着
+ * 09-25 的任务在「本周」这一档里根本看不见；而窗口里没有任务的那一段，会变成
+ * 一大片空白列铺到表格右端。所以粒度现在只当作「最少要看多宽」的下限，
+ * 列数跟着数据的起止走。
+ */
+function windowFor(range: TimelineRange, tasks: Task[]): TimelineWin {
+  const base = timelineWindow(range);
+  let start = base.start;
+  let end = base.start + base.days - 1;
+
+  if (tasks.length > 0) {
+    start = Math.min(start, ...tasks.map((task) => dayNumber(task.start)));
+    end = Math.max(end, ...tasks.map((task) => dayNumber(task.end)));
+  }
+
+  // 今天必须在窗口里：它是唯一一个「没有任务也要能对着看」的日期
+  start = Math.min(start, TODAY) - WIN_PAD;
+  end = Math.max(end, TODAY) + WIN_PAD;
+  return { start, days: end - start + 1 };
+}
+
+/** 列宽 = 可用宽度按天数平分后再夹到区间里 —— 表格因此永远铺满右侧。 */
+function columnWidth(days: number, available: number): number {
+  const room = Math.max(available - SCROLL_GUTTER - LABEL_W, COL_MIN * days);
+  return Math.min(COL_MAX, Math.max(COL_MIN, room / days));
+}
+
+// ─── 右键菜单 ────────────────────────────────────────────────────────────────
+
+let ctxMenu: HTMLElement | null = null;
+
+function closeCtxMenu(): void {
+  ctxMenu?.remove();
+  ctxMenu = null;
+}
+
+/**
+ * 任务行的右键菜单。以前右键和双击等价（都只是打开抽屉），于是「右键功能」形同
+ * 不存在 —— 右键该给的是「不用挪视线就能处置」的那一列动作，而不是把打开再走一遍。
+ */
+function openCtxMenu(task: Task, x: number, y: number): void {
+  closeCtxMenu();
+
+  const done = task.status === "done";
+  const item = (label: string, onClick: () => void, danger = false): HTMLElement => {
+    const row = el("div", { class: `menu-item ${danger ? "danger" : ""}`, text: label });
+    row.addEventListener("click", () => {
+      closeCtxMenu();
+      onClick();
+    });
+    return row;
+  };
+
+  const menu = el("div", { class: "ctx-menu" }, [
+    item("打开维护抽屉", () => openTask(task.id)),
+    item(done ? "标记为待办" : "标记完成", () => {
+      task.status = done ? "todo" : "done";
+      if (!done) task.progress = 100;
+      dataChanged();
+      toast(`「${task.title}」${done ? "已回到待办" : "已标记完成"}`);
+    }),
+    item("删除任务", () => void removeTask(task), true),
+  ]);
+
+  document.body.append(menu);
+
+  // 贴边时收回来：fixed 定位越界就被窗口边缘吃掉
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`;
+  ctxMenu = menu;
+}
+
+// pointerdown 早于 click：点在菜单里不算关闭，点别处才关
+document.addEventListener("pointerdown", (event) => {
+  if (ctxMenu && !ctxMenu.contains(event.target as Node)) closeCtxMenu();
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeCtxMenu();
+});
 
 // ─── 页面状态 ────────────────────────────────────────────────────────────────
 
@@ -153,7 +253,7 @@ function hideTip(): void {
 
 // ─── 行 ──────────────────────────────────────────────────────────────────────
 
-function renderRow(task: Task, win: TimelineWin): HTMLElement {
+function renderRow(task: Task, win: TimelineWin, colW: number): HTMLElement {
   const dot = el("span", { class: "d" });
   dot.style.background = statusVar(task.status);
 
@@ -175,9 +275,9 @@ function renderRow(task: Task, win: TimelineWin): HTMLElement {
   const span = last - first + 1;
 
   const bar = el("div", { class: `tt-bar st-${task.status}`, "data-task": task.id });
-  const barWidth = Math.max(span * COL_W - 4, 10);
+  const barWidth = Math.max(span * colW - 4, 10);
   // 左右各留 2px：相邻任务挨在一起时还看得出是两条
-  bar.style.left = `${(first - win.start) * COL_W + 2}px`;
+  bar.style.left = `${(first - win.start) * colW + 2}px`;
   bar.style.width = `${barWidth}px`;
 
   const fill = el("i");
@@ -202,7 +302,7 @@ function renderRow(task: Task, win: TimelineWin): HTMLElement {
   bar.addEventListener("mouseleave", hideTip);
 
   const track = el("div", { class: "tt-track" }, [bar]);
-  track.style.width = `${win.days * COL_W}px`;
+  track.style.width = `${win.days * colW}px`;
 
   const row = el(
     "div",
@@ -215,12 +315,15 @@ function renderRow(task: Task, win: TimelineWin): HTMLElement {
     paintSelection();
   });
 
-  // 双击与右键都是「打开」。单击留给选中 —— 表格里误触打开抽屉，
-  // 回来还得重新找那一行。
+  // 双击才是「打开」，单击留给选中 —— 表格里误触打开抽屉，回来还得重新找那一行。
   row.addEventListener("dblclick", () => openTask(task.id));
+  // 右键给处置菜单，并把当前选中带过去：菜单里删除的那一项就该作用在
+  // 右键点的这一行上，而不是上一次点选的那行。
   row.addEventListener("contextmenu", (event) => {
     event.preventDefault();
-    openTask(task.id);
+    selectedId = task.id;
+    paintSelection();
+    openCtxMenu(task, event.clientX, event.clientY);
   });
 
   return row;
@@ -253,6 +356,59 @@ export function mount(host: HTMLElement): void {
     render();
   });
 
+  // 快速新建。它以前住在总览页 —— 那里没有任何「按天 × 任务」的追踪手段，
+  // 任务建完就沉到列表底部看不见了；这里是时间轴，建完立刻出现在今天那一列上，
+  // 能接着往下追。
+  const quick = el("input", {
+    class: "qc-input",
+    placeholder: "快速新建：任务名 #标签（回车创建）",
+  });
+  const runQuick = (): void => {
+    const raw = quick.value.trim();
+    if (!raw) return;
+
+    const tags = [...raw.matchAll(/#\S+/g)].map((match) => match[0]);
+    const title = raw.replace(/#\S+/g, "").trim();
+    // 不允许无名任务：只剩标签的任务在时间轴上没有名字可认，一旦得到
+    // 「未命名任务」这种东西，回头只能靠抽屉里的 id 去猜它是谁。宁可在这一步拦下。
+    if (!title) {
+      toast("先写个任务名 —— 只有标签的任务没法在时间轴上认出来");
+      return;
+    }
+
+    const today = todayMonthDay();
+    const id = `quick-${Date.now()}`;
+    TASKS.unshift({
+      id,
+      title,
+      status: "todo",
+      tags: tags.length > 0 ? tags : ["#工作"],
+      due: null,
+      at: null,
+      start: today,
+      end: today,
+      progress: 0,
+      urgency: 3,
+      repeat: "",
+      created: today,
+      archived: false,
+      related: [],
+      activities: [{ at: "刚刚", text: "创建任务", kind: "create" }],
+    });
+
+    quick.value = "";
+    // 新任务可能在当前筛选/搜索词之外，先复位再定位，否则建完就消失
+    statusFilter = "all";
+    query = "";
+    selectedId = id;
+
+    dataChanged();
+    toast(`已新建「${title}」· 在今天的列上`);
+  };
+  quick.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") runQuick();
+  });
+
   const chips = el("div", { class: "chips" });
   const count = el("span", { class: "dim mono" });
 
@@ -283,6 +439,10 @@ export function mount(host: HTMLElement): void {
     el("div", {}, [
       el("div", { class: "tools" }, [
         el("span", { class: "searchbox" }, [
+          el("span", { class: "ic", html: PLUS_ICON }),
+          quick,
+        ]),
+        el("span", { class: "searchbox" }, [
           el("span", { class: "ic", html: SEARCH_ICON }),
           search,
         ]),
@@ -300,14 +460,20 @@ export function mount(host: HTMLElement): void {
     // 输入框里的字可能被别处改过（新建任务会清空 query），搜索框自己不知道
     if (search.value !== query) search.value = query;
 
-    const win = timelineWindow(timelineRange());
+    // 先取数据再定窗口：窗口本身要并上数据的跨度，拿 rows 去算就绕成环了
+    const tasks = visibleTasks();
+    const win = windowFor(timelineRange(), tasks);
     const winEnd = win.start + win.days - 1;
 
-    // 窗口外的任务不画。色条是从「起止」算出来的，一条排在窗口右边的任务
-    // 只会得到一根宽度为负的条 —— 与其夹成一根假的短条，不如不出现在这一档里。
-    const rows = visibleTasks().filter(
+    // 正常情况下这个过滤拦不掉任何东西（窗口本来就是按它们算出来的），留着是给
+    // 「窗口被外力改坏」兜底 —— 色条算成负宽度会把相邻几行的节奏整个打乱。
+    const rows = tasks.filter(
       (task) => dayNumber(task.end) >= win.start && dayNumber(task.start) <= winEnd,
     );
+
+    // 页面隐藏时 clientWidth 量不到（display:none 下是 0），给个够用的兜底值，
+    // 切回前台会再 render 一次重算（见 mount 末尾的 subscribePages）
+    const colW = columnWidth(win.days, table.clientWidth > 0 ? table.clientWidth : 1080);
 
     // ── chips（数量随数据变）──
     chips.replaceChildren();
@@ -346,14 +512,16 @@ export function mount(host: HTMLElement): void {
           el("span", { class: "dw", text: WEEKDAY_SHORT[weekday] }),
         ],
       );
-      cell.style.width = `${COL_W}px`;
       dayCells.push(cell);
     }
 
-    const body = rows.map((task) => renderRow(task, win));
+    const body = rows.map((task) => renderRow(task, win, colW));
 
     const grid = el("div", { class: "tt-grid" });
-    grid.style.width = `${LABEL_W + win.days * COL_W}px`;
+    grid.style.width = `${LABEL_W + win.days * colW}px`;
+    // 列宽交给 CSS 变量：表头日期格的宽度和 .tt-track 的格线周期都从这里取，
+    // 于是「让列宽铺满」这件事只有 tasks.ts 一个地方说了算
+    grid.style.setProperty("--tt-col", `${colW}px`);
     grid.append(
       el("div", { class: "tt-hrow" }, [
         el("div", { class: "tt-label" }, [
@@ -373,7 +541,7 @@ export function mount(host: HTMLElement): void {
 
     if (TODAY >= win.start && TODAY <= winEnd) {
       const todayLine = el("div", { class: "tt-today" });
-      todayLine.style.left = `${LABEL_W + (TODAY - win.start) * COL_W + COL_W / 2}px`;
+      todayLine.style.left = `${LABEL_W + (TODAY - win.start) * colW + colW / 2}px`;
       grid.append(todayLine);
     }
 
@@ -397,12 +565,24 @@ export function mount(host: HTMLElement): void {
     scrollToSelected();
   });
 
+  // 窗口宽窄变了，列数不变但列宽要重算 —— 否则右边重新空出来
+  let resizeTimer: number | undefined;
+  window.addEventListener("resize", () => {
+    window.clearTimeout(resizeTimer);
+    resizeTimer = window.setTimeout(render, 140);
+  });
+
   // 别的页面喊「定位到某个任务 / 按某状态筛选」时，在本页自己的地盘上复位
   subscribePages((id) => {
     if (id !== "tasks") return;
 
     const request = consumeTasksRequest();
-    if (request.filter === null && request.taskId === null) return;
+    if (request.filter === null && request.taskId === null) {
+      // 页面隐藏时量不到可用宽度（clientWidth 是 0），回到前台重新量一次，
+      // 否则列宽会停在挂载时的兜底值上，右侧又空出一条
+      render();
+      return;
+    }
 
     if (request.filter !== null) statusFilter = request.filter;
     if (request.taskId !== null) {
@@ -417,35 +597,4 @@ export function mount(host: HTMLElement): void {
   });
 }
 
-/** 页头主按钮：新建一条空任务并直接打开抽屉。 */
-export function onAction(): void {
-  const id = `new-${Date.now()}`;
-  const today: [number, number] = [9, 12];
 
-  TASKS.unshift({
-    id,
-    title: "未命名任务",
-    status: "todo",
-    tags: [],
-    due: null,
-    at: null,
-    start: today,
-    end: today,
-    progress: 0,
-    urgency: 2,
-    repeat: "",
-    created: today,
-    archived: false,
-    related: [],
-    activities: [{ at: "刚刚", text: "创建任务", kind: "create" }],
-  });
-
-  // 新任务在「逾期」或某个搜索词下面根本不会出现，先复位再定位
-  statusFilter = "all";
-  query = "";
-  selectedId = id;
-
-  dataChanged();
-  openTask(id);
-  toast("已新建任务 · 在抽屉里改标题和标签");
-}

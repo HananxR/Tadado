@@ -142,29 +142,10 @@ const TABS: TabSpec[] = [
       },
     ],
   },
-  {
-    id: "ai",
-    label: "AI 助手",
-    groups: [
-      {
-        title: "助手",
-        rows: [
-          { label: "助手提供商" },
-          { label: "专用工作区", value: "resources/ai_workspace/" },
-          { label: "自动续接上次会话" },
-          { label: "会话用量超 80% 提醒" },
-          { label: "注入分区环境变量" },
-        ],
-      },
-      {
-        title: "Skill 管理",
-        rows: [
-          { label: "SKILL.md 版本" },
-          { label: "分发位置", value: "~/.claude · ~/.agents" },
-        ],
-      },
-    ],
-  },
+  // 「AI 助手」页签已移除（2026-09-15）。它那一页 7 行里没有一行接了后端，
+  // 值全是占位（其中「专用工作区」还指向一个已经不存在的目录）—— 一排死开关
+  // 比没有这一页更误导人：看着能配，点了什么都不会发生。真要接入 AI 能力时，
+  // 把它连着能用的开关一起放回来；现在这 7 行在 git 历史里取回即可。
   {
     id: "part",
     label: "分区",

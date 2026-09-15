@@ -4,8 +4,12 @@
 // 放在这里的判断标准是「两个以上页面要用」，只有一个页面用到的留在那个页面里。
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { TASKS } from "../data/mock";
+import { dataChanged } from "../data/store";
 import type { TimelineRange } from "../data/timeline";
-import type { MonthDay, TaskStatus } from "../data/types";
+import type { MonthDay, Task, TaskStatus } from "../data/types";
+import { confirmAction } from "../shell/confirm";
+import { toast } from "../shell/toast";
 
 export const DAY_MS = 86400000;
 
@@ -120,6 +124,28 @@ export function timelineWindow(range: TimelineRange): { start: number; days: num
   if (range === "30d") return { start: TODAY - 29, days: 30 };
 
   // 本周从周一开头。getUTCDay 里周日是 0，先换算成「周一 = 0」再回退。
-  const offset = (today.getUTCDay() + 6) % 7;
-  return { start: TODAY - offset, days: 7 };
+  const offset = today.getUTCDay();
+  return { start: TODAY - ((offset + 6) % 7), days: 7 };
+}
+
+/**
+ * 删除一条任务（含二次确认），返回是否真的删了。
+ *
+ * 抽屉的单条删除和任务页的右键菜单共用这一条路径：破坏性操作的确认条件与措辞
+ * 必须在两处一致，否则用户会以为其中一处「点了就真删」。返回布尔值让调用方自己
+ * 决定后续动作 —— 抽屉删完要顺手收起，任务页删完要清掉选中态。
+ */
+export async function removeTask(task: Task): Promise<boolean> {
+  const ok = await confirmAction({
+    title: "删除这个任务？",
+    detail: `「${task.title}」和它名下的活动时间线会一并移除，删除后无法恢复。`,
+    confirmText: "删除任务",
+  });
+  if (!ok) return false;
+
+  const index = TASKS.findIndex((item) => item.id === task.id);
+  if (index >= 0) TASKS.splice(index, 1);
+  dataChanged();
+  toast(`已删除「${task.title}」`);
+  return true;
 }
