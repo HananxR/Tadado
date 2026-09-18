@@ -153,7 +153,10 @@
 /* ============ 总览：焦点时间轴（原型 .tdt）============ */
 .tdt {
   position: relative;
-  height: 172px;
+  /* 172 → 150（2026-09-17）：总览下半页分两列之后，左列要同时装下时间轴与
+     优先级分布。轴内的气泡都按 50% 定位，降下来的高度只是上下各松 11px ——
+     e2e 里那条「不互相遮挡、不溢出卡片」就是这条改动量的尺 */
+  height: 150px;
   margin-top: 2px;
 }
 
@@ -258,11 +261,6 @@
   text-decoration: line-through;
 }
 
-/* 逾期任务不落在时间点上（它们只有日期），统一钉在最左侧 */
-.tdt-p.over-pill {
-  left: 1% !important;
-}
-
 .tdt-cb {
   width: 14px;
   height: 14px;
@@ -300,7 +298,100 @@
   opacity: 0.85;
 }
 
-/* ============ 总览：活动流 / 紧迫度分布（原型 .feed / .ubar）============ */
+/* ── 未排时刻 ──
+   今天要做、但没排具体时刻的任务。轴上每个气泡都对应一个时间点，它们没有时间点；
+   全钉到左侧那条通道里又会挤成一团（实测 9 条时压了 6 对），所以单开一条。
+   关键是**别丢**：以前它们被整句 continue 掉，看着就是「焦点时间轴显示不全」。 */
+.tdt-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tdt-untimed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.tdt-untimed .lbl {
+  font: 400 10.5px var(--font);
+  color: var(--text-3);
+  flex: none;
+  margin-right: 2px;
+}
+
+.tdt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 260px;
+  padding: 2px 10px 2px 5px;
+  border: 1px solid;
+  border-radius: 999px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.tdt-chip:hover {
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+}
+
+.tdt-chip .tdt-tx {
+  font-size: 11px;
+}
+
+.tdt-chip.st-overdue {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.tdt-chip.st-todo {
+  color: var(--todo);
+  border-color: var(--todo);
+  background: var(--todo-soft);
+}
+.tdt-chip.st-doing {
+  color: var(--doing);
+  border-color: var(--doing);
+  background: var(--doing-soft);
+}
+.tdt-chip.st-done {
+  color: var(--done);
+  border-color: var(--done);
+  background: var(--done-soft);
+}
+
+.tdt-chip.is-done {
+  opacity: 0.55;
+}
+
+.tdt-chip.is-done .tdt-tx {
+  text-decoration: line-through;
+}
+
+.tdt-chip.is-done .tdt-cb,
+.tdt-p.is-done .tdt-cb {
+  background: currentColor;
+}
+
+.tdt-chip.is-done .tdt-cb::after {
+  content: "✓";
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* ============ 总览：活动流 / 优先级分布（原型 .feed / .ubar）============ */
 .feed {
   padding: 2px 0;
 }
@@ -333,6 +424,25 @@
 
 .feed-item .tx b {
   font-weight: 500;
+}
+
+/* 状态色点：一条流里混着已完成和进行中，光看标题分不出来。
+   baseline 对齐会把圆点压到文字下面一点，提上来与首行文字齐平 */
+.feed-item .dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transform: translateY(-2px);
+}
+
+/* 标签钉在行尾：一行只有一句「标题 · 进展」，右侧空着也是空着 */
+.feed-item .tags {
+  flex: none;
+  margin-left: auto;
+  font: 400 10.5px var(--mono);
+  color: var(--text-3);
+  white-space: nowrap;
 }
 
 .ubar {
@@ -369,6 +479,19 @@
   color: var(--text-3);
   width: 22px;
   text-align: right;
+}
+
+/* 优先级分布的一档是一个入口：点它去看这一档的任务 */
+.ubar.clickable {
+  cursor: pointer;
+  border-radius: 7px;
+  padding: 6px 4px;
+  margin: 0 -4px;
+  transition: background 0.15s;
+}
+
+.ubar.clickable:hover {
+  background: var(--hover);
 }
 
 /* ============ 总览：甘特模式（周 / 月，原型 .fg）============ */
@@ -447,16 +570,23 @@
 
 /* ============ 任务页：时间轴表格（原型 .tt-*）============ */
 .tt-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
   overflow: hidden;
 }
 
-/* 视口高度减去标题栏 + 工具行 + 页头 + 图例，让表格自己滚而不是整页滚 */
+/* 表格吃掉 .tt-wrap 的剩余高度。以前这里是 max-height: calc(100vh - 268px)——
+   拿一串写死的层高（标题栏 + 工具行 + 页头 + 图例）去估可视高度，估错一次就有
+   一截表格被切掉；现在这条链从 .main 一路传下来，多一层少一层都自己算对 */
 .tt-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
-  max-height: calc(100vh - 268px);
 }
 
 .tt-grid {
@@ -562,14 +692,30 @@
   overflow: hidden;
 }
 
+/* 标题 + 截止同行：截止靠右、标题吃掉剩余宽度并省略号 */
 .tt-label .lt1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 12.5px;
   font-weight: 500;
+}
+
+.tt-label .lt1 .t {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.tt-label .lt1 .dlt {
+  flex: none;
+  font: 400 9.5px var(--mono);
+  color: var(--text-3);
+}
+
+/* 标签单独一行。和截止挤同一行时，第三个标签会被 overflow:hidden 静默裁掉 */
 .tt-label .lt2 {
   font-size: 10px;
   color: var(--text-3);
@@ -578,15 +724,12 @@
   display: flex;
   gap: 4px;
   align-items: center;
+  margin-top: 1px;
 }
 
 .tt-label .lt2 .tag {
   font-size: 9.5px;
   padding: 0 4px;
-}
-
-.tt-label .lt2 .dlt {
-  font: 400 9.5px var(--mono);
 }
 
 /* 竖向格线用 repeating-linear-gradient 画，和 22px 的日期列宽同源 */
@@ -753,8 +896,13 @@
    页面的根节点是 nav.ts 建的 `.page`，不是某个自定义类名；从前那版 .gpage 从来
    没命中过任何节点，于是 .gwrap 永远退回 min-height 那 320px，而画布却按估算的
    632px 高去画，底下一半被 overflow:hidden 直接切掉。
-   注意每一层都得给 min-height:0 —— flex 子项默认不被压矮，漏一层就传不下来。 */
-#page-graph {
+   注意每一层都得给 min-height:0 —— flex 子项默认不被压矮，漏一层就传不下来。
+
+   `.active` 不能省：shell.css 里用 `.page { display:none }` + `.page.active`
+   控制显示哪一页，而 `#page-graph` 是 ID 选择器，优先级高于类选择器 —— 少了
+   `.active` 就等于让图谱页永远「显示」，于是它在主区里排第三的位置上，把排在
+   它后面的活动分析 / 任务管理的页头整个顶了下去。 */
+#page-graph.active {
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -959,13 +1107,30 @@
 }
 
 .node.partition {
-  width: 56px;
-  height: 56px;
+  width: 64px;
+  height: 64px;
   background: var(--accent);
   color: #fff;
-  font: 600 13.5px var(--font);
+  font: 600 13px var(--font);
   box-shadow: 0 0 0 8px var(--accent-soft);
   z-index: 3;
+  /* 名字 + 「分区」小签两行：分区名与标签名可能一字不差，得在节点上就分开。
+     两行都要居中：`.node` 的 place-items 只覆盖**交叉轴**，换成 flex 列之后
+     主轴（垂直）用的是 justify-content，默认 normal = 顶对齐 —— 少了这一行，
+     文字会贴着圆顶排（实测偏上 19px）。 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.node.partition .pk {
+  font: 500 8.5px var(--font);
+  opacity: 0.78;
+  letter-spacing: 0.5px;
 }
 
 .node.tag {
@@ -976,6 +1141,13 @@
   background: var(--surface-2);
   font: 500 9.5px var(--font);
   z-index: 2;
+}
+
+/* 「未分类」不是标签，是「没有标签」这件事：虚线框，形状上先分开 */
+.node.tag.untagged {
+  border-style: dashed;
+  border-color: var(--text-3);
+  color: var(--text-2);
 }
 
 .node.task {
@@ -1122,40 +1294,72 @@
   height: 13px;
 }
 
-/* ============ 活动分析：热力图（原型 .hm*）============ */
-/* --cell / --gap 由 activity.ts 按档位写进来（13/4 或 11/3）。月份标签要按
-   列号算绝对位置，格子尺寸放两处迟早对不上，所以这里只提供默认值。 */
-.hm-block {
-  --cell: 11px;
+/* ============ 活动分析：热力图 ============ */
+/* 版式：一年切成 12 个月块，每块自带一张网格（列 = 该月的 ISO 周，行 = 周一..周日），
+   块间留缝；底部是连续周序号，左侧是星期列。格子尺寸由 activity.ts 按可用宽度反算
+   后写进 --cell —— 尺寸写死的话，窗口一放大整幅就缩在左边（曾经 13px × 53 列 = 900px）。
+
+   行高三处必须同源（左侧标签列、块内网格、底部周序号）：月份题头 16px、7 行格子、
+   周序号 14px，任何一处对不上，星期标签就会一行一行越错越远。 */
+.hm {
+  --cell: 13px;
   --gap: 3px;
+  --block-gap: 12px;
   display: flex;
   align-items: flex-start;
-  gap: 9px;
+  gap: var(--block-gap);
 }
 
-/* 左侧周几标签。要和网格的 7 行逐行对齐，所以行高、间距、顶部留白
-   都必须和网格同源 —— 20px = .hmcols 的 14px + 6px margin。 */
-.hm-days {
+.hm-lab {
   display: grid;
-  grid-template-rows: repeat(7, var(--cell));
+  grid-template-rows: 16px repeat(7, var(--cell)) 14px;
   gap: var(--gap);
   align-items: center;
-  padding-top: 20px;
-  font: 400 8.5px var(--font);
+  font: 400 9.5px var(--font);
   color: var(--text-3);
   flex: none;
 }
 
-.hm {
+.hm-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  /* 把算完尺寸剩下来的那几个像素均摊到块与块之间 */
+  justify-content: space-between;
+  gap: var(--block-gap);
+}
+
+.hm-mo {
   display: grid;
-  grid-auto-flow: column;
-  /* 列宽必须写死：不给 grid-auto-columns 的话，隐式列是 auto —— 而 .hm 是块级
-     网格，宽度等于容器宽度，auto 列在默认的 justify-content: stretch 下会被拉到
-     平分容器（实测列距从 17px 变成 45px）。格子疏成一盘散沙还是小事，月份标签按
-     (--cell + --gap) 算绝对位置，于是整个月份刻度都压在左边那一小段上。 */
-  grid-auto-columns: var(--cell);
-  grid-template-rows: repeat(7, var(--cell));
+  grid-template-rows: 16px auto 14px;
   gap: var(--gap);
+  flex: none;
+}
+
+.hm-mo-t {
+  font: 400 10px var(--mono);
+  color: var(--text-3);
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* 按行填：先铺满一周（7 行），再换下一列 */
+.hm-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--weeks), var(--cell));
+  grid-template-rows: repeat(7, var(--cell));
+  grid-auto-flow: column;
+  gap: var(--gap);
+}
+
+.hm-weeks {
+  display: grid;
+  grid-template-columns: repeat(var(--weeks), var(--cell));
+  gap: var(--gap);
+  font: 400 8.5px var(--mono);
+  color: var(--text-3);
+  text-align: center;
 }
 
 .hm .hc {
@@ -1172,6 +1376,28 @@
   outline-offset: 1px;
 }
 
+/* 块内不属于本月的日子（跨月那周的另一半）：整个留空，让块看起来是有边界的
+   日历，而不是被硬切成方块的连续网格。 */
+.hm .hc.blank {
+  background: transparent;
+  cursor: default;
+}
+
+.hm .hc.blank:hover {
+  outline: none;
+}
+
+/* 还没到的日子：留个空框，表明「这里有一天，但没有活动可看」 */
+.hm .hc.future {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+  cursor: default;
+}
+
+.hm .hc.future:hover {
+  outline: none;
+}
+
 .hm .h1 {
   background: var(--h1);
 }
@@ -1185,26 +1411,6 @@
   background: var(--h4);
 }
 
-.hmwrap {
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  padding-bottom: 4px;
-}
-
-.hmcols {
-  position: relative;
-  margin-bottom: 6px;
-  height: 14px;
-}
-
-.hmcols span {
-  position: absolute;
-  font: 400 10px var(--mono);
-  color: var(--text-3);
-  white-space: nowrap;
-}
-
 .hmlegend {
   display: flex;
   align-items: center;
@@ -1212,7 +1418,35 @@
   font-size: 10.5px;
   color: var(--text-3);
   flex: none;
-  padding-top: 20px;
+}
+
+/* 色板：色块本体就是按钮，选中靠描边和一圈浅色外环 */
+.hmscheme {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  flex: none;
+}
+
+.hmsw {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.hmsw:hover {
+  border-color: var(--accent);
+}
+
+.hmsw.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .hmlegend i {
@@ -1237,6 +1471,31 @@
 .hmlegend i.l4 {
   background: var(--h4);
 }
+
+/* 活动页的范围过滤条：横跨整页压在「标签筛选 + 活动报告」之上。
+   它同时决定左边标签行的条数和右边报告的内容 —— 只挂在报告卡里的话，
+   左边那两个数字不跟着动，看着像两套数据。
+   形状跟卡片一致（同样的圆角/描边），表明它是一层作用于整块区域的过滤，
+   而不是某张卡的一部分。 */
+.act-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+/* 范围条里的弹性空白：把导出按钮推到这一行的最右。
+   .grow 是按容器作用域定义的（.card-h / .tools / .batchbar … 各一条），漏了
+   这一条的结果不是「没推开」，而是这个 span 宽 0、导出紧紧黏在区间说明后面 */
+.act-filter .grow {
+  flex: 1;
+}
+
 
 /* ============ 活动分析：标签筛选 / 活动报告（原型 .tcb / .act-item）============ */
 .tcb {
@@ -1299,6 +1558,46 @@
 
 .navbtn:hover {
   color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* 年份：夹在两个箭头之间，宽度固定，翻年时数字不会把箭头挤来挤去 */
+.hmyear {
+  min-width: 54px;
+  text-align: center;
+  font: 600 12.5px var(--mono);
+  line-height: 26px;
+}
+
+/* 不在当前年份时才可以点（回到今年），给个可点的样子 */
+.hmyear-off .hmyear {
+  cursor: pointer;
+  color: var(--accent);
+}
+
+.hmyear-off .hmyear:hover {
+  text-decoration: underline;
+}
+
+/* 指定范围的两个日期框 */
+.act-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.act-date {
+  font: 400 11.5px var(--mono);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 3px 6px;
+  outline: none;
+}
+
+.act-date:focus {
   border-color: var(--accent);
 }
 
@@ -1718,6 +2017,134 @@
   height: 13px;
 }
 
+/* 记录右侧的操作（只有人手写的那几条有）。默认淡出，鼠标落在这条记录上才显形
+   —— 每条记录都挂着两个按钮，时间线会变成一排按钮。 */
+.tl-ops {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.tl-card:hover .tl-ops,
+.tl-ops:focus-within {
+  opacity: 1;
+}
+
+.tl-op {
+  font: 400 10.5px var(--font);
+  color: var(--text-2);
+  background: none;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 1px 7px;
+  cursor: pointer;
+  flex: none;
+}
+
+.tl-op:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.tl-op.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* 就地编辑用的输入框 */
+.tl-edit {
+  flex: 1;
+  min-width: 0;
+  font: 500 12.5px var(--font);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 2px 6px;
+  outline: none;
+}
+
+/* 改过的记录：让人知道这条被动过，但不用把它藏起来 */
+.tl-edited {
+  font: 400 9.5px var(--mono);
+  color: var(--text-3);
+  border: 1px dashed var(--border-2);
+  border-radius: 4px;
+  padding: 0 4px;
+  flex: none;
+}
+
+/* ── 任务定义区 ──
+   整块圈起来：「这条任务是什么」和下面的「它经历过什么」是两件事，以前它们只是
+   平铺的两串内容，读到中间分不清哪一行属于哪一段。 */
+.dr-def {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-2);
+  padding: 12px 12px 14px;
+  margin-bottom: 14px;
+}
+
+.dr-tl {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.sec-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.sec-t {
+  font: 600 12.5px var(--font);
+}
+
+.sec-h .grow {
+  flex: 1;
+}
+
+/* 表单行：标签 + 控件。和 .dt 的排布同源，所以开始/结束两行与上面两行是齐的 */
+.tform {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.tf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tf-k {
+  font-size: 11.5px;
+  color: var(--text-2);
+  flex: none;
+  min-width: 30px;
+}
+
+/* 进度数字框：滑杆适合「大概拖一下」，想让它是 65% 就得能直接键入 */
+.pct-input {
+  width: 52px;
+  font: 400 11.5px var(--mono);
+  text-align: right;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 3px 6px;
+  outline: none;
+}
+
+.pct-input:focus {
+  border-color: var(--accent);
+}
+
 /* Markdown 源：默认折叠，避免抢了活动时间线的视线 */
 details.md-d {
   border: 1px solid var(--border);
@@ -1851,12 +2278,22 @@ details.md-d .md {
    重复的内联栅格。这里收成三个具名布局，改宽度只改一处。 */
 
 /* 总览下半区：活动流 + 紧迫度（右侧固定窄列） */
-.split-feed {
+/* 总览下半页：左右两列。左列「今天」（焦点时间轴 + 优先级分布），右列活动流。
+   两列各自是一个 flex 纵列，谁吃掉多余高度由下面的规则说 ── 见 pages.css 末尾
+   的「一屏到底」一节 */
+.ov-split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
   gap: 14px;
   margin-top: 14px;
-  align-items: start;
+}
+
+.ov-left,
+.ov-right {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
 }
 
 /* 分析页 / 管理页：左窄右宽 */
@@ -1873,6 +2310,153 @@ details.md-d .md {
   grid-template-columns: minmax(0, 1fr) 262px;
   gap: 14px;
   align-items: start;
+}
+
+/* ── 一屏到底（2026-09-17）───────────────────────────────────────────────────
+   总览 / 活动分析 / 任务管理原来靠内容自然堆叠，一页看全就得整页滚 —— 页头、
+   卡片头、分页器全被滚走。现在主区不再滚（见 shell.css 的 .main），这三页各自
+   撑满主区：固定的块（指标卡、热力图、工具行）留在原地，会长的那块（列表 /
+   表格）吃掉剩余高度，超出时在**卡片内部**滚。
+   作用域限定这三页：抽屉、设置抽屉里的卡片仍是「有多高长多高」。 */
+
+/* 总览的这些块外面还包着一层 .ov-page（见 overview.ts 的 mount）—— 它自己先
+   撑满页面，再把这条链传给 .ov-split。不加 gap：块之间的间距一直由各块自己的
+   margin 决定（tiles 的 16px、.ov-split 的 14px），这里再加一份会变成双倍 */
+#page-overview .ov-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 撑满的那块之外的兄弟（指标卡 / 热力图 / 范围条）不参与伸缩 ——
+   少了这条它们会被压矮，内容溢出后被页面裁掉 */
+#page-overview .ov-page > :not(.ov-split),
+#page-activity .page-body > :not(.split-filter),
+#page-manage .page-body > :not(.split-manage) {
+  flex: none;
+}
+
+#page-overview .ov-split,
+#page-activity .split-filter,
+#page-manage .split-manage {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 卡片顶天立地：两列等高，右侧窄卡不再吊在半空 */
+  align-items: stretch;
+  /* 这一条是「不滚」的关键：grid 的行高默认由**内容**决定，列表装了 20 行就
+     把行高顶到 700px，容器被压扁后行高照旧 —— 多出来的部分顶着整页滚（总览
+     实测溢出 186px 就是这么来的）。minmax(0,1fr) 把行高钉在容器高度上，
+     卡片再靠内部的 flex 链把列表压进剩余空间 */
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* 总览两列内部：左列的时间轴吸收多余高度（内容在卡片里居中），优先级分布按
+   内容；右列整条高度都归活动流 —— 它就是这里最需要空间的那张表 */
+#page-overview .ov-left > .card:first-child {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+#page-overview .ov-left > .card:first-child > .card-b {
+  /* 时间轴卡吸收多余高度时内容居中；窗口压到极限时宁可这一张卡自己滚，
+     也别把轴上的气泡裁掉（那是它唯一的内容） */
+  overflow: auto;
+}
+
+/* 居中用 auto margin 而不是 justify-content:center —— 两者在「内容装得下」时
+   看起来一样，内容一旦超高就分道扬镳：justify-content 会把溢出的一半推到
+   滚动区**外面**的那一侧（顶部那截再也滚不回来，还会被卡头盖住、点不到，
+   e2e 就卡在「点轴上那个簇」这一步重试到超时）；auto margin 在空间不够时
+   解析成 0，内容老老实实从头上排 */
+#page-overview .ov-left > .card:first-child > .card-b > * {
+  margin: auto 0;
+}
+
+#page-overview .ov-left > .card:last-child {
+  flex: none;
+}
+
+#page-overview .ov-right > .card {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+#page-overview .card,
+#page-activity .card,
+#page-manage .card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#page-overview .card > .card-h,
+#page-activity .card > .card-h,
+#page-manage .card > .card-h,
+#page-overview .card > .card-f,
+#page-activity .card > .card-f {
+  flex: none;
+}
+
+#page-overview .card > .card-b,
+#page-activity .card > .card-b,
+#page-manage .card > .card-b {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* 溢出必须看不见：撑满场景下卡片是等高的，一处的绝对定位气泡（时间轴上的
+     那些）多出来几像素就会盖住下面那张卡 —— 不只是难看，被盖住的按钮直接
+     点不到（e2e 就卡在这一步上重试到超时） */
+  overflow: hidden;
+}
+
+/* 卡片正文里除了会长的那块，其余（批量条、分页器、空状态）不参与伸缩 */
+#page-overview .card-b > :not(.feed),
+#page-activity .card-b > :not(.act-list, .taglist),
+#page-manage .card-b > :not(.tablefill, .taglist) {
+  flex: none;
+}
+
+/* 会长的那块：吃掉卡片剩余高度，超出时自己滚 */
+#page-overview .feed,
+#page-activity .act-list,
+.taglist,
+#page-manage .tabwrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* 管理页表格卡：表格 + 分页器竖排，分页器钉在卡内底部 */
+.tablefill {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── 任务页：同一条链（工具行固定，表格吃剩余高度）───────────────────────── */
+.tt-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tt-page > .tools {
+  flex: none;
+}
+
+.tt-box {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tt-box > .pager {
+  flex: none;
 }
 
 /* 卡片头右侧的图例 */

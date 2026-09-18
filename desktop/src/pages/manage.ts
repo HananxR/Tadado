@@ -9,18 +9,30 @@
 // 而结果和改名完全一样。所以这里只做改名，并在目标已存在时把话说清楚。
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { parseTasks, tasksToMarkdown } from "../data/markdown";
+import { groupedText, type ExportGroup } from "../data/export";
 import { TASKS } from "../data/mock";
-import { activePartition, activePartitionId } from "../data/partitions";
-import { dataChanged, onDataChange } from "../data/store";
+import { activePartitionId } from "../data/partitions";
+import { dataChanged, keepActive, onDataChange } from "../data/store";
+import { UNTAGGED } from "../data/tags";
 import type { Task, TaskStatus } from "../data/types";
 import { el } from "../shell/dom";
 import { confirmAction } from "../shell/confirm";
+import { exportButton } from "../shell/exportMenu";
 import { toast } from "../shell/toast";
 import { jumpToTask } from "./focus";
-import { STATUS_LABEL, TODAY, dayNumber, monthDayText, pad2 } from "./shared";
+import { pager } from "./pager";
+import {
+  PAGE_SIZE,
+  STATUS_LABEL,
+  TODAY,
+  dayNumber,
+  isoDay,
+  pad2,
+  setTaskStatus,
+} from "./shared";
 
-const PAGE_SIZE = 12;
+/** 当前每页几条。分页器上那个下拉改它（默认 PAGE_SIZE）。 */
+let pageSize = PAGE_SIZE;
 
 const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
   { value: "all", label: "全部状态" },
@@ -129,12 +141,39 @@ function checkbox(on: boolean, onToggle: () => void): HTMLElement {
   return box;
 }
 
+/**
+ * 导出用的三层结构：标签 → 任务 → 它的活动。
+ *
+ * 一条任务只归到它的**第一个**标签下：这是任务清单，同一条在文件里出现两遍会
+ * 让人以为有两件事。（活动分析那边是按标签查活动，同一条进展天然会被多个标签
+ * 命中，所以那边做了去重。）
+ */
+function exportGroups(list: Task[]): ExportGroup[] {
+  const byTag = new Map<string, ExportGroup["tasks"]>();
+
+  for (const task of list) {
+    const tag = task.tags[0] ?? UNTAGGED;
+    const bucket = byTag.get(tag) ?? [];
+    bucket.push({
+      title: task.title,
+      status: STATUS_LABEL[task.status],
+      // 活动时间倒序：最新的一条在最上面，和人看时间线的顺序一致
+      rows: [...task.activities].sort((a, b) => b.at - a.at),
+    });
+    byTag.set(tag, bucket);
+  }
+
+  return [...byTag.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([tag, tasks]) => ({ tag, tasks }));
+}
+
 function renderTable(): HTMLElement {
   const rows = tableRows();
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
   if (page >= pageCount) page = pageCount - 1;
-  const start = page * PAGE_SIZE;
-  const slice = rows.slice(start, start + PAGE_SIZE);
+  const start = page * pageSize;
+  const slice = rows.slice(start, start + pageSize);
 
   const allOn = slice.length > 0 && slice.every((task) => selected.has(task.id));
   const headBox = checkbox(allOn, () => {
@@ -210,32 +249,25 @@ function renderTable(): HTMLElement {
   const table = el("table", {}, [el("thead", {}, [head]), body]);
   const wrap = el("div", { class: "tabwrap" }, [table]);
 
-  const pager = el("div", { class: "pager" }, [
-    el("span", {
-      text: rows.length === 0 ? "共 0 条" : `第 ${start + 1}–${Math.min(start + PAGE_SIZE, rows.length)} 条 / 共 ${rows.length} 条`,
-    }),
-    (() => {
-      const button = el("button", { class: "navbtn", type: "button", text: "◀" });
-      button.addEventListener("click", () => {
-        if (page === 0) return;
-        page -= 1;
-        refreshTable?.();
-      });
-      return button;
-    })(),
-    el("span", { class: "mono dim", text: `${page + 1} / ${pageCount}` }),
-    (() => {
-      const button = el("button", { class: "navbtn", type: "button", text: "▶" });
-      button.addEventListener("click", () => {
-        if (page >= pageCount - 1) return;
-        page += 1;
-        refreshTable?.();
-      });
-      return button;
-    })(),
-  ]);
+  const bar = pager({
+    page,
+    pageCount,
+    total: rows.length,
+    size: pageSize,
+    onGo: (next) => {
+      page = next;
+      refreshTable?.();
+    },
+    // 每页几条：这是「一屏看多少」的**入口**，不是设置项 —— 它只影响眼前这张表
+    onSize: (size) => {
+      pageSize = size;
+      page = 0;
+      refreshTable?.();
+    },
+  });
 
-  return el("div", {}, [wrap, pager]);
+  // .tablefill：表格吃剩余高度、分页器钉在卡内底部（见 pages.css 的一屏到底一节）
+  return el("div", { class: "tablefill" }, [wrap, bar]);
 }
 
 // ─── 卡片 ────────────────────────────────────────────────────────────────────
@@ -269,10 +301,7 @@ function renderBatchBar(): HTMLElement | null {
   const done = action(el("button", { type: "button", text: "标记完成" }));
   done.addEventListener("click", () =>
     applyToSelected(
-      (task) => {
-        task.status = "done";
-        task.progress = 100;
-      },
+      (task) => setTaskStatus(task, "done"),
       (count) => `已把 ${count} 个任务标记为完成`,
     ),
   );
@@ -288,6 +317,8 @@ function renderBatchBar(): HTMLElement | null {
   restore.addEventListener("click", () =>
     applyToSelected((task) => {
       task.archived = false;
+      // 手动恢复的，本次会话里自动归档不再碰 —— 否则下次数据一变更它就又消失了
+      keepActive(task.id);
     }, (count) => `已恢复 ${count} 个任务`),
   );
 
@@ -335,7 +366,8 @@ function renderTagCard(): HTMLElement {
     refreshTagList();
   });
 
-  const list = el("div");
+  // .taglist：标签多到装不下时在中间这一块滚，上面的搜索框与下面的编辑区留在原地
+  const list = el("div", { class: "taglist" });
   const editor = el("div");
 
   function refreshList(): void {
@@ -364,7 +396,7 @@ function renderTagCard(): HTMLElement {
   function refreshEditor(): void {
     editor.replaceChildren();
     if (!selectedTag) {
-      editor.append(el("div", { class: "dim", style: "font-size:11.5px", text: "选中一个标签后可改名；改成已有的名字即为合并。" }));
+      editor.append(el("div", { class: "dim", style: "font-size:11.5px", text: "选中标签后可重命名；改为已有名称即为合并。" }));
       return;
     }
 
@@ -422,7 +454,8 @@ function renderTagCard(): HTMLElement {
   return el("div", { class: "card" }, [
     el("div", { class: "card-h" }, [
       el("span", { class: "t", text: "标签管理" }),
-      el("span", { class: "d", text: "改成已有的名字即为合并" }),
+      // 操作说明（改名 / 合并）在下面的编辑区里写一次就够，卡头这句是重复的
+      el("span", { class: "d", text: "重命名与合并" }),
     ]),
     el("div", { class: "card-b" }, [
       el("div", { class: "searchbox", style: "margin-bottom:8px" }, [search]),
@@ -437,62 +470,49 @@ function renderTagCard(): HTMLElement {
 export function mount(host: HTMLElement): void {
   const tableCard = el("div", { class: "card" });
 
-  // ── 导入 / 导出（Markdown 方言）────────────────────────────────────────
-  // 这两个按钮处理的都是「当前分区」的任务：分区是数据的隔离边界，
-  // 导出别的分区会让人以为导出来的是自己这份。
-  const importInput = el("input", {
-    type: "file",
-    accept: ".md,.txt,text/markdown",
-    style: "display:none",
+  // ── 导出（md / txt / xlsx 三选一，见 shell/exportMenu.ts）─────────────────
+  // 「导入 .md」撤了（2026-09-17）：方言本来就带不回状态（导出再导入会把已完成
+  // 变成待办，见 data/markdown.ts 顶部），而任务页的批量新建框吃的是**同一套
+  // 方言**、当场就能看见解析出几条 —— 先存成文件再导回来只是多绕一圈。
+  //
+  // 导出跟着**当前筛选**走：表格上摆着状态与归档两个筛选，导出的就该是眼前这批，
+  // 而不是「这个分区全部」—— 后者会让人以为筛选压根没生效。
+  const exportBtn = exportButton({
+    table: () => {
+      const list = tableRows();
+      return {
+        // 与活动分析的导出**同一套三层结构**（标签 → 任务 → 活动），生成逻辑也共用
+        // data/export.ts 的 groupedText。以前这里是 md 方言行（`- [ ] 标题 #标签`），
+        // 那是为了让文件能导回来；导入在 2026-09-17 撤了，这个约束也就没了 ——
+        // 两份导出统一之后，用户不用再记「哪个页面给的是哪种格式」
+        text: {
+          md: groupedText(exportGroups(list), "md"),
+          txt: groupedText(exportGroups(list), "txt"),
+        },
+        head: ["#", "创建", "任务内容", "截止", "进度", "状态", "标签", "归档"],
+        rows: list.map((task, index) => [
+          String(index + 1),
+          `${pad2(task.created[0])}-${pad2(task.created[1])}`,
+          task.title,
+          task.due ?? "",
+          `${task.progress}%`,
+          STATUS_LABEL[task.status],
+          task.tags.join(" "),
+          task.archived ? "已归档" : "",
+        ]),
+      };
+    },
+    baseName: () => `tadado2-${activePartitionId()}-${isoDay(TODAY)}`,
+    countText: () => `${tableRows().length} 条任务`,
+    blocked: () => (tableRows().length === 0 ? "当前筛选下没有任务可导出" : ""),
   });
-  importInput.addEventListener("change", () => {
-    const file = importInput.files?.[0];
-    if (!file) return;
-    void file.text().then((text) => {
-      const drafts = parseTasks(text);
-      const imported = drafts.map((draft) => ({
-        ...draft,
-        // id 必须唯一，分区必须落在当前分区 —— 否则导入完一条都看不见
-        id: `imp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        partition: activePartitionId(),
-      }));
-      TASKS.unshift(...imported);
-      dataChanged();
-      toast(
-        imported.length > 0
-          ? `已导入 ${imported.length} 条到「${activePartition().name}」分区`
-          : "这个文件里没有解析出任务行",
-      );
-      importInput.value = "";
-    });
-  });
-
-  const exportBtn = el("button", { class: "btn sm", type: "button", text: "导出 .md" });
-  exportBtn.addEventListener("click", () => {
-    const rows = TASKS.filter((task) => task.partition === activePartitionId());
-    const md = tasksToMarkdown(rows, activePartition().name);
-
-    const url = URL.createObjectURL(new Blob([md], { type: "text/markdown;charset=utf-8" }));
-    const link = el("a", {
-      href: url,
-      download: `tadado-${activePartitionId()}-${monthDayText(TODAY)}.md`,
-    });
-    document.body.append(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-    toast(`已导出 ${rows.length} 条任务`);
-  });
-
-  const importBtn = el("button", { class: "btn sm", type: "button", text: "导入 .md" });
-  importBtn.addEventListener("click", () => importInput.click());
 
   const render = (): void => {
     const batch = renderBatchBar();
     tableCard.replaceChildren(
       el("div", { class: "card-h" }, [
         el("span", { class: "t", text: "任务表格" }),
-        el("span", { class: "d", text: `每页 ${PAGE_SIZE} 条 · 行点击打开维护抽屉` }),
+        el("span", { class: "d", text: `${pageSize} 条/页 · 行点击打开维护抽屉` }),
         el("span", { class: "grow" }),
         filterChips(STATUS_OPTIONS, statusFilter, (value) => {
           statusFilter = value;
@@ -505,8 +525,6 @@ export function mount(host: HTMLElement): void {
           refreshTable?.();
         }),
         exportBtn,
-        importBtn,
-        importInput,
       ]),
       el("div", { class: "card-b" }, [...(batch ? [batch] : []), renderTable()]),
     );

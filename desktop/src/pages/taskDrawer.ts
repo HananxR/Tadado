@@ -1,12 +1,27 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 任务维护抽屉。
 //
-// 它是任务的唯一编辑入口（DESIGN.md：单击选中 · 双击 / 右键打开 · 保存后自动
-// 收起 · Esc 关闭）。节点结构写在原型里，这里在首次打开时建出来并常驻 ——
-// 每次重建成百个节点会让滑出动画掉帧。
+// 它是任务的编辑入口（DESIGN.md：单击选中 · 双击 / 右键打开 · Esc 关闭）。
+//
+// 这一版按「这个界面是本软件的核心」重排过，改掉的是四件说不通的事：
+//
+//   1. **任务定义与活动时间线之间没有边界**。两段东西平行铺着，中间只有一点间距，
+//      读到一半分不清哪行是「这条任务是什么」、哪行是「它经历过什么」。现在分成
+//      两个有标题、有边框的分区。
+//   2. **时间只有一半**。列表上写着「⏰ 今天 15:00」，抽屉里却只有一个日期框，
+//      时分根本没有地方改。现在开始与结束都用 shell/dateTime.ts 的同一个组件
+//      （开始只到日期、结束带时分），排布也一致。
+//   3. **进度只能拖**。滑杆适合「大概拖一下」，想让它是 65% 就得来回蹭 ——
+//      旁边补一个能直接键入的数字框。
+//   4. **底部「删除 / 保存」**。所有字段本来就是即时保存的，「保存」实际只做
+//      「收起抽屉」；按钮的名字在骗人。两个都撤掉，关闭交给右上角的 X 与 Esc，
+//      删除走列表行的右键菜单与任务管理页（两处都有二次确认）。
+//
+// 另外：活动时间线上人手写的记录（kind: log）现在可改可删，改过会标「已编辑」；
+// 系统记录（创建 / 改状态 / 改进度）不给编辑入口。
 //
 // 它属于「页面层」而不是「外壳层」：抽屉的内容完全跟着任务域走，
-// 外壳不该知道什么是「紧迫度」。
+// 外壳不该知道什么是「优先级」。
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { parseTasks, taskToMarkdown } from "../data/markdown";
@@ -14,27 +29,11 @@ import { byId } from "../data/mock";
 import { dataChanged, onDataChange } from "../data/store";
 import type { Activity, Task, TaskStatus } from "../data/types";
 import { el } from "../shell/dom";
-import { shouldCloseOnSave } from "../shell/drawerPref";
-import { dropdown } from "../shell/menu";
+import { panelClosed, panelOpened, registerPanel } from "../shell/panels";
+import { subscribePages } from "../shell/router";
 import { toast } from "../shell/toast";
-import {
-  DAY_MS,
-  STATUS_LABEL,
-  TODAY,
-  URGENCY_LABEL,
-  dayNumber,
-  monthDayText,
-  pad2,
-  removeTask,
-  statusVar,
-  todayMonthDay,
-} from "./shared";
-
-/** 天数 → [月, 日]，和 dayNumber 互逆。 */
-const monthDayOf = (day: number): [number, number] => {
-  const date = new Date(day * DAY_MS);
-  return [date.getUTCMonth() + 1, date.getUTCDate()];
-};
+import { STATUS_LABEL, nowStamp, pad2, stampText, statusVar } from "./shared";
+import { taskForm } from "./taskForm";
 
 // ─── 图标 ────────────────────────────────────────────────────────────────────
 
@@ -79,40 +78,112 @@ export function onTaskOpen(listener: OpenListener): () => void {
 interface Drawer {
   root: HTMLElement;
   badge: HTMLElement;
-  title: HTMLInputElement;
-  tags: HTMLInputElement;
-  due: HTMLInputElement;
+  /** 头部的任务名（只读展示）。真正可编辑的那个在表单里 —— 一个字段一处输入。 */
+  name: HTMLElement;
   created: HTMLElement;
-  progressText: HTMLElement;
-  progressRange: HTMLInputElement;
-  statusPick: ReturnType<typeof dropdown<TaskStatus>>;
-  urgencyPick: ReturnType<typeof dropdown<string>>;
-  repeat: HTMLElement;
+  form: ReturnType<typeof taskForm>;
   timeline: HTMLElement;
   timelineCount: HTMLElement;
   composer: HTMLInputElement;
   markdown: HTMLTextAreaElement;
-  /** 重画 md 预览。任务被别处改了以后，框里的 md 和它渲染出来的样子都要跟上。 */
+  /** 重画 md 预览。 */
   mdSync: () => void;
 }
 
 let drawer: Drawer | null = null;
 let current: Task | null = null;
 
+/** 时间线上人手写的那一类记录。只有它能改能删（见 types.ts）。 */
+type LogActivity = Extract<Activity, { kind: "log" }>;
+
+// ─── 时间线 ──────────────────────────────────────────────────────────────────
+
+/** 一条记录右侧的操作（只有人手写的那些才有）。 */
+function entryOps(
+  task: Task,
+  index: number,
+  activity: LogActivity,
+): HTMLElement {
+  const edit = el("button", { class: "tl-op", type: "button", text: "编辑" });
+  const remove = el("button", { class: "tl-op danger", type: "button", text: "删除" });
+  const row = el("div", { class: "tl-ops" }, [edit, remove]);
+
+  edit.addEventListener("click", () => startEdit(task, index, activity));
+  remove.addEventListener("click", () => {
+    task.activities.splice(index, 1);
+    dataChanged();
+    toast("已删除这条记录");
+  });
+
+  return row;
+}
+
+/**
+ * 就地改一条记录。
+ *
+ * 不改时间戳：这条记录写的还是当时发生的事，只是措辞改了 —— 把时间刷成「现在」
+ * 会让时间线开始说谎。改过之后标一个「已编辑」，读者知道它被动过。
+ */
+function startEdit(task: Task, index: number, activity: LogActivity): void {
+  if (!drawer) return;
+  const entry = drawer.timeline.children[index];
+  const card = entry?.querySelector<HTMLElement>(".tl-card");
+  if (!card) return;
+
+  const input = el("input", { class: "tl-edit", value: activity.text });
+  const save = el("button", { class: "tl-op", type: "button", text: "保存" });
+  const cancel = el("button", { class: "tl-op", type: "button", text: "取消" });
+
+  const commit = (): void => {
+    const next = input.value.trim();
+    if (!next) {
+      toast("内容不能为空");
+      input.focus();
+      return;
+    }
+    activity.text = next;
+    activity.edited = true;
+    dataChanged();
+    toast("已更新这条记录");
+  };
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commit();
+    }
+    if (event.key === "Escape") {
+      // 这一层的 Esc 是「取消编辑」，不该顺手把整个抽屉关掉
+      event.stopPropagation();
+      renderTimeline(task);
+    }
+  });
+  save.addEventListener("click", commit);
+  cancel.addEventListener("click", () => renderTimeline(task));
+
+  card.replaceChildren(el("div", { class: "t1" }, [input, el("div", { class: "tl-ops" }, [save, cancel])]));
+
+  // 光标落在末尾：改错别字时不用再按一次 End
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+}
+
 function renderTimeline(task: Task): void {
   if (!drawer) return;
+  // 收窄成局部常量：下面在 forEach 回调里用，模块级 let 的收窄传不进闭包
+  const host = drawer;
 
-  drawer.timeline.replaceChildren();
-  drawer.timelineCount.textContent = `${task.activities.length} 条`;
+  host.timeline.replaceChildren();
+  host.timelineCount.textContent = `${task.activities.length} 条`;
 
   if (task.activities.length === 0) {
     drawer.timeline.append(
-      el("div", { class: "dim", text: "暂无活动记录 — 在下方输入第一条进展" }),
+      el("div", { class: "dim", text: "暂无记录，可在下方添加第一条进展" }),
     );
     return;
   }
 
-  for (const activity of task.activities) {
+  task.activities.forEach((activity, index) => {
     const icon = el("div", {
       class: `tl-ico ${ICON_CLASS[activity.kind]}`,
       html: ICONS[activity.kind],
@@ -121,7 +192,10 @@ function renderTimeline(task: Task): void {
     const card = el("div", { class: "tl-card" }, [
       el("div", { class: "t1" }, [
         el("span", { class: "tt", text: activity.text }),
-        el("span", { class: "tm", text: activity.at }),
+        el("span", { class: "tm", text: stampText(activity.at) }),
+        ...(activity.kind === "log" && activity.edited
+          ? [el("span", { class: "tl-edited", text: "已编辑" })]
+          : []),
       ]),
     ]);
 
@@ -150,193 +224,79 @@ function renderTimeline(task: Task): void {
     }
 
     if (detail.childElementCount > 0) card.append(detail);
-    drawer.timeline.append(el("div", { class: "tl-entry" }, [rail, card]));
-  }
+    // 可改可删的只有人手写的那一类：系统记录是既成事实
+    if (activity.kind === "log") card.append(entryOps(task, index, activity));
+
+    host.timeline.append(el("div", { class: "tl-entry" }, [rail, card]));
+  });
 }
+
+// ─── 重画 ────────────────────────────────────────────────────────────────────
 
 function paint(task: Task): void {
   if (!drawer) return;
 
   drawer.badge.className = `st st-${task.status}`;
   drawer.badge.textContent = STATUS_LABEL[task.status];
-
-  // 正在编辑的那个框不回写：`change` 之前模型还是旧的，
-  // 此时若被别处的 dataChanged 带着重画一遍，用户敲到一半的字就没了
-  if (document.activeElement !== drawer.title) drawer.title.value = task.title;
-  if (document.activeElement !== drawer.tags) drawer.tags.value = task.tags.join(" ");
-
-  // 日期框给的是 yyyy-mm-dd。年份锚在 2026（种子数据就是按 2026 写的），
-  // 没有截止时留空 —— 填今天会让人以为这条任务定在今天结束。
-  if (document.activeElement !== drawer.due) {
-    drawer.due.value = task.due ? `2026-${monthDayText(dayNumber(task.end))}` : "";
-  }
+  drawer.name.textContent = task.title;
   drawer.created.textContent = `创建于 ${pad2(task.created[0])}-${pad2(task.created[1])}`;
 
-  drawer.progressText.textContent = `${task.progress}%`;
-  drawer.progressRange.value = String(task.progress);
+  drawer.form.paint(task);
+  renderTimeline(task);
 
-  drawer.statusPick.setValue(task.status);
-  drawer.urgencyPick.setValue(String(task.urgency) as "0" | "1" | "2" | "3");
-  drawer.repeat.textContent = task.repeat || "无循环";
-
-  // 序列化只此一份（data/markdown.ts）—— 抽屉里这行和「导出 .md」必须是同一个
-  // 方言，否则导出去的东西和这里看到的不一样
   // md 框同理：正在改 md 的人不该被这里的重画把内容和光标一起带走
   if (document.activeElement !== drawer.markdown) {
     drawer.markdown.value = taskToMarkdown(task);
     drawer.mdSync();
   }
-  renderTimeline(task);
 }
 
-function build(): Drawer {
+// ─── 构建 ────────────────────────────────────────────────────────────────────
+
+function build(task: Task): Drawer {
   const badge = el("span", { class: "st" });
-
-  // 标题、标签、截止曾经全是只读节点：改不动的「维护抽屉」不是维护抽屉 ——
-  // 建任务时手滑打错一个字，那条任务就永远错着。这里都换成可编辑控件。
-  const title = el("input", { class: "dr-title", spellcheck: "false" });
-  title.addEventListener("change", () => {
-    if (!current) return;
-    const next = title.value.trim();
-    // 空标题不许存：时间轴上一条没有名字的色条等于不知道它是谁
-    if (!next) {
-      title.value = current.title;
-      toast("标题不能为空");
-      return;
-    }
-    current.title = next;
-    dataChanged();
-    toast(`标题已改为「${next}」`);
-  });
-
-  const tags = el("input", {
-    class: "dr-tags",
-    spellcheck: "false",
-    placeholder: "标签，空格分隔，如 #后端 #紧急",
-  });
-  tags.addEventListener("change", () => {
-    if (!current) return;
-    const next = [...tags.value.matchAll(/#[^\s#]+/g)].map((match) => match[0]);
-    current.tags = next;
-    dataChanged();
-    toast(next.length > 0 ? `标签已改为 ${next.join(" ")}` : "已清空标签");
-  });
-
-  const due = el("input", { type: "date", class: "dr-due" });
-  /** 截止落在哪一天：写 due 文案的同时必须同步 end —— 时间轴是按 end 画的。 */
-  const applyDue = (day: number | null): void => {
-    if (!current) return;
-    if (day === null) {
-      current.due = null;
-      current.at = null;
-      current.end = todayMonthDay();
-      dataChanged();
-      toast("已清除截止");
-      return;
-    }
-    const monthDay = monthDayOf(day);
-    current.due = monthDayText(day);
-    current.at = null;
-    current.end = monthDay;
-    dataChanged();
-    toast(`截止已设为 ${monthDayText(day)}`);
-  };
-
-  // 监听 input 而不是 change：从日期面板里选一个日期派发的就是 input，
-  // change 要等到失焦才来 —— 选完还得点一下别处才生效，看着像坏了
-  due.addEventListener("input", () => {
-    if (!due.value) return;
-    // <input type="date"> 给的是 yyyy-mm-dd，按 UTC 解析后换回「天数」，
-    // 与 dayNumber / monthDayText 是同一套换算
-    applyDue(Math.floor(Date.parse(`${due.value}T00:00:00Z`) / DAY_MS));
-  });
-
-  // 快捷档位。原版是「6 选项弹窗」，这里给三个最常用 + 清除就够了 ——
-  // 「下周一」「本周五」这种要先想一下再点的，直接开日期选择器更省事。
-  const quickRow = el("div", { class: "due-quick" }, [
-    ["今天", 0],
-    ["明天", 1],
-    ["下周", 7],
-  ].map(([label, offset]) => {
-    const chip = el("button", { class: "chip", type: "button", text: label as string });
-    chip.addEventListener("click", () => applyDue(TODAY + (offset as number)));
-    return chip;
-  }));
-  const clearDue = el("button", { class: "chip", type: "button", text: "清除" });
-  clearDue.addEventListener("click", () => applyDue(null));
-  quickRow.append(clearDue);
-
+  const name = el("div", { class: "dr-name" });
   const created = el("span", { class: "mono dim" });
 
-  const close = el("button", { class: "icon-btn", title: "关闭 (Esc)", html: CLOSE_ICON });
+  const close = el("button", {
+    class: "dr-close",
+    type: "button",
+    title: "关闭 (Esc)",
+    html: CLOSE_ICON,
+  });
   close.addEventListener("click", closeTask);
 
   const head = el("div", { class: "dr-h" }, [
-    badge,
-    title,
-    close,
-    tags,
-    el("div", { class: "due-row" }, [due, quickRow, created]),
+    el("div", { class: "dr-h1" }, [badge, name, close]),
+    el("div", { class: "dr-sub" }, [created]),
   ]);
 
-  // ── 进度 ──
-  const progressText = el("span", { class: "pct", text: "0%" });
-  const progressRange = el("input", { type: "range", class: "range", min: "0", max: "100" });
-  progressRange.addEventListener("input", () => {
-    if (!current) return;
-    current.progress = Number(progressRange.value);
-    progressText.textContent = `${current.progress}%`;
-    dataChanged();
+  // 任务定义：字段全部由 taskForm 提供，和「新建任务」对话框是同一份实现 ——
+  // 两处各写一份的话，新建时能填的东西编辑时未必有，列表与编辑界面就会对不上
+  const form = taskForm({
+    task,
+    onEdit: () => dataChanged(),
+    onStatusChange: (next: TaskStatus) =>
+      toast(`状态已改为「${STATUS_LABEL[next]}」· 全局视图已联动`),
   });
 
-  // ── 快捷变更 ──
-  const statusPick = dropdown<TaskStatus>({
-    items: [
-      { value: "todo", label: STATUS_LABEL.todo },
-      { value: "doing", label: STATUS_LABEL.doing },
-      { value: "done", label: STATUS_LABEL.done },
-      { value: "overdue", label: "逾期（仅系统标记）" },
-    ],
-    value: "todo",
-    onPick: (status) => {
-      if (!current) return;
-      current.status = status;
-      if (status === "done") current.progress = 100;
-      paint(current);
-      dataChanged();
-      toast(`状态已改为「${STATUS_LABEL[status]}」· 全局视图已联动`);
-    },
-  });
-
-  const urgencyPick = dropdown<string>({
-    items: URGENCY_LABEL.map((label, index) => ({ value: String(index), label })),
-    value: "2",
-    onPick: (value) => {
-      if (!current) return;
-      current.urgency = Number(value) as Task["urgency"];
-      dataChanged();
-      toast(`优先级已改为「${URGENCY_LABEL[Number(value)]}」`);
-    },
-  });
-
-  const repeat = el("span", { class: "chip" });
-
-  const quick = el("div", { class: "dr-sec", style: "display:none" });
   const timeline = el("div", { class: "tl-list" });
   const timelineCount = el("span", { class: "dim mono" });
 
   // ── 记录新进展 ──
-  const composer = el("input", { placeholder: "记录新进展…（回车追加）" });
-  const send = el("button", { class: "tl-send", title: "发送", html: SEND_ICON });
+  const composer = el("input", { placeholder: "记录一条进展（回车保存）" });
+  const send = el("button", { class: "tl-send", title: "保存", html: SEND_ICON });
   const appendActivity = (): void => {
     if (!current) return;
     const text = composer.value.trim();
     if (!text) return;
-    current.activities.unshift({ at: "刚刚", text, kind: "log" });
+    current.activities.unshift({ at: nowStamp(), text, kind: "log" });
     composer.value = "";
     renderTimeline(current);
     dataChanged();
-    toast(`已追加进展「${text}」`);
+    // 「发送」本来就是保存 —— 以前这条已经落库了，只是没有任何反馈，
+    // 让人以为还得再点一次什么才算存上
+    toast("已保存到活动时间线");
   };
   send.addEventListener("click", appendActivity);
   composer.addEventListener("keydown", (event) => {
@@ -344,9 +304,6 @@ function build(): Drawer {
   });
 
   // ── Markdown 源 ──
-  //
-  // 这个框以前能打字、但没有接任何处理：敲半天既没有预览，也没有「按此更新」，
-  // 看上去就是坏的。现在它是一条真正的编辑路径 —— 边敲边渲染，写回要显式点按钮。
   const markdown = el("textarea", { class: "md", spellcheck: "false" });
   const mdPreview = el("div", { class: "md-prev" });
   const mdApply = el("button", { class: "btn sm", type: "button", text: "按 md 更新任务" });
@@ -356,9 +313,7 @@ function build(): Drawer {
    * 把框里的 md 渲染成一眼能看完的一块。
    *
    * 状态**不**从 md 读：方言不承载状态（DESIGN.md，见 data/markdown.ts 表头），
-   * 于是 `[x]` 在这里不生效，显示的仍是任务自己的状态 —— 否则改一下 md
-   * 会把「已完成」悄悄变回待办。反过来，md 里没写的东西（比如 `:: 40%`）
-   * 也按「会归零」如实显示：写回之前先在这里看见，比事后发现进度丢了强。
+   * 于是 `[x]` 在这里不生效，显示的仍是任务自己的状态。
    */
   const renderMdPreview = (): void => {
     const draft = parseTasks(markdown.value)[0];
@@ -369,7 +324,7 @@ function build(): Drawer {
       mdPreview.append(
         el("div", {
           class: "dim",
-          text: "认不出任务行。写法：- [ ] 标题 #标签 ⏰09-21 14:30 :: 40% +1w",
+          text: "无法识别任务行，格式示例：- [ ] 标题 #标签 ⏰09-21 14:30 :: 40%",
         }),
       );
       return;
@@ -384,13 +339,13 @@ function build(): Drawer {
       ]),
     );
 
-    const facts = el("div", { class: "mdp-2" }, [
-      ...draft.tags.map((tag) => el("span", { class: "tag", text: tag })),
-      el("span", { class: "mdp-fact", text: draft.due ? `⏰ ${draft.due}` : "无截止" }),
-      el("span", { class: "mdp-fact", text: `进度 ${draft.progress}%` }),
-    ]);
-    if (draft.repeat) facts.append(el("span", { class: "mdp-fact", text: draft.repeat }));
-    mdPreview.append(facts);
+    mdPreview.append(
+      el("div", { class: "mdp-2" }, [
+        ...draft.tags.map((tag) => el("span", { class: "tag", text: tag })),
+        el("span", { class: "mdp-fact", text: draft.due ? `⏰ ${draft.due}` : "无截止" }),
+        el("span", { class: "mdp-fact", text: `进度 ${draft.progress}%` }),
+      ]),
+    );
   };
 
   markdown.addEventListener("input", renderMdPreview);
@@ -412,7 +367,6 @@ function build(): Drawer {
     current.title = draft.title;
     current.tags = draft.tags;
     current.progress = draft.progress;
-    current.repeat = draft.repeat;
     // start 不在方言里（md 只带一个截止日）。一律填今天会把跨天任务的起点抹平，
     // 所以起点、以及没写截止时的终点都照旧不动
     if (draft.due) {
@@ -431,88 +385,47 @@ function build(): Drawer {
 
   const markdownBlock = el("details", { class: "md-d" }, [
     el("summary", { text: "Markdown 源（规范数据源）" }),
-    el("div", { class: "md-note dim", text: "改这里不会立刻改任务 —— 点「按 md 更新任务」才写入；状态不进 md，写回时保留。" }),
+    el("div", {
+      class: "md-note dim",
+      text: "修改后不会立即写入任务，需点击「按 md 更新任务」；状态不参与 md，写回时保留原值。",
+    }),
     mdPreview,
     markdown,
     el("div", { class: "md-actions" }, [mdApply, mdReset]),
   ]);
 
+  // 两个分区：上面「这条任务是什么」，下面「它经历过什么」。以前它们是平铺的
+  // 两串字段与记录，中间没有任何边界。
   const body = el("div", { class: "dr-b" }, [
-    el("div", { class: "dr-sec" }, [
-      el("div", { class: "lbl" }, [
-        el("span", { text: "进度" }),
-        el("span", { class: "grow" }),
-        progressText,
+    el("section", { class: "dr-sec dr-def" }, [
+      el("div", { class: "sec-h" }, [
+        el("span", { class: "sec-t", text: "任务定义" }),
+        el("span", { class: "dim", text: "这条任务是什么" }),
       ]),
-      progressRange,
+      form.root,
     ]),
-    el("div", { class: "dr-sec" }, [
-      el("div", { class: "lbl", text: "快捷变更" }),
-      el("div", { class: "kvrow" }, [
-        el("span", { class: "k", text: "状态" }),
-        el("span", { class: "v" }, [statusPick.root]),
-      ]),
-      el("div", { class: "kvrow" }, [
-        el("span", { class: "k", text: "优先级" }),
-        el("span", { class: "v" }, [urgencyPick.root]),
-      ]),
-      el("div", { class: "kvrow" }, [
-        el("span", { class: "k", text: "循环" }),
-        el("span", { class: "v" }, [repeat]),
-      ]),
-      quick,
-    ]),
-    el("div", { class: "dr-sec" }, [
-      el("div", { class: "lbl" }, [
-        el("span", { text: "活动时间线" }),
+    el("section", { class: "dr-sec dr-tl" }, [
+      el("div", { class: "sec-h" }, [
+        el("span", { class: "sec-t", text: "活动时间线" }),
+        el("span", { class: "dim", text: "这条任务经历过什么" }),
         el("span", { class: "grow" }),
         timelineCount,
       ]),
       timeline,
       el("div", { class: "tl-compose" }, [composer, send]),
     ]),
-    el("div", { class: "dr-sec" }, [markdownBlock]),
+    el("section", { class: "dr-sec" }, [markdownBlock]),
   ]);
 
-  const remove = el("button", { class: "btn danger", text: "删除" });
-  remove.addEventListener("click", async () => {
-    if (!current) return;
-    const task = current;
-    // 删除（含二次确认）和任务页右键共用 shared.removeTask ——
-    // 同一个动作在两处不该有不同的措辞和确认条件
-    if (!(await removeTask(task))) return;
-    closeTask();
-  });
-
-  const save = el("button", { class: "btn primary", text: "保存" });
-  save.addEventListener("click", () => {
-    if (!current) return;
-    const name = current.title;
-    // 收不收起由设置决定：连着整理好几条任务时，每改一条就被弹回表格挺烦的
-    const closing = shouldCloseOnSave();
-    if (closing) closeTask();
-    dataChanged();
-    toast(closing ? `已保存「${name}」· 抽屉已自动收起` : `已保存「${name}」· 抽屉留在这里`);
-  });
-
-  const root = el("aside", { class: "drawer", id: "task-drawer" }, [
-    head,
-    body,
-    el("div", { class: "dr-f" }, [remove, save]),
-  ]);
+  // 没有页脚：删除与保存都撤了（见文件头注释）
+  const root = el("aside", { class: "drawer", id: "task-drawer" }, [head, body]);
 
   return {
     root,
     badge,
-    title,
-    tags,
-    due,
+    name,
     created,
-    progressText,
-    progressRange,
-    statusPick,
-    urgencyPick,
-    repeat,
+    form,
     timeline,
     timelineCount,
     composer,
@@ -531,14 +444,15 @@ export function openTask(taskId: string): void {
   }
 
   if (!drawer) {
-    drawer = build();
+    drawer = build(task);
     document.body.append(drawer.root);
   }
 
   current = task;
   paint(task);
   drawer.root.classList.add("open");
-  // 新任务的活动时间线在下面、MD 源更下面，滚回顶部才看得到标题和进度
+  panelOpened("task");
+  // 新任务的时间线在下面，滚回顶部才看得到标题与进度
   drawer.root.querySelector<HTMLElement>(".dr-b")?.scrollTo({ top: 0 });
 
   for (const listener of openListeners) listener(task);
@@ -548,14 +462,18 @@ export function closeTask(): void {
   if (!drawer) return;
   drawer.root.classList.remove("open");
   current = null;
+  panelClosed("task");
   for (const listener of openListeners) listener(null);
 }
+
+/** 同一个任务再双击一次就收起 —— 见 tasks.ts 的 dblclick。 */
+export const isTaskOpen = (taskId: string): boolean =>
+  current?.id === taskId && drawer?.root.classList.contains("open") === true;
 
 export const openedTask = (): Task | null => current;
 
 // 别处改了数据（右键菜单里的标记完成、管理页的批量操作、逾期自动标记），
-// 抽屉里显示的状态徽标、进度、循环也得跟着变 ——
-// 否则抽屉一打开就是一张过期快照，改完还得关掉重开才看得见
+// 抽屉里的徽标、字段、时间线也得跟着变 —— 否则抽屉一打开就是一张过期快照
 onDataChange(() => {
   if (current && drawer?.root.classList.contains("open")) paint(current);
 });
@@ -564,4 +482,20 @@ onDataChange(() => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || !current) return;
   closeTask();
+});
+
+// 与设置抽屉互斥：右侧只有一块地方（shell/panels.ts）
+registerPanel("task", closeTask);
+
+/**
+ * 切页就收起。
+ *
+ * 抽屉里的字段与时间线讲的都是「这一页的这条任务」，翻到别的模块还挂着它，
+ * 看上去就像是新页面里长出来的一层，也说不清它属于谁。
+ *
+ * 顺序上安全：从图谱双击节点走的是 focus.jumpToTask，它先 goPage 再 openTask，
+ * 于是这里先收掉旧抽屉，随后新页面把新的打开。
+ */
+subscribePages(() => {
+  if (current) closeTask();
 });

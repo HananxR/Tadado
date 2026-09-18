@@ -1,27 +1,33 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// 页面共用的展示换算：状态文案、日期算数、时间排序键。
+// 页面共用的展示换算：状态文案、日期算数、活动时刻的显示。
 //
 // 放在这里的判断标准是「两个以上页面要用」，只有一个页面用到的留在那个页面里。
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { TASKS } from "../data/mock";
 import { dataChanged } from "../data/store";
-import type { TimelineRange } from "../data/timeline";
-import type { Task, TaskStatus } from "../data/types";
+import type { Task, TaskStatus, Urgency } from "../data/types";
 import { confirmAction } from "../shell/confirm";
+import { el } from "../shell/dom";
 import { toast } from "../shell/toast";
 
 // 时间基准住在 data/time.ts（data/markdown.ts 也要用，数据层不该反向依赖页面层），
 // 这里取进来再原样转出，各页面继续从 shared 拿，import 一行都不用改。
 // 只把本文件自己要用的取进作用域，其余纯转发（都 import 进来会触发 unused 报错）
-import { DAY_MS, TODAY, dayNumber } from "../data/time";
+import { nowStamp } from "../data/time";
 
 export {
   DAY_MS,
   TODAY,
   dayNumber,
+  dayOfStamp,
   isWeekend,
+  isoDay,
+  minuteOfStamp,
   monthDayText,
+  nowMinutes,
+  nowStamp,
+  stampText,
   todayMonthDay,
   weekdayOf,
 } from "../data/time";
@@ -33,71 +39,87 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   done: "已完成",
 };
 
+/**
+ * 改任务状态 —— 全应用只有这一条路径。
+ *
+ * 以前四个入口各自改 `task.status`（总览勾选框、任务页右键菜单、管理页批量、抽屉
+ * 里的状态按钮），**没有一处写活动记录**。后果是：勾了「完成」，近期活动里没有这一
+ * 条；「本周完成」也数不到它 —— 完成时间只能退化为结束日，于是「刚完成的这个任务
+ * 结束日在上周」就被漏掉。用户做了事，页面上像没发生过。
+ *
+ * 留痕不只是为了统计：活动时间是这条任务唯一的「什么时候发生的」证据，写下来的
+ * 才是历史，没写下来就只能靠日期字段去猜。
+ */
+export function setTaskStatus(task: Task, status: TaskStatus): void {
+  if (task.status === status) return;
+  const from = task.status;
+  task.status = status;
+  // 已完成就是 100%：留个 30% 的「已完成」在列表上自相矛盾
+  if (status === "done") task.progress = 100;
+  task.activities.unshift({
+    at: nowStamp(),
+    kind: "status",
+    from,
+    to: status,
+    text: `${STATUS_LABEL[from]} → ${STATUS_LABEL[status]}`,
+  });
+  dataChanged();
+}
+
 export const URGENCY_LABEL = ["紧急", "重要", "关注", "普通"];
+
+// ─── 一屏多少条 ──────────────────────────────────────────────────────────────
+// **不进设置**：每页几条是「这一屏放得下多少」，不是用户偏好；入口就在各表的
+// 分页器上。要调默认值 / 档位就在这里改。
+
+/** 每页几条的可选档位 —— 四张表（管理页表格 / 任务页时间轴 / 活动报告 /
+ *  总览近期活动）共用这一组，所以每页条数在哪儿都是同一套数。 */
+export const PAGE_SIZES = [20, 30, 50, 100];
+
+/**
+ * 各表的默认每页：都是 20（档位里的第一档）。
+ *
+ * 分开四个常量不是为了让它们各不相同，而是**想单独调某一张表时不必改全局** ——
+ * 比如时间轴一列一天、一屏放 30 行也不挤，那就只把 TASK_PAGE_SIZE 改成 30。
+ */
+export const PAGE_SIZE = 20; // 管理页表格
+export const TASK_PAGE_SIZE = 20; // 任务页时间轴
+export const REPORT_PAGE_SIZE = 20; // 活动分析报告
+export const FEED_PAGE_SIZE = 20; // 总览近期活动
+
+/** 总览焦点时间轴（甘特档）最多画几条 —— 它没有分页，是上限。 */
+export const GANTT_LIMIT = 20;
+
+/** 优先级配色。四档从「紧急」到「普通」，和总览的优先级分布同一套色。 */
+export const URGENCY_COLORS = [
+  "var(--danger)",
+  "var(--doing)",
+  "var(--todo)",
+  "var(--text-3)",
+];
+
+/**
+ * 优先级徽标（P0–P3 + 四档色）。
+ *
+ * 列表上原来只有那个 8px 圆点，而它是**状态色**（待办蓝 / 进行中橙 / 已完成绿 /
+ * 逾期红）—— 优先级在列表上根本没有画出来。用户看到的「优先级圆点」其实是状态，
+ * 自然分不出谁更急。现在优先级有自己的徽标，编辑界面里用同一套，两处一眼对得上。
+ */
+export function urgencyBadge(urgency: Urgency): HTMLElement {
+  const node = el("span", {
+    class: `urg u${urgency}`,
+    title: `优先级：${URGENCY_LABEL[urgency]}`,
+  });
+  node.textContent = `P${urgency}`;
+  return node;
+}
 
 /** 状态色变量名。逾期没有 `--overdue`，原型统一借 `--danger`。 */
 export const statusVar = (status: TaskStatus): string =>
   status === "overdue" ? "var(--danger)" : `var(--${status})`;
 
+/** 列表行上的截止文案用得上，与时间基准同一个来源。 */
 export { pad2 } from "../data/time";
-
-/**
- * 活动时间的排序键。
- *
- * 原型直接拿「今天 08:40」「昨天 17:20」「09-11 09:30」这些展示串做字符串比较，
- * 结果是「昨天」排在「今天」前面（昨 U+6628 > 今 U+4ECA）—— 而卡片标题写着
- * 「按时间倒序」。这里换成按真实时刻排序：相对词先落回具体日期，再乘上天内的
- * 分钟数。展示串本身不变。
- */
-export function activitySortKey(at: string, relativeDays: Record<string, number>): number {
-  const relative = /^(今天|昨天)\s+(\d{2}):(\d{2})$/.exec(at);
-  if (relative) {
-    const day = relativeDays[relative[1]];
-    if (day !== undefined) {
-      return day * 1440 + Number(relative[2]) * 60 + Number(relative[3]);
-    }
-  }
-
-  const absolute = /^(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?$/.exec(at);
-  if (absolute) {
-    const day = dayNumber([Number(absolute[1]), Number(absolute[2])]);
-    return day * 1440 + Number(absolute[3] ?? 0) * 60 + Number(absolute[4] ?? 0);
-  }
-
-  return 0;
-}
-
-/** 相对日期词到天数的映射，供上面的排序使用。 */
-export const RELATIVE_DAYS: Record<string, number> = {
-  今天: TODAY,
-  昨天: TODAY - 1,
-};
-
-/**
- * 任务页时间轴的**最小**日期窗口：三档都是以今天为锚点的相对窗口。
- *
- * 注意它是「下限」不是最终窗口：任务页会把数据自身的跨度并进来再向右展开
- * （见 tasks.ts 的 windowFor）。以前这里就是最终窗口，于是「本周」只有 7 列，
- * 而数据是跨月排的 —— 后半截任务整条消失，右边还留着一大片没有任务的空格。
- */
-export function timelineWindow(range: TimelineRange): { start: number; days: number } {
-  const today = new Date(TODAY * DAY_MS);
-
-  if (range === "month") {
-    const year = today.getUTCFullYear();
-    const month = today.getUTCMonth();
-    const start = Date.UTC(year, month, 1) / DAY_MS;
-    // Date.UTC(y, m+1, 0) 就是当月最后一天，闰年和 30/31 天都不用自己判
-    const days = Date.UTC(year, month + 1, 0) / DAY_MS - start + 1;
-    return { start, days };
-  }
-
-  if (range === "30d") return { start: TODAY - 29, days: 30 };
-
-  // 本周从周一开头。getUTCDay 里周日是 0，先换算成「周一 = 0」再回退。
-  const offset = today.getUTCDay();
-  return { start: TODAY - ((offset + 6) % 7), days: 7 };
-}
 
 /**
  * 删除一条任务（含二次确认），返回是否真的删了。

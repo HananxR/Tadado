@@ -75,12 +75,13 @@
   --disp: "Segoe UI Semibold", "Segoe UI", "Microsoft YaHei UI", sans-serif;
   --mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
 
-  /* ── 活动热力图色阶（默认 warm，见下方 [data-scheme]）── */
-  --h0: #ece9df;
-  --h1: #f2d7a7;
-  --h2: #e8b96a;
-  --h3: #d99a3d;
-  --h4: #c47a26;
+  /* ── 活动热力图色阶。这里是「JS 还没跑」时的兜底值，必须和默认方案
+        [data-scheme="indigo"] 一致，否则首帧会闪一下旧配色 ── */
+  --h0: #e5e8f1;
+  --h1: #b0bbf1;
+  --h2: #7b88e8;
+  --h3: #4b55d0;
+  --h4: #2b2f9c;
 }
 
 /* ============ 深色 ============ */
@@ -110,11 +111,11 @@
   --hover: rgba(123, 131, 232, 0.12);
   --shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-drawer: -14px 0 44px -16px rgba(0, 0, 0, 0.6);
-  --h0: #2a2a25;
-  --h1: #5c4a2c;
-  --h2: #8a6a35;
-  --h3: #b58a45;
-  --h4: #d9a55a;
+  --h0: #2c3247;
+  --h1: #39448a;
+  --h2: #4f5cc4;
+  --h3: #8b96f0;
+  --h4: #ccd2ff;
 }
 
 /* 跟随系统：浅色就是上面的默认值，只有系统为深色时才需要覆盖 */
@@ -146,15 +147,25 @@
     --shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.5),
       0 2px 8px rgba(0, 0, 0, 0.3);
     --shadow-drawer: -14px 0 44px -16px rgba(0, 0, 0, 0.6);
-    --h0: #2a2a25;
-    --h1: #5c4a2c;
-    --h2: #8a6a35;
-    --h3: #b58a45;
-    --h4: #d9a55a;
+    --h0: #2c3247;
+    --h1: #39448a;
+    --h2: #4f5cc4;
+    --h3: #8b96f0;
+    --h4: #ccd2ff;
   }
 }
 
 /* ============ 热力图配色方案 ============ */
+/* 默认那套要保证「深浅两版都看得出档位」：
+   浅色底上 h0 只是比卡片底色冷一点，往上是逐档压暗的靛蓝；
+   深色底上反过来，越深色越亮 —— 背景是暗的，靠变暗表达「更多」是不成立的。 */
+[data-scheme="indigo"] {
+  --h0: #e5e8f1;
+  --h1: #b0bbf1;
+  --h2: #7b88e8;
+  --h3: #4b55d0;
+  --h4: #2b2f9c;
+}
 [data-scheme="warm"] {
   --h0: #ece9df;
   --h1: #f2d7a7;
@@ -185,6 +196,14 @@
 }
 
 /* 深色下的色阶需要整体压暗，否则热力图会亮得刺眼 */
+:root[data-theme="dark"] [data-scheme="indigo"],
+:root[data-theme="dark"][data-scheme="indigo"] {
+  --h0: #2c3247;
+  --h1: #39448a;
+  --h2: #4f5cc4;
+  --h3: #8b96f0;
+  --h4: #ccd2ff;
+}
 :root[data-theme="dark"] [data-scheme="warm"],
 :root[data-theme="dark"][data-scheme="warm"] {
   --h0: #2a2a25;
@@ -219,6 +238,13 @@
 }
 
 @media (prefers-color-scheme: dark) {
+  :root[data-theme="sys"] [data-scheme="indigo"] {
+    --h0: #2c3247;
+    --h1: #39448a;
+    --h2: #4f5cc4;
+    --h3: #8b96f0;
+    --h4: #ccd2ff;
+  }
   :root[data-theme="sys"] [data-scheme="warm"] {
     --h0: #2a2a25;
     --h1: #5c4a2c;

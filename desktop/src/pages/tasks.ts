@@ -19,31 +19,39 @@ import { activePartitionId } from "../data/partitions";
 import { dataChanged, onDataChange } from "../data/store";
 import {
   TIMELINE_RANGES,
-  onTimelineRangeChange,
   setTimelineRange,
   timelineRange,
-  type TimelineRange,
+  timelineWindow,
 } from "../data/timeline";
-import type { Task } from "../data/types";
+import type { Task, Urgency } from "../data/types";
 import { el } from "../shell/dom";
 import { dropDraft, loadDraft, saveDraft } from "../shell/draft";
 import { dropdown } from "../shell/menu";
 import { subscribePages } from "../shell/router";
 import { seg } from "../shell/seg";
 import { toast } from "../shell/toast";
-import { consumeTasksRequest, type StatusFilter } from "./focus";
+import {
+  consumeTasksRequest,
+  type StatusFilter,
+  type UrgencyFilter,
+} from "./focus";
 import {
   DAY_MS,
   STATUS_LABEL,
+  TASK_PAGE_SIZE,
   TODAY,
+  URGENCY_LABEL,
   dayNumber,
   monthDayText,
+  nowStamp,
   removeTask,
+  setTaskStatus,
   statusVar,
-  timelineWindow,
-  todayMonthDay,
+  urgencyBadge,
 } from "./shared";
-import { onTaskOpen, openTask } from "./taskDrawer";
+import { pager } from "./pager";
+import { closeTask, isTaskOpen, onTaskOpen, openTask } from "./taskDrawer";
+import { draftTask, taskForm } from "./taskForm";
 
 /** 时间轴的日期窗口：起点天数 + 列数。 */
 type TimelineWin = ReturnType<typeof timelineWindow>;
@@ -57,9 +65,6 @@ const COL_MAX = 34;
 
 /** 竖向滚动条的宽度余量。不留的话铺满之后右边会溢出第二条滚动条。 */
 const SCROLL_GUTTER = 16;
-
-/** 窗口左右各留的白边天数。0 会让首尾两条色条贴着表格边界。 */
-const WIN_PAD = 2;
 
 const SORTS = [
   { value: "due", label: "按截止日期" },
@@ -80,41 +85,36 @@ const FILTERS: { value: StatusFilter; label: string }[] = [
 const SEARCH_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>';
 
-const PLUS_ICON =
-  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
-
 const WEEKDAY_SHORT = ["日", "一", "二", "三", "四", "五", "六"];
 
 // ─── 日期窗口与列宽 ──────────────────────────────────────────────────────────
-
-/**
- * 真正拿来画表的窗口 = 粒度给的最小窗口 ∪ 数据自身的跨度 ∪ 今天。
- *
- * 只按粒度算（以前就是这样）有两个后果：跨出窗口的任务整条消失 —— 数据里写着
- * 09-25 的任务在「本周」这一档里根本看不见；而窗口里没有任务的那一段，会变成
- * 一大片空白列铺到表格右端。所以粒度现在只当作「最少要看多宽」的下限，
- * 列数跟着数据的起止走。
- */
-function windowFor(range: TimelineRange, tasks: Task[]): TimelineWin {
-  const base = timelineWindow(range);
-  let start = base.start;
-  let end = base.start + base.days - 1;
-
-  if (tasks.length > 0) {
-    start = Math.min(start, ...tasks.map((task) => dayNumber(task.start)));
-    end = Math.max(end, ...tasks.map((task) => dayNumber(task.end)));
-  }
-
-  // 今天必须在窗口里：它是唯一一个「没有任务也要能对着看」的日期
-  start = Math.min(start, TODAY) - WIN_PAD;
-  end = Math.max(end, TODAY) + WIN_PAD;
-  return { start, days: end - start + 1 };
-}
 
 /** 列宽 = 可用宽度按天数平分后再夹到区间里 —— 表格因此永远铺满右侧。 */
 function columnWidth(days: number, available: number): number {
   const room = Math.max(available - SCROLL_GUTTER - LABEL_W, COL_MIN * days);
   return Math.min(COL_MAX, Math.max(COL_MIN, room / days));
+}
+
+/**
+ * 把窗口撑到**刚好装下这批任务**。
+ *
+ * 档位说的是「我想看多长一段时间」，不是「允许悄悄漏掉几条」。以前反过来 ——
+ * 先按档位算出窗口，再拿窗口去过滤任务：总览写着「逾期 4」，点进来只看见 3 条，
+ * 第 4 条的起止落在窗口外。它没丢，只是没被画出来，而用户只能认为那个数字是假的。
+ *
+ * 所以顺序调过来：先有筛选结果，再让窗口去迁就它。窗口因此可能比档位宽 ——
+ * 表头一直写着真实区间，不会让人误以为自己还在看「本周」。
+ */
+function fitWindow(base: TimelineWin, tasks: Task[]): TimelineWin {
+  if (tasks.length === 0) return base;
+
+  let from = base.start;
+  let to = base.start + base.days - 1;
+  for (const task of tasks) {
+    from = Math.min(from, dayNumber(task.start));
+    to = Math.max(to, dayNumber(task.end));
+  }
+  return { start: from, days: to - from + 1 };
 }
 
 // ─── 右键菜单 ────────────────────────────────────────────────────────────────
@@ -146,9 +146,7 @@ function openCtxMenu(task: Task, x: number, y: number): void {
   const menu = el("div", { class: "ctx-menu" }, [
     item("打开维护抽屉", () => openTask(task.id)),
     item(done ? "标记为待办" : "标记完成", () => {
-      task.status = done ? "todo" : "done";
-      if (!done) task.progress = 100;
-      dataChanged();
+      setTaskStatus(task, done ? "todo" : "done");
       toast(`「${task.title}」${done ? "已回到待办" : "已标记完成"}`);
     }),
     item("删除任务", () => void removeTask(task), true),
@@ -192,7 +190,7 @@ function openBatchCreate(): void {
 
   const preview = el("div", { class: "modal-detail", text: "将创建 0 条" });
   // 粘了十行再手滑点到遮罩就白干了 —— 对话框关掉不等于放弃，字还在这儿
-  const keptNote = el("span", { class: "draft-t", text: "上次没提交的内容还在" });
+  const keptNote = el("span", { class: "draft-t", text: "上次未提交的内容已保留" });
   const restored = el("div", { class: "draft-bar", style: "display:none" });
   const keptDrop = el("button", { class: "btn sm", type: "button", text: "丢弃草稿" });
   restored.append(keptNote, el("span", { class: "grow" }), keptDrop);
@@ -203,7 +201,11 @@ function openBatchCreate(): void {
     el("div", { class: "modal-title", text: "批量新建" }),
     el("div", {
       class: "modal-detail",
-      text: "一行一条任务，可带 #标签 ⏰截止 :: 进度% +1w；空行和认不出的行会跳过。",
+      // 原来这里还写着 `+1w`（循环）—— 那个字段早已删除（见 data/markdown.ts
+      // 顶部），提示里留着它就是让人照着一个不存在的语法写
+      text:
+        "一行一条任务，可带 #标签 ⏰截止 :: 进度%；任务下面缩进的行会记进它的活动时间线。" +
+        "空行与无法识别的行会跳过。",
     }),
     area,
     restored,
@@ -296,20 +298,38 @@ function openBatchCreate(): void {
 // ─── 页面状态 ────────────────────────────────────────────────────────────────
 
 let statusFilter: StatusFilter = "all";
+/** 优先级筛选。总览的「优先级分布」点某一档时由 focus 请求带过来。 */
+let urgencyFilter: UrgencyFilter = "all";
+/** 时间轴表格翻到第几页（0 起）。换筛选 / 排序 / 档位都回到第一页。 */
+let page = 0;
+/** 当前每页几条。分页器上那个下拉改它。 */
+let taskPageSize = TASK_PAGE_SIZE;
 let query = "";
 let sortKey: SortKey = "due";
 let selectedId: string | null = null;
 
 // ─── 筛选与排序 ──────────────────────────────────────────────────────────────
 
-function visibleTasks(): Task[] {
+/**
+ * 除**状态**以外的筛选（优先级 + 搜索）。
+ *
+ * 单独抽出来是为了 chips 上的数字：那个数必须等于「点这个 chip 之后表里会有几行」，
+ * 所以它要带上优先级和搜索词，唯独不带状态本身 —— 否则点「逾期」前后的数字会互相打架。
+ */
+function poolTasks(): Task[] {
   const needle = query.trim().toLowerCase();
 
-  const rows = activeTasks().filter((task) => {
-    if (statusFilter !== "all" && task.status !== statusFilter) return false;
+  return activeTasks().filter((task) => {
+    if (urgencyFilter !== "all" && task.urgency !== urgencyFilter) return false;
     if (!needle) return true;
     return [task.title, ...task.tags].join(" ").toLowerCase().includes(needle);
   });
+}
+
+function visibleTasks(): Task[] {
+  const rows = poolTasks().filter(
+    (task) => statusFilter === "all" || task.status === statusFilter,
+  );
 
   const endDay = (task: Task): number => dayNumber(task.end);
 
@@ -359,7 +379,7 @@ function showTip(task: Task, x: number, y: number): void {
     }),
     el("div", {
       class: "mono dim",
-      text: `${task.tags.join(" ") || "无标签"}${task.repeat ? ` · ${task.repeat}` : ""}`,
+      text: `${task.tags.join(" ") || "无标签"} · ${URGENCY_LABEL[task.urgency]}`,
     }),
     el("div", {
       class: "mono dim",
@@ -384,12 +404,21 @@ function renderRow(task: Task, win: TimelineWin, colW: number): HTMLElement {
   const label = el("div", { class: "tt-label" }, [
     dot,
     el("div", { class: "lt" }, [
-      el("div", { class: "lt1", text: task.title }),
-      el("div", { class: "lt2" }, [
-        ...task.tags.map((tag) => el("span", { class: "tag", text: tag })),
+      // 标题与截止同行：截止靠右。标签以前和它挤在同一行，三个标签就会被
+      // overflow:hidden 静默裁掉 —— 数据在，只是看不见
+      el("div", { class: "lt1" }, [
+        el("span", { class: "t", text: task.title }),
         el("span", { class: "dlt", text: task.due ? `⏰ ${task.due}` : "无截止" }),
       ]),
+      el(
+        "div",
+        { class: "lt2" },
+        task.tags.map((tag) => el("span", { class: "tag", text: tag })),
+      ),
     ]),
+    // 优先级徽标钉在任务列右端。左边那个圆点是**状态**色，这里才是优先级 ——
+    // 两件事分开摆，不用去猜颜色
+    urgencyBadge(task.urgency),
   ]);
 
   // 起止跨出窗口时要夹到边界：一个跨月任务在「本周」里应该是一条顶住两边的
@@ -440,7 +469,11 @@ function renderRow(task: Task, win: TimelineWin, colW: number): HTMLElement {
   });
 
   // 双击才是「打开」，单击留给选中 —— 表格里误触打开抽屉，回来还得重新找那一行。
-  row.addEventListener("dblclick", () => openTask(task.id));
+  // 同一条上再双击一次就收起：双击是唯一的打开手势，没有反手势就只能去够右上角。
+  row.addEventListener("dblclick", () => {
+    if (isTaskOpen(task.id)) closeTask();
+    else openTask(task.id);
+  });
   // 右键给处置菜单，并把当前选中带过去：菜单里删除的那一项就该作用在
   // 右键点的这一行上，而不是上一次点选的那行。
   row.addEventListener("contextmenu", (event) => {
@@ -470,6 +503,111 @@ function scrollToSelected(): void {
     ?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
+// ─── 新建任务 ────────────────────────────────────────────────────────────────
+
+/**
+ * 新建任务对话框。
+ *
+ * 为什么不沿用原来那个「快速新建」输入框：它只能填名称和标签，建出来的任务状态
+ * 永远是待办、优先级永远是普通、没有起止时间，建完还得再开抽屉补一遍 —— 用户的
+ * 原话就是「均需要二次编辑进行才能实现」。这里打开的是一张完整表单
+ * （pages/taskForm.ts），和抽屉里编辑同一条任务用的是同一套字段与控件。
+ *
+ * 提交时才入库：填一半就关掉，不该在列表里留下一条没名字的任务。
+ */
+function openCreateTask(): void {
+  const draft = draftTask();
+  // 建在当前分区下 —— 切了分区再建，它出现在别的分区里会像凭空消失
+  draft.partition = activePartitionId();
+
+  const form = taskForm({
+    task: draft,
+    // 对话框里每次改动都不落库：草稿还没进 TASKS，提交时才写
+    onEdit: () => {},
+  });
+
+  const cancelBtn = el("button", { class: "btn", type: "button", text: "取消" });
+  const createBtn = el("button", { class: "btn primary", type: "button", text: "创建" });
+
+  const card = el("div", { class: "modal-card wide" }, [
+    el("div", { class: "modal-title", text: "新建任务" }),
+    el("div", {
+      class: "modal-detail",
+      text: "创建后可在维护抽屉中继续修改。",
+    }),
+    form.root,
+    el("div", { class: "modal-actions" }, [cancelBtn, createBtn]),
+  ]);
+  const mask = el("div", { class: "mask" }, [card]);
+
+  function close(): void {
+    mask.classList.remove("show");
+    window.removeEventListener("keydown", onKey, true);
+    window.setTimeout(() => mask.remove(), 180);
+  }
+
+  function onKey(event: KeyboardEvent): void {
+    if (event.key !== "Escape") return;
+    // 抽屉也用 Esc，别一次关两层
+    event.stopPropagation();
+    close();
+  }
+
+  cancelBtn.addEventListener("click", close);
+  mask.addEventListener("click", (event) => {
+    if (event.target === mask) close();
+  });
+
+  createBtn.addEventListener("click", () => {
+    const title = draft.title.trim();
+
+    // 必填三项：任务名 / 标签 / 结束时间。缺任何一个都不落库 —— 尤其是标签：
+    // 以前这里有个兜底，没写标签就偷偷塞一个 `#工作`，用户看到的是「我明明写了
+    // 好几个标签，怎么变成一个了」。宁可在这一步拦住并说清缺什么。
+    const missing: string[] = [];
+    if (!title) missing.push("任务名");
+    if (draft.tags.length === 0) missing.push("标签");
+    if (!draft.due) missing.push("结束时间");
+
+    if (missing.length > 0) {
+      toast(`还差：${missing.join(" / ")}`);
+      const target = !title
+        ? form.root.querySelector<HTMLInputElement>(".dr-title")
+        : draft.tags.length === 0
+          ? form.root.querySelector<HTMLInputElement>(".dr-tags")
+          : form.root.querySelector<HTMLInputElement>(".dt:has(.dt-time) .dt-date");
+      target?.focus();
+      return;
+    }
+
+    const id = `task-${Date.now()}`;
+    TASKS.unshift({
+      ...draft,
+      id,
+      title,
+      activities: [{ at: nowStamp(), text: "创建任务", kind: "create" }],
+    });
+
+    // 新任务可能落在当前筛选 / 搜索词 / 档位之外，先复位再定位，否则建完就消失
+    statusFilter = "all";
+    query = "";
+    selectedId = id;
+    dataChanged();
+    close();
+    toast(`已新建「${title}」`);
+  });
+
+  document.body.append(mask);
+  requestAnimationFrame(() => {
+    mask.classList.add("show");
+    form.root.querySelector<HTMLInputElement>(".dr-title")?.focus();
+  });
+  window.addEventListener("keydown", onKey, true);
+}
+
+/** 页头主按钮（registry 里配的 action）—— 任务页唯一的「新建」入口。 */
+export const onAction = (): void => openCreateTask();
+
 // ─── 页面 ────────────────────────────────────────────────────────────────────
 
 export function mount(host: HTMLElement): void {
@@ -477,105 +615,14 @@ export function mount(host: HTMLElement): void {
   search.value = query;
   search.addEventListener("input", () => {
     query = search.value;
+    page = 0;
     render();
   });
 
-  // 快速新建。它以前住在总览页 —— 那里没有任何「按天 × 任务」的追踪手段，
-  // 任务建完就沉到列表底部看不见了；这里是时间轴，建完立刻出现在今天那一列上，
-  // 能接着往下追。
-  const quick = el("input", {
-    class: "qc-input",
-    placeholder: "快速新建：任务名 #标签（回车创建）",
-  });
-
-  // ── 草稿条 ──
-  //
-  // 没提交的字不算数据，写在这儿纯粹是为了「打了一半被打断」这种事：
-  // 领导喊一声、窗口被临时 Fast Report 顶掉，回来输入框空空如也。
-  // 所以它跟着 kv 走而不是内存 —— 重启也还在，而且显式说清楚「玩意还在那」。
-  const draftBar = el("div", { class: "draft-bar", style: "display:none" });
-  const draftText = el("span", { class: "draft-t" });
-  const draftDrop = el("button", { class: "btn sm", type: "button", text: "丢弃" });
-  draftBar.append(draftText, el("span", { class: "grow" }), draftDrop);
-
-  const showDraftBar = (text: string): void => {
-    const value = text.trim();
-    if (!value) {
-      draftBar.style.display = "none";
-      return;
-    }
-    // 只露个开头：一行长任务会把工具条撑歪
-    const brief = value.replace(/\s+/g, " ").slice(0, 40);
-    draftText.textContent = `草稿已自动保留：「${brief}${brief.length === 40 ? "…" : ""}」· 关掉窗口也不会丢`;
-    draftBar.style.display = "flex";
-  };
-
-  draftDrop.addEventListener("click", () => {
-    quick.value = "";
-    showDraftBar("");
-    void dropDraft("quick");
-  });
-
-  quick.addEventListener("input", () => {
-    saveDraft("quick", quick.value);
-    showDraftBar(quick.value);
-  });
-
-  void loadDraft("quick").then((text) => {
-    showDraftBar(text);
-    if (!text.trim() || quick.value) return;
-    quick.value = text;
-  });
-  const runQuick = (): void => {
-    const raw = quick.value.trim();
-    if (!raw) return;
-
-    const tags = [...raw.matchAll(/#\S+/g)].map((match) => match[0]);
-    const title = raw.replace(/#\S+/g, "").trim();
-    // 不允许无名任务：只剩标签的任务在时间轴上没有名字可认，一旦得到
-    // 「未命名任务」这种东西，回头只能靠抽屉里的 id 去猜它是谁。宁可在这一步拦下。
-    if (!title) {
-      toast("先写个任务名 —— 只有标签的任务没法在时间轴上认出来");
-      return;
-    }
-
-    const today = todayMonthDay();
-    const id = `quick-${Date.now()}`;
-    TASKS.unshift({
-      id,
-      title,
-      status: "todo",
-      tags: tags.length > 0 ? tags : ["#工作"],
-      due: null,
-      at: null,
-      start: today,
-      end: today,
-      progress: 0,
-      urgency: 3,
-      repeat: "",
-      created: today,
-      archived: false,
-      // 建在当前分区下 —— 切了分区再建，它出现在别的分区里会像凭空消失
-      partition: activePartitionId(),
-      related: [],
-      activities: [{ at: "刚刚", text: "创建任务", kind: "create" }],
-    });
-
-    quick.value = "";
-    showDraftBar("");
-    // 已经变成任务了，就不再留草稿 —— 下次开窗口还冒出来一次很吓人
-    void dropDraft("quick");
-    // 新任务可能在当前筛选/搜索词之外，先复位再定位，否则建完就消失
-    statusFilter = "all";
-    query = "";
-    selectedId = id;
-
-    dataChanged();
-    toast(`已新建「${title}」· 在今天的列上`);
-  };
-  quick.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") runQuick();
-  });
+  // 这里原来是「快速新建」——一个只能填名称和标签的输入框，建出来的任务状态
+  // 永远是「待办」、优先级永远是「普通」、没有开始与结束时间，建完必须再开一次
+  // 抽屉补齐。用户的原话是「像任务状态、优先级都无法直接维护，均需要二次编辑」，
+  // 所以它整个撤掉了：新建走页头的「＋ 新建任务」，打开的是和编辑同一套表单。
 
   // 批量新建：一次粘贴多行，走的是同一套 Markdown 方言（data/markdown.ts）。
   // 原版有「多任务创建对话框」，桌面端只有单行快速新建 —— 一次录十条的时候
@@ -591,38 +638,64 @@ export function mount(host: HTMLElement): void {
     value: sortKey,
     onPick: (value) => {
       sortKey = value;
+      page = 0;
       render();
     },
   });
 
-  // 档位由 data/timeline 持有，设置面板里也能改同一个值 ——
-  // 所以这里不自建状态，on/off 交给 setValue（订阅见 mount 末尾）
+  // 档位放在 data/timeline，总览的焦点时间轴共用同一组档位定义。
+  // 这里是唯一能改它的地方（设置里那一份已撤），所以直接改完自己重画，
+  // 不用再经一层事件广播把改动绕回来
   const rangePick = seg(
     TIMELINE_RANGES.map((item) => ({ value: item.value, label: item.label })),
     timelineRange(),
-    (value) => setTimelineRange(value),
+    (value) => {
+      setTimelineRange(value);
+      page = 0;
+      render();
+    },
   );
   rangePick.root.style.flex = "none";
   rangePick.root.style.width = "auto";
 
-  const table = el("div");
+  /**
+   * 优先级筛选。总览的「优先级分布」点某一档时由 focus 请求带过来，
+   * 这里也能自己换 —— 入口只有这一个，和状态那排 chips 并列。
+   */
+  type UrgencyKey = "all" | "0" | "1" | "2" | "3";
+  const urgencyPick = dropdown<UrgencyKey>({
+    items: [
+      { value: "all", label: "全部优先级" },
+      ...URGENCY_LABEL.map((label, level) => ({
+        value: String(level) as UrgencyKey,
+        label: `P${level} ${label}`,
+      })),
+    ],
+    value: "all",
+    onPick: (value) => {
+      urgencyFilter = value === "all" ? "all" : (Number(value) as Urgency);
+      page = 0;
+      render();
+    },
+  });
+
+  // .tt-box：工具行之下的那一块（表格 + 分页器）。它吃掉页面剩余高度，
+  // 表格再吃掉它的（见 pages.css 的一屏到底一节）—— 换掉原来那个
+  // max-height: calc(100vh - 268px) 的写死估算
+  const table = el("div", { class: "tt-box" });
 
   // 工具行和表格包在同一个容器里：直接挂两个子节点给 .page-body，
   // 它的 gap 会和 .tools 自己的 margin-bottom 叠加成 28px。
   host.append(
-    el("div", {}, [
-      draftBar,
+    el("div", { class: "tt-page" }, [
       el("div", { class: "tools" }, [
-        el("span", { class: "searchbox" }, [
-          el("span", { class: "ic", html: PLUS_ICON }),
-          quick,
-        ]),
         el("span", { class: "searchbox" }, [
           el("span", { class: "ic", html: SEARCH_ICON }),
           search,
         ]),
         batchBtn,
         chips,
+        urgencyPick.root,
         el("span", { class: "grow" }),
         count,
         sortPick.root,
@@ -636,40 +709,51 @@ export function mount(host: HTMLElement): void {
     // 输入框里的字可能被别处改过（新建任务会清空 query），搜索框自己不知道
     if (search.value !== query) search.value = query;
 
-    // 先取数据再定窗口：窗口本身要并上数据的跨度，拿 rows 去算就绕成环了
-    const tasks = visibleTasks();
-    const win = windowFor(timelineRange(), tasks);
-    const winEnd = win.start + win.days - 1;
+    // 顺序：先筛，再让窗口去迁就筛出来的这批（见 fitWindow）。
+    // 反过来「先定窗口、再拿窗口砍任务」的结果就是总览写 4、这里只画 3。
+    const matched = visibleTasks();
+    const pageCount = Math.max(1, Math.ceil(matched.length / taskPageSize));
+    if (page >= pageCount) page = pageCount - 1;
 
-    // 正常情况下这个过滤拦不掉任何东西（窗口本来就是按它们算出来的），留着是给
-    // 「窗口被外力改坏」兜底 —— 色条算成负宽度会把相邻几行的节奏整个打乱。
-    const rows = tasks.filter(
-      (task) => dayNumber(task.end) >= win.start && dayNumber(task.start) <= winEnd,
-    );
+    // 翻到**定位的那条所在的页**：抽屉开了、列表里却没有它，看着就像跳转坏了
+    if (selectedId !== null) {
+      const at = matched.findIndex((task) => task.id === selectedId);
+      if (at >= 0) page = Math.floor(at / taskPageSize);
+    }
+
+    const rows = matched.slice(page * taskPageSize, (page + 1) * taskPageSize);
+    const win = fitWindow(timelineWindow(timelineRange()), rows);
+    const winEnd = win.start + win.days - 1;
 
     // 页面隐藏时 clientWidth 量不到（display:none 下是 0），给个够用的兜底值，
     // 切回前台会再 render 一次重算（见 mount 末尾的 subscribePages）
     const colW = columnWidth(win.days, table.clientWidth > 0 ? table.clientWidth : 1080);
 
     // ── chips（数量随数据变）──
+    // 数字按 poolTasks 算（含优先级 / 搜索，不含状态），于是「chip 上写几
+    // 条」＝「点开后表里几行」。以前按 activeTasks 全量算，点进去对不上。
+    const pool = poolTasks();
     chips.replaceChildren();
     for (const filter of FILTERS) {
       const total =
         filter.value === "all"
-          ? activeTasks().length
-          : activeTasks().filter((task) => task.status === filter.value).length;
+          ? pool.length
+          : pool.filter((task) => task.status === filter.value).length;
       const chip = el("button", {
         class: `chip ${statusFilter === filter.value ? "on" : ""}`,
         type: "button",
       }, [filter.label, el("span", { class: "cn", text: String(total) })]);
       chip.addEventListener("click", () => {
         statusFilter = filter.value;
+        page = 0;
         render();
       });
       chips.append(chip);
     }
 
-    count.textContent = `${rows.length} / ${activeTasks().length}`;
+    // 三个数都摆出来：筛出几条（当前筛选的结果）/ 一共几条（当前分区未归档）。
+    // 少写一个，用户就分不清是「被筛掉了」还是「在别的页上」
+    count.textContent = `筛出 ${matched.length} · 共 ${activeTasks().length}`;
 
     const dayCells: HTMLElement[] = [];
     for (let offset = 0; offset < win.days; offset += 1) {
@@ -712,7 +796,12 @@ export function mount(host: HTMLElement): void {
       ]),
       ...(body.length > 0
         ? body
-        : [el("div", { class: "empty", text: "这一档里没有任务 —— 换个粒度、筛选或清空搜索" })]),
+        : [
+            el("div", {
+              class: "empty",
+              text: `${monthDayText(win.start)} – ${monthDayText(winEnd)} 区间内没有任务，可切换档位、调整筛选或清空搜索`,
+            }),
+          ]),
     );
 
     if (TODAY >= win.start && TODAY <= winEnd) {
@@ -721,14 +810,27 @@ export function mount(host: HTMLElement): void {
       grid.append(todayLine);
     }
 
-    table.replaceChildren(el("div", { class: "tt-wrap" }, [el("div", { class: "tt-scroll" }, [grid])]));
+    table.replaceChildren(
+      el("div", { class: "tt-wrap" }, [el("div", { class: "tt-scroll" }, [grid])]),
+      // 窗口按**当前页**的行去撑（fitWindow），所以翻页时表头的区间会跟着变 ——
+      // 每页都只装这一页要看的那几天，列宽才不会为了迁就一条远处的任务而挤成线
+      pager({
+        page,
+        pageCount,
+        total: matched.length,
+        size: taskPageSize,
+        onGo: (next) => {
+          page = next;
+          render();
+        },
+        onSize: (size) => {
+          taskPageSize = size;
+          page = 0;
+          render();
+        },
+      }),
+    );
   };
-
-  // 设置面板里也能改粒度，改完工具行那排按钮和表格都要跟上
-  onTimelineRangeChange(() => {
-    rangePick.setValue(timelineRange());
-    render();
-  });
 
   render();
   onDataChange(render);
@@ -753,7 +855,7 @@ export function mount(host: HTMLElement): void {
     if (id !== "tasks") return;
 
     const request = consumeTasksRequest();
-    if (request.filter === null && request.taskId === null) {
+    if (request.filter === null && request.taskId === null && request.urgency === null) {
       // 页面隐藏时量不到可用宽度（clientWidth 是 0），回到前台重新量一次，
       // 否则列宽会停在挂载时的兜底值上，右侧又空出一条
       render();
@@ -761,12 +863,23 @@ export function mount(host: HTMLElement): void {
     }
 
     if (request.filter !== null) statusFilter = request.filter;
+    if (request.urgency !== null) urgencyFilter = request.urgency;
     if (request.taskId !== null) {
       selectedId = request.taskId;
       // 搜索词是上一次留下的，不清掉目标任务可能根本不在结果里
       query = "";
       search.value = "";
     }
+
+    // 换了筛选就回第一页。停在上一次翻到的那一页，「点逾期 38 条」进来看到的是
+    // 第 21–38 条那半截 —— 数字没算错，但看着就像对不上。
+    // 定位某条任务的请求不走这一步：它要翻到那条所在的页（见 render 的 selectedId）
+    if (request.taskId === null && (request.filter !== null || request.urgency !== null)) {
+      page = 0;
+    }
+
+    // 控件是常驻的，别处的跳转改了筛选值，这里得把显示跟上
+    urgencyPick.setValue(urgencyFilter === "all" ? "all" : (String(urgencyFilter) as UrgencyKey));
 
     render();
     if (request.taskId !== null) scrollToSelected();

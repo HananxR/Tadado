@@ -7,14 +7,19 @@
 // 这里改成：分区在圆心，标签铺一圈，任务挂在各自主标签外侧的弧上。
 // 位置固定 ⇒ 可以凭肌肉记忆找到节点；拖动只影响被拖的那一个。
 //
-// 多标签任务只挂到一个标签下（TAG_NAMES 里最靠前的那个），否则一个任务在
-// 图上会出现两次，「双击直达任务」就有了两个一模一样的入口。
+// 多标签任务只画**一个**节点（否则「双击直达任务」会出现两个一模一样的入口），
+// 但它会连到自己拥有的**每一条**标签上 —— 关系看得见，入口只有一个。
+//
+// 标签集合按数据现算（见 data/tags.ts）：预置的在前、新标签接在后面。以前这里
+// 用的是写死的六个预置名，于是「新建的标签」在图上不存在，连挂在它上面的任务也
+// 一起消失 —— 用户看到的就是「图谱里没有体现」。
 //
 // 数据变更时整页重建：节点集合、位置、连线、统计都得跟着换，增量改的代码比
 // 重建还多。代价是缩放和拖动会被重置 —— 数据都变了，布局本来就该重排。
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { TAG_NAMES, activeTasks } from "../data/mock";
+import { activeTasks } from "../data/mock";
+import { UNTAGGED, tagsInUse } from "../data/tags";
 import { activePartition } from "../data/partitions";
 import { onDataChange } from "../data/store";
 import type { Task } from "../data/types";
@@ -57,20 +62,28 @@ interface Edge {
   line: SVGPathElement;
 }
 
-const FILTERS = ["全部", "紧急与重要", "进行中"] as const;
+// 「紧急与重要」改成「高优先级」：全应用讨论的都是优先级 P0–P3（编辑面板、
+// 列表徽标、总览的优先级分布），这里单独用一组形容词会让人以为不是同一个字段
+const FILTERS = ["全部", "高优先级", "进行中"] as const;
 type Filter = (typeof FILTERS)[number];
 
 let filter: Filter = "全部";
 
 function passesFilter(task: Task): boolean {
-  if (filter === "紧急与重要") return task.urgency <= 1;
+  if (filter === "高优先级") return task.urgency <= 1;
   if (filter === "进行中") return task.status === "doing";
   return true;
 }
 
-/** 任务的主标签：TAG_NAMES 里最靠前的那一个，保证归组唯一。 */
-function primaryTag(task: Task): string | null {
-  return TAG_NAMES.find((tag) => task.tags.includes(tag)) ?? null;
+/**
+ * 任务在图上连出去的标签节点：它拥有的每一条标签，顺序跟着环走。
+ *
+ * 没有任何一条标签能对上时归「未分类」—— 新建已经不允许无标签，但历史数据里
+ * 可能还有；以前这种情况任务直接不画，等于数据在图上凭空少了。
+ */
+function linkedTags(task: Task, liveTags: string[]): string[] {
+  const own = liveTags.filter((tag) => task.tags.includes(tag));
+  return own.length > 0 ? own : [UNTAGGED];
 }
 
 function legendDot(background: string, border?: string): HTMLElement {
@@ -101,7 +114,7 @@ export function mount(target: HTMLElement): void {
     el("div", { class: "glegend" }, [
       el("span", { class: "it" }, [legendDot("var(--accent)"), "分区"]),
       el("span", { class: "it" }, [legendDot("transparent", "1.5px solid var(--accent)"), "标签"]),
-      el("span", { class: "it" }, [legendDot("var(--doing)"), "任务（色 = 状态）"]),
+      el("span", { class: "it" }, [legendDot("var(--doing)"), "任务（颜色表示状态）"]),
     ]),
     el("span", { class: "grow" }),
     el("div", { class: "gfilters" }, FILTERS.map((value) => {
@@ -139,24 +152,39 @@ export function mount(target: HTMLElement): void {
 
   const tasks = activeTasks().filter(passesFilter);
 
+  // 标签集合按数据现算：预置的在前，用户在表单里写出来的新标签接在后面
+  const liveTags = tagsInUse(tasks);
+  // 「未分类」只在真有任务一条标签都对不上时才出现
+  const ringTags = tasks.some((task) => linkedTags(task, liveTags).includes(UNTAGGED))
+    ? [...liveTags, UNTAGGED]
+    : liveTags;
+
+  // 布局锚点：任务挂在它第一个标签的弧上（位置稳定、不重复画节点）。
+  // 「一个标签下有哪些任务」分两份：byTag 是锚在这里的（布局用），
+  // byTagAll 是拥有这个标签的（详情面板用，多标签任务两条边都算）。
   const byTag = new Map<string, Task[]>();
-  for (const tag of TAG_NAMES) byTag.set(tag, []);
-  for (const task of tasks) {
-    const tag = primaryTag(task);
-    if (tag) byTag.get(tag)?.push(task);
+  const byTagAll = new Map<string, Task[]>();
+  for (const tag of ringTags) {
+    byTag.set(tag, []);
+    byTagAll.set(tag, []);
   }
-  // 没有任务的标签不画：一个空圈会让人以为「这里还没加载出来」
-  const liveTags = TAG_NAMES.filter((tag) => (byTag.get(tag)?.length ?? 0) > 0);
+  for (const task of tasks) {
+    const tags = linkedTags(task, liveTags);
+    byTag.get(tags[0])?.push(task);
+    for (const tag of tags) byTagAll.get(tag)?.push(task);
+  }
 
   // ── 1. 确定性布局 ─────────────────────────────────────────────────────────
+  // 分区名和标签名很容易撞（分区「工作」、标签「#工作」）：中心节点在名字下面挂
+  // 一枚「分区」小签（见下面画节点那段），标签节点则带 `#`，两边不用读第二眼
   const nodes: GraphNode[] = [
     { id: "core", kind: "partition", label: activePartition().name },
   ];
   const layout = new Map<string, Point>();
   layout.set("core", { x: centerX, y: centerY });
 
-  liveTags.forEach((tag, index) => {
-    const angle = (index / liveTags.length) * Math.PI * 2 - Math.PI / 2;
+  ringTags.forEach((tag, index) => {
+    const angle = (index / ringTags.length) * Math.PI * 2 - Math.PI / 2;
     nodes.push({ id: tag, kind: "tag", label: tag });
     layout.set(tag, {
       x: centerX + Math.cos(angle) * tagRadiusX,
@@ -189,10 +217,11 @@ export function mount(target: HTMLElement): void {
     edges.push({ a, b, line });
   };
 
-  for (const tag of liveTags) link("core", tag);
+  for (const tag of ringTags) link("core", tag);
+  // 任务连到它**拥有**的每一条标签，而不是只连锚点那一条：多标签关系才在图上
+  // 看得出来（原来 #学习 这类第二标签在图上完全不可见）
   for (const task of tasks) {
-    const tag = primaryTag(task);
-    if (tag) link(tag, task.id);
+    for (const tag of linkedTags(task, liveTags)) link(tag, task.id);
   }
 
   const neighbours = new Map<string, Set<string>>();
@@ -294,6 +323,8 @@ export function mount(target: HTMLElement): void {
 
     const classes = ["node", node.kind];
     if (node.kind === "task") classes.push(node.task?.status ?? "todo");
+    // 「未分类」不是一个标签，给个虚线框：形状上先分开，不用去读文字
+    if (node.kind === "tag" && node.label === UNTAGGED) classes.push("untagged");
 
     const element = el("div", { class: classes.join(" "), "data-id": node.id });
     element.style.left = `${point.x}px`;
@@ -308,10 +339,18 @@ export function mount(target: HTMLElement): void {
       element.style.background = statusVar(node.task.status);
       // 只有紧急与重要才常驻名签：27 个节点全挂上标签就成了一张文字地毯
       if (node.task.urgency <= 1) element.append(el("span", { class: "nl", text: node.label }));
-      element.title = `${node.label} · 双击直达`;
+      element.title = `${node.label} · 双击直达任务`;
+    } else if (node.kind === "partition") {
+      // 名字下面挂一枚「分区」小签：分区名与标签名可能一字不差（工作 / #工作），
+      // 只靠有没有 `#` 区分，扫一眼还是会读成同一个东西
+      element.append(
+        el("span", { class: "pn", text: node.label }),
+        el("span", { class: "pk", text: "分区" }),
+      );
+      element.title = `${node.label} · 分区（数据的隔离边界）`;
     } else {
       element.textContent = node.label;
-      element.title = node.label;
+      element.title = node.label === UNTAGGED ? "没有标签的任务" : node.label;
     }
 
     bindDrag(element, node.id);
@@ -347,13 +386,15 @@ export function mount(target: HTMLElement): void {
     if (node.kind === "partition") {
       detail.append(
         el("div", { class: "ds", text: `${tasks.length} 个任务 · ${liveTags.length} 个标签` }),
-        el("div", { class: "meta" }, [el("span", { class: "tag", text: "根节点" })]),
+        // 「根节点」是图的术语，对用户没有信息量；图例里它就叫「分区」
+        el("div", { class: "meta" }, [el("span", { class: "tag", text: "分区" })]),
       );
       return;
     }
 
     if (node.kind === "tag") {
-      const group = byTag.get(node.id) ?? [];
+      // 用 byTagAll：拥有这个标签的都算，不只是锚在这里的那些
+      const group = byTagAll.get(node.id) ?? [];
       const wrap = el("div", { class: "meta" });
       for (const task of group) {
         const chip = el("span", { class: "tag", text: task.title });
@@ -362,7 +403,14 @@ export function mount(target: HTMLElement): void {
         chip.addEventListener("click", () => jumpToTask(task.id));
         wrap.append(chip);
       }
-      detail.append(el("div", { class: "ds", text: `${group.length} 个任务` }), wrap);
+      detail.append(
+        el("div", {
+          class: "ds",
+          text:
+            node.label === UNTAGGED ? `${group.length} 个没有标签的任务` : `${group.length} 个任务`,
+        }),
+        wrap,
+      );
       return;
     }
 

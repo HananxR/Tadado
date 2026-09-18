@@ -37,6 +37,16 @@
   padding: 14px 16px;
 }
 
+/* 卡片页脚：图例、色板这类「解释这张图怎么读」的东西放这里，
+   和标题栏（.card-h）分开 —— 挤在标题行里会把说明文字顶掉。 */
+.card-f {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid var(--border);
+}
+
 /* ============ 按钮（原型 .btn）============ */
 .btn {
   font: 500 12.5px var(--font);
@@ -106,7 +116,23 @@
   font-size: 11.5px;
 }
 
+/* 分区行那个「自动 ▾」：底下两项只要有一项不是「关」就染上强调色 ——
+   收着的时候也得看得出这个分区动过默认值 */
+.btn.sm.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ============ 胶囊筛选（原型 .chip）============ */
+/* 胶囊的容器。三个页面都在用它，但样式一直没写 —— 之前靠 .chip 是行内元素
+   自己排成一行，夹进一个 display:grid 的箭头按钮（年份切换）就换行了。 */
+.chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .chip {
   font-size: 12px;
   padding: 3px 11px;
@@ -133,6 +159,100 @@
 .chip .cn {
   font: 500 10.5px var(--mono);
   opacity: 0.85;
+}
+
+/* ============ 优先级徽标（pages/shared.ts 的 urgencyBadge）============ */
+/* 列表行和编辑界面共用同一套：列表上那个 8px 圆点是**状态**色，优先级以前根本
+   没有画出来，所以「看不出谁优先级高」是必然的 —— 能看的颜色在说另一件事。 */
+.urg {
+  flex: none;
+  font: 700 9.5px var(--mono);
+  letter-spacing: 0.3px;
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.urg.u0 {
+  background: var(--danger);
+}
+.urg.u1 {
+  background: var(--doing);
+}
+.urg.u2 {
+  background: var(--todo);
+}
+.urg.u3 {
+  background: var(--text-3);
+}
+
+/* 抽屉里的优先级选择：徽标 + 文字，和列表上看到的长一样 */
+.urg-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 6px;
+}
+
+/* 「逾期（系统标记）」是说明，不是可点的按钮 */
+.chip.st-overdue-note {
+  cursor: default;
+  border-style: dashed;
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* 新建任务用的对话框比提示框宽：里面是一张表单，不是一行字 */
+.modal-card.wide {
+  width: 460px;
+}
+
+/* ============ 日期时间输入（shell/dateTime.ts）============ */
+/* 一行三段：标签 / 日期（可带时刻）/ 快捷档 + 结果说明。开始与结束用同一套排布，
+   抽屉里那两行因此是齐的；窄了允许换行，代价只是不齐，好过把日期框压扁。 */
+.dt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dt-k {
+  font-size: 11.5px;
+  color: var(--text-2);
+  flex: none;
+  min-width: 30px;
+}
+
+.dt-date,
+.dt-time {
+  font: 400 11.5px var(--mono);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 3px 6px;
+  outline: none;
+}
+
+.dt-date:focus,
+.dt-time:focus {
+  border-color: var(--accent);
+}
+
+.dt-time {
+  width: 76px;
+}
+
+.dt-quick {
+  flex: none;
+}
+
+.dt-hint {
+  font: 400 11px var(--mono);
+  color: var(--text-3);
+  flex: none;
 }
 
 /* ============ 分段控件（原型 .seg）============ */
@@ -278,6 +398,17 @@
 
 .lock-screen.show {
   display: flex;
+}
+
+/* 锁屏让位（忘了口令时从锁屏里开设置）：只把设置抽屉和它上面弹的对话框抬到
+   锁屏之上，主区 / 侧栏 / 标题栏照旧被盖着 —— 锁没解，抬的只是外壳工具。
+   由 lock.ts 加 body.lock-suppressed，settings.ts 关抽屉时摘掉 */
+body.lock-suppressed .drawer {
+  z-index: 210;
+}
+
+body.lock-suppressed .mask {
+  z-index: 220;
 }
 
 .lock-card {
@@ -629,6 +760,13 @@
 
 .sw.on::after {
   left: 16px;
+}
+
+/* 问不到真实值的环境（浏览器预览没有系统集成）：开关摆着但不给点 ——
+   点了没反应的开关比没有这个开关更让人困惑 */
+.sw.disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 /* ============ 进度条（原型 .prog）============ */

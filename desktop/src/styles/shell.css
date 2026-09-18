@@ -32,34 +32,10 @@
   cursor: default;
 }
 
-.logo {
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: var(--accent);
-  display: grid;
-  place-items: center;
-  color: #fff;
-  flex: none;
-}
-
-.logo svg {
-  width: 11px;
-  height: 11px;
-}
-
+/* 左上角只剩软件名：图标 / 版本号都撤了（见 index.html 的注释） */
 .brand {
   font: 700 14px var(--disp);
   letter-spacing: 0.2px;
-}
-
-.ver {
-  font: 500 10px var(--mono);
-  color: var(--text-3);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 0 5px;
-  line-height: 16px;
 }
 
 .tb-grow {
@@ -249,23 +225,39 @@
 }
 
 /* ============ 主区 / 页面骨架（原型 .main / .page）============ */
+/* 主区**不再滚**（2026-09-17）：以前 .page 靠内容撑高，看全一页要点开就整页滚，
+   页头 / 卡片头 / 分页器全被滚走。现在高度从 .main 一路 flex 传下来，页面自己
+   撑满主区，会长的那一块（表格 / 列表）在卡片内部滚 —— 目光不用离开工具栏。
+   每一层都得给 min-height:0：flex 子项默认不会被压矮，漏一层这条链就断在那一层。 */
 .main {
   flex: 1;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
   position: relative;
 }
 
 .page {
   display: none;
+  height: 100%;
   padding: 22px 28px 32px;
+  /* auto 而不是 hidden：正常高度下页面本来就装得下，出不了滚动条；窗口被压到
+     极限（比如 500px 高）时它是一条兜底出口，总比把内容裁掉看不见强 */
+  overflow: auto;
 }
 
 .page.active {
-  display: block;
+  display: flex;
+  flex-direction: column;
 }
 
 .inner {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* width 不能省：.inner 本来靠 margin:0 auto 居中，一旦成了 flex 子项，
+     交叉轴上的 auto margin 会顶掉默认的 stretch，宽度就塌成内容的宽度 */
+  width: 100%;
   max-width: 1320px;
   margin: 0 auto;
 }
@@ -277,6 +269,8 @@
   gap: 14px;
   margin-bottom: 18px;
   flex-wrap: wrap;
+  /* 页头永远留在原地：下面那块才是吃剩余高度的那块 */
+  flex: none;
 }
 
 .ph-t {
@@ -316,6 +310,8 @@
    注意：页面里的子块不要再叠 margin-top —— 单个子节点时 gap 不生效，
    两个子节点时就会和 margin 相加，出现 28px 的缝。 */
 .page-body {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -361,6 +357,62 @@
   font: 700 15px var(--font);
   flex: 1;
   min-width: 0;
+}
+
+/* 标题行：徽标 + 标题 + 关闭。单独一层是为了把关闭钉在最右 —— .dr-h 是
+   flex-wrap 的，混在同一层里标题一长就把关闭挤到下一行。 */
+.dr-h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+/* 头部那个任务名只读展示（可编辑的输入框在「任务定义」区里，一个字段一处输入）。
+   flex:1 是必需的：不撑满的话关闭按钮只会跟在文字后面，而不是钉在右端。 */
+.dr-name {
+  flex: 1;
+  min-width: 0;
+  font: 700 14.5px var(--font);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dr-sub {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+
+/* 关闭要能一眼找到：抽屉里唯一的出口，长得像普通图标按钮就等于藏起来了。
+   尺寸按 28px 给，比图标本身大一圈，好点也好认。 */
+.dr-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.dr-close svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.dr-close:hover {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 .dr-b {
@@ -422,6 +474,47 @@
   margin-bottom: 4px;
 }
 
+/* 分区行底下收着的两行（自动归档 / 空闲锁定）：缩进一点、左边一条竖线，
+   和上面那个分区行是一组，别看成独立的两项设置 */
+.part-more {
+  margin: 0 0 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+/* 分区名过长时不挤那四个按钮：它自己截断 */
+.part-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 默认分区的单选点：一组分区里只有一个，所以不是开关。
+   空心 = 不是默认，实心 = 启动时进它 */
+.part-dot {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  cursor: pointer;
+  border: 1.5px solid var(--border-2);
+  border-radius: 50%;
+  background: var(--surface-2);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.part-dot:hover {
+  border-color: var(--accent);
+}
+
+.part-dot.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--surface);
+}
+
 .set-row {
   display: flex;
   align-items: center;
@@ -436,6 +529,52 @@
   border-bottom: 0;
 }
 
+/* ── 关于：介绍块 ───────────────────────────────────────────────────────────
+   抽屉只有 420px 宽，所以这里不堆大标题：应用名一行、定位一句、两组小清单。
+   字级都压在小字区间，和设置项本身的调性一致 */
+.about {
+  padding: 2px 0 10px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.about-name {
+  font: 700 15px var(--disp);
+  letter-spacing: 0.2px;
+  margin-bottom: 4px;
+}
+
+.about-lead {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.about-h {
+  margin: 10px 0 5px;
+  font: 500 10.5px var(--font);
+  letter-spacing: 1px;
+  color: var(--text-3);
+}
+
+.about-list {
+  margin: 0;
+  padding-left: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.about-list li::marker {
+  color: var(--text-3);
+}
+
+
+
 .set-row .v {
   display: flex;
   align-items: center;
@@ -444,10 +583,4 @@
   color: var(--text-2);
 }
 
-.set-tab {
-  display: none;
-}
 
-.set-tab.active {
-  display: block;
-}
