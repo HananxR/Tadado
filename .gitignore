@@ -14,7 +14,10 @@ build/
 .vscode/
 
 # Data (user-generated)
-data/
+# 只忽略**仓库根**下的 data/（Python 版运行时产生的库与导出）。不能写成 `data/`
+# —— 那会连 desktop/src/data/ 一起挡掉，而那是桌面端的数据层源码（types / db /
+# store / mock / markdown / export …），此前一直被误挡，仓库里缺这一层。
+/data/
 resources/tadado.data
 resources/config.json
 
@@ -24,6 +27,9 @@ resources/loginfo/
 # Claude (local only)
 .claude/
 .agents/
+
+# IDE / agent 的本地数据（会话、teams、automations），不进仓库
+.codebuddy/
 
 # Local docs (not for public repo)
 RELEASE.md
