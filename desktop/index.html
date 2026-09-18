@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tadado</title>
+    <title>Tadado2</title>
     <script>
       // 首帧前落主题。模块脚本要等 CSS 之后才执行，暗色用户会先看到一帧白底；
       // 这个内联片段是唯一的规避手段，取值逻辑与 src/shell/theme.ts 保持一致。
@@ -25,25 +25,15 @@
     <div class="app">
       <!-- ============ 标题栏 ============ -->
       <!-- 无边框窗口（decorations:false），靠 Tauri 的拖拽区域拖动。
-           必须是 "deep"：裸属性只认「直接点在 header 上」，点在品牌文字或 logo
-           上就拖不动了；deep 让整条标题栏可拖，而 button/input 等可点击元素由
-           Tauri 自己排除（见 tauri 2.x window/scripts/drag.js）。
+           必须是 "deep"：裸属性只认「直接点在 header 上」，点在品牌文字上就拖不动
+           了；deep 让整条标题栏可拖，而 button/input 等可点击元素由 Tauri 自己
+           排除（见 tauri 2.x window/scripts/drag.js）。
            双击标题栏 = 最大化，同样由它接管。 -->
       <header class="titlebar" id="titlebar" data-tauri-drag-region="deep">
-        <div class="logo" aria-hidden="true">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="3.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M4.5 12.5l4.8 4.8L19.5 7" />
-          </svg>
-        </div>
-        <span class="brand">Tadado</span>
-        <span class="ver" id="tb-ver">—</span>
+        <!-- 左上角只留软件名（2026-09-17）：图标在任务栏 / 托盘 / 安装包上已经见过
+             一遍，标题栏里再来一张是同一句话重复三遍；版本号同理 —— 它在
+             设置 → 关于里，那里读的是真实版本，不是这里写死的一个徽章 -->
+        <span class="brand">Tadado2</span>
 
         <div class="tb-grow"></div>
 
@@ -51,7 +41,7 @@
           <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>随时唤起
         </div>
 
-        <button class="tb-btn" id="tb-pin" title="常驻置顶">
+        <button class="tb-btn" id="tb-pin" title="窗口置顶：浮在其他应用之上">
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -195,13 +185,6 @@
     <aside class="drawer" id="set-drawer" style="width: 420px">
       <div class="dr-h">
         <span class="t">设置</span>
-        <div class="seg" id="set-tabs" style="flex: none; width: auto">
-          <!-- 页签必须和 settings.ts 的 TABS 一一对应：多一个按钮却没有面板，
-               点上去会把所有面板的 .active 摘掉，抽屉直接空白 -->
-          <button data-tab="gen" class="on">常规</button>
-          <button data-tab="part">分区</button>
-          <button data-tab="about">关于</button>
-        </div>
         <button class="icon-btn" id="set-close" title="关闭 (Esc)">
           <svg
             viewBox="0 0 24 24"

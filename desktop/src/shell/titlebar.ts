@@ -1,11 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// 标题栏装配：图标 / 版本 / 热键提示 / 常驻置顶 / 主题切换 / 窗口按钮
+// 标题栏装配：软件名 / 热键提示 / 窗口置顶 / 主题切换 / 窗口按钮
 //
 // 无边框窗口（decorations:false），拖拽靠 index.html 上的
 // data-tauri-drag-region —— 按钮不带该属性，所以点按钮是点击而非拖窗。
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { getVersion } from "@tauri-apps/api/app";
 import { el, need } from "./dom";
 import { HOTKEY_KEYS } from "./hotkey";
 import { resolveTheme, setThemeMode, onThemeChange, type ResolvedTheme } from "./theme";
@@ -37,7 +36,8 @@ function bindPin(): void {
   const button = need("#tb-pin");
   button.addEventListener("click", () => {
     void togglePinned().then((pinned) => {
-      toast(pinned ? "已开启常驻置顶" : "已取消常驻置顶");
+      // 说清楚「置顶」是什么：切成别的应用时它还在最上层，不会被盖住
+      toast(pinned ? "已窗口置顶 · 切到别的应用也不会被盖住" : "已取消窗口置顶");
     });
   });
 
@@ -81,20 +81,8 @@ function bindWindowButtons(): void {
   });
 }
 
-function renderVersion(): void {
-  const node = need("#tb-ver");
-  void getVersion()
-    .then((version) => {
-      node.textContent = version;
-    })
-    .catch(() => {
-      // 拿不到版本不该影响外壳可用性，保持占位符
-    });
-}
-
 export function mountTitlebar(): void {
   renderHotkeyHint();
-  renderVersion();
   bindPin();
   bindTheme();
   bindWindowButtons();

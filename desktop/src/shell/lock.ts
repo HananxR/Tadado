@@ -4,16 +4,19 @@
 // 定位：这是**隐私屏风**，不是加密保险箱。密码只用来挡住路过的人看一眼，
 // 不防拿到数据文件的人 —— 真要防那种场景，得做的是磁盘加密，不是应用层口令。
 // 所以口令存的是哈希（不是为了安全强度，是为了不把原文摆在配置里），
-// 而且**忘了就没法找回**：不做安全问题、不做邮箱找回，那种东西在单机应用里
-// 只会把「防君子」变成「防自己」。
+// 而且**不提供找回**：不做安全问题、不做邮箱找回，那种东西在单机应用里只会把
+// 「防君子」变成「防自己」。忘了怎么办 —— 在别的分区里直接重设一个（覆盖不需要
+// 旧口令）：既然它只挡路过的人，就没有「证明你是你」的必要。
 //
-// 空闲锁定：一段时间没有任何输入就把已解锁的分区全部重新锁上。
+// 空闲锁定：一段时间没有任何输入就把**当前**分区重新锁上，按分区各设各的。
 // 计时只看真实的用户输入（键鼠），不动页面自己的重绘。
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { loadSetting, saveSetting } from "../data/db";
 import { activePartitionId, onPartitionChange } from "../data/partitions";
 import { el } from "./dom";
+import { openPanel } from "./panels";
+import { asNumberRecord, asStringRecord } from "../data/schema";
 
 const KEY_PASSWORDS = "lock.passwords";
 const KEY_IDLE = "lock.idleMinutes";
@@ -26,8 +29,11 @@ const listeners = new Set<Listener>();
 let passwords: Record<string, string> = {};
 /** 本次运行里已经解锁的分区。关掉应用即失效。 */
 const unlocked = new Set<string>();
-/** 空闲多少分钟后自动上锁，0 = 不自动锁。 */
-let idleMinutes = 0;
+/**
+ * 空闲多少分钟后自动上锁，**按分区** —— 工作区的东西比个人区更需要自动挡一层，
+ * 反过来也一样；一个全局值只能取折中，结果就是两头都别扭。0 = 不自动锁。
+ */
+let idleMinutes: Record<string, number> = {};
 
 let idleTimer: number | undefined;
 let screen: HTMLElement | null = null;
@@ -50,13 +56,16 @@ const notify = (): void => {
   for (const listener of listeners) listener();
 };
 
-export const onLockChange = (listener: Listener): void => {
+export const onLockChange = (listener: Listener): (() => void) => {
   listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 };
 
 export const hasPassword = (id: string): boolean => Boolean(passwords[id]);
 export const isUnlocked = (id: string): boolean => !hasPassword(id) || unlocked.has(id);
-export const idleLimit = (): number => idleMinutes;
+export const idleLimit = (id: string = activePartitionId()): number => idleMinutes[id] ?? 0;
 
 export async function setPassword(id: string, password: string): Promise<void> {
   if (password) {
@@ -76,9 +85,12 @@ export async function setPassword(id: string, password: string): Promise<void> {
   syncScreen();
 }
 
-export async function setIdleMinutes(minutes: number): Promise<void> {
-  idleMinutes = minutes;
-  await saveSetting(KEY_IDLE, minutes);
+export async function setIdleMinutes(
+  minutes: number,
+  id: string = activePartitionId(),
+): Promise<void> {
+  idleMinutes[id] = minutes;
+  await saveSetting(KEY_IDLE, idleMinutes);
   armIdle();
 }
 
@@ -90,10 +102,17 @@ export function unlock(id: string, password: string): boolean {
   return true;
 }
 
-/** 全部重新上锁（空闲超时、或用户手动上锁）。 */
+/** 全部重新上锁（用户手动上锁）。 */
 export function lockAll(): void {
   if (unlocked.size === 0) return;
   unlocked.clear();
+  notify();
+  syncScreen();
+}
+
+/** 只锁**当前**分区：空闲是按分区设的，到点该锁的是你现在待的这个。 */
+function lockCurrent(): void {
+  if (!unlocked.delete(activePartitionId())) return;
   notify();
   syncScreen();
 }
@@ -107,10 +126,11 @@ export function canEnter(id: string): boolean {
 
 function armIdle(): void {
   window.clearTimeout(idleTimer);
-  if (idleMinutes <= 0) return;
+  const minutes = idleLimit();
+  if (minutes <= 0) return;
   idleTimer = window.setTimeout(() => {
-    lockAll();
-  }, idleMinutes * 60_000);
+    lockCurrent();
+  }, minutes * 60_000);
 }
 
 function trackActivity(): void {
@@ -138,7 +158,7 @@ function buildScreen(): HTMLElement {
       input.value = "";
       return;
     }
-    hint.textContent = "口令不对";
+    hint.textContent = "口令错误";
     input.value = "";
     input.focus();
   };
@@ -148,13 +168,24 @@ function buildScreen(): HTMLElement {
     if (event.key === "Enter") submit();
   });
 
+  // 「设置」是**忘了口令时的唯一出口**：锁屏盖住整个应用，而重设口令不需要旧
+  // 口令（它只挡路过的人），没有这个入口就等于把人锁在自己的数据外面 ——
+  // 想改口令先得进得去，进得去又得先知道口令。
+  const settings = el("button", { class: "btn", type: "button", text: "设置" });
+  settings.title = "打开设置，可在此重设口令";
+  settings.style.marginRight = "auto";
+  settings.addEventListener("click", () => openPanel("settings"));
+
   const node = el("div", { class: "lock-screen" }, [
     el("div", { class: "lock-card" }, [
       el("div", { class: "modal-title", text: "分区已锁定" }),
-      el("div", { class: "modal-detail", text: "输入该分区的口令以继续" }),
+      el("div", {
+        class: "modal-detail",
+        text: "请输入该分区口令。忘记口令可在「设置」中重设：该口令仅用于遮蔽，不校验旧口令。",
+      }),
       input,
       hint,
-      el("div", { class: "modal-actions" }, [button]),
+      el("div", { class: "modal-actions" }, [settings, button]),
     ]),
   ]);
 
@@ -179,19 +210,47 @@ export function syncScreen(): void {
   }
 }
 
+// ─── 让位给设置 ──────────────────────────────────────────────────────────────
+
+export const isLockScreenUp = (): boolean => screen?.classList.contains("show") === true;
+
+/**
+ * 锁屏让位：只把**外壳工具**（设置抽屉、它上面弹的对话框）抬到锁屏之上，锁并没有
+ * 解 —— 主区、侧栏、标题栏照旧被盖着，点不到也看不见（见 styles 里的
+ * `body.lock-suppressed`）。
+ *
+ * 由 settings.ts 在开 / 关设置时配对调用：这是忘了口令的人唯一能改到口令的路径。
+ */
+export function suppressLockScreen(): void {
+  document.body.classList.add("lock-suppressed");
+}
+
+/** 关上设置时收起让位：期间清了口令或重设了当前分区的口令，锁屏会自己消失。 */
+export function restoreLockScreen(): void {
+  document.body.classList.remove("lock-suppressed");
+  syncScreen();
+}
+
 // ─── 启动 ────────────────────────────────────────────────────────────────────
 
 export async function bootLock(): Promise<void> {
   const [savedPasswords, savedIdle] = await Promise.all([
     loadSetting<Record<string, string>>(KEY_PASSWORDS),
-    loadSetting<number>(KEY_IDLE),
+    loadSetting<Record<string, number>>(KEY_IDLE),
   ]);
-  passwords = savedPasswords ?? {};
-  idleMinutes = savedIdle ?? 0;
+  // 值取一遍证：存档形状不对（不是「分区 id → 值」的映射）就当没设过。
+  // 以前是 `?? {}` —— 存档要是个数组，`passwords[id]` 全是 undefined，
+  // 表现是「口令明明设过却不上锁」，一句话都不报
+  passwords = asStringRecord(savedPasswords);
+  idleMinutes = asNumberRecord(savedIdle);
 
   trackActivity();
   armIdle();
   syncScreen();
-  // 切到上了锁的分区时立刻挡一层；切回来（已解锁或未设密码）则收起
-  onPartitionChange(() => syncScreen());
+  // 切到上了锁的分区时立刻挡一层；切回来（已解锁或未设密码）则收起。
+  // 计时也要跟着换：每个区的空闲时限是各设各的
+  onPartitionChange(() => {
+    armIdle();
+    syncScreen();
+  });
 }

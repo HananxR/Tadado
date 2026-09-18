@@ -8,31 +8,52 @@
 // 写成只读值。
 //
 // 已经接通的几项都属于外壳自身或跨页面的共享偏好：
-//   · 主题           → theme.ts（light / dark / sys）
-//   · 常驻置顶       → window.ts（与标题栏图钉共享同一份状态）
-//   · 时间轴默认粒度 → data/timeline.ts（与任务页工具行共享同一份状态）
-//   · 分区口令 / 空闲锁定 → lock.ts
-//   · 保存后收起抽屉 → drawerPref.ts
+//   · 主题 → theme.ts（light / dark / sys）
+//   · 分区（增 / 删 / 改名 / 指定默认，以及**各分区各一份**的口令 / 空闲锁定 /
+//     自动归档）→ data/partitions.ts + lock.ts + data/store.ts
+//
+// **一页到底，不分页签**（2026-09-17）：分了「常规 / 分区 / 关于」三页之后，每页
+// 只剩两三行，翻页成本比滚动高，还得记住「口令在哪一页」。现在整页从上到下就是
+// 外观 → 窗口 → 分区 → 关于。
+//
+// 切到别的模块会收起（和「编辑任务」抽屉一致）：设置讲的是外壳与分区，翻页后还
+// 挂在这儿，说不清它属于谁。
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { getVersion } from "@tauri-apps/api/app";
+import { autostartEnabled, setAutostart } from "./autostart";
 import { TASKS } from "../data/mock";
-import { PARTITIONS, activePartitionId } from "../data/partitions";
-import { onDataChange } from "../data/store";
 import {
-  TIMELINE_RANGES,
-  onTimelineRangeChange,
-  setTimelineRange,
-  timelineRange,
-} from "../data/timeline";
+  PARTITIONS,
+  addPartition,
+  defaultPartitionId,
+  onPartitionListChange,
+  type Partition,
+  removePartition,
+  renamePartition,
+  setDefaultPartition,
+} from "../data/partitions";
+import { archiveAfterDays, onDataChange, setArchiveDays } from "../data/store";
+
 import { confirmAction } from "./confirm";
 import { el, need } from "./dom";
-import { setCloseOnSave, shouldCloseOnSave } from "./drawerPref";
-import { hasPassword, idleLimit, isUnlocked, setIdleMinutes, setPassword } from "./lock";
-import { promptText } from "./prompt";
+import {
+  hasPassword,
+  idleLimit,
+  isLockScreenUp,
+  isUnlocked,
+  onLockChange,
+  restoreLockScreen,
+  setIdleMinutes,
+  setPassword,
+  suppressLockScreen,
+} from "./lock";
+import { panelClosed, panelOpened, registerOpen, registerPanel } from "./panels";
+import { promptText, promptWithExtra } from "./prompt";
+import { subscribePages } from "./router";
 import { seg } from "./seg";
 import { toast } from "./toast";
 import { getThemeMode, setThemeMode, type ThemeMode } from "./theme";
-import { onPinChange, togglePinned } from "./window";
 
 interface SettingRow {
   label: string;
@@ -40,17 +61,15 @@ interface SettingRow {
   value?: string;
   /** 自定义控件，优先于 value。 */
   control?: () => HTMLElement;
+  /** 给只读值一个 id，供事后填真实值（版本号要等 Tauri 回话）。 */
+  id?: string;
 }
 
 interface SettingGroup {
   title: string;
   rows: SettingRow[];
-}
-
-interface TabSpec {
-  id: string;
-  label: string;
-  groups: SettingGroup[];
+  /** 组标题下的一段自定义内容（目前只有「关于」用得上）。 */
+  intro?: () => HTMLElement;
 }
 
 const PLACEHOLDER = "—";
@@ -80,91 +99,52 @@ function themeControl(): HTMLElement {
   return el("div", { class: "seg", style: "flex:none;width:auto" }, buttons);
 }
 
-/** 任务页时间轴的默认粒度。用短标签（周 / 月 / 30 天）——设置行的右侧没有
- *  任务页工具行那么宽，写「近 30 天」会把标题挤成两行。 */
-function timelineRangeControl(): HTMLElement {
-  const control = seg(
-    TIMELINE_RANGES.map((range) => ({ value: range.value, label: range.short })),
-    timelineRange(),
-    (value) => setTimelineRange(value),
-  );
-
-  // 在任务页工具行里改了同一项，这里那排按钮也要跟上
-  onTimelineRangeChange(() => control.setValue(timelineRange()));
-
-  control.root.style.flex = "none";
-  control.root.style.width = "auto";
-  return control.root;
-}
-
 /**
- * 分区口令：先挑分区，再设 / 清。
+ * 分区口令：**设 / 改 / 清是同一个入口**。
  *
- * 不做「找回」这一步：单机应用里加安全问题或邮箱找回，只会把「防君子」变成
- * 「防自己」。忘了就是忘了 —— 所以设置时把这句话摆在浮层里，而不是等忘了才说。
+ * 它们本来就是一件事的三种结果（「这个分区要不要口令、要的话是什么」），拆成
+ * 「设口令 / 改口令 / 清口令」三个按钮，用户每次都得先判断「我现在该点哪个」，
+ * 而答案往往只有他自己知道 —— 一眼看不出这个区到底设没设。
+ *
+ * 改的时候**不校验旧口令**：它挡的是路过的人，不是拿到数据文件的人（见 lock.ts
+ * 顶部），所以没有「证明你是你」的必要。忘了旧的，在别的分区里重设一个就行 ——
+ * 要旧口令反而多出一个「忘了就彻底进不去」的死结，而屏风不值得配一把这样的锁。
+ *
+ * 清口令也不再二次确认：弹窗里那个「清除」就是明确动作，而口令随时能重设，
+ * 没有什么会因此丢掉。
  */
-function passwordControl(): HTMLElement {
-  let target = activePartitionId();
+async function editPassword(partition: Partition): Promise<void> {
+  const had = hasPassword(partition.id);
 
-  const picker = seg(
-    PARTITIONS.map((partition) => ({ value: partition.id, label: partition.name })),
-    target,
-    (value) => {
-      target = value;
-      sync();
-    },
-  );
-  picker.root.style.flex = "none";
-  picker.root.style.width = "auto";
-
-  const button = el("button", { class: "btn sm", type: "button" });
-
-  const sync = (): void => {
-    button.textContent = hasPassword(target) ? "清除口令" : "设置口令";
-  };
-
-  button.addEventListener("click", () => {
-    void (async () => {
-      const name = PARTITIONS.find((partition) => partition.id === target)?.name ?? target;
-
-      if (hasPassword(target)) {
-        const ok = await confirmAction({
-          title: `清除「${name}」的口令？`,
-          detail: "之后进入这个分区不再需要口令。",
-          confirmText: "清除",
-        });
-        if (!ok) return;
-        await setPassword(target, "");
-        toast(`已清除「${name}」的口令`);
-        sync();
-        return;
-      }
-
-      const password = await promptText({
-        title: `给「${name}」设口令`,
-        detail: "这是防路过的人瞄一眼，不是加密存储 —— 而且忘了没法找回，请自己记牢。",
-        placeholder: "口令",
-        password: true,
-        confirmText: "设置",
-      });
-      if (password === null) return;
-      if (!password.trim()) {
-        toast("口令不能为空");
-        return;
-      }
-
-      await setPassword(target, password);
-      toast(`已为「${name}」设置口令`);
-      sync();
-    })();
+  const result = await promptWithExtra({
+    title: had ? `「${partition.name}」的口令` : `给「${partition.name}」设口令`,
+    detail: had ? "填新口令就是换一个，留着不填就是不改" : undefined,
+    placeholder: "新口令",
+    password: true,
+    confirmText: had ? "保存" : "设置",
+    extra: had ? { label: "清除", danger: true } : undefined,
   });
+  if (result === null) return;
 
-  sync();
-  return el("div", { class: "rowctl" }, [picker.root, button]);
+  if (result.extra) {
+    await setPassword(partition.id, "");
+    toast(`已清除「${partition.name}」的口令`);
+    return;
+  }
+
+  if (!result.value.trim()) {
+    // 已经设过的、留空 = 不改（那就是取消的一种写法）；
+    // 还没设过的留空则无处可退，说一句
+    if (!had) toast("口令不能为空");
+    return;
+  }
+
+  await setPassword(partition.id, result.value);
+  toast(had ? `已改「${partition.name}」的口令` : `已设置「${partition.name}」的口令`);
 }
 
-/** 空闲多久自动上锁。0 = 不自动锁（默认）。 */
-function idleLockControl(): HTMLElement {
+/** 空闲多久自动上锁（**按分区**）。0 = 不自动锁（默认）。 */
+function idleLockControl(partition: Partition): HTMLElement {
   const control = seg(
     [
       { value: "0", label: "关" },
@@ -172,10 +152,17 @@ function idleLockControl(): HTMLElement {
       { value: "10", label: "10 分" },
       { value: "30", label: "30 分" },
     ],
-    String(idleLimit()),
+    String(idleLimit(partition.id)),
     (value) => {
-      void setIdleMinutes(Number(value)).then(() => {
-        toast(value === "0" ? "已关闭空闲锁定" : `空闲 ${value} 分钟后自动上锁`);
+      // seg 是无状态的：选中态得由调用方自己更新，不然点了这一档，高亮还停在原来
+      // 那个按钮上 —— 看着像没生效
+      control.setValue(value);
+      void setIdleMinutes(Number(value), partition.id).then(() => {
+        toast(
+          value === "0"
+            ? `「${partition.name}」不再自动上锁`
+            : `「${partition.name}」空闲 ${value} 分钟后上锁`,
+        );
       });
     },
   );
@@ -184,146 +171,333 @@ function idleLockControl(): HTMLElement {
   return control.root;
 }
 
-/** 保存之后要不要把抽屉收起来。默认收（DESIGN.md 的规定），但连续整理时不收更顺手。 */
-function closeOnSaveControl(): HTMLElement {
-  const toggle = el("span", { class: "sw", role: "switch", tabindex: "0" });
+/** 自动归档（**按分区**）：已完成任务结束 N 天后收进归档。关 = 只在手动归档时收。 */
+function archiveControl(partition: Partition): HTMLElement {
+  const control = seg(
+    [
+      { value: "0", label: "关" },
+      { value: "7", label: "7 天" },
+      { value: "30", label: "30 天" },
+      { value: "90", label: "90 天" },
+    ],
+    String(archiveAfterDays(partition.id)),
+    (value) => {
+      control.setValue(value);
+      void setArchiveDays(Number(value), partition.id).then(() => {
+        toast(
+          value === "0"
+            ? `「${partition.name}」不再自动归档`
+            : `「${partition.name}」的已完成任务 ${value} 天后归档`,
+        );
+      });
+    },
+  );
+  control.root.style.flex = "none";
+  control.root.style.width = "auto";
+  return control.root;
+}
 
-  const paint = (): void => {
-    toggle.classList.toggle("on", shouldCloseOnSave());
-    toggle.setAttribute("aria-checked", String(shouldCloseOnSave()));
+/**
+ * 删分区。**里面有任务就不让删**。
+ *
+ * 不做「自动迁到别的分区」：迁去哪儿用户没得选，等于替他决定一批任务的归属，而
+ * 这边只是想删个空分区。真要留着那些任务，他自己先移走更清楚 —— 所以按钮直接
+ * 置灰，写明还剩几条。
+ */
+async function dropPartition(partition: Partition): Promise<void> {
+  const mine = TASKS.filter((task) => task.partition === partition.id).length;
+  if (mine > 0) {
+    toast(`「${partition.name}」里还有 ${mine} 条任务，先移走再删`);
+    return;
+  }
+
+  const ok = await confirmAction({ title: `删除分区「${partition.name}」？`, confirmText: "删除" });
+  if (!ok) return;
+  if (!removePartition(partition.id)) {
+    toast("至少留一个分区");
+    return;
+  }
+  toast(`已删除分区「${partition.name}」`);
+}
+
+/**
+ * 分区那一段：**一个分区一行** —— 名字 · 条数 · 锁 · 口令 / 改名 / 删除。
+ *
+ * 口令、空闲锁定、自动归档都是**某个分区**的属性：工作区的东西比个人区更需要自动
+ * 挡一层，过期任务也更该收走。摆成全局要么得先挑分区（多一层），要么取一个两头
+ * 都不对的折中值。
+ *
+ * 后两项默认关、也是少数人用得着的那类设置，所以收在行尾「自动 ▾」里、展开了才
+ * 建那两个 seg —— 四个分区不会各挂两个常年不动的控件。两项只要有一项不是「关」，
+ * 按钮就染色：收着的时候也看得出这个分区动过默认值。
+ *
+ * 分区本身能增删改名：它本来就是用户想怎么分就怎么分的东西，只能看不能动等于没做。
+ */
+function partitionSection(): HTMLElement {
+  const box = el("div", { class: "set-sec", id: "set-part" });
+
+  const subRow = (label: string, control: HTMLElement): HTMLElement =>
+    el("div", { class: "set-row" }, [
+      el("span", { text: label }),
+      el("span", { class: "rowctl" }, [control]),
+    ]);
+
+  const add = el("button", { class: "btn sm", type: "button", text: "+ 新建分区" });
+  add.addEventListener("click", () => {
+    void promptText({ title: "新建分区", placeholder: "分区名", confirmText: "创建" }).then(
+      (name) => {
+        if (name === null || !name.trim()) return;
+        addPartition(name.trim());
+        toast(`已新建分区「${name.trim()}」`);
+      },
+    );
+  });
+
+  // 重画时连订阅一起换掉：面板常驻，不退订的话每次重画都会多留一份旧闭包
+  const unsubs: (() => void)[] = [];
+
+  /** 收起的两行（自动归档 / 空闲锁定）挂在行下面，与行一起重排。 */
+  const rowOf = (partition: Partition): HTMLElement[] => {
+    const count = el("span", { class: "v mono" });
+    const lock = el("span", { class: "lock" });
+    // 默认分区是**一组里只有一个**的那种设置，所以画成单选点而不是按钮 ——
+    // 「默认 / 设为默认」两种文字来回切换，一排分区里谁是哪个反而看不清
+    const dot = el("button", { class: "part-dot", type: "button", role: "radio" });
+    const pass = el("button", { class: "btn sm", type: "button", text: "设口令" });
+    const auto = el("button", { class: "btn sm", type: "button", text: "自动 ▾" });
+    const more = el("div", { class: "part-more", hidden: true });
+    const del = el("button", { class: "btn sm", type: "button", text: "删除" });
+
+    const paint = (): void => {
+      count.textContent = `${TASKS.filter((task) => task.partition === partition.id).length} 条`;
+      lock.textContent = !hasPassword(partition.id)
+        ? ""
+        : isUnlocked(partition.id)
+          ? "🔓"
+          : "🔒";
+
+      // 设没设用**点亮**表示，不换按钮文字：设 / 改 / 清是同一个入口，
+      // 换文字等于让用户先判断自己处在哪种状态
+      const locked = hasPassword(partition.id);
+      pass.classList.toggle("on", locked);
+      pass.title = locked ? "改 / 清除这个分区的口令" : "给这个分区设口令";
+
+      const mine = TASKS.filter((task) => task.partition === partition.id).length;
+      del.disabled = mine > 0;
+      del.title = mine > 0 ? `里面还有 ${mine} 条任务，先移走再删` : "删除这个分区";
+      del.style.opacity = mine > 0 ? "0.45" : "";
+
+      const isDefault = defaultPartitionId() === partition.id;
+      dot.classList.toggle("on", isDefault);
+      dot.setAttribute("aria-checked", String(isDefault));
+      dot.title = isDefault ? "启动时进入这个分区" : "设为默认分区（启动时进入）";
+
+      const days = archiveAfterDays(partition.id);
+      const idle = idleLimit(partition.id);
+      auto.classList.toggle("on", days > 0 || idle > 0);
+      auto.title = `自动归档 ${days === 0 ? "关" : `${days} 天`} · 空闲锁定 ${idle === 0 ? "关" : `${idle} 分钟`}`;
+    };
+
+    pass.addEventListener("click", () => void editPassword(partition).then(paint));
+
+    dot.addEventListener("click", () => {
+      setDefaultPartition(partition.id);
+      // 上锁的分区当默认，一开机就是一层口令。先说一句，不然看着像坏了 ——
+      // 也提醒一句：锁屏上没有「换个分区」的出口，忘了口令只能靠别的分区重设
+      toast(
+        hasPassword(partition.id)
+          ? `已把「${partition.name}」设为默认分区 · 它上着锁，启动时先要口令`
+          : `已把「${partition.name}」设为默认分区`,
+      );
+    });
+
+    // 展开了才建那两个 seg：一个分区两个、默认都是关，建了也是常年不动的死控件
+    let built = false;
+    auto.addEventListener("click", () => {
+      if (!built) {
+        more.append(
+          subRow("自动归档", archiveControl(partition)),
+          subRow("空闲锁定", idleLockControl(partition)),
+        );
+        built = true;
+      }
+      more.hidden = !more.hidden;
+      auto.textContent = more.hidden ? "自动 ▾" : "自动 ▴";
+    });
+
+    const rename = el("button", { class: "btn sm", type: "button", text: "改名" });
+    rename.addEventListener("click", () => {
+      void promptText({
+        title: `重命名「${partition.name}」`,
+        placeholder: partition.name,
+        confirmText: "保存",
+      }).then((name) => {
+        if (name === null || !name.trim()) return;
+        renamePartition(partition.id, name.trim());
+        toast(`已改名为「${name.trim()}」`);
+      });
+    });
+
+    del.addEventListener("click", () => void dropPartition(partition));
+
+    unsubs.push(onDataChange(paint), onLockChange(paint));
+    paint();
+
+    return [
+      el("div", { class: "set-row" }, [
+        // 条数与锁跟着名字：一眼看出这个区里有多少、上没上锁。
+        // 摆右边会和那四个按钮抢位置 —— 抽屉只有 420px，挤到最后是谁都放不下
+        el("span", { class: "rowctl" }, [
+          dot,
+          el("span", { class: "part-name", text: partition.name }),
+          count,
+          lock,
+        ]),
+        el("span", { class: "rowctl" }, [auto, pass, rename, del]),
+      ]),
+      more,
+    ];
   };
 
+  const paint = (): void => {
+    while (unsubs.length > 0) unsubs.pop()?.();
+    box.replaceChildren(
+      el("div", { class: "set-sec-t", text: "分区" }),
+      ...PARTITIONS.flatMap(rowOf),
+      el("div", { class: "set-row" }, [add]),
+    );
+  };
+
+  onPartitionListChange(paint);
+  paint();
+  return box;
+}
+
+/**
+ * 开机自启动。
+ *
+ * 真实值要问系统（异步），所以先渲染成「关」，拿到再翻过来 —— 设置面板是同步
+ * 渲染的，不能等一个 Promise。浏览器预览里问不到（`autostartEnabled` 返回 null），
+ * 那一行就标成不可用：与其摆一个点了没反应的开关，不如直接说这个环境没有。
+ */
+function autostartControl(): HTMLElement {
+  const toggle = el("span", {
+    class: "sw",
+    role: "switch",
+    tabindex: "0",
+    title: "开机后自动启动 Tadado2",
+  });
+
   const flip = (): void => {
-    void setCloseOnSave(!shouldCloseOnSave()).then(paint);
+    const next = !toggle.classList.contains("on");
+    void setAutostart(next).then((ok) => {
+      if (!ok) {
+        toast("当前环境改不了开机自启动");
+        return;
+      }
+      toggle.classList.toggle("on", next);
+      toggle.setAttribute("aria-checked", String(next));
+      toast(next ? "已设为开机自动启动" : "已取消开机自动启动");
+    });
   };
 
   toggle.addEventListener("click", flip);
   toggle.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    flip();
-  });
-
-  paint();
-  return toggle;
-}
-
-/**
- * 一个分区一行：条数 + 锁没锁。
- *
- * 上锁状态也摆在这里 —— 不然「哪几个分区要口令」只能靠一个个点过去试。
- */
-function partitionRow(partition: (typeof PARTITIONS)[number]): SettingRow {
-  return {
-    label: partition.name,
-    control: () => {
-      const count = el("span", { class: "v mono" });
-      const lock = el("span", { class: "lock" });
-
-      const paint = (): void => {
-        count.textContent = `${TASKS.filter((task) => task.partition === partition.id).length} 条`;
-        lock.textContent = hasPassword(partition.id)
-          ? isUnlocked(partition.id)
-            ? "🔓"
-            : "🔒"
-          : "";
-      };
-
-      onDataChange(paint);
-      paint();
-      return el("span", { class: "rowctl" }, [count, lock]);
-    },
-  };
-}
-
-function pinControl(): HTMLElement {
-  const toggle = el("span", { class: "sw", role: "switch", tabindex: "0" });
-
-  onPinChange((pinned) => {
-    toggle.classList.toggle("on", pinned);
-    toggle.setAttribute("aria-checked", String(pinned));
-  });
-
-  toggle.addEventListener("click", () => void togglePinned());
-  toggle.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      void togglePinned();
+      flip();
     }
   });
 
+  void autostartEnabled().then((on) => {
+    if (on === null) {
+      toggle.classList.add("disabled");
+      toggle.removeAttribute("tabindex");
+      toggle.title = "当前环境不支持（浏览器预览里没有系统集成）";
+      return;
+    }
+    toggle.classList.toggle("on", on);
+    toggle.setAttribute("aria-checked", String(on));
+  });
+
   return toggle;
 }
 
-const TABS: TabSpec[] = [
+// 分区自己管渲染（能增删，静态行不够用），插在「启动」和「关于」之间 ——
+// 见 mountSettings。
+const TOP_GROUPS: SettingGroup[] = [
   {
-    id: "gen",
-    label: "常规",
-    groups: [
-      {
-        title: "外观",
-        rows: [{ label: "主题", control: themeControl }],
-      },
-      {
-        title: "唤起与常驻",
-        rows: [
-          // 只读值：这个组合键是 shell/hotkey.ts 里的常量，不是可配项。
-          // 摆成能改的样子、改完才发现不生效，比直接把现实摆出来更气人
-          { label: "全局热键", value: "Ctrl+Shift+Space" },
-          { label: "常驻置顶", control: pinControl },
-        ],
-      },
-      {
-        title: "任务视图",
-        rows: [
-          { label: "时间轴默认粒度", control: timelineRangeControl },
-          { label: "保存后收起抽屉", control: closeOnSaveControl },
-        ],
-      },
-      {
-        title: "安全",
-        rows: [
-          { label: "分区口令", control: passwordControl },
-          { label: "空闲锁定", control: idleLockControl },
-        ],
-      },
-      {
-        title: "自动化",
-        rows: [
-          // 逾期标记不设开关：它每次加载顺手扫一遍（store.refreshOverdue），
-          // 关掉的后果是过了截止日的任务永远停在「待办」上，比自动更正还糟。
-          // 归档 / 摘要 / 安静时段一样没做 —— 没做就不摆一排好看的开关
-          { label: "逾期自动标记", value: "每次加载时扫一遍" },
-        ],
-      },
-    ],
-  },
-  // 「AI 助手」页签已移除（2026-09-15）。它那一页 7 行里没有一行接了后端，
-  // 值全是占位（其中「专用工作区」还指向一个已经不存在的目录）—— 一排死开关
-  // 比没有这一页更误导人：看着能配，点了什么都不会发生。真要接入 AI 能力时，
-  // 把它连着能用的开关一起放回来；现在这 7 行在 git 历史里取回即可。
-  {
-    id: "part",
-    label: "分区",
-    // 分区里有什么（多少条、锁没锁）是活的，所以这些行自己订阅 dataChanged ——
-    // 设置面板的节点是常驻的，不订阅的话数字会停在「打开设置那一刻」
-    groups: [{ title: "分区", rows: PARTITIONS.map(partitionRow) }],
+    title: "外观",
+    rows: [{ label: "主题", control: themeControl }],
   },
   {
-    id: "about",
-    label: "关于",
-    groups: [
-      {
-        title: "关于",
-        rows: [
-          // 版本号与 package.json 一致（为一个版本号去开 JSON 导入不值得）
-          { label: "版本", value: "0.1.0 · Tauri 重写" },
-          { label: "架构", value: "2.0 界面 · Windows 适配" },
-        ],
-      },
+    // 组名从「窗口」改成「启动」：这一组回答的是「这个进程怎么被叫起来、怎么被
+    // 叫出来」—— 开机自启动（进程层面）和全局热键（窗口层面）都在这里
+    title: "启动",
+    rows: [
+      { label: "开机自启动", control: autostartControl },
+      // 只读值：这个组合键是 shell/hotkey.ts 里的常量，不是可配项。
+      // 摆成能改的样子、改完才发现不生效，比直接把现实摆出来更气人
+      //
+      // 「窗口置顶」那一行撤了（2026-09-17）：它是标题栏图钉的**第二个入口**，
+      // 而图钉就在那儿一键切换 —— 和其他设置项不同，它是「现在就要这个窗口浮
+      // 上来」的动作，不是一条需要翻两层菜单去改的偏好
+      { label: "全局热键", value: "Ctrl+Shift+Space" },
     ],
   },
 ];
+
+/**
+ * 「关于」的介绍块。
+ *
+ * 按**实际能做什么**逐条写：对着五个页面和那十几条真做出来的能力列，不写愿景、
+ * 不写「基于 XX 框架」—— 用户点开这里想知道的是「它能替我做什么」，技术栈是
+ * 开发文档的事。
+ *
+ * 也不另开一个「关于」对话框：想知道版本和数据在哪的人，本来就会来设置里找，
+ * 再套一层只是让这几句话住进一个更大的房间。
+ */
+function aboutIntro(): HTMLElement {
+  const list = (items: string[]): HTMLElement =>
+    el("ul", { class: "about-list" }, items.map((text) => el("li", { text })));
+
+  return el("div", { class: "about" }, [
+    el("div", { class: "about-name", text: "Tadado2" }),
+    el("p", {
+      class: "about-lead",
+      text: "本地优先的个人任务管理：任务、进展与时间线都留在你自己的机器上。",
+    }),
+
+    el("div", { class: "about-h", text: "功能" }),
+    list([
+      "五个视图：总览、任务、任务图谱、活动分析、任务管理",
+      "任务页是甘特时间轴：色条为起止区间、填充为进度，档位从今天到全年",
+      "图谱把「任务 × 标签 × 分区」铺成关系网络，悬停高亮、双击直达",
+      "活动分析：整年热力图 + 分标签报告，可按当前范围导出 md / txt / xlsx",
+      "分区是数据的隔离边界，每个分区可单独设口令、空闲锁定与自动归档",
+      "Markdown 方言：一行一条任务（- [ ] 标题 #标签 ⏰09-20 :: 30%），粘贴多行即建",
+    ]),
+
+    el("div", { class: "about-h", text: "特色" }),
+    list([
+      "本地存储：单文件 SQLite，无账号、无云端同步",
+      "一屏到底：五个页面都撑满窗口，筛选与翻页不必整页滚动",
+      "键盘优先：Ctrl+1–5 切页，Ctrl+Shift+Space 全局唤起",
+      "改状态留痕：完成、改进度、改优先级都会写进活动时间线",
+    ]),
+  ]);
+}
+
+const ABOUT: SettingGroup = {
+  title: "关于",
+  intro: aboutIntro,
+  rows: [
+    // 版本号启动时由 Tauri 填真实值（见 mountSettings）；这里写的是拿不到时的
+    // 兜底（浏览器预览），与 package.json / tauri.conf.json 保持一致
+    { label: "版本", value: "v1.0.0", id: "set-ver" },
+    { label: "运行环境", value: "Windows 桌面应用" },
+  ],
+};
 
 function renderRow(row: SettingRow): HTMLElement {
   const control = row.control?.();
@@ -334,6 +508,7 @@ function renderRow(row: SettingRow): HTMLElement {
       class: row.value ? "v mono" : "v mono dim",
       text: row.value ?? PLACEHOLDER,
     });
+  if (row.id) right.id = row.id;
 
   return el("div", { class: "set-row" }, [
     el("span", { text: row.label }),
@@ -341,18 +516,12 @@ function renderRow(row: SettingRow): HTMLElement {
   ]);
 }
 
-function renderTab(tab: TabSpec): HTMLElement {
-  const sections = tab.groups.map((group) =>
-    el("div", { class: "set-sec" }, [
-      el("div", { class: "set-sec-t", text: group.title }),
-      ...group.rows.map(renderRow),
-    ]),
-  );
-
-  // 以前每个页签底下都压一行「仅主题 / 置顶 / 粒度已接通」的说明。
-  // 现在这一句已经不成立（安全组、保存行为都真的生效），而没接通的项目根本
-  // 不在这里了 —— 留着它等于继续替每一行道歉，不如让它别来稀释视线。
-  return el("div", { class: "set-tab", id: `tab-${tab.id}` }, sections);
+function renderGroup(group: SettingGroup): HTMLElement {
+  return el("div", { class: "set-sec" }, [
+    el("div", { class: "set-sec-t", text: group.title }),
+    ...(group.intro ? [group.intro()] : []),
+    ...group.rows.map(renderRow),
+  ]);
 }
 
 // ─── 装配 ────────────────────────────────────────────────────────────────────
@@ -360,25 +529,19 @@ function renderTab(tab: TabSpec): HTMLElement {
 const drawer = (): HTMLElement => need("#set-drawer");
 const body = (): HTMLElement => need("#set-body");
 
-let activeTab = TABS[0].id;
-
-function showTab(id: string): void {
-  activeTab = id;
-  for (const button of drawer().querySelectorAll<HTMLElement>("#set-tabs button")) {
-    button.classList.toggle("on", button.dataset.tab === id);
-  }
-  for (const panel of body().querySelectorAll<HTMLElement>(".set-tab")) {
-    panel.classList.toggle("active", panel.id === `tab-${id}`);
-  }
-}
-
-export function openSettings(tab?: string): void {
-  showTab(tab ?? activeTab);
+export function openSettings(): void {
   drawer().classList.add("open");
+  // 从锁屏上进来的（忘了口令时的唯一出口）：把抽屉抬到锁屏之上，锁并没解
+  if (isLockScreenUp()) suppressLockScreen();
+  // 右侧只有一块地方：开设置就得把任务抽屉收起来（shell/panels.ts）
+  panelOpened("settings");
 }
 
 export function closeSettings(): void {
   drawer().classList.remove("open");
+  panelClosed("settings");
+  // 配对收起让位：期间清了口令 / 重设了当前分区的口令，锁屏就不会再回来
+  restoreLockScreen();
 }
 
 export const isSettingsOpen = (): boolean => drawer().classList.contains("open");
@@ -389,18 +552,36 @@ export function toggleSettings(): void {
 }
 
 export function mountSettings(): void {
-  body().replaceChildren(...TABS.map(renderTab));
+  body().replaceChildren(
+    ...TOP_GROUPS.map(renderGroup),
+    partitionSection(),
+    renderGroup(ABOUT),
+  );
 
-  for (const button of drawer().querySelectorAll<HTMLElement>("#set-tabs button")) {
-    button.addEventListener("click", () => showTab(button.dataset.tab ?? TABS[0].id));
-  }
+  // 版本号等 Tauri 回话再写进去（标题栏那个徽章撤了，这里是唯一一处）。
+  // 浏览器预览 / 拿不到就保留 ABOUT 里写死的那个，不为版本号卡住外壳
+  void getVersion()
+    .then((version) => {
+      const node = document.getElementById("set-ver");
+      // 前面的 v 是给版本号看的：这一行念作「版本 v1.0.0」，
+      // 而 Tauri 回话给的是纯数字
+      if (node) node.textContent = `v${version}`;
+    })
+    .catch(() => {});
 
   need("#set-close").addEventListener("click", closeSettings);
   need("#set-btn").addEventListener("click", toggleSettings);
+  registerPanel("settings", closeSettings);
+  // 锁屏上那个「设置」按钮走这里（它不能直接 import 本模块：本模块依赖 lock）
+  registerOpen("settings", openSettings);
+
+  // 切到别的模块就收起，和「编辑任务」抽屉一致：设置讲的是外壳与分区，翻页后
+  // 还挂在这儿，看上去就像新页面里长出来的一层，也说不清它属于谁
+  subscribePages(() => {
+    if (isSettingsOpen()) closeSettings();
+  });
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && isSettingsOpen()) closeSettings();
   });
-
-  showTab(activeTab);
 }
