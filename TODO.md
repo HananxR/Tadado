@@ -404,3 +404,11 @@
   **刻意没开 `Require status checks`**：它会让直接推 `main` 被拒（新 commit 的 CI 还没跑，状态是 expected），而本仓库的流程是「本地跑 e2e → 直接推 main」（`tadado-release` 步骤 1 + 4）。CI 现在仍在 `push` / `pull_request` 上跑，只是**事后报警**而不是事前闸门。将来若加了协作者、或吃过一次「忘了跑 e2e 就推了」的亏，再改成 PR 流程 —— 那时 skill 的第 4 步也要一起改。
   skill 的铁律里同步记了一句：`main` 已有分支保护，但**别把它当挡箭牌**，本地那层照样要守住；也**不要**为了绕开它去点 `Allow force pushes`。
 
+- [x] **安装包上架阿里云盘（v1.0.0）＋ 新建 `tadado-aliyun` skill**（云盘 `/Tadado/Tadado2_setup_v1.0.0.exe`；`README.md` 的「安装」一节加「国内下载」；`resources/skill/tadado-aliyun/SKILL.md` 从「手动上传」改成 CLI 版）：
+  **先摸清既有约定**：云盘 `/Tadado` 里是 v0.x 的全套历史（31 个文件 / 1.42 GB，最新 v0.2.4），命名规律是 `Tadado_setup_v<版本>.exe` / `_portable.zip` / `_linux.tar.gz` / `_source.zip` —— 新版沿用同一规律落成 **`Tadado2_setup_v1.0.0.exe`**（前缀加 `2`：产品名就是 Tadado2，也与旧文件一眼区分）。
+  **工具**：`aliyunpan` v0.3.9（在 `D:\aliyunpan-v0.3.9-windows-x64\`）。开源第三方 —— 因为阿里云盘**没有官方 API**，官方客户端也不提供命令行，这是唯一能自动化的路。登录由用户完成（浏览器 + 手机扫码两道），凭证留在工具目录里。
+  **踩到的坑（已写进 skill）**：`upload` 的**最后一个参数是「目标目录」而不是「另存为的文件名」** —— 第一次写成 `upload <文件> /Tadado/Tadado2_setup_v1.0.0.exe`，结果得到一个**同名目录**，文件被塞进 `/Tadado/Tadado2_setup_v1.0.0.exe/Tadado2_1.0.0_x64-setup.exe`。`ls` 一看就发现了，`rm` 掉重传再 `rename` 改名。skill 因此写明「**传完一定要 `ls /Tadado` 核一眼**」。
+  **分享**：`share set -mode 1`（普通分享，`.exe` 实测可用；不支持的类型要换 `-mode 3` 快传）→ 私密分享 `https://www.alipan.com/s/MA7w54XvNWY`，提取码 `tfaq`。⚠️ **文件分享的链接绑的是「这一次」那个文件 —— 下次发版要重新分享并回来改 README**，这条写进了 skill 的回执要求。
+  **账号安全（你特意叮嘱的）**：skill 里定死四条 —— 不读 `aliyunpan_config.json` 与 `aliyunpan_command_history.txt`；不把它们的路径或内容写进 skill / TODO / 提交信息 / 对话；要验登录就用 `ls /`，**不用 `who` / `loglist`**（那两条会打印账号、手机号、UID、配额）；不把工具目录复制进仓库。这一轮全程照此执行 —— 上面的流水与对话里只有链接、提取码和 SHA256。
+  **README**：「安装」表格后加「国内下载」段，带链接、提取码、以及安装包 SHA256 `C8741B…`（网盘文件没有签名，哈希是唯一能让用户自证「下的没被换过」的东西；并给了 `Get-FileHash` 的核法）。
+
