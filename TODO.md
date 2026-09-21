@@ -399,3 +399,8 @@
   ⑤ **长日志别用 `Select-String` 全量过**（`npm run e2e` 几百行会爆内部缓冲、截断输出），先 `Tee-Object` 落盘再筛，跑完删掉那个临时文件；
   ⑥ **安全护栏会拦掉 `Select-String` / `Get-Content`**（判成「读文件内容、之后可能再写回」），报的还是一句**和实际命令无关**的编码警告 —— 别去理论，把动作拆开就行；另外 `git commit` / `git push` / `Copy-Item` 本身不会被拦，但**别和读文本的动作塞进同一条命令**：一条被拦，整条都不执行（连前面已经成功的 `git add` 也白做）。这条是补这六条时**当场又踩到**的。
 
+- [x] **GitHub 上给 `main` 开分支保护**（仓库设置，不落仓库文件）：`Block force pushes` + `Restrict deletions`，`enforcement = Active`，target = `Include default branch`。**普通 `git push` 照常**（实推验证过：`965db2d..859ce05`，退出码 0）—— 这两条规则只管 force push 与删除。
+  ⚠️ 两处演示出来的坑：① Ruleset 的 `Enforcement status` **默认是 `Disabled`**（草稿态），不改成 `Active` 就等于没配；② **`Target branches` 默认是空的**，不点 `Add target` 会得到那句 "This ruleset does not target any resources and will not be applied" —— 远端 `include` 是 `[]`。两处都补上之后远端才变成 `include: ["refs/heads/main"]`。
+  **刻意没开 `Require status checks`**：它会让直接推 `main` 被拒（新 commit 的 CI 还没跑，状态是 expected），而本仓库的流程是「本地跑 e2e → 直接推 main」（`tadado-release` 步骤 1 + 4）。CI 现在仍在 `push` / `pull_request` 上跑，只是**事后报警**而不是事前闸门。将来若加了协作者、或吃过一次「忘了跑 e2e 就推了」的亏，再改成 PR 流程 —— 那时 skill 的第 4 步也要一起改。
+  skill 的铁律里同步记了一句：`main` 已有分支保护，但**别把它当挡箭牌**，本地那层照样要守住；也**不要**为了绕开它去点 `Allow force pushes`。
+
