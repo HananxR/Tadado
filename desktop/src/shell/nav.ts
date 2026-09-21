@@ -26,14 +26,19 @@ function renderPage(spec: PageSpec): HTMLElement {
     el("div", { class: "ph-grow" }),
   ]);
 
-  if (spec.action) {
-    const view = PAGE_VIEWS[spec.id];
-    const action = el("button", { class: "btn primary", text: spec.action });
-    action.addEventListener("click", () => {
-      if (view.onAction) view.onAction();
-      else toast(`「${spec.action}」尚未接入`);
+  // 页头动作（registry 的 actions）：按数组顺序从左到右排，主按钮由 kind 指定
+  const view = PAGE_VIEWS[spec.id];
+  for (const action of spec.actions ?? []) {
+    const button = el("button", {
+      class: action.kind === "primary" ? "btn primary" : "btn",
+      text: action.label,
+      title: action.title,
     });
-    head.append(action);
+    button.addEventListener("click", () => {
+      if (view.onAction) view.onAction(action.id);
+      else toast(`「${action.label}」尚未接入`);
+    });
+    head.append(button);
   }
 
   const body = el("div", { class: "page-body" });

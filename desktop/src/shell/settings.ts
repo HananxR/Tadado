@@ -33,7 +33,13 @@ import {
   renamePartition,
   setDefaultPartition,
 } from "../data/partitions";
-import { archiveAfterDays, onDataChange, setArchiveDays } from "../data/store";
+import {
+  ARCHIVE_NEVER,
+  ARCHIVE_NOW,
+  archiveAfterDays,
+  onDataChange,
+  setArchiveDays,
+} from "../data/store";
 
 import { confirmAction } from "./confirm";
 import { el, need } from "./dom";
@@ -171,11 +177,31 @@ function idleLockControl(partition: Partition): HTMLElement {
   return control.root;
 }
 
-/** 自动归档（**按分区**）：已完成任务结束 N 天后收进归档。关 = 只在手动归档时收。 */
+/** 归档档位的短标签（那枚「自动 ▾」的悬浮提示用）。 */
+const archiveShort = (days: number): string =>
+  days === ARCHIVE_NEVER ? "不归档" : days === ARCHIVE_NOW ? "立即" : `${days} 天`;
+
+/** 归档档位的整句说法（toast 用）：「完成即归档」/「完成后 7 天归档」/「不归档」。 */
+const archiveLabel = (days: number): string =>
+  days === ARCHIVE_NEVER
+    ? "不归档"
+    : days === ARCHIVE_NOW
+      ? "完成即归档"
+      : `完成后 ${days} 天归档`;
+
+/**
+ * 完成后归档（**按分区**）：勾完「已完成」之后，过多久把它从任务页收进归档。
+ *
+ * 档位就是这句话的后半截：**不归档 / 立即 / 7 天 / 30 天 / 90 天**。
+ * 以前它叫「自动归档」—— 那个词说不出**什么时候**自动（7/30/90 也是自动），
+ * 而第一档叫「关」也错位：它是这条刻度上的 0，不是「这个功能开不开」。
+ * 现在左边第一档叫「不归档」（功能显式关掉），「立即」是真正的 0 天。
+ */
 function archiveControl(partition: Partition): HTMLElement {
   const control = seg(
     [
-      { value: "0", label: "关" },
+      { value: String(ARCHIVE_NEVER), label: "不归档" },
+      { value: String(ARCHIVE_NOW), label: "立即" },
       { value: "7", label: "7 天" },
       { value: "30", label: "30 天" },
       { value: "90", label: "90 天" },
@@ -184,11 +210,7 @@ function archiveControl(partition: Partition): HTMLElement {
     (value) => {
       control.setValue(value);
       void setArchiveDays(Number(value), partition.id).then(() => {
-        toast(
-          value === "0"
-            ? `「${partition.name}」不再自动归档`
-            : `「${partition.name}」的已完成任务 ${value} 天后归档`,
-        );
+        toast(`「${partition.name}」${archiveLabel(Number(value))}`);
       });
     },
   );
@@ -294,8 +316,9 @@ function partitionSection(): HTMLElement {
 
       const days = archiveAfterDays(partition.id);
       const idle = idleLimit(partition.id);
-      auto.classList.toggle("on", days > 0 || idle > 0);
-      auto.title = `自动归档 ${days === 0 ? "关" : `${days} 天`} · 空闲锁定 ${idle === 0 ? "关" : `${idle} 分钟`}`;
+      // 「立即」(-1) 也算**开着** —— 它只是延迟为 0，不代表关掉（只有 ARCHIVE_NEVER 才是关）
+      auto.classList.toggle("on", days !== ARCHIVE_NEVER || idle > 0);
+      auto.title = `完成后归档 ${archiveShort(days)} · 空闲锁定 ${idle === 0 ? "关" : `${idle} 分钟`}`;
     };
 
     pass.addEventListener("click", () => void editPassword(partition).then(paint));
@@ -311,12 +334,12 @@ function partitionSection(): HTMLElement {
       );
     });
 
-    // 展开了才建那两个 seg：一个分区两个、默认都是关，建了也是常年不动的死控件
+    // 展开了才建那两个 seg：一个分区两个、多数人不会天天动，建了也是常年不动的死控件
     let built = false;
     auto.addEventListener("click", () => {
       if (!built) {
         more.append(
-          subRow("自动归档", archiveControl(partition)),
+          subRow("完成后归档", archiveControl(partition)),
           subRow("空闲锁定", idleLockControl(partition)),
         );
         built = true;
@@ -471,11 +494,15 @@ function aboutIntro(): HTMLElement {
     el("div", { class: "about-h", text: "功能" }),
     list([
       "五个视图：总览、任务、任务图谱、活动分析、任务管理",
-      "任务页是甘特时间轴：色条为起止区间、填充为进度，档位从今天到全年",
+      // 这行原来写「色条为起止区间…档位从今天到全年」：条形 2026-09-20 已改成
+      // **创建 → 截止**，档位也从来没有「全年」这一档（是 昨天 / 今天 / 上周 / 本周 /
+      // 上月 / 本月 + 全部）。对着界面核对一遍再写（2026-09-21）
+      "任务页是甘特时间轴：条 = 创建 → 截止那一段时间，颜色只编码状态，窗口固定 32 天、按住可拖动平移",
       "图谱把「任务 × 标签 × 分区」铺成关系网络，悬停高亮、双击直达",
       "活动分析：整年热力图 + 分标签报告，可按当前范围导出 md / txt / xlsx",
-      "分区是数据的隔离边界，每个分区可单独设口令、空闲锁定与自动归档",
-      "Markdown 方言：一行一条任务（- [ ] 标题 #标签 ⏰09-20 :: 30%），粘贴多行即建",
+      "分区是数据的隔离边界，每个分区可单独设口令、空闲锁定与完成后归档",
+      // 界面上的按钮叫「数据迁入」（原来这里写「批量迁入」，与按钮对不上）
+      "Markdown 写法：一行一条任务（- [ ] 标题 #标签 ⏰09-20 :: 30%），任务管理页可「数据迁入」",
     ]),
 
     el("div", { class: "about-h", text: "特色" }),
@@ -483,7 +510,7 @@ function aboutIntro(): HTMLElement {
       "本地存储：单文件 SQLite，无账号、无云端同步",
       "一屏到底：五个页面都撑满窗口，筛选与翻页不必整页滚动",
       "键盘优先：Ctrl+1–5 切页，Ctrl+Shift+Space 全局唤起",
-      "改状态留痕：完成、改进度、改优先级都会写进活动时间线",
+      "变更留痕：状态、进度、优先级的每一次改动都写进活动时间线",
     ]),
   ]);
 }

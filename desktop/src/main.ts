@@ -13,6 +13,7 @@ import { setupHotkey } from "./shell/hotkey";
 import { bootLock } from "./shell/lock";
 import { mountNav } from "./shell/nav";
 import { mountPartition } from "./shell/partition";
+import { watchDayRollover } from "./shell/rollover";
 import { initScheme } from "./shell/scheme";
 import { mountSettings } from "./shell/settings";
 import { initTheme } from "./shell/theme";
@@ -61,6 +62,11 @@ async function boot(): Promise<void> {
   await setupHotkey().catch((error) => {
     toast(`热键（${describe(error)}）不可用`);
   });
+
+  // 跨日续跑：托盘常驻的应用会开着过夜，过了午夜得把「今天」重新算一遍
+  // （重载一次，见 shell/rollover.ts 里为什么是这个办法）。
+  // 放在 `isTauri()` 之后：常驻这件事只存在于 Tauri，而 e2e 跑到一半被重载会更难查。
+  watchDayRollover();
 }
 
 if (document.readyState === "loading") {

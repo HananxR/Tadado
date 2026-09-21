@@ -18,6 +18,12 @@ export const HOTKEY_ACCELERATOR = "Control+Shift+Space";
 export const HOTKEY_KEYS = ["Ctrl", "Shift", "Space"] as const;
 
 export async function setupHotkey(): Promise<string> {
+  // 先摘掉可能还挂着的那一份。**重载之后 Rust 侧的注册仍然在**（托盘与热键都由
+  // Rust 侧持有，与 webview 生命周期解耦 —— 见 main.ts 开头那段），直接再 register
+  // 会以「已注册」失败，于是每次重载都弹一句「热键不可用」，而热键其实是好用的。
+  // 跨日自动重载（见 shell/rollover.ts）会让这条路成为常态，所以这里必须是幂等的。
+  if (await isRegistered(HOTKEY_ACCELERATOR).catch(() => false)) await teardownHotkey();
+
   await registerHotkey(HOTKEY_ACCELERATOR, (event) => {
     if (event.state === "Pressed") void toggleWindow();
   });

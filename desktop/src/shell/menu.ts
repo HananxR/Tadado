@@ -26,6 +26,9 @@ export interface Dropdown<V extends string> {
    * 无限递归：paint → setValue → onPick → paint。任务抽屉一打开就 RangeError，
    * 抽屉节点建出来了却永远加不上 .open —— 表现就是双击、右键都没反应。
    * 选值只有一条路：菜单行自己的点击回调。setValue 因此是纯展示，和 seg 一致。
+   *
+   * 它用在**别处改了值**的时候（跨页请求把优先级筛选换掉、外部复位档位这类），
+   * 自己的点击不用它 —— 菜单行会顺手把显示同步好（见下面的 row 回调）。
    */
   setValue(value: V): void;
 }
@@ -65,6 +68,12 @@ export function dropdown<V extends string>(options: {
     const row = el("div", { class: "menu-item" }, [el("span", { text: item.label }), check]);
     row.addEventListener("click", () => {
       closeOpenMenu();
+      // 点了自己就把显示同步好（按钮文案 + 勾选），再交给调用方。
+      // 2026-09-21 修：这一步原来只在 `setValue` 里做，于是**菜单行的点击不改显示** ——
+      // 任务页的排序下拉点「按创建时间」，值确实换了、行也重排了，按钮上却还写着
+      // 「按截止日期」、勾也还在原来那项上，看着就是「切不过去」。
+      // 调用方仍可在**别处改了值**时用 setValue 同步（跨页请求复位筛选那类）。
+      apply(item.value);
       options.onPick(item.value);
     });
     menu.append(row);
@@ -82,14 +91,32 @@ export function dropdown<V extends string>(options: {
     }
   };
 
+  /**
+   * 展开：默认向下，**下方装不下就向上翻**（2026-09-20 用户报的）。
+   *
+   * 分页器贴在卡片底部，而那几张卡片的正文是 `overflow: hidden`（撑满场景的要求，
+   * 见 pages.css 里 `#page-overview .card > .card-b`）—— 菜单向下展开会落在那条
+   * 裁切线以下：**看得见一截，点不到任何一项**。翻上去之后菜单落在卡片内部，
+   * 既不裁也不挡别人。
+   *
+   * 判据只看视口：下方放不下整块菜单、且上方比下方宽裕，就翻。先量高度再决定，
+   * 所以要先 `open`（display:block 之后 offsetHeight 才是真值）。
+   */
+  const openPanel = (): void => {
+    menu.classList.add("open");
+    menu.classList.remove("up");
+    const spaceBelow = window.innerHeight - button.getBoundingClientRect().bottom;
+    if (spaceBelow < menu.offsetHeight + 8 && button.getBoundingClientRect().top > spaceBelow) {
+      menu.classList.add("up");
+    }
+    openMenu = menu;
+  };
+
   button.addEventListener("click", (event) => {
     event.stopPropagation();
     const willOpen = !menu.classList.contains("open");
     closeOpenMenu();
-    if (willOpen) {
-      menu.classList.add("open");
-      openMenu = menu;
-    }
+    if (willOpen) openPanel();
   });
 
   apply(options.value);
