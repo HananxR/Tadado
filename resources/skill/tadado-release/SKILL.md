@@ -284,6 +284,23 @@ npm run e2e 2>&1 | Tee-Object -FilePath e2e-check.txt | Select-String -Pattern '
 之后再从那个文件里统计（`Select-String -Path e2e-check.txt -Pattern '^OK' | Measure-Object`）。
 **跑完记得删** —— 它是临时文件，不该留在工作区（`git status` 里会冒出来）。
 
+### 6. 有些环境会**拦掉** `Select-String` / `Get-Content` 这类命令
+
+在带安全护栏的环境里（AI 助手的命令审批），这两条会被判成「读文件内容、之后可能再写回去」
+从而**直接拦掉**，而且报的是一句**和你实际敲的命令无关**的编码警告：
+
+```
+[Craft] Blocked PowerShell command: Get-Content is reading file content without an explicit encoding…
+                ↑ 你那条命令里可能根本没有 Get-Content
+```
+
+**别跟它理论，把动作拆开就好**：
+
+- 要统计日志 → `Get-Content -Path x.txt -Encoding UTF8`（显式编码）或 `-AsByteStream`；
+- 只是想看一眼某个文件 → 用**编辑器的读文件能力**（AI 工具自带的 `read_file`），不要走 shell；
+- `git commit`、`git push`、`Copy-Item` 本身不会被拦 —— 但**别和读文本的动作塞进同一条命令**，
+  一条被拦，整条都不执行（连前面已经成功的 `git add` 都白做）。
+
 ## 这份 skill 为什么存在
 
 因为这套流程**每一步都踩过坑**：
