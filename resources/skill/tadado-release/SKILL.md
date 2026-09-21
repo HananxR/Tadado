@@ -192,6 +192,14 @@ gh release create v1.0.0 --title "Tadado2 v1.0.0" --notes-file RELEASE_NOTES.md 
 
 发完把 Release 链接给用户。README 里的下载说明指向 Releases，不用改。
 
+### 4b. 国内镜像（可选，但国内用户多半需要）
+
+GitHub Releases 在国内经常打不开。要把安装包也放到阿里云盘（README 里那个「国内下载」），
+走 **`tadado-aliyun`** 那个 skill —— 它管上传前校验（时间戳 / SHA256）、分享方式（**文件夹**分流，
+链接长期不变）、以及把链接与哈希写回 README。
+
+⚠️ 阿里云盘**没有官方 API**，所以没有「自动上传」；别在发布流程里假装有这一步。
+
 ## 步骤 5：同步 skill 到本机
 
 `resources/skill/` 是**仓库里的权威源**，但 `.claude/` 在 `.gitignore` 里 ——
