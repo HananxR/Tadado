@@ -89,7 +89,8 @@
 | 便携版 | `Tadado2-portable.zip`（3.3 MB），解压即用、放在哪都能跑（WebView2 由 Win10/11 自带） |
 | 从源码构建 | `cd desktop && npm install && npm run tauri build` |
 
-> **国内下载**（不用访问 GitHub）：阿里云盘 <https://www.alipan.com/s/S6kDK8xJGVt>，提取码 `wccn`。
+> **国内下载**（不用访问 GitHub）：阿里云盘 <https://www.alipan.com/s/S6kDK8xJGVt>
+> —— **公开分享，无需提取码**，打开就能看。
 > 这是**整个下载目录**的分享链接，能一直用下去，不必每次发版回来换。
 >
 > 进去认准 **`Tadado2_setup_v1.0.0.exe`**（2.6 MB）。目录里那些 `Tadado_setup_v0.x.x.exe`、
