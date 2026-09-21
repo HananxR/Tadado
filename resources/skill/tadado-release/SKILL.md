@@ -218,6 +218,72 @@ Get-ChildItem resources\skill -Directory | ForEach-Object {
 | e2e 红了但用户催着打包 | **不要**带着红的构建去打包。先修，或者明确告诉他「这是带病的包」并让他定 |
 | 版本号没变却要发 Release | 别发 —— `gh release create` 同 tag 会失败，先确认用户到底要什么 |
 
+## 在这台机器上干活：PowerShell 的几个坑
+
+仓库的自动化都在 Windows 的 PowerShell 下跑，下面几条是**实际踩过的**（不是理论上的）。
+
+### 1. `Get-Content` 默认按 GBK 读，UTF-8 文件会整段乱码
+
+`CHANGELOG.md` / `README.md` / `TODO.md` 都是 UTF-8。直接读会得到「鈥?」「銆?」这种 ——
+**看着像文件坏了，其实只是解码错了**。摘 CHANGELOG 做 Release 说明时踩过一次。
+
+```powershell
+# 读：显式给 UTF8
+$all = Get-Content CHANGELOG.md -Raw -Encoding UTF8
+
+# 写：也要显式，并且关掉 BOM
+[System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding $false))
+```
+
+⚠️ `Set-Content -Encoding UTF8` 在 PowerShell 5.1 下会**写 BOM**；给 `gh --notes-file` 用还能忍，
+但 `WriteAllText` 干净。
+
+**判断文件到底坏没坏**：用编辑器（或 AI 工具的 `read_file`）打开看一眼 —— 那边按 UTF-8 解码。
+**不要**因为控制台乱码就去「修」文件。
+
+### 2. `git mv` 搬不动未跟踪的文件
+
+`git mv` 要求源文件**已被跟踪**。这个仓库有过整个 `tools/` 目录都没 `git add` 过的情况，
+于是 `git mv tools/x.mjs resources/x.mjs` 直接报 `fatal: not under version control`。
+
+```powershell
+Move-Item tools\x.mjs resources\x.mjs -Force    # 退而求其次
+```
+
+代价：git 认不出这是一次「重命名」，日志里会显示成一条删除 + 一条新增。文件已被跟踪之后再搬就没这问题。
+
+### 3. `gh … --jq` 在 PowerShell 里会被拆参数
+
+```powershell
+# ✗ accepts at most 1 arg(s), received 3 —— `|` 那些被 PowerShell 先吃了
+gh release view v1.0.0 --json assets --jq '.assets[] | "\(.name)"'
+
+# ✓ 交给 ConvertFrom-Json
+(gh release view v1.0.0 --json assets | ConvertFrom-Json).assets |
+  ForEach-Object { "{0}  {1} KB" -f $_.name, [math]::Round($_.size/1KB, 1) }
+```
+
+### 4. `git push` 的进度输出走 stderr —— **报红不等于失败**
+
+`git push` 把 `To github.com:…` 和 `* [new tag] …` 写在 **stderr**，而 PowerShell 会把原生命令的
+stderr 渲染成红字 + `NativeCommandError`。**看这一行判断成败**：
+
+```
+7544c12..acf75ec  main -> main
+```
+
+### 5. 长日志别用 `Select-String` 全量过
+
+`npm run e2e` 会打几百行，`Select-String` 会把整份输出读进内存再过滤，很容易爆掉内部缓冲
+（输出被截断，看不到真正想找的那条）。做法是**先落盘再筛**：
+
+```powershell
+npm run e2e 2>&1 | Tee-Object -FilePath e2e-check.txt | Select-String -Pattern '^FAIL|全部通过'
+```
+
+之后再从那个文件里统计（`Select-String -Path e2e-check.txt -Pattern '^OK' | Measure-Object`）。
+**跑完记得删** —— 它是临时文件，不该留在工作区（`git status` 里会冒出来）。
+
 ## 这份 skill 为什么存在
 
 因为这套流程**每一步都踩过坑**：

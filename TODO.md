@@ -391,3 +391,10 @@
   **顺带踩到两个坑（记下来）**：① `git mv` 对**未跟踪**的文件不可用（`tools/` 整个目录从没被 add 过）—— 搬迁移工具时就撞上了，改用 `Move-Item`；② PowerShell 的 `Get-Content -Raw` 按 **GBK** 读 UTF-8 文件 → 摘 CHANGELOG 时整段乱码，加 `-Encoding UTF8` 才对（写出去也要显式 `UTF8Encoding $false`，避免 BOM）。
   **提交信息风格**：Conventional Commits，与仓库既有风格一致（`feat(desktop):` / `chore(desktop):` / `test(desktop):` / `docs:` / `chore:`）
 
+- [x] **`tadado-release` 补一节「在这台机器上干活：PowerShell 的几个坑」**（`resources/skill/tadado-release/SKILL.md`）：第一次实战之后按你的要求补，那五条都是**这一轮真踩到的**，不是理论：
+  ① **`Get-Content -Raw` 默认按 GBK 读** UTF-8 文件（摘 CHANGELOG 做 Release 说明时整段乱码，看着像文件坏了）—— 读要 `-Encoding UTF8`、写要 `UTF8Encoding $false` 避免 BOM，并写明「判断文件坏没坏要用编辑器 / AI 工具看，别因为控制台乱码就去修文件」；
+  ② **`git mv` 搬不动未跟踪的文件**（`tools/` 整个目录从没 `git add` 过 → `fatal: not under version control`），退用 `Move-Item`，代价是 git 认不出这是一次「重命名」；
+  ③ **`gh … --jq` 在 PowerShell 里被拆参数**（`accepts at most 1 arg(s), received 3`），改用 `ConvertFrom-Json`；
+  ④ **`git push` 的进度输出走 stderr**，PowerShell 渲染成红字 + `NativeCommandError`，**报红不等于失败** —— 看 `7544c12..acf75ec  main -> main` 那一行判断成败；
+  ⑤ **长日志别用 `Select-String` 全量过**（`npm run e2e` 几百行会爆内部缓冲、截断输出），先 `Tee-Object` 落盘再筛，跑完删掉那个临时文件。
+
