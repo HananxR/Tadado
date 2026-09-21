@@ -1,3 +1,5 @@
+
+
 <p align="center">
   <img src="resources/icons/app.png" width="96" alt="Tadado">
 </p>
@@ -55,7 +57,7 @@ Tadado 是一款本地优先的桌面任务管理工具：用 Markdown 一行写
 |------|------|
 | Windows 安装包 | GitHub Releases 下载 `Tadado_setup_v*.exe` |
 | 便携包 | Windows `.zip` / Linux `tar.gz`，解压即用 |
-| 从源码运行 | `uv venv --python 3.10 .venv && uv sync --dev && uv run python main.py` |
+| 从源码运行 | 在 `archive/pyversion` 分支：`uv venv --python 3.10 .venv && uv sync --dev && uv run python main.py` |
 
 ## 📖 文档
 
