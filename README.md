@@ -143,7 +143,7 @@ node scripts/migrate-activity.mjs <活动清单.md> --apply     # 对账通过�
 所以整个目录单独拷走也能用，不依赖这个仓库。同一份手册也是 Claude Code / Codex 这类助手的
 操作指南：它把上面那套「先预演、认不出就停、数字要平」写成了助手**必须遵守**的规矩。
 
-**Releases 里有一份现成的** `tadado-activity-import.zip`（38 KB）—— 解压到 `.claude/skills/`
+**Releases 里有一份现成的** `tadado-activity-import.zip`（15.6 KB）—— 解压到 `.claude/skills/`
 （或 Codex 的对应目录）即可，不需要 clone 这个仓库。
 
 ## 版本线

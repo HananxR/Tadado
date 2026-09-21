@@ -114,7 +114,8 @@ Get-ChildItem desktop/src-tauri/target/release/bundle -Recurse -File |
 ```
 
 参考体积：安装包 ≈2.59 MB、MSI ≈3.62 MB、便携 zip ≈3.33 MB（里面那个 exe 是 7.68 MB）、
-迁移 skill zip ≈38 KB。**突然变大**通常意味着打包进了不该进的东西。
+迁移 skill zip ≈15.6 KB（压缩后；里面三个文件解压出来约 37.7 KB）。
+**突然变大**通常意味着打包进了不该进的东西。
 
 ## 步骤 3：提交
 
@@ -182,7 +183,7 @@ gh release create v1.0.0 --title "Tadado2 v1.0.0" --notes-file RELEASE_NOTES.md 
   "desktop/src-tauri/target/release/bundle/tadado-activity-import.zip"
 ```
 
-**四份都要传**，包括那个 38 KB 的 skill 包 —— 它体积最小，却最容易被漏（它不跟
+**四份都要传**，包括那个 15.6 KB 的 skill 包 —— 它体积最小，却最容易被漏（它不跟
 `npm run tauri build` 走，`bundle/` 里也不会自己出现）。漏了它，用 AI 助手搬旧数据的用户
 只能回去改仓库 URL。
 

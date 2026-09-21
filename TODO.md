@@ -377,11 +377,17 @@
 - [x] **第四份交付物：迁移 skill 的 zip**（生成 `bundle/tadado-activity-import.zip`；改 `tadado-release` skill 四处、`DESIGN.md`、`CLAUDE.md`、`README.md`）：你指出「少一个旧数据迁移的 SKILL」。
   **它为什么该跟 Release 一起发**：用户装上 Tadado2 之后，要让自己的 Claude Code / Codex 帮忙搬旧数据，就得有那份 skill —— 而它**不是应用的产物**，不跟 `npm run tauri build` 走，`bundle/` 里也不会自己出现。不发出去，用户只能回去找仓库 URL，而「拿仓库 URL 让 AI 去读」正是前几轮才废掉的那条路（`resources/skill/` 那份之所以做成自包含，就是为了这个）。
   **关键细节：压目录本身，不要压里面的文件** —— `-Path resources\skill\tadado-activity-import` 而不是 `…\*`：zip 里必须保留 `tadado-activity-import/` 这一层，用户解压出来才能直接放进 `.claude/skills/`；少了这层，`.claude/skills/SKILL.md` 是**加载不到**的。
-  **实测**：`tadado-activity-import.zip` = **38 KB**，条目三条 —— `SKILL.md`(13.2 KB) / `scripts/migrate-activity.mjs`(23.7 KB) / `sample-input.md`(0.8 KB)，都在 `tadado-activity-import\` 这一层下面。
+  **实测**：`tadado-activity-import.zip` = **15.6 KB**（压缩后；里面 `SKILL.md`(13.2 KB) / `scripts/migrate-activity.mjs`(23.7 KB) / `sample-input.md`(0.8 KB)，解压出来约 37.7 KB），三条都在 `tadado-activity-import\` 这一层下面 —— 这一层就是它能被 `.claude/skills/` 加载的原因。
   **流程与文档同步**：`tadado-release` skill —— 步骤表、步骤 2（新增「第四个产物」整段，含命令与「为什么压目录」）、`bundle/` 的核对命令（扩展名加 `.zip`）、参考体积、Release 上传清单（改成四份，并注明「它体积最小却最容易被漏」）、末尾的坑（补一条）；`DESIGN.md` 的产物说明补第四份；`CLAUDE.md` 的打包命令补压 skill 包那一步；`README.md` 迁移一节加一句「Releases 里有一份现成的，解压到 `.claude/skills/` 即可，不用 clone」。skill 已重新同步到本机。
   ⚠️ 同样**没重新打包、没跑 e2e**（`desktop/` 没动）
 - [x] **新增项目级 skill：`tadado-release`（发布流程）**（`resources/skill/tadado-release/SKILL.md`；`README.md` 文档清单登记）：你要一个「自动提交和推送打包的软件、并同步 skill」的 skill。写成**五步**：验收（e2e）→ 打包（三份产物）→ 提交（一次 commit）→ 推送（push / tag / Release）→ 同步 skill 到本机。
   **一处没有完全照办的地方**：你要的是「**自动**提交和推送」；我写成「**一次确认后全自动**」—— 先把 `git status --short` + `git diff --stat` 的摘要给用户看、等他点头，之后提交→推送→打 tag→发 Release 一口气做完，中间不再打断。理由：提交推送不可逆，而这个仓库工作区里长期叠着几十项跨轮改动（此刻 49 项），挑着提交几乎必然漏或混进不相干的东西。**铁律**照 Git 安全协议写死：绝不 force push、绝不 `--no-verify`、绝不改 `git config`、`--amend` 只在明确要求时（用前先核作者）。
   **写进去的坑**：便携版不在 bundler 目标里（漏拷 = 名字对版本对但是旧二进制）、版本号散在**三个文件**（`tauri.conf.json` / `Cargo.toml` / `package.json`）+ CHANGELOG、`resources/skill/` 改了但 `.claude/` 被忽略所以本机不生效、安装包 14 MB **不进 git** 走 Release。另附一张「常见情况」表：工作区干净 / 只动文档能不能跳打包 / e2e 红了但用户催打包时**不许带红构建** / 版本号没变却要发 Release 要拦住。
   **打包命令**：`gh` 2.93 可用、remote 是 `git@github.com:HananxR/Tadado.git`、tag 目前停在 v0.2.7（v1.0.0 还没打）
+
+- [x] **发布 v1.0.0 —— `tadado-release` skill 的第一次实战**：按那五步走完 —— **验收**（`npm run e2e` 192 项 OK / 0 FAIL，105.3s）→ **打包跳过**（`desktop/` 这轮没动，四份产物已是 18:05–18:23 的，正是 skill 里写好的例外）→ **提交 8 条**（按层拆：数据层 / 页面 / 外壳 / 样式 / Rust / 测试 / 文档 / 工具，`60 files changed, 8096 insertions(+), 2426 deletions(-)`）→ **推送**（`main` 7544c12..acf75ec、`v1.0.0` tag）→ **同步 skill 到本机**（两个）。
+  **Release**：[v1.0.0](https://github.com/HananxR/Tadado/releases/tag/v1.0.0)，说明直接摘 CHANGELOG 那一节（2713 字），四份产物一起传 —— `Tadado2_1.0.0_x64-setup.exe`(2.59 MB) / `Tadado2_1.0.0_x64_en-US.msi`(3.62 MB) / `Tadado2-portable.zip`(3.33 MB) / **`tadado-activity-import.zip`(15.6 KB)**。这是仓库第一次有 v1.x 的 tag（此前停在 v0.2.7）。
+  **按 skill 铁律执行的几处**：提交前先把 `git status --short` + `git diff --stat` 与**分组方案**给用户过目、等他确认；推送等用户明说；tag 单独推；全程**没有** `--force`、**没有** `--no-verify`、**没有**改 config。
+  **顺带踩到两个坑（记下来）**：① `git mv` 对**未跟踪**的文件不可用（`tools/` 整个目录从没被 add 过）—— 搬迁移工具时就撞上了，改用 `Move-Item`；② PowerShell 的 `Get-Content -Raw` 按 **GBK** 读 UTF-8 文件 → 摘 CHANGELOG 时整段乱码，加 `-Encoding UTF8` 才对（写出去也要显式 `UTF8Encoding $false`，避免 BOM）。
+  **提交信息风格**：Conventional Commits，与仓库既有风格一致（`feat(desktop):` / `chore(desktop):` / `test(desktop):` / `docs:` / `chore:`）
 

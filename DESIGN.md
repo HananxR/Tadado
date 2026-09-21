@@ -1176,7 +1176,7 @@ v1.x **任务管理页 →「数据迁入」** 导入。**人手写的活动时�
   要不要双击的东西」；zip 3.3 MB，一眼就知道是「下载 → 解压 → 运行」。
   **每次打包都要记得这两步** —— 漏了第一步，README 承诺的便携版会是一个旧二进制；漏了第二步，
   zip 里装的是上一次的 exe。两种都**看不出来**（名字一样）。
-- **第四份交付物是 skill 包**（`tadado-activity-import.zip`，约 38 KB）—— 它**不是应用的产物**，
+- **第四份交付物是 skill 包**（`tadado-activity-import.zip`，约 15.6 KB）—— 它**不是应用的产物**，
   而是给用户的那份「旧数据迁移」skill：用户下载 Tadado2 之后，要让自己的 Claude Code / Codex
   帮忙搬旧数据，就得有它。压的时候**压目录本身**（`-Path resources\skill\tadado-activity-import`），
   让 zip 里保留 `tadado-activity-import/` 这一层 —— 少了它，解压到 `.claude/skills/` 是加载不到的。
