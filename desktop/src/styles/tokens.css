@@ -43,15 +43,36 @@
   --danger: #c24536;
   --danger-soft: #f6e4e0;
 
-  /* ── 状态色（design_tokens.status_color）── */
-  --todo: #3d6fb5;
-  --todo-soft: #e2eaf5;
-  --doing: #c07f2d;
+  /* ── 优先级色阶：红 → 绿（P0 最急 → P3 普通）──
+     取现有语义色当停靠点：--danger（红）→ --doing（橙）→ 两色之间的混色 → --done（绿）。
+     **不引入新色相**，写成 var() / color-mix() 而不是四个字面值 —— 深色主题把那几个
+     语义色换掉了，这一串跟着换（自定义属性在使用点才解析，所以定义一次就够，不必在
+     两个主题块里各写一份）。
+     ⚠️ 代价：P0/P1/P3 会分别与「逾期 / 进行中 / 已完成」同色（红-绿本身就用掉了这三个
+     色）。区分靠**形状与位置**（状态是行首的圆点，优先级是任务列右端的 `Px` 文字）+
+     字重，见 styles/controls.css 的 `.urg`。 */
+  --p0: var(--danger);
+  --p1: var(--doing);
+  --p2: color-mix(in srgb, var(--doing) 45%, var(--done));
+  --p3: var(--done);
+
+  /* ── 状态色（design_tokens.status_color）──
+     ⚠️ 原来是四档（蓝 = 待办 / 橙 = 进行中 / 绿 = 已完成 / 红 = 逾期）。「待办」2026-09-21
+     删掉之后**蓝色一起撤了**（它当初就是「还没开始」的颜色，没有别的档接得住它），
+     现在只有三档，见 types.ts 的 TaskStatus。 */
+  --doing: #d98b1f;
   --doing-soft: #f6ead9;
   --done: #3c8d5e;
   --done-soft: #e0efe5;
   --sus: #8d8675;
   --sus-soft: #eceae3;
+
+  /* （这里原有一组「甘特条的面」渐变 `--bar-overdue/doing/done`，2026-09-21 **撤掉了**：
+     用户看到的是「**渐变分层**」—— 三段色标（浅 → 本色 → 深）在 100% 填充的长条上会露出
+     两个**折点**，读起来像条被切成了几截，而不是一块完整的胶囊。试过的方向（斜向被长度
+     稀释、垂直只有 19px 铺不开）也都不成立。
+     **现在条的色相就是状态色本身**（`.tt-bar.st-*` 直接用 `--doing` / `--done` / `--danger`），
+     进度靠「填了多少」说 —— 顺带把条与徽标、进度饼、优先级色阶重新对回了同一份色值。） */
 
   --hover: rgba(76, 86, 192, 0.06);
 
@@ -100,9 +121,7 @@
   --border-2: #3b3c4c;
   --danger: #e26b5b;
   --danger-soft: #3a2622;
-  --todo: #6f9fe0;
-  --todo-soft: #223049;
-  --doing: #dfa24e;
+  --doing: #e8ab45;
   --doing-soft: #3a2f1e;
   --done: #78bd92;
   --done-soft: #1f3328;
@@ -135,9 +154,7 @@
     --border-2: #3b3c4c;
     --danger: #e26b5b;
     --danger-soft: #3a2622;
-    --todo: #6f9fe0;
-    --todo-soft: #223049;
-    --doing: #dfa24e;
+    --doing: #e8ab45;
     --doing-soft: #3a2f1e;
     --done: #78bd92;
     --done-soft: #1f3328;

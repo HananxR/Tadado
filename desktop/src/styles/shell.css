@@ -175,14 +175,66 @@
   margin: 4px 0;
 }
 
-/* ============ 分区弹层（原型 .part-pop）============ */
+/* ============ 分区（rail 最下：入口 + 弹层）============ */
 .part-wrap {
   position: relative;
 }
 
+/* 入口：图标 + 一行**分区名**。名字原先只在 title 里 —— 要悬浮才知道自己在哪个区，
+   而这是随时要能答上来的问题；rail 有 64px，一行放得下四五个汉字。
+   只改这一个按钮的形状：其余 rail 按钮仍是 42×42 的图标格。 */
+.part-btn {
+  width: 56px;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 2px 5px;
+}
+
+/* 图标 + 锁一行。锁最初挂的是**图标角上的小角标**（13px）—— 那个尺寸下认不出是锁，
+   看着就是个方点；挪到名字旁边又把名字挤成「演示空…」。放在图标这一行两头都合适：
+   这行有富余，锁能画到 11px */
+.part-top {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.part-lock {
+  display: flex;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  color: var(--text-3);
+}
+
+/* 没设过口令时这里没有内容 —— 留一个空 flex 项会多出一段 gap */
+.part-lock:empty {
+  display: none;
+}
+
+.part-lock svg {
+  width: 100%;
+  height: 100%;
+}
+
+.part-cap {
+  max-width: 100%;
+  font-size: 10px;
+  line-height: 1.3;
+  color: var(--text-2);
+  /* 名字是用户起的，长了就截断 —— 完整值在按钮的 title 里 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 弹层紧贴按钮右缘（按钮 56px 宽 → 留 2px 缝）。
+   值跟 .part-btn 的宽度是一对：只改一处，弹层就会压在按钮上 */
 .part-pop {
   position: absolute;
-  left: 52px;
+  left: 58px;
   bottom: -4px;
   width: 184px;
   background: var(--surface-2);
@@ -223,6 +275,45 @@
   font: 400 10.5px var(--mono);
   color: var(--text-3);
 }
+
+/* 勾选标记。底色同时被 :hover 用着 —— 只靠底色，扫一眼分不出「当前项」和
+   「鼠标正停在这一项上」 */
+.pt-tick {
+  display: flex;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  color: var(--accent);
+}
+
+.pt-tick svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* 名字吃掉剩余宽度：分区名是用户起的，长了就截断，别把锁和条数挤出去 */
+.pt-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pt-lock {
+  display: flex;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  color: var(--text-3);
+}
+
+.pt-lock svg {
+  width: 100%;
+  height: 100%;
+}
+
+
 
 /* ============ 主区 / 页面骨架（原型 .main / .page）============ */
 /* 主区**不再滚**（2026-09-17）：以前 .page 靠内容撑高，看全一页要点开就整页滚，

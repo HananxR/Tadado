@@ -16,6 +16,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* 挤不下时**换行**，而不是把左边压扁：卡片头右侧的东西会越加越多（筛选项、
+     按钮），而 flex 默认会让标题与说明一起缩 —— 「任务表格」竖着断成两截、
+     「20 条/页 · …」折成两行就是这么来的。右侧那组控件自己换行后仍然成组。 */
+  flex-wrap: wrap;
   padding: 13px 16px 11px;
   border-bottom: 1px solid var(--border);
 }
@@ -27,6 +31,12 @@
 .card-h .d {
   font-size: 11.5px;
   color: var(--text-3);
+}
+
+/* 标题与说明是固定文案，不参与压缩（要挤就挤右边那组控件） */
+.card-h .t,
+.card-h .d {
+  flex: none;
 }
 
 .card-h .grow {
@@ -161,29 +171,37 @@
   opacity: 0.85;
 }
 
+
+
 /* ============ 优先级徽标（pages/shared.ts 的 urgencyBadge）============ */
-/* 列表行和编辑界面共用同一套：列表上那个 8px 圆点是**状态**色，优先级以前根本
-   没有画出来，所以「看不出谁优先级高」是必然的 —— 能看的颜色在说另一件事。 */
+/* **红到绿的色阶文字，不是色块**：`P0` 红（加粗）→ `P1` 橙 → `P2` 橙绿之间 → `P3` 绿，
+   颜色取自 tokens.css 的 `--p0`…`--p3`，同时配合字重（800 → 500）。
+   「红=急、绿=稳」这套不需要解释，四档一眼分得开。
+   ⚠️ 与状态色的关系：P0/P1/P3 分别和「逾期 / 进行中 / 已完成」同色 —— 这是红-绿这套
+   色阶本身的代价。区分靠**形状与位置**：状态是行首那个 8px 圆点，优先级是任务列**右端**
+   的 `Px` 文字（一左一右），一个是色块一个是字，且 `Px` 这两个字符本身就把「这是优先级」
+   说清楚了。 */
 .urg {
   flex: none;
   font: 700 9.5px var(--mono);
   letter-spacing: 0.3px;
-  color: #fff;
-  border-radius: 4px;
-  padding: 1px 4px;
+  color: var(--p2);
 }
 
 .urg.u0 {
-  background: var(--danger);
+  color: var(--p0);
+  font-weight: 800;
 }
 .urg.u1 {
-  background: var(--doing);
+  color: var(--p1);
 }
 .urg.u2 {
-  background: var(--todo);
+  color: var(--p2);
+  font-weight: 600;
 }
 .urg.u3 {
-  background: var(--text-3);
+  color: var(--p3);
+  font-weight: 500;
 }
 
 /* 抽屉里的优先级选择：徽标 + 文字，和列表上看到的长一样 */
@@ -565,6 +583,13 @@ body.lock-suppressed .mask {
   display: block;
 }
 
+/* 向下装不下时翻到按钮上方（见 menu.ts 的 openPanel）。
+   分页器贴着卡片底部，卡片正文又是 overflow: hidden，向下展开会被裁掉一截 */
+.menu.up {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
 /* ============ 二次确认浮层（confirm.ts）============ */
 /* 层级要压过 tooltip(98) 和 toast(99)：确认框弹出期间不该再被别的东西盖住 */
 .mask {
@@ -621,6 +646,131 @@ body.lock-suppressed .mask {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* 对话框底部左侧的说明（如「Ctrl + Enter 创建」）与右侧按钮分开站 */
+.modal-actions .grow {
+  flex: 1;
+}
+
+/* ── 数据迁入对话框（.modal-card.batch）────────────────────────────────────
+   这一屏只留三样：**导到哪儿 / 选文件 / 解析结果**。以前的「一句话说明 + 代码样例 +
+   支持 .md/.txt」三行小字都撤了 —— 文件是转换工具产出的，用户不需要在这儿再看一遍写法。 */
+
+/* 比通用宽版再宽一点：解析结果与「认不出的行」都要在这儿列出来 */
+.modal-card.batch {
+  width: 524px;
+}
+
+/* 条数：点「导入」前唯一的确认信息。前面加个状态点，读起来是「当前状态」
+   而不是随便一句灰字；解析出来了才染强调色 */
+.batch-n {
+  margin-top: 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font: 600 12.5px var(--font);
+  color: var(--text-3);
+}
+
+.batch-n::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+.batch-n.ok {
+  color: var(--accent);
+}
+
+/* 「导入到「演示空间」」—— 这一屏唯一要用户确认的前提，所以给它正常字号，
+   分区名再重一点。（文件是转换工具产出的，写法不用在这儿再讲一遍。） */
+.batch-where {
+  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font: 400 13px var(--font);
+  color: var(--text-2);
+}
+
+.batch-where b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 选文件那一行：按钮 + 文件名 / 提示 */
+.batch-file {
+  margin-top: 11px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* 两块「对账」结果：认不出的行、与库里重名的。共用一个壳 */
+.batch-skip,
+.batch-dup {
+  margin-top: 9px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-2);
+  font: 400 11.5px var(--mono);
+  color: var(--text-2);
+  /* 粘 200 行时只让它自己滚，别把卡片撑出屏幕 */
+  max-height: 128px;
+  overflow: auto;
+}
+
+/* 左边一道红：这里有东西被丢掉了，是提醒不是普通信息块 */
+.batch-skip {
+  border-left: 3px solid var(--danger);
+}
+
+/* 重复用暖色：它不是错误 —— 同一个分区导出过两次完全可能，跳过与否由用户定 */
+.batch-dup {
+  border-left: 3px solid var(--doing);
+}
+
+.batch-dup .bs-h {
+  color: var(--doing);
+}
+
+/* 块里没东西时整块不占位置 */
+.batch-skip:empty,
+.batch-dup:empty {
+  display: none;
+}
+
+.bs-h {
+  font: 500 11.5px var(--font);
+  color: var(--danger);
+  margin-bottom: 5px;
+}
+
+.bs-row {
+  display: flex;
+  gap: 8px;
+  padding: 1px 0;
+}
+
+.bs-ln {
+  flex: none;
+  color: var(--text-3);
+}
+
+.bs-tx {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bs-more {
+  padding-top: 3px;
+  color: var(--text-3);
 }
 
 /* 确认按钮要实心红：.btn.danger 是「安静的次要危险操作」（透明底），
@@ -693,10 +843,6 @@ body.lock-suppressed .mask {
 .st-overdue {
   color: var(--danger);
   background: var(--danger-soft);
-}
-.st-todo {
-  color: var(--todo);
-  background: var(--todo-soft);
 }
 .st-doing {
   color: var(--doing);

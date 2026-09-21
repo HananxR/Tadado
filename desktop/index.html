@@ -141,18 +141,27 @@
           <div class="rail-sep"></div>
 
           <div class="part-wrap">
-            <button class="rail-btn" id="part-btn" title="分区">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="M3.5 7.5A2 2 0 015.5 5.5h4l2 2h7a2 2 0 012 2v7a2 2 0 01-2 2h-13a2 2 0 01-2-2z"
-                />
-              </svg>
+            <!-- 图标下面跟一行**分区名**：rail 有 64px，一行放得下四个汉字。
+                 名字原先只在 title 里（要悬浮才看得见），而「我在哪个区」是随时要能答上来的
+                 问题。名字由 shell/partition.ts 填（它跟着分区切换重画）。 -->
+            <button class="rail-btn part-btn" id="part-btn" title="分区">
+              <!-- 图标 + 锁一行（名字那行要全留给名字：「演示空间」再加一把锁就超出
+                   56px，名字会被截成「演示空…」），名字单独一行 -->
+              <span class="part-top">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linejoin="round"
+                >
+                  <path
+                    d="M3.5 7.5A2 2 0 015.5 5.5h4l2 2h7a2 2 0 012 2v7a2 2 0 01-2 2h-13a2 2 0 01-2-2z"
+                  />
+                </svg>
+                <span class="part-lock" id="part-lock"></span>
+              </span>
+              <span class="part-cap" id="part-cap"></span>
             </button>
             <div class="part-pop" id="part-pop"></div>
           </div>

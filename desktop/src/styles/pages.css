@@ -78,9 +78,11 @@
 }
 
 /* ============ 总览：指标卡（原型 .tiles / .tile）============ */
+/* 五张：今日到期 / 逾期 / 进行中 / 已完成 / **归档**（2026-09-21 加第五张）。
+   等宽五列在 1180 窗口下每张约 204px，足够放下「本周 12 · 较上周 +3」这类副标 */
 .tiles {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -178,6 +180,10 @@
   color: var(--text-3);
 }
 
+/* 「现在」那条竖线。**不吃指针事件**（2026-09-21 修）：它是一条坐标系标记，却横跨整条轴 ——
+   压在簇气泡上时，那个簇就**点不开了**（e2e 正是在这一步超时的：跑测试的时刻一变，
+   竖线就滑到簇头上；用户遇到的是同一件事）。顶端那枚小签**单独放行**：它自己有 `title`
+   （「现在 16:40」），悬停仍要看得到。任务页的同类竖线 `.tt-today` 一直是这么写的 */
 .tdt-now {
   position: absolute;
   top: 8px;
@@ -186,6 +192,7 @@
   background: var(--accent);
   opacity: 0.7;
   z-index: 2;
+  pointer-events: none;
 }
 
 .tdt-now span {
@@ -199,6 +206,8 @@
   padding: 0 5px;
   border-radius: 4px;
   white-space: nowrap;
+  /* 竖线整体不吃事件，小签单独放行 —— 它的 `title` 里写着「现在 16:40」（见上面那段注释） */
+  pointer-events: auto;
 }
 
 .tdt-p {
@@ -236,11 +245,6 @@
   color: var(--danger);
   border-color: var(--danger);
   background: var(--danger-soft);
-}
-.tdt-p.st-todo {
-  color: var(--todo);
-  border-color: var(--todo);
-  background: var(--todo-soft);
 }
 .tdt-p.st-doing {
   color: var(--doing);
@@ -351,11 +355,6 @@
   border-color: var(--danger);
   background: var(--danger-soft);
 }
-.tdt-chip.st-todo {
-  color: var(--todo);
-  border-color: var(--todo);
-  background: var(--todo-soft);
-}
 .tdt-chip.st-doing {
   color: var(--doing);
   border-color: var(--doing);
@@ -373,6 +372,37 @@
 
 .tdt-chip.is-done .tdt-tx {
   text-decoration: line-through;
+}
+
+/* 气泡上的「+N」：这个任务今天更新了几条记录（明细在抽屉时间线里，点气泡就到）。
+   绿字 = 「有新增」的方向感；不占宽度 —— 气泡是轴上的**标记**，一句
+   「更新了 N 条记录」会把整条轴挤满。与 `.chip .cn`（灰色计数）区分开：
+   这里的 N 是「新增」，用进行色 */
+.tdt-cn {
+  flex: none;
+  font: 700 10.5px var(--mono);
+  color: var(--done);
+  white-space: nowrap;
+}
+
+/* 「已过期未完成」折叠掉的那部分：只给**个数 + 去处**（点它去逾期清单）。
+   虚线边 + 最弱的字色：它是一句「还有，去那边看」，不是一条任务 ——
+   长得和旁边的 chip 一样就会被当成第 4 条任务 */
+.tdt-more {
+  flex: none;
+  padding: 2px 9px;
+  border: 1px dashed var(--border-2);
+  border-radius: 999px;
+  background: none;
+  font: 400 10.5px var(--font);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tdt-more:hover {
+  color: var(--text-2);
+  border-color: var(--text-3);
 }
 
 .tdt-chip.is-done .tdt-cb,
@@ -436,6 +466,16 @@
   transform: translateY(-2px);
 }
 
+/* 这个任务被折叠了几条活动（`.cn` 原来只在 .chip 里有定义）。
+   最新一条后面的计数：**不说出来，折叠就是丢信息** —— 「动过一次」和「动过八次、
+   只看见最后一条」在这一行上会长得一模一样。用最弱的字色：它是备注，不是数据 */
+.feed-item .cn {
+  flex: none;
+  font: 400 10.5px var(--mono);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
 /* 标签钉在行尾：一行只有一句「标题 · 进展」，右侧空着也是空着 */
 .feed-item .tags {
   flex: none;
@@ -452,11 +492,14 @@
   padding: 6px 0;
 }
 
+/* 名字带上编号（`紧急(P0)`，见 shared.ts 的 urgencyText）：30px 只够两个字，
+   括号里的编号会被挤到色条上 —— 这里留的是一行的宽度，不是两个字的宽度 */
 .ubar .un {
-  width: 30px;
+  width: 56px;
   font-size: 12px;
   color: var(--text-2);
   flex: none;
+  white-space: nowrap;
 }
 
 .ubar .tr {
@@ -547,9 +590,6 @@
 .fg-bar.st-overdue {
   background: var(--danger);
 }
-.fg-bar.st-todo {
-  background: var(--todo);
-}
 .fg-bar.st-doing {
   background: var(--doing);
 }
@@ -587,6 +627,26 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  /* 拖动平移（2026-09-20）：窗口固定 32 天之后，「看别的时间段」就只有拖动这一条路。
+     grab 是唯一的线索 —— 表头那句区间悬浮时也会说，但光标不用等悬停 */
+  cursor: grab;
+}
+
+/* 拖的时候：光标变抓手，并且**别选中文字**（一拖整屏都是蓝色高亮） */
+.tt-box.dragging .tt-scroll {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* 表头那句区间：既是「我在看哪 32 天」，也是**回到今天**的入口。
+   今天被拖出窗口时它转成强调色 —— 那时它是唯一的出口 */
+.tt-range {
+  cursor: pointer;
+}
+
+.tt-range.off {
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .tt-grid {
@@ -632,15 +692,26 @@
   z-index: 8;
 }
 
+/* ── 表头三种状态（2026-09-21 配色整理，全部走 token，深浅两个主题同一套规则）──
+   周末 / 今天 / 月首各有一件事要说，底色与线条都比原来收得更轻：
+   一张表上最该跳出来的是**条**和**今天**，表头只是坐标系。
+   （第四种「档位那段」`.in-range` 随任务页那排档位一起撤掉，同日） */
 .tt-date.wknd {
   background: var(--bg-2);
 }
 
+/* 今天：底色 + 一条**底线**。底线和行里那条竖线说的是同一件事，一个在头一个在身 */
 .tt-date.today {
   color: var(--accent);
   font-weight: 600;
   background: var(--accent-soft);
-  border-right-color: var(--accent);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* 月首：左侧一条分隔线，和行里的 .tt-moline 对齐（同一根线，两处各画一半：
+   表头这半截要压在表头的底色上，所以用 border；行里那半截用绝对定位的元素） */
+.tt-date.mo-start {
+  border-left: 1px solid var(--border-2);
 }
 
 .tt-row {
@@ -660,9 +731,11 @@
   background: var(--hover);
 }
 
-/* 任务列横向吸附：日期轴滚到右边时左边仍看得见任务名 */
+/* 任务列横向吸附：日期轴滚到右边时左边仍看得见任务名。
+   宽度 248 → 256（2026-09-20）：行首那枚圆点换成 16px 的进度饼。**必须与 tasks.ts
+   的 LABEL_W 同步** —— 少改一处，表头那条「今天」竖线（按 LABEL_W + 天数算）就会偏 8px */
 .tt-label {
-  width: 248px;
+  width: 256px;
   flex: none;
   position: sticky;
   left: 0;
@@ -679,11 +752,31 @@
   background: var(--hover);
 }
 
-.tt-label .d {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+/* 行首那枚「进度饼」：外圈 + 按进度从 12 点顺时针长出的扇形（conic-gradient）。
+   **形状说进度、颜色说状态** —— 颜色由 tasks.ts 写成 `color: statusVar(...)`
+   （逾期红 / 待办蓝 / 进行中橙 / 已完成绿），所以它同时替掉了原来那枚 8px 的状态圆点。
+   百分比由 TS 写进 `--pct`，样式表只负责画：
+   `.tt-label .pdot` 里不出现任何 JS 拼出来的样式串。
+   没填的那部分是**透明**的（衬出行的底色），和参考图里那半圈白是一个意思。 */
+.tt-label .pdot {
+  --pct: 0%;
+  position: relative;
   flex: none;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  background: conic-gradient(currentColor 0 var(--pct), transparent var(--pct) 100%);
+}
+
+/* 两端的记号（▶ 未开始 / ✓ 完成）：留 3px 内边距，让记号缩在圈里 */
+.tt-label .pdot svg {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 3px;
 }
 
 .tt-label .lt {
@@ -692,7 +785,8 @@
   overflow: hidden;
 }
 
-/* 标题 + 截止同行：截止靠右、标题吃掉剩余宽度并省略号 */
+/* 第一行只有标题：截止与优先级都让给第二行，标题因此吃掉这一列剩下的全部宽度
+   （省略号仍在，但触发它的标题长度往后推了一大截） */
 .tt-label .lt1 {
   display: flex;
   align-items: baseline;
@@ -709,20 +803,16 @@
   text-overflow: ellipsis;
 }
 
-.tt-label .lt1 .dlt {
-  flex: none;
-  font: 400 9.5px var(--mono);
-  color: var(--text-3);
-}
-
-/* 标签单独一行。和截止挤同一行时，第三个标签会被 overflow:hidden 静默裁掉 */
+/* 第二行：标签 + 截止 + 优先级。三者都是短记号，横向挤不开时**先缩标签**
+   —— 截止与优先级各占一个固定位置，被整条裁掉就再也找不回来；标签缩掉一截
+   至少还看得出是标签（任务页上限 3 个标签，正常情况轮不到它缩） */
 .tt-label .lt2 {
   font-size: 10px;
   color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
   display: flex;
-  gap: 4px;
+  gap: 5px;
   align-items: center;
   margin-top: 1px;
 }
@@ -730,59 +820,121 @@
 .tt-label .lt2 .tag {
   font-size: 9.5px;
   padding: 0 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* 竖向格线用 repeating-linear-gradient 画，和 22px 的日期列宽同源 */
+/* 截止靠右：标签数量不固定，只有把它推到右端，这一排才不会跟着标签的长短晃 */
+.tt-label .lt2 .dlt {
+  flex: none;
+  margin-left: auto;
+  font: 400 9.5px var(--mono);
+  color: var(--text-3);
+}
+
+/* 竖向格线用 repeating-linear-gradient 画，和 22px 的日期列宽同源。
+   2026-09-21 加一层**周末淡带**：7 天一个周期、宽 2 天（周六 + 周日），
+   起点用 `--tt-wk`（窗口首日到第一个周六的像素）经 background-position 落位 ——
+   每格一个元素那种画法在 32 天 × 28 行下要多出近千个只用来铺色的 div。
+   第一层是格线（画在最上面），第二层才是周末带 */
 .tt-track {
   position: relative;
   flex: none;
   background-color: var(--surface);
   background-image: repeating-linear-gradient(
-    to right,
-    transparent 0 calc(var(--tt-col, 22px) - 1px),
-    var(--border) calc(var(--tt-col, 22px) - 1px) var(--tt-col, 22px)
-  );
+      to right,
+      transparent 0 calc(var(--tt-col, 22px) - 1px),
+      var(--border) calc(var(--tt-col, 22px) - 1px) var(--tt-col, 22px)
+    ),
+    repeating-linear-gradient(
+      to right,
+      var(--bg-2) 0 calc(2 * var(--tt-col, 22px)),
+      transparent calc(2 * var(--tt-col, 22px)) calc(7 * var(--tt-col, 22px))
+    );
+  background-position: 0 0, var(--tt-wk, 0px) 0;
+}
+
+/* 月分隔线（行里那半截）：1px，压在日期带与条之下 —— 先摆它再摆别的，
+   所以不需要 z-index */
+.tt-moline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-2);
+  pointer-events: none;
 }
 
 .tt-row:hover .tt-track {
   background-color: var(--hover);
 }
 
+/* 选中行：任务列左边一条强调色。整行染色会和「档位日期带」撞成一片 —— 一条竖记号
+   在左侧，和行里的日期带（在中段）分得开 */
 .tt-row.selected .tt-label {
   background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .tt-row.selected .tt-track {
   background-color: var(--accent-soft);
 }
 
+/* 条（2026-09-21 配色整理；同日条改成**标准甘特** —— 整块实色、不画进度，见下面那段）：
+   · 更圆润的胶囊（9px）—— 和行首那枚圆形进度饼呼应，整行读起来更整齐；
+   · 一圈**内描边** + 顶部一道高光（inset 阴影，画在背景之上）：实色块压在浅色行背景上，
+     不描边会显得「糊在格线上」；进度填充（`.tt-bar i`）删掉之后，这个轮廓从头到尾都在；
+   · 颜色**只编码状态**（见下面的 `.tt-bar.st-*`），三种状态色一个没改，只改画法 */
+/* 条 = **两件事叠在一起**，各有各的读法：
+   ① 整条的**长度** = 时间跨度（创建日 → 截止日）、整条的**色相** = 状态；
+   ② 里面填的那一段（`::before`）= **进度**（`--fill`，由 tasks.ts 按 `task.progress` 写进来）。
+   底（未完成那一段）用同色系的**浅底**，一眼看出「这条还没走完多少」。
+   ⚠️ **这一版把进度请回来了**（2026-09-21 用户提的「不同进度的感觉差异不大」）——
+   与他 2026-09-21 早些时候定的「条不体现进度」相反。那次否掉的理由是「一条上叠两个量
+   会互相打糊」，但**只填长度、不叠别的**时这条是读得出来的：位置与色相已经把「哪段时间、
+   什么状态」说完了，填充再回答「走到哪了」，三者互不抢戏。 */
 .tt-bar {
   position: absolute;
-  top: 11px;
-  height: 18px;
-  border-radius: 5px;
+  top: 10px;
+  height: 19px;
+  border-radius: 9px;
   overflow: visible;
   cursor: pointer;
-  transition: filter 0.15s, box-shadow 0.15s;
+  background: color-mix(in srgb, var(--bar-state, var(--doing)) 24%, var(--surface));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5), inset 0 -1px 0 rgba(40, 36, 28, 0.06);
+  transition: filter 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+/* 已经走过的那一段：**状态色纯色**，宽度 = 进度。
+   左端跟着条的圆角，右端**方角** —— 圆角会让它看起来像"条里塞了个小胶囊"。
+   ⚠️ 这里一度是**渐变**（`--bar-face`），2026-09-21 撤了：三段色标在 100% 的长条上会露出
+   两个折点，看着像条被切成几截（用户的原话是「渐变分层」） */
+.tt-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--fill, 0%);
+  border-radius: 9px 0 0 9px;
+  background: var(--bar-state);
 }
 
 .tt-bar:hover {
-  filter: brightness(1.04);
-  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.25);
+  filter: brightness(1.03);
+  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55), 0 3px 9px -3px rgba(40, 36, 28, 0.3);
   z-index: 2;
 }
 
-.tt-bar i {
-  display: block;
-  height: 100%;
-  border-radius: 5px 0 0 5px;
-}
-
-/* max-width 由 tasks.ts 按进度填充的宽度写进来 —— 文字不能越过填充区，
-   越过去就是白字落在浅色底上 */
+/* 条内那枚白字进度（**只写 N%、不写标题**，见 tasks.ts）。贴**右端**对齐（2026-09-21
+   用户提的「标到右侧，标识向右前进」）：进度是从左往右长的，数字放在推进的那一头，
+   读起来才是「朝右推进到 N%」。
+   `max-width` 由 tasks.ts 按条的宽度写进来 —— 条已经是实色，白字落在哪儿都看得见，
+   留这一手只是为了不让它顶着条的圆角跑出去 */
 .tt-bar b {
   position: absolute;
-  left: 7px;
+  right: 7px;
   top: 0;
   bottom: 0;
   display: flex;
@@ -793,6 +945,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+  /* 要抬到逾期延长段（`.seg-late`，z-index 2）**之上** —— 那一段从结束日一直铺到今天、
+   *  正好压在条的右端，而进度数字也贴右端：不给它抬起来，逾期条上的进度会被整个盖掉
+   *  （2026-09-21 用户报的「逾期的甘特图上没有进度显示」就是这么来的） */
+  z-index: 3;
+  /* 白字会压在**两种底**上：填充段（饱满）与未完成段（浅）。所以描边要给足 ——
+     四向各一道细的，浅底上它是「白字带黑边」、深底上就是普通的白字 */
+  text-shadow:
+    -1px 0 0 rgba(0, 0, 0, 0.42),
+    1px 0 0 rgba(0, 0, 0, 0.42),
+    0 -1px 0 rgba(0, 0, 0, 0.42),
+    0 1px 0 rgba(0, 0, 0, 0.42),
+    0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .tt-bar .end {
@@ -806,41 +970,48 @@
   z-index: 2;
 }
 
-.tt-bar.st-overdue {
-  background: var(--danger-soft);
+/* 被窗口**截掉**的两端：一条竖记。贴边的一条和「它就这么长」长得一模一样，不标出来
+   就会被读成「这条任务只干了这几天」。用中性灰而不是状态色 —— 灰在四种状态色的实底上
+   都看得见，状态色则会在同色或近色上糊掉 */
+.tt-bar .cut {
+  position: absolute;
+  /* 上下各留 2px：贴着条的圆角画会有一小段糊在弧线上 */
+  top: 2px;
+  bottom: 2px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--text-3);
+  opacity: 0.8;
+  z-index: 2;
 }
-.tt-bar.st-overdue i {
-  background: var(--danger);
+
+.tt-bar .cut-l {
+  left: 0;
+}
+
+.tt-bar .cut-r {
+  right: 0;
+}
+
+/* 状态 → 一个变量（用法见上面 `.tt-bar` 那两段）：`--bar-state` 既是**填充段的纯色**，
+   也用来配**未完成那段的浅底**（`color-mix(… 24%, var(--surface))`）。
+   收尾圆点与它同色，只是不掺浅底 */
+.tt-bar.st-overdue {
+  --bar-state: var(--danger);
 }
 .tt-bar.st-overdue .end {
   background: var(--danger);
 }
 
-.tt-bar.st-todo {
-  background: var(--todo-soft);
-}
-.tt-bar.st-todo i {
-  background: var(--todo);
-}
-.tt-bar.st-todo .end {
-  background: var(--todo);
-}
-
 .tt-bar.st-doing {
-  background: var(--doing-soft);
-}
-.tt-bar.st-doing i {
-  background: var(--doing);
+  --bar-state: var(--doing);
 }
 .tt-bar.st-doing .end {
   background: var(--doing);
 }
 
 .tt-bar.st-done {
-  background: var(--done-soft);
-}
-.tt-bar.st-done i {
-  background: var(--done);
+  --bar-state: var(--done);
 }
 .tt-bar.st-done .end {
   background: var(--done);
@@ -851,14 +1022,52 @@
   outline-offset: 1px;
 }
 
-/* 从表头下面开始画：表头那格自己已经有高亮，再压一条竖线只会显得脏 */
+/* ── 标准甘特：条 = 持续时间（2026-09-21 用户定的）──
+   单色、整块，颜色只编码**状态**（见下面的 `.tt-bar.st-*`）。不画进度、也不按档位切段：
+   进度与持续时间叠在一条上会互相打糊 —— 进度是个标量，画在条上只能靠「填充长度」，而
+   填充长度与时间长度是两个量，一条上放两个量就分不清哪个是哪个。进度去**行首那枚进度饼**、
+   悬停小卡与条内那道白字进度（**只写 `N%`，不写标题** —— 标题在左边任务列里已经占了一整行）。
+   档位只留下**表头那几格**（`.tt-date.in-range`）：条与范围不相交时，它是唯一说得出
+   「档位在哪一段」的地方，而且它在表头、不与条打架。
+   这里只剩逾期延长那一段 —— 它是**渲染**延长，数据不动 */
+
+.tt-bar .seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+/* 逾期延长到今天的那一段 + 原结束日处的竖记（横穿条的上下边各 2px）。
+   ⚠️ 延长段用**半透明**（2026-09-21 改）：条现在是「浅底 + 进度填充」两层，
+   实色的延长段会把底下那两层整个盖住 —— 截止日在窗口左侧的逾期条（整条都是延长段）
+   于是看不出进度，和别的条长得不一样。半透明之后：填充段压在它下面照样是实色，
+   未填充的那半透出浅底，而「这里逾期延长了」交给 `late-mark` 那一道竖记去说 */
+.tt-bar .seg-late {
+  background: color-mix(in srgb, var(--danger) 55%, transparent);
+  z-index: 2;
+}
+
+.tt-bar .late-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1.5px;
+  background: var(--surface);
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* 今天：一条 2px 的强调线，从表头下面画到底（表头那格自己已经有底色与底线，
+   再压一条会显得脏）。**只在今天确实落在窗口里时才画** —— 见 tasks.ts */
 .tt-today {
   position: absolute;
   top: 36px;
   bottom: 0;
   width: 2px;
+  border-radius: 2px;
   background: var(--accent);
-  opacity: 0.55;
+  opacity: 0.5;
   z-index: 4;
   pointer-events: none;
 }
@@ -872,9 +1081,22 @@
   font: 500 9px var(--font);
   color: #fff;
   background: var(--accent);
-  padding: 0 5px;
+  padding: 1px 5px;
   border-radius: 4px;
   white-space: nowrap;
+}
+
+/* 贴到窗口两端时这个小签贴边对齐：居中的话它会伸到任务列底下（被吸附列盖掉半截），
+   或者越过右边界把表格撑宽 */
+.tt-today.at-start::before {
+  left: 0;
+  transform: none;
+}
+
+.tt-today.at-end::before {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 
 .tt-tip {
@@ -1156,9 +1378,6 @@
   z-index: 1;
 }
 
-.node.task.todo {
-  background: var(--todo);
-}
 .node.task.doing {
   background: var(--doing);
 }
@@ -1669,6 +1888,9 @@
   background: var(--hover);
 }
 
+/* 管理页「归档」那一列（与「状态」「标签」两列同性质）：只读的标 —— 已归档 / —
+   （曾经在这里放过一枚单条「归档 / 取消归档」按钮，撤了：那一列是**看**的，
+   动手的地方是上面那枚按筛选的按钮与勾选后的批量栏） */
 .arch-tag {
   font-size: 10.5px;
   color: var(--text-3);
@@ -1677,14 +1899,31 @@
   padding: 0 5px;
 }
 
+/* 分页器：一句范围说明 + （有得翻时）翻页件 + 档位下拉。
+   2026-09-20 减负：间距 10 → 6，上内边距 12 → 8，档位下拉在**这里**比别处轻
+   （它是「这一屏放多少」的次级设置，不该长得像主按钮）——用户的原话是
+   「分页的下方样式感觉很繁琐，不够简洁」 */
 .pager {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   justify-content: flex-end;
-  padding: 12px 4px 2px;
+  padding: 8px 2px 0;
   font-size: 12px;
   color: var(--text-2);
+}
+
+.pager .dd-btn {
+  border-color: transparent;
+  background: none;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.pager .dd-btn:hover {
+  border-color: var(--border-2);
+  color: var(--text);
 }
 
 .tagrow {
@@ -1756,6 +1995,13 @@
   font-weight: 700;
 }
 
+/* 管理页页头只有**一条**单选（全部状态 / 逾期 / 待办 / 进行中 / 已完成 / 未归档 / 已归档）——
+   曾经分过「两组」（状态 × 归档），两组都「只亮一枚」又挨在一起，看起来是一条单选行里亮了
+   两枚，被当成坏了；2026-09-21 合成一条，就不再需要额外的排布规则 */
+
+/* 批量条：**勾选了才出现**（那一排是「我勾的这几条要怎么办」）。
+   批量归档不在这里 —— 它是「按筛选执行」的动作，住在页头「导出」之后（见 manage.ts
+   的 archiveBatchButton），两者的输入不同：一个是勾选，一个是筛选条件 */
 .batchbar {
   display: flex;
   align-items: center;
@@ -1882,9 +2128,19 @@
   color: var(--doing);
 }
 
+/* 优先级变更：图标保持中性 —— 它标的是「这是哪一类事件」，具体落到哪一档由行内
+   文案上色（见 taskDrawer 的 urgency 分支）。一个「普通 → 关注」配个红点，
+   会被读成出错了 */
+.tl-ico.ur {
+  background: var(--sus-soft);
+  color: var(--sus);
+}
+
+/* 「进展」（人手写的记录）的图标底色。以前借的是状态色里的蓝 —— 那档随「待办」
+   一起撤了（2026-09-21），改用中性灰：时间线里最常见的就是这一类，本来就该最安静 */
 .tl-ico.lg {
-  background: var(--todo-soft);
-  color: var(--todo);
+  background: var(--sus-soft);
+  color: var(--sus);
 }
 
 .tl-line {
@@ -1963,6 +2219,41 @@
 .tl-note b {
   color: var(--accent);
   font-weight: 500;
+}
+
+/* 进度维护（在活动时间线里，2026-09-20）：写进展与改进度是同一件事，
+   分在「任务定义」和这里两处，用户就会漏维护一处。
+   左边那条就是**滑杆本身**（有填充 = 一眼看出到哪了，拖一下就是改），
+   右边数字框给精确值 —— 不另摆一条只读进度条，两条长得一样，只是重复 */
+.tl-prog {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0 8px;
+}
+
+/* 滑杆 + 数字框 + 「%」。两处（对话框的任务定义、抽屉的活动时间线）共用 */
+.prog-ctl {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 「待保存 65% → 70%」。抽屉里进度是**草稿式**的（按发送才落库），所以必须把
+   「还没保存」写在脸上：不写出来，用户拖完就走，改动静默消失 —— 那和「拖着就被
+   提交」是同一类毛病的两面（2026-09-20 用户报的）。用 doing 色：待办的琥珀，
+   不是错误 */
+.prog-pending {
+  flex: none;
+  font: 400 10.5px var(--mono);
+  color: var(--doing);
+  white-space: nowrap;
+}
+
+.prog-pending:empty {
+  display: none;
 }
 
 .tl-compose {
@@ -2053,17 +2344,37 @@
   border-color: var(--danger);
 }
 
-/* 就地编辑用的输入框 */
+/* 就地编辑用的输入框。编辑时它就是这一屏的主输入框，给足面积：
+   以前 padding 只有 2px 6px、又和进度值/两个按钮挤在同一行，说明只剩一百多像素
+   （用户 2026-09-20：「再次编辑时信息编辑区域太小了」） */
 .tl-edit {
   flex: 1;
+  width: 100%;
   min-width: 0;
   font: 500 12.5px var(--font);
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--accent);
   border-radius: 6px;
-  padding: 2px 6px;
+  padding: 5px 8px;
   outline: none;
+}
+
+/* 就地编辑区：**两行** —— 第一行整行给说明，第二行放进度值与两个按钮 */
+.tl-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tl-edit-row + .tl-edit-row {
+  margin-top: 7px;
+}
+
+/* 编辑态的按钮常显：这会儿它俩就是这一屏唯一要做的事，不该等悬停才出来 */
+.tl-edit-row .tl-ops {
+  margin-left: auto;
+  opacity: 1;
 }
 
 /* 改过的记录：让人知道这条被动过，但不用把它藏起来 */
@@ -2179,39 +2490,25 @@ details.md-d[open] summary::after {
   content: "▴";
 }
 
-details.md-d .md {
+/* Markdown 编辑框（抽屉底部的「md 源」）。写成通用类而不是 `details.md-d .md`：
+   写死作用域的那一版，曾经让另一个用到它的地方成了裸控件（只有 base.css 的
+   font-family），又窄又没边界、看着像没做完。 */
+.md {
   font: 400 12px/1.75 var(--mono);
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: 7px;
   padding: 8px 11px;
-  margin: 7px 0 9px;
   color: var(--text);
   outline: none;
   width: 100%;
   resize: vertical;
+}
+
+/* 抽屉里那个的上下留白与最低高度（对话框里另有一套，见 controls.css 的 .batch） */
+details.md-d .md {
+  margin: 7px 0 9px;
   min-height: 74px;
-}
-
-/* 草稿条：不是为了好看，是为了让人知道「字还在那儿」——
-   一行悄悄自动保存的输入，跟丢了字的输入框看起来一模一样 */
-.draft-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  padding: 7px 10px;
-  border: 1px dashed var(--accent);
-  border-radius: 8px;
-  background: var(--surface-2);
-  font: 400 12px var(--font);
-  color: var(--text-2);
-}
-
-.draft-bar .draft-t {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* 实时预览：md 是给人读的行，盯着一行 `- [ ] x #a ⏰09-21 :: 40%`
