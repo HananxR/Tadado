@@ -17,7 +17,7 @@
 
 1. Fork 本仓库
 2. 创建功能分支：`git checkout -b feature/my-feature`
-3. 确保构建通过：`cd desktop && npm run build`（桌面端目前只有 `tsc` 这一道自动检查）
+3. 确保构建与冒烟都通过：`cd desktop && npm run build && npm run e2e`（CI 跑的就是这两条）
 4. 桌面端还没有 lint / format / 测试脚本，改完请对着 `resources/ui-mockup/tadado-2.0.html` 核一遍视觉差异
 5. 提交并推送，创建 Pull Request
 

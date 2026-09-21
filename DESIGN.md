@@ -1,1326 +1,1257 @@
-# Tadado 详细设计说明
+# Tadado 详细设计说明 —— v1.x（Tadado2 · Tauri 版）
 
 > 本文档按功能模块记录需求、实现方案和界面布局标注，用于快速项目重建和迭代参考。
+> 「怎么跑 / 目录里有什么」看 [`desktop/README.md`](desktop/README.md)，
 > 运行时 AI 指令参见 [CLAUDE.md](CLAUDE.md)，更新日志参见 [CHANGELOG.md](CHANGELOG.md)。
 >
-> **2026-09-15 分支分家**：PySide6 版的代码已归档到 **`archive/pyversion`** 分支。
-> 本文件里「技术栈 / 目录结构 / 控件实现」这些段落描述的是**那一代实现** ——
-> 它们解释「为什么这么设计」（分区、Markdown 方言、状态不在 md 里体现等约定），
-> 这部分仍然有效；但凡涉及具体模块路径和控件类的，以 `desktop/` 下的实现为准。
-> 桌面端 README 引用的 1.3.1 导航骨架 / 2.12 窗口形态两节不受影响。
+> **两条版本线各自维护自己的文档**：
+>
+> | 版本线 | 分支 | 形态 | 设计文档 |
+> |:--:|---|---|---|
+> | **v1.x（当前）** | `main` | Tadado2 · Tauri 2 | **本文件** |
+> | v0.x | `archive/pyversion` | PySide6 | 那条分支上的 `DESIGN.md` |
+>
+> 两版**零数据共享**，但共享同一份**设计语言**（语义色、几何、暖灰双主题）与同一份**领域概念**
+> （分区、优先级 P0–P3、状态、活动时间线）。v1.x 在几个地方**有意与 v0.x 分叉**，
+> 分叉点在本文件里逐条写明。
+>
+> **路径约定**：本文件提到的源码路径**均相对 `desktop/`** —— 写 `src/data/db.ts` 时，
+> 实际位置是 `desktop/src/data/db.ts`。
+>
+> 取归档分支上的东西：
+>
+> ```bash
+> git show archive/pyversion:DESIGN.md                    # Py 版设计文档
+> git show archive/pyversion:src/utils/design_tokens.py   # 语义色权威源
+> git checkout archive/pyversion -- <路径>                 # 取单个文件或整目录
+> ```
 
 ---
 
-## 1. 项目总览
+## 1. 总览
 
 ### 1.1 技术栈
 
 | 层面 | 技术 |
 |------|------|
-| 语言 | Python 3.10+ |
-| GUI | PySide6 ≥ 6.5.0 |
-| 数据库 | SQLite 3 + FTS5 全文索引 |
-| 定时任务 | APScheduler ≥ 3.10 (QtScheduler) |
-| 日期计算 | python-dateutil ≥ 2.8 |
-| Excel 导出 | openpyxl ≥ 3.1 |
-| 打包 | PyInstaller + Inno Setup |
-| 开发工具 | pytest, black, ruff |
+| 外壳 | Tauri 2（Rust） |
+| 渲染 | 系统 WebView2（Windows）+ TypeScript，无框架 |
+| 构建 | Vite 8 · TypeScript 6（`strict`） |
+| 存储 | SQLite（`tauri-plugin-sql`，feature `sqlite`） |
+| 测试 | Playwright 冒烟（真 Chromium 点一遍）+ `tsc --noEmit` |
+| 打包 | Tauri bundler（NSIS / MSI）+ 便携 zip |
 
-### 1.2 四层架构
+**无框架是刻意的**：界面是「外壳 + 五个页面 + 几个浮层」，没有路由表要维护、没有虚拟 DOM 要调和。
+`el()` 一个 DOM 助手（`shell/dom.ts`）就够把结构写清楚；换框架带来的收益（组件复用、响应式）在这里
+用不上，代价（构建链、抽象层、首帧）却是实打实的。
 
-```
-┌──────────────────────────────────────────┐
-│  UI 层 (src/ui/)                          │
-│  MainWindow, TaskListView, Heatmap, ...  │
-│  controllers/ (Partition, Batch, Filter) │
-├──────────────────────────────────────────┤
-│  服务层 (src/services/)                   │
-│  TaskService, Parser, Formatter,         │
-│  Scheduler, Notifier, Archiver,          │
-│  Recurrence, UpdateChecker               │
-├──────────────────────────────────────────┤
-│  模型层 (src/models/)                     │
-│  Task, TaskStatus, TaskFilter,           │
-│  TaskRepository (SQLite CRUD + FTS5)     │
-├──────────────────────────────────────────┤
-│  SQLite 持久化                             │
-│  tasks / tasks_fts / partitions /        │
-│  notification_log                        │
-└──────────────────────────────────────────┘
+**无运行时依赖**：产物是单文件 exe，用户机器上不需要 Node、Python 或任何运行库 —— 这是相对 Py 版
+（PyInstaller 要打包整个 Python 运行时）最直接的收益。
 
-模块间通信：SignalBus (Qt 信号，单例)
-数据门面：TaskService（UI 层与数据层唯一接缝）
-配置中心：AppConfig (JSON 持久化，热加载)
-主题系统：DesignTokens (20+ 语义色角色)
-```
-
-### 1.3 UI 控制器
-
-MainWindow 拆分为 3 个可独立测试的控制器（`src/ui/controllers/`）：
-
-| 控制器 | 文件 | 职责 |
-|--------|------|------|
-| PartitionController | `partition_controller.py` | 分区生命周期、密码缓存、空闲锁定、状态栏分区按钮和菜单 |
-| BatchController | `batch_controller.py` | 任务管理页面构建、批量操作、手动归档/清除、批量导出 |
-
-控制器通过构造函数注入依赖，不直接访问数据库。
-
-### 1.3.1 导航骨架（2.0）
-
-- **NavShell**（`src/ui/nav_shell.py`）：常驻左侧图标栏，按分组「工作 / 洞察 / 管理」渲染
-  `VIEW_REGISTRY` 中的页面入口，底部为设置齿轮；点击或 <kbd>Ctrl</kbd>+<kbd>1</kbd>..<kbd>5</kbd> 切换页面。
-- **视图注册表**（`src/ui/views/__init__.py`）：新增页面只需 `register(ViewSpec(...))`，
-  NavShell 自动渲染入口，`QStackedWidget` 懒构建页面。旧视图名经 `VIEW_ALIASES` 别名兼容
-  （`edit → tasks`、`dashboard → analysis`、`batch → manage`）。
-- **SelectionContext**（`src/ui/selection_context.py`）：跨视图共享的分区 / 选中任务 / 时段粒度，
-  视图之间不再互相触碰私有属性，读取状态并订阅 `changed` 即可。
-- 当前页面入口：总览、任务、任务图谱（占位）、活动分析、任务管理。
-
-数据刷新职责已收敛：SignalBus 事件由 `TimelineController` 独家订阅（含 50ms 去抖），
-MainWindow 不再持有重复的刷新管线；任务页的过滤全部由时间轴工具行承载
-（粒度 / 搜索 / 状态 / 优先级 / 排序），旧 FilterCoordinator 与分页机制已退役。
-
-### 1.4 核心设计决策
-
-1. **TaskService 单门面** — UI 层所有数据操作通过 `TaskService`，不再直接调用 `TaskRepository`。TaskService 持有 Parser/Formatter/SignalBus，在写操作后统一发射信号、重建 raw_md。
-2. **raw_md 是规范数据源** — 结构化字段从 Markdown 解析派生，始终可重新生成。`MarkdownTaskFormatter` 保证往返稳定。
-3. **SignalBus 解耦** — 所有模块通过 Qt 信号通信，无直接跨层调用。
-3. **生产/开发环境隔离** — `sys.frozen` 判断，打包版使用预制 package DB（4 分区 + 演示空间预设数据），开发版使用 dev DB（含测试分区 + 功能演示分区）；构建时通过 `scripts/create_package_db.py` 生成 package DB，frozen 模式跳过自动 seeding。
-4. **Design Tokens 语义化配色** — 所有颜色通过 `design_tokens.py` 的语义角色引用，亮/暗主题全局切换。
-   视觉规范（暖灰精修）：浅色暖灰阶（正文 `#3a3832`/次要 `#6f6a5f` 对比度 ≥4.5:1）、
-   暖调靛青强调 `#4d57c3`；深色 Tokyo-night 基底 + 暖灰文字 + `#7c83ea` 强调；
-   圆角标度 4/6/8、卡片 `surface_raised` 分层 + 软阴影（`apply_card_shadow`）、
-   状态色统一走 `status_color()` 令牌辅助函数。
-
-### 1.4 全局信号总线
-
-| 信号 | 参数 | 发射方 | 监听方 |
-|------|------|--------|--------|
-| `task_created` | Task | TaskEditPanel, TaskInputWidget, Recurrence | MainWindow, HeatmapWidget |
-| `task_updated` | Task | TaskEditPanel | MainWindow, HeatmapWidget |
-| `task_deleted` | task_id (str) | TaskListView, BatchToolbar | MainWindow |
-| `task_status_changed` | Task, old_status | TaskEditPanel, BatchToolbar, Recurrence | MainWindow, HeatmapWidget |
-| `reminders_fired` | list[tuple[Task, int]] | TaskScheduler (已废弃) | — |
-| `daily_digest` | — | TaskScheduler | TaskNotifier |
-| `archive_completed` | count (int) | TaskArchiver | MainWindow |
-| `date_selected` | date | CalendarHeatmapWidget | MainWindow |
-| `date_range_selected` | date, date | CalendarHeatmapWidget | MainWindow, ActivityReportPanel |
-| `heatmap_create_task` | date | CalendarHeatmapWidget | MainWindow |
-| `partitions_changed` | — | SettingsDrawer, MainWindow | MainWindow |
-| `config_changed` | — | AppConfig, SettingsDrawer | MainWindow, 各组件主题刷新 |
-| `batch_operation_completed` | summary (dict) | TaskRepository | MainWindow |
-| `tasks_bulk_created` | count, task_ids | MultiTaskDialog, TaskEditPanel | MainWindow |
-| `application_quit` | — | app.py | SystemTrayManager |
-| `scan_completed` | task_count | MarkdownImporter | MainWindow |
-| `scan_error` | error_msg | MarkdownImporter | MainWindow |
-
-**文件**：[src/utils/signal_bus.py](src/utils/signal_bus.py)
-
-### 1.5 日志系统
-
-**文件**：[src/utils/log_manager.py](src/utils/log_manager.py)
-
-Tadado 使用 Python 标准库 `logging` 模块实现日志记录。
-
-| 属性 | 值 |
-|------|-----|
-| Logger 名称 | `runlog` |
-| 日志文件 | `resources/loginfo/tadado.log` |
-| 轮转策略 | `TimedRotatingFileHandler`，每日午夜切割，保留 3 天 |
-| 格式 | `%(asctime)s [%(levelname)s] %(name)s - %(message)s` |
-| 初始化时机 | `TadadoApp.__init__()` 首行，早于任何业务初始化 |
-
-**日志级别规范**：
-
-| 级别 | 使用场景 |
-|------|---------|
-| `ERROR` | 数据库异常、文件 I/O 错误、网络 API 错误、配置加载失败 |
-| `WARNING` | JSON 解析失败、版本解析失败、更新检测超时/回退、定时任务配置异常 |
-| `INFO` | 任务 CRUD、批量操作、分区操作、标签操作、应用启动/关闭阶段、配置变更 |
-| `DEBUG` | 查询语句构造（当前未使用，预留给未来诊断） |
-
-**性能约束**：
-- 不在 `search()`、`search_with_total()`、`count()`、热力图聚合等高频路径中记录日志
-- 不在 1s 时钟、5s 轮播、30s 空闲检测等定时回调中记录日志
-- 不在循环内部逐条记录，仅在操作边界记录一次汇总结果
-- `logging` 模块内置线程锁（`threading.RLock`），与 APScheduler 后台线程兼容
-
-### 1.6 CLI 与 Claude Code Skill 通道
-
-Tadado 提供命令行通道，供 Claude Code skill（`.claude/skills/tadado/SKILL.md`）
-与终端用户操作任务，与 GUI 共享同一份 SQLite 数据与同一套 TaskService 逻辑。
-
-**模块结构**（`src/cli/`）：
-
-| 文件 | 职责 |
-|------|------|
-| `parser.py` | argparse 子命令定义（12 命令） |
-| `commands.py` | 命令执行核心：接收 TaskService + AppConfig，返回 JSON 结果；headless 与 GUI 转发共用；错误抛 `CliError` |
-| `output.py` | 稳定 JSON schema（任务对象字段与 Task 模型对齐）+ `--format human` 渲染 |
-| `headless.py` | `run_cli()` 入口：UTF-8 stdio、`--format` 提取、转发或 headless 执行、`TADADO_DATA_DIR` 数据目录覆盖 |
-| `forward.py` | 转发客户端：QLocalSocket 连接运行中 GUI（单写者原则） |
-| `protocol.py` | 管道协议：请求帧 `TADADO_CLI/1\n` + JSON，响应为裸 JSON；旧版 GUI 无响应 → 退出码 10 |
-
-**执行流程**：
+### 1.2 分层
 
 ```
-tadado-cli <command> [args]
-        │
-        ├─ 连接 QLocalServer("Tadado_Instance") 成功 → 请求帧转发给 GUI
-        │     GUI 线程内执行 commands.execute()（用其 TaskService/AppConfig）
-        │     → 裸 JSON 响应回传，CLI 渲染输出；UI 信号触发实时刷新
-        │     └─ 旧版 GUI（无协议处理）→ 报错退出码 10，绝不回退直写 DB
-        └─ 连接失败（GUI 未运行）→ headless 模式
-              QCoreApplication + AppConfig + TaskRepository + TaskService
-              → 同栈执行 → JSON 输出
+desktop/
+index.html                 应用骨架：标题栏 + rail + 主区 + 设置抽屉（静态壳）
+src/main.ts                入口：只按顺序调用各模块的 mount，不放业务逻辑
+src/styles.css             样式入口：按依赖顺序 @import 五层 css
+
+src/data/                  数据层（不认识 DOM）
+  types.ts                 领域类型：TaskStatus / Urgency / MonthDay / At / Activity / Task
+  time.ts                  时间基准 TODAY、dayNumber、时刻与文案换算
+  db.ts                    持久化：SQLite / localStorage 双后端、读写、backend 状态机
+  schema.ts                存储版本 + 迁移链 + 读入口归位
+  store.ts                 变更广播 dataChanged / onDataChange、逾期重算、完成后归档、完成日推算
+  mock.ts                  种子数据：演示空间 100 条
+  partitions.ts            分区列表 / 当前分区 / 默认分区
+  tags.ts                  标签规则（上限 3、未分类）
+  markdown.ts              任务行写法：parseTasks（入）/ taskToMarkdown（出）
+  export.ts / xlsx.ts      导出：三种格式的同一份数据；xlsx 自写 zip
+  timeline.ts              时间轴档位与窗口算数
+
+src/shell/                 外壳能力（跨页面、不认识业务）
+  dom.ts / toast.ts        极简 DOM 助手、提示条
+  theme.ts / scheme.ts     主题（light/dark/sys）、热力图配色
+  titlebar.ts / window.ts  标题栏装配、窗口能力（Tauri 环境降级）
+  nav.ts / router.ts       rail 渲染与页面挂载、页面切换状态
+  partition.ts             分区切换器
+  settings.ts              设置抽屉
+  lock.ts                  分区口令与空闲锁定
+  hotkey.ts / trayBridge.ts / autostart.ts   全局热键、托盘事件、开机自启
+  rollover.ts              跨日续跑：托盘常驻过了午夜，让「今天」重新算一遍（重载）
+  confirm.ts / prompt.ts   二次确认、单行输入浮层
+  panels.ts                右侧抽屉互斥
+  menu.ts / seg.ts / dateTime.ts             下拉、分段、日期时间输入
+  download.ts / exportMenu.ts                落文件、「导出 ▾」按钮
+
+src/pages/                 页面层
+  registry.ts              PageId / PageSpec / PAGES —— 导航与快捷键的唯一来源
+  index.ts                 PAGE_VIEWS：PageId → 实现（与 registry 分开，避免循环依赖）
+  shared.ts                跨页共用的常量与展示换算
+  overview.ts / tasks.ts / graph.ts / activity.ts / manage.ts
+  taskDrawer.ts / taskForm.ts                维护抽屉、定义表单
+  focus.ts                 跨页「定位到任务」的单向请求
+  pager.ts                 分页器（三张表共用）
+
+src-tauri/
+  src/lib.rs               插件注册、托盘、app_exit 命令、单实例
+  src/main.rs              只调 desktop_lib::run()
+  tauri.conf.json          窗口与打包配置
+  capabilities/default.json 权限清单（白名单，逐项授予）
 ```
 
-**命令集**（14 个）：`list`（筛选/排序/分页）、`today`（今日摘要分组，分区可过滤）、
-`activity`（指定日期活动时间线）、`add`（Markdown 行为主 + flags 覆盖）、`edit`
-（字段修改 + `--dry-run` diff）、`done`（状态变更，触发周期克隆与即时归档）、`log`
-（追加活动进展）、`rm`、`tags`、`partitions`（增删改）、`archive`（`--all` 归档全部
-已完成）、`recurrence`（`+1d/+1w/+1m/+1y`）、`reminder`（全局提醒配置）、`export`
-（md/xlsx，复用 `MarkdownExporter`/`task_exporter`）、`report`（周报/月报摘要）。
+**依赖方向是单向的**：`data ← shell ← pages`。`data/` 不许碰 DOM，`shell/` 不认识业务对象，
+`pages/` 只经由 `shell/` 提供的能力动窗口与浮层。这条线撑住了「页面可以整体替换」这件事 ——
+本文档后面每一节的实现方案都依赖它。
 
-**关键设计**：
+### 1.3 启动装配顺序（`main.ts`）
 
-1. **单一写者 + 实例身份校验** — GUI 运行时 CLI 一律转发，绝不双进程写库；GUI 未运行时才
-   headless 直写。请求帧携带调用方 app 版本与数据目录，GUI 校验不一致即拒绝（退出码 11），
-   防止旧版/异库实例占用管道名导致写入错误实例。
-2. **raw_md 不被绕过** — `add` 用 formatter 构造规范 Markdown 行再走 `TaskService.create_task`；
-   `edit` 走 `update_task` 重建 raw_md。
-3. **LLM 输入防御** — `add` 归一化 `TODO<日期>`（缺空格）→ `TODO <日期>`，与 GUI 语法一致；
-   任务/分区 ID 支持 ≥8 位唯一前缀解析（人类输出截断的 8 位 ID 可直接复用）。
-4. **管道可靠性**（Windows 命名管道经验）— 服务端写完响应后 `waitForDisconnected` 再关闭
-   （立即 close 会丢弃未读数据）；客户端写完请求立即读响应（`waitForBytesWritten` 会空转超时）；
-   `read_raw` 收到首个 chunk 即返回（防双方互相等待死锁）。
-5. **打包** — `Tadado.spec` 单 Analysis 单脚本（`main.py`）双 EXE：`Tadado.exe`
-   （windowed GUI）+ `tadado-cli.exe`（console CLI）共用同一 `_internal` 包；
-   入口分流按 `argv[0]` 文件名（`tadado-cli.exe`）或 `--cli` 参数判定
-   （PyInstaller 对多脚本切片的入口分配不可靠，故不切片）；
-   `build.bat` 改由 spec 驱动。
-6. **安全** — `rm`/`archive`/`edit` 提供 `--dry-run`；SKILL.md 规定破坏性操作先展示确认。
-7. **环境隔离** — dev 用 `uv run python main.py --cli`（dev DB），发布版用安装的
-   `tadado-cli.exe`（用户 DB）；`TADADO_DATA_DIR` 可覆盖数据目录。
-8. **AI 助手托盘入口**（`src/services/ai_assistant.py`）— 托盘「AI 助手」一键启动专属
-   Claude Code / Codex 会话：单一 provider（配置 `ai_assistant.provider` 指定，未配置
-   自动检测 claude 优先）；自动续接上次会话（会话 ID 捕获 + `--resume`）；专用工作区
-   `ai_workspace/` + 首条指令 `/tadado` 保证 skill 唯一加载；未安装助手时菜单置灰；
-   启动时注入 `TADADO_EXE`/`TADADO_PARTITION`；会话 jsonl usage 超 80% 托盘提醒 /compact。
-9. **Skill 管理**（设置 → AI 助手）— `resources/skill/tadado/SKILL.md`（随程序分发、
-   带 version 字段）为唯一权威源：「编辑 Skill」打开微调，「同步到 Claude / Codex」
-   分发到 `~/.claude`/`~/.agents` 宿主目录后生效；状态行实时展示版本与同步状态。
-10. **字体平台适配** — Windows 用系统字体（安装包剔除内置字体 -27MB）；Linux 启动时
-   探测系统 CJK/Emoji 字体族，缺失才加载内置 Noto 字体。
-11. **设置对话框页签化** — 常规 / AI 助手 / 归档与分区 / 关于；帮助文档并入关于页，
-   与版本更新记录一样以浏览器打开（左侧可收起目录 + 锚点滚动高亮）。
+`boot()` 的调用顺序**不是随手排的**，每一处都有理由：
 
-**关联修复**：`repository.count()` 的 FTS 分支修正为 `rowid IN` + LIKE 兜底
-（原实现 `id IN` 恒假且缺中文 LIKE，导致关键词搜索时 total 恒为 0）；
-补齐缺失的 `md_exporter.py`/`md_importer.py` 服务模块（修复 GUI 导入/导出
-点击即 ImportError 的潜伏 bug）；批量导出 Excel 逻辑下沉到 `task_exporter.py`。
+| 序 | 调用 | 为什么是这个位置 |
+|:--:|------|------------------|
+| 1 | `initTheme()` | 主题先落 `data-theme`，否则首帧闪白 |
+| 2 | `initScheme()` | 热力图色阶同理，要在画格子之前定好 |
+| 3 | `await bootStore()` | **数据先装好再画页面**：反过来的话第一帧画的是种子数据，存档一到位整屏跳一次 |
+| 4 | `await bootPartitions()` | 先读存档再用 —— 用户自己分过的区不能被内置那四个盖回去 |
+| 5 | `await bootLock()` | 排在画页面之前：要先决定这一屏要不要挡一层锁屏 |
+| 6–9 | `mountTitlebar()` `mountNav()` `mountPartition()` `mountSettings()` | 骨架装配 |
+| 10 | `storageIssue()` → `toast` | 存储有问题在这里**说出来**，不静默 |
+| 11 | `mountTrayBridge()` | 托盘事件的前端一半 |
+| 12 | `await initWindowState()` | 对齐窗口真实状态（置顶 / 最大化），避免按钮显示与实际不符 |
+| 13 | `if (!isTauri()) return` | 浏览器预览到此为止，下面都是宿主能力 |
+| 14 | `await setupHotkey()` | 失败要**告警**：热键挂了、窗口收起后唤不回，用户会以为应用死了 |
+| 15 | `watchDayRollover()` | 托盘常驻会**开着过夜**：过了午夜得把「今天」重新算一遍（见 §5.2） |
+
+### 1.4 与 Py 版（v0.x）的关系
+
+- **2026-09-15 分家**：PySide6 版连同 `src/` `tests/` `scripts/` `resources/themes/` `pyproject.toml`
+  全部归档到 **`archive/pyversion`** 分支；`main` 只推桌面端。两条线**各自维护自己的代码与文档**。
+- **零数据共享**：两版数据目录不同（v1.x 在 `%APPDATA%\com.tadado.app\`，v0.x 是 `resources/tadado.data`），
+  装 v1.x 不会动旧版。旧数据走**导出 → 转换 → 批量新建**（见 §7.1）。
+- **`identifier` 不能改**：`com.tadado.app` 决定数据目录。改它等于让用户现有的库、窗口位置、设置
+  全部「消失」。同理 `tadado.data` 这个库名、localStorage 的键、Cargo 的 package name（开机自启的
+  注册项按它走）都保持原样。
 
 ---
 
-## 2. 功能模块设计
+## 2. 视觉与样式
 
-### 2.1 任务列表
+### 2.1 两个权威源
 
-**文件**：[src/ui/task_list/](src/ui/task_list/)
+颜色和几何**不许在这里自由发挥**：
 
-#### 需求
+| 内容 | 权威源 |
+|------|--------|
+| 语义色、字体栈 | `archive/pyversion:src/utils/design_tokens.py`（随 Py 版归档，见文件头的取法） |
+| 圆角、控件尺寸、阴影、动效曲线 | [`resources/ui-mockup/tadado-2.0.html`](resources/ui-mockup/tadado-2.0.html) |
+| 窗口形态、导航骨架 | `archive/pyversion:DESIGN.md` 的 2.12 / 1.3.1 两节 |
 
-- 9 列 QTableView：复选框(30px)、序号(30px)、创建时间(80px)、任务内容(Stretch)、截止时间(95px)、进度(45px)、状态(55px)、标签(80px)、归档(55px)
-- 优先级渲染：delegate 整行 `fillRect` 背景色，4 级颜色走 design_tokens（紧急红/重要橙/关注绿/普通淡蓝），alpha 浅色 35/深色 50。凸显任务红色加粗叠加在背景之上，不跳过
-- 优先级定义：`Task.urgency: int`（0=紧急, 1=重要, 2=关注, 3=普通，默认 3）
-- Markdown 语法 `- [***]`：`[]` 中仅统计 `*` 数量决定优先级（clamp 0-3），其他字符忽略。状态关键字不在 Markdown 中体现。旧格式 `[ ]`/`[x]` 兼容映射为普通优先级
-- Markdown 格式：`- [优先级] <截止日期> <截止时间> 任务内容 #标签`（无状态关键字）。标签 `#` 前须有空格或行首才识别为标签，紧跟内容则视为内容的一部分
-- `load_task` 直接使用 `task.raw_md` 显示，不再手动重建
-- 编辑面板活动时间线进度行新增"优先级"下拉（DropdownWidget 90px，与状态下拉同样式）
-- 批操作栏新增"更改优先级"按钮（QPushButton+QMenu，4 级子菜单）
-- 右键菜单新增"更改优先级"子菜单
-- 排序：`CASE WHEN status='DONE' THEN 1 ELSE 0 END ASC → urgency ASC → deadline_date ASC（NULL 最后）→ created_at ASC → completed_at DESC`。已完成任务始终排在最底部，组内按完成时间倒序（最近完成的排前面），通过设置 → 任务列表 → "已完成置底"复选框可关闭
-- 排序刷新：`_build_filter_with_sort()` 以筛选栏为基底，叠加分区/速览范围
-- 自定义绘制：圆形复选框(绿色实心勾)、状态圆角徽章、整行优先级背景
-- 暂停任务渲染透明度 45%
-- 凸显任务红色加粗（仅 COL_CONTENT 列，不干扰紧急程度整行背景渲染）
-- ExtendedSelection 多选 + 右键菜单(编辑/详情/删除/更改状态/更改优先级/复制 MD)
-- 分页：上/下页 + 每页条数(20/50/100) + 页码显示
-- 交替行颜色、无网格线
+`src/styles/tokens.css` 只做一件事：把上面两者翻译成 CSS 变量。**不要新增颜色** ——
+一旦出现字面量色值，主题（亮/暗）就会在某处漏掉一块。
 
-#### 实现方案
+### 2.2 五层样式与依赖方向
 
-- **TaskListModel** (`task_list_model.py`) — QAbstractTableModel，`_tasks: list[Task]` 数据源，`_checked_ids: set` 管理复选框。9 列常量定义。`highlighted_task_id()` public getter。支持行前插、行移动、选中状态追踪
-- **TaskListDelegate** (`task_list_delegate.py`) — QStyledItemDelegate，`paint()` 中按列分支：0 列画复选框圆，6 列画 `_paint_status_badge()`(圆角矩形 + display_color)，8 列画归档文字，3 列凸显任务红色加粗手绘。所有非复选框列调用 `_draw_urgency_bg()` 绘制整行优先级背景色（红/橙/绿/淡蓝，所有行统一绘制不跳过凸显任务）
-- **TaskListView** (`task_list_view.py`) — QTableView，`selected_task_ids()` 获取多选。右键菜单新增"更改优先级"子菜单（`_on_change_urgency`），通过 `task_updated` 信号触发列表刷新
-- ~~**TaskListPanel**~~ — 已删除（2.0 阶段 3：任务页改由时间轴承载，该面板为孤儿）
-
-#### 任务凸显方案
-
-**术语定义**："任务凸显"（Task Highlighting）指当前活动任务（即编辑面板中正在编辑的任务）在任务列表中的视觉强调。实现方式为 **仅 COL_CONTENT 列红色加粗**，无整行高亮，不干扰紧急程度背景渲染。
-
-**触发场景**（统一入口 `MainWindow._on_task_selected(task)`）：
-- 用户在表格中点击某行
-- 单任务/多任务创建完成后自动选中首项
-- 速览栏预设切换后自动选中首个任务
-- 进度栏筛选后自动选中首个任务
-- 筛选栏变更后自动选中首个任务
-- 分区激活后自动选中首个任务
-- "返回首页"操作后自动选中首个任务
-- 轮播点击（经 `_select_and_load_task` 委托）
-- 分页翻页后自动选中首个任务
-- 数据刷新后恢复上次凸显任务（经 `_select_and_load_task` 委托）
-
-**呈现规则**：
-- 仅 COL_CONTENT（任务内容列）文字红色 + 粗体
-- 红色值走 `design_tokens.danger`（浅色 `#c4453c` / 深色 `#e06c63`），主题切换自动适配
-- 紧急程度整行背景色不受影响，所有行统一渲染
-- 其余列（行号、创建时间、截止时间、进度、状态、标签、归档）无额外视觉变化
-- Qt 原生选中蓝色高亮已被移除（Col 0 复选框列、Col 6 状态徽章列均不再响应 `State_Selected`），选中状态仅通过复选框勾选状态体现
-
-**与其他视觉系统的关系**：
-- 紧急程度背景（`_draw_urgency_bg`）是独立的业务配色方案，所有行始终绘制
-- 暂停任务透明度 45% 先于凸显渲染
-- 多任务批量创建时不再使用 `_bold_task_ids`（排序已确保新任务在顶部，首条红色加粗即可）
-
-**代码入口**（`main_window.py`）：
-- `_on_task_selected(task)` — 统一凸显入口，执行：`set_highlighted_task` + `load_task` + `selectRow` + `scrollTo`
-- `_on_view_task_selected(task)` — 信号守卫，阻止 `selectRow()` 导致的递归重入
-- `_select_and_load_task(task_id)` — 按 ID 查找后委托给 `_on_task_selected`
-- 模型内部：`TaskListModel._highlighted_task_id`（历史命名，实际效果为红色加粗）
-
-**凸显渲染实现**（`task_list_delegate.py`）：
-- Col 3（任务内容）凸显时直接手绘红色加粗文字，紧急背景始终绘制于底层，形成叠加效果
-
-**新建任务自动定位**（"新建任务状态"机制）：
-- 单/多任务保存后，`_new_task_sort_active=True`，排序临时切换为"创建时间"倒序，新任务自然排在最前，首条红色加粗
-- 同时自动清除搜索、优先级、状态过滤（`reset()` 在 `_setting_sort_internally` 守卫内，避免信号消耗标志位），确保新任务不受当前过滤条件影响
-- `activate_preset("today")` 前临时清除 `_new_task_sort_active`，避免 `_on_quick_preset` 恢复默认排序
-- 破坏条件（任一触发即恢复默认排序）：① 手动调整筛选栏 ② 点击速览栏预设按钮 ③ 切换视图
-- 内部守卫 `_setting_sort_internally` 防止代码自身 `set_sort`/`reset` 误触发状态破坏
-- 切换视图时通过 `_switch_view` 恢复设置默认排序
-- 多任务创建时间戳统一（同一 `now`），`rowid ASC` tiebreaker 保证插入顺序
-
-#### 预览效果
+`src/styles.css` 按顺序 `@import`：
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│ [☐全选] 更改状态 ▾ │更改优先级▾│ [删除] [中止] [重启]      │ ← BatchToolbar
-├────┬───┬──────────┬──────────────────┬────────┬────┬──────┬──┤
-│ ☐  │ # │ 创建时间  │ 任务内容          │ 截止时间│进度│ 状态 │标签│
-├────┼───┼──────────┼──────────────────┼────────┼────┼──────┼──┤
-│ ☐  │ 1 │ 2026-05-20│ 重构认证模块 #后端│ 05-30   │80% │ 进行 │后端│  ← 红色背景(紧急)
-│ ☐  │ 2 │ 2026-05-22│ 阅读系统设计 #学习│ 06-05   │ 0% │ 待办 │学习│  ← 橙色背景(重要)
-│ ☐  │ 3 │ 2026-04-10│ 整理本月开支 #生活│ 04-25   │ 0% │ 逾期 │生活│  ← 绿色背景(关注)
-│ ☐  │ 4 │ 2026-06-01│ 随便看看 #杂项    │ --      │ 0% │ 待办 │杂项│  ← 淡蓝背景(普通)
-└────┴───┴──────────┴──────────────────┴────────┴────┴──────┴──┘
-│ ✓  │ 1 │ 2026-05… │ 重构认证模块      │ 05-30  │80% │ 进行中│#后端│ ← urgency 暖色
-│ ☐  │ 2 │ 2026-05… │ 阅读系统设计      │ 06-05  │ 0% │ 待办 │#学习│ ← urgency 中色
-│ ☐  │ 3 │ 2026-04… │ 整理本月开支      │ 04-25  │ 0% │ 逾期 │#生活│ ← urgency 红色
-├────┴───┴──────────┴──────────────────┴────────┴────┴──────┴──┤
-│              ‹ 1 / 3 页 ›  [20 条/页 ▾]                     │ ← Pagination
-└──────────────────────────────────────────────────────────────┘
+tokens   →  CSS 变量（语义色 + 几何 + 字体 + 热力图色阶）
+base     →  reset / 排版 / 滚动条 / 焦点环 / 提示条
+shell    →  应用骨架：标题栏 + rail + 主区 + 抽屉
+controls →  通用控件：按钮 / 胶囊 / 分段 / 输入 / 下拉 / 卡片 / 开关
+pages    →  五个视图各自的部件 + 维护抽屉内容
 ```
+
+**方向只能是 `tokens → base → shell → controls → pages`**。改样式前先确认改的是哪一层：
+变量不许塞进控件层，控件的几何不许在页面层重写。
+
+`pages.css` 有两处**刻意改名**，别照着原型搜索：原型的 `.tile.tl` → `.tile.clickable`（原名在 CSS 里
+是没有意义的缩写），原型的全局 `table` → `.tabwrap`（全局选择器会波及抽屉里的表格）。
+
+### 2.3 一屏到底（布局的总原则）
+
+**主区不滚**。五个页面各自撑满窗口：固定的块（指标卡、热力图、工具行）留在原地，**会长的那一块**
+（表格 / 列表）在卡片内部吃掉剩余高度并在那里滚。这样翻页与筛选时，页头、卡片头、分页器不会被滚走。
+
+高度是这样传下去的：
+
+```
+.main{overflow:hidden}          主区不滚
+  └ .page{height:100%; display:flex; flex-direction:column}
+      └ .inner{flex:1; min-height:0}
+          ├ .ph{flex:none}      页头留在原地
+          └ .page-body{flex:1}  固定块 flex:none，会长的那块 flex:1
+```
+
+**四个坑**（都是实测踩出来的，改布局前先读）：
+
+1. **grid 的行高默认由内容决定**。列表装了 20 行就把行高顶到 700px，容器被压扁后行高照旧 ——
+   多出来的部分顶着整页滚（总览实测溢出 186px）。要 `grid-template-rows: minmax(0,1fr)`
+   把行高钉在容器高度上，卡片再靠内部的 flex 链把列表压进剩余空间。
+2. **无名 div 会断链**。块级容器不做 flex 分配，链断在那里 `flex:1` 全落空。总览那几块外面
+   原来包着一层没有样式的 div，因此给它一个 `.ov-page` 才把链接上。
+3. **卡片等高之后，绝对定位的元素会盖住下一张卡**。时间轴上的气泡多出几像素就越界，不只是难看 ——
+   **被盖住的按钮点不到**（e2e 就卡在那一步重试到超时）。撑满场景的 `.card-b` 要 `overflow:hidden`。
+4. **每一层都要 `min-height:0`**。flex 子项默认不会被压矮，漏一层这条链就断在那一层。
+
+**不要用 `calc(100vh - Npx)` 估可视高度**：那是一串写死的层高，多一层少一层就估错，估错一次
+就有一截内容被切掉。任务页原来就是这么干的（`calc(100vh - 268px)`），现在换成了同一条 flex 链。
+
+**分页与屏内滚并存**：每页条数仍是分页器上的档位（`PAGE_SIZES = [20, 30, 50, 100]`），
+屏内滚只是兜底 —— 一屏装 13 行时看第 14 行要滚，但**不必滚整页**。
+
+### 2.4 窗口形态
+
+| 参数 | 值 | 理由 |
+|------|-----|------|
+| 尺寸 | 1180 × 760 | 一屏装得下五个页面的主内容 |
+| 最小尺寸 | 1050 × 680 | 低于这个尺寸，任务页的列吸附会开始互相压 |
+| `decorations` | `false` | 自绘标题栏（样式与原型对齐） |
+| `resizable` | `true` | **保留系统缩放热区与 Aero Snap** —— 自绘标题栏不能连边缘拖拽一起丢掉 |
+| `transparent` | `false` | 页面有实底，透明窗口没有收益且合成更贵 |
+| `alwaysOnTop` | `false` | 启动不置顶，由标题栏的图钉按钮控制 |
+| 标题栏拖拽 | `data-tauri-drag-region="deep"` | 让子元素所在区域也能拖 |
+| 关闭按钮 | 收起常驻 | 真正退出走托盘菜单的 `app_exit` |
+
+`additionalBrowserArgs` 里关掉了 WebView2 的若干特性（`msWebOOUI` / `msPdfOOUI` /
+`msSmartScreenProtection` / `CalculateNativeWinOcclusion`）并禁用了后台节流 ——
+关前三个是为了去掉页面里的浏览器痕迹，最后一个是为了让窗口被遮挡时计时器不被降频。
 
 ---
 
-### 2.2 任务编辑器
+## 3. 数据层
 
-**文件**：[src/ui/task_list/task_edit_panel.py](src/ui/task_list/task_edit_panel.py)
-
-#### 需求
-
-- 双模式：首页(无选中任务时显示欢迎横幅) / 编辑模式(选中任务后显示详情)
-- Markdown 源编辑区(QTextEdit) + 实时 HTML 预览(QLabel rich text)
-- 折叠/展开切换：折叠时显示任务摘要，展开时直接进入编辑模式（Markdown 编辑器同步可见）
-- 截止日期选择(CalendarPopup) + 时间选择(TimePopup) + 快速计算器(DeadlineIntervalCalculator, 6 选项平铺: 今天/明天/本周日/一周后/本月末/下月今天)
-- 草稿模式：新建任务时预填当天日期和标签模板，未保存提示横幅
-- 多任务创建：`create_draft_multi()` 生成 3 行模板
-- 活动时间线：_TimelineBrowser + 状态下拉 + 优先级下拉 + 进度输入 + 追加进展按钮
-- 操作按钮：编辑切换 / 保存 / 删除
-- 分区选择器
-
-#### 实现方案
-
-- **TaskEditPanel** (QWidget) — 外层 QVBoxLayout：`_editor_header_widget`(固定顶部标签+折叠按钮) → QScrollArea(内部含 `_draft_banner`、`_editor_collapsible`、`_task_summary`、`_timeline_card`)
-- `_editor_collapsible` 包含：`_source_edit`(QTextEdit, Markdown 源) → `_preview_label`(QLabel, 实时 HTML 渲染) → 时间行(`_deadline_date_edit`+`_deadline_time_edit`+快速计算按钮) → 操作按钮(编辑/保存/删除)
-- **DeadlineIntervalCalculator** (QDialog) — 快速计算弹窗，6 个截止时间选项平铺展示：今天 / 明天(+1天) / 本周日 / 一周后(+7天) / 本月末 / 下月今天(+1个月)，选中后预览"标签 (日期 时间)"，点击应用填入日期时间选择器
-- `_timeline_card` 包含：状态+进度输入 → `_timeline_browser`(QTextBrowser 检测锚点点击) → `_new_log_input`(QTextEdit)
-- 内部类：`_TimelineEntryWidget`(时间线卡片, 图标+时间戳+内容, 48px)、`_TimelineBrowser`(QTextBrowser 子类)、`_BannerWidget`(背景图→半透明遮罩→HTML 文本三层渲染，遮罩 150/160 alpha 确保文字可读)
-- Banner 动态切换：`_partition_has_tasks()` 查询当前分区是否有活跃任务，有任务时显示日历日期（`_build_date_html`，📅 + 日期 + 忌拖延·宜行动），无任务时显示欢迎语（`_build_welcome_html`/`_build_draft_html`，🎉/✍️ + 今日无事）
-- 信号：`textChanged` → `_on_raw_md_changed()` 实时解析预览
-
-#### 预览效果
-
-```
-┌───────────────────────────────────────────────┐
-│ ▼ 编辑任务                           [折叠 ▲] │ ← _editor_header_widget
-├───────────────────────────────────────────────┤
-│ ┌─ 草稿未保存 ────────────────────────────┐   │ ← _draft_banner (半透明遮罩 + 动态HTML)
-│ │  📅 2026年6月11日 星期三                 │   │   有任务→日历 / 空分区→欢迎
-│ └──────────────────────────────────────────┘   │
-│ ── Markdown ─────────────────────────────────  │
-│ ┌─────────────────────────────────────────┐   │
-│ │ - [ ] TODO <2026-05-30> 任务标题 #标签   │   │ ← _source_edit (QTextEdit)
-│ └─────────────────────────────────────────┘   │
-│ ┌─ 预览 ──────────────────────────────────┐   │
-│ │ □ 待办 · 05-30 · 任务标题 `#标签`       │   │ ← _preview_label (QLabel)
-│ └─────────────────────────────────────────┘   │
-│ 截止日: [2026-05-30 ▾] 时间: [14:30 ▾] [快速计算]│ ← CalendarPopup/TimePopup
-│ [编辑] [保存] [删除]                           │
-│ ── 活动时间线 ──────────────────────────────── │
-│ 状态: [进行中 ▾] 优先级: [紧急 ▾] 进度: [__80__%] [追加进展]   │
-│ ┌─────────────────────────────────────────┐   │
-│ │ ● 05-30 10:30 [进行中|80%|紧急] 收集各团队Q3数据报表      │   │ ← _TimelineEntryWidget
-│ │ ○ 05-30 14:00 完成初稿15页              │   │    (48px 卡片)
-│ │ + 输入新进展...                          │   │
-│ └─────────────────────────────────────────┘   │
-└───────────────────────────────────────────────┘
-```
-
----
-
-### 2.3 底部状态栏
-
-**文件**：[src/ui/main_window.py](src/ui/main_window.py) (`_setup_status_bar` 方法)
-
-#### 需求
-
-- 左：分区图标 + 分区名称 + 按状态分列统计(逾期/进行中/待办/已完成) + 共计总数 + 每日名言(来自 config `motd` 字段)
-- 右：实时时钟 年月日 时分秒 AM/PM(每秒更新)
-- 空闲锁定：30 秒定时器检测 `_last_activity`，超 `auto_lock_minutes/2` 即锁定分区
-
-#### 实现方案
-
-- 状态提示改由 `Toast` 浮层承载（`src/ui/toast.py`）：瞬时消息不再常驻状态栏
-- QTimer(1000ms) → `_update_status_clock()`
-- `_update_status_bar()` 调用 `TaskRepository.get_status_counts(partition_id=...)` 获取当前分区各状态计数，格式化拼接后写入 `_status_msg`
-- 统计格式：`逾期 X | 进行中 X | 待办 X | 已完成 X | 共X项`
-- `_setup_idle_lock()` QTimer(30s) → `_check_idle_lock()` 比对 `_last_activity`
-
-#### 预览效果
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 📁 工作 :: 逾期 3 | 进行中 2 | 待办 8 | 已完成 5 | 共18项 | 今日无事 🌿  │ 2026年05月30日 02:30:25 PM │
-└──────────────────────────────────────────────────────────────────────────────┘
-                                addWidget (stretch=1)                        addPermanentWidget
-```
-
----
-
-### 2.4 筛选栏（2.0 阶段 3 起已退役）
-
-> **已退役**：FilterBar 随任务页改由时间轴承载而删除，其搜索 / 状态 / 优先级 / 排序
-> 能力已迁入时间轴工具行。以下内容保留作历史记录。
-
-**文件**（已删除）：`src/ui/widgets/filter_bar.py`
-
-#### 需求
-
-- 搜索框(QLineEdit + 300ms 防抖 QTimer)
-- 优先级下拉(DropdownWidget)：全部优先级 / ● 紧急(0) / ● 重要(1) / ● 关注(2) / ● 普通(3)
-- 状态下拉(DropdownWidget)：全部 / 待办 / 进行中 / 已完成 / 逾期
-- 排序下拉(DropdownWidget)：优先级 / 截止日 / 创建时间 / 状态 / 标题，默认"优先级"
-- 所有下拉项选中后显示 ✓ 标记(_CheckmarkDelegate)
-
-#### 实现方案
-
-- FilterBar(QWidget)：水平布局 `_search(2x stretch)` + `_priority_combo` + `_status_combo` + `sort_label` + `_sort_combo`
-- `_SORT_MAP` 字典映射显示名 → SortCriterion.field
-- `build_filter()` 构建 TaskFilter 实例（含 `urgencies` 过滤），通过 `filter_changed` 信号发射
-- `reset()` 同时清除搜索、优先级、状态下拉
-- 下拉框宽度通过 `combo_width()` 计算：中文 12px/字 + 36px 控件填充
-
-#### 预览效果
-
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ [搜索任务关键词..._________]  优先级 ▾  ▼  状态 ▾  ▼  排序 ▾  ▼       │
-└──────────────────────────────────────────────────────────────────────────┘
-       stretch=2                 combo(4字)    combo(3字)   combo(4字)
-```
-
----
-
-### 2.5 统计组件（2.0 阶段 3 起已退役）
-
-> **已退役**：StatusBadgeStrip / ProgressDynamicsBar / QuickOverviewBar 随任务页改由
-> 时间轴承载而删除（状态计数保留在状态栏）。以下内容保留作历史记录。
-
-**文件**（已删除）：`status_badge_strip.py`、`progress_dynamics_bar.py`、`quick_overview_bar.py`
-
-#### 2.5.1 StatusBadgeStrip — 状态徽章
-
-**需求**：4 个可点击状态计数徽章(逾期/待办/进行中/已完成)，点击切换激活(背景填充+文字加粗)，再点取消。
-
-**实现方案**：`_StatBadge(QPushButton)` 内部类，`_active` 控制填充/轮廓样式，clicked → `filter_changed(TaskFilter)`。
-
-**预览**：
-```
-┌────────┐ ┌────────┐ ┌──────────┐ ┌──────────┐
-│ 逾期 3  │ │ 待办 8 │ │ 进行中 2 │ │ 已完成 5 │
-└────────┘ └────────┘ └──────────┘ └──────────┘
-  红色药丸    蓝色        橙色         绿色
-  点击=激活   点击=激活    点击=激活     点击=激活
-```
-
-#### 2.5.2 ProgressDynamicsBar — 进度动态栏
-
-**需求**：6 个时段按钮（始终可点击，不再联动速览栏）。双重模式：未点击时 1 列显示最近活跃任务的最新进展（包含截止紧迫度）；点击后 1 列轮播按活动日志数量降序的 Top 6 任务。
-
-**实现方案**：`_show_latest_activity()` 扫描 activity_log 找最新记录，追加 `deadline_suffix()`（如 `⏰14:30截止`、`⚠逾期2天`）。`_rank_tasks()` 按 `activity_count × deadline_weight` 降序排列（今日/逾期任务加权 2×，3 天内加权 1.5×）。`reset_to_unclicked()` 取消选中并回到 hint 模式。点击发射 `progress_filter_activated(TaskFilter)`。`filter_tasks_by_activity()` 做 Python 层 activity_log timestamp 精准扫描。
-
-**预览**：
-```
-未点击:  [昨天] [今天] [上周] [本周] [上月] [本月]   │ 最新: 重构认证模块 — 完成了接口联调 ⏰14:30截止
-点击后:  [昨天] [■今天] [上周] [本周] [上月] [本月]   │ +3条 重构认证模块 ⚠逾期2天
-```
-  按钮始终可点击 (不与速览栏锁定)     轮播区 (单列, 点击后每5s切换)
-
-#### 2.5.3 QuickOverviewBar — 速览栏
-
-**需求**：6 个预设按钮(昨天/今天/上周/本周/上月/本月) + 自动轮播(按紧急度排序，每 5 秒切换展示组，每组 3 个任务)。标签支持时间粒度：当 `deadline_time` 存在且 deadline 为今天时，显示"X 分钟后"/"X 小时后"/"HH:MM截止"/"已超时"；颜色按剩余时间分 4 档（>3h 绿、1-3h 橙、<1h 红、已超时 红）。tooltip 显示精确截止日期时间。
-
-**过滤逻辑**（2026-06-07 重构，2026-06-11 修订）：按 `created_at ≤ 时间上限` + `archived = 0`（排除已完成已归档），不再按 `deadline_date` 过滤：
-
-| 按钮 | 过滤 |
-|------|------|
-| 昨天 | 昨天及之前创建 + 排除已归档 |
-| 今天 | 今天及之前创建 + 排除已归档 |
-| 上周 | 上周日及之前创建 + 排除已归档 |
-| 本周 | 本周日及之前创建 + 排除已归档 |
-| 上月 | 上月最后一天及之前创建 + 排除已归档 |
-| 本月 | 本月最后一天及之前创建 + 排除已归档 |
-
-**实现方案**：`_build_ui()` 创建预设按钮 + 轮播区 QLabel，QTimer(5s) → `_scroll()`。`preset_activated(str)` 和 `task_clicked(task_id)` 信号。`build_filter()` 设置 `created_to`，仓库层 `archived=0` 默认排除已归档。
-
-**预览**：
-```
-┌────────────────────────────────────────────────────────────┐
-│ [昨天] [■今天] [上周] [本周] [上月] [本月]   │ 重构认证模块  阅读系统…   │
-└────────────────────────────────────────────────────────────┘
-  预设按钮 (点击高亮蓝色)          轮播区 (每5s切换)
-```
-
----
-
-### 2.6 活动分析（Activity Analysis）
-
-**文件**：[src/ui/calendar_heatmap/](src/ui/calendar_heatmap/)、[src/ui/main_window.py](src/ui/main_window.py)（`_switch_view("analysis")` / 侧栏「活动分析」/ <kbd>Ctrl</kbd>+<kbd>4</kbd>）
-
-#### 需求
-
-- Ctrl+4 切换，上下两区布局：「活动热力图」+「活动报告」
-- 紧凑热力图（12px 单元格，4 组配色方案可选：☀️ 暖阳 / 🌱 新绿 / 🌊 海洋 / 🌸 樱花）+ 悬浮 Tooltip + 点击日期选中
-- 统计卡片同行右侧显示
-- PeriodSelectorBar：昨天/今天/上周/本周/上月/本月 + 自定义日期范围（CalendarPopup）
-- 左侧 TaskTreePanel：FlowLayout 胶囊标签云（可勾选，默认仅勾选活动数>0的标签，活动数为0的标签不预选），顶部搜索框（实时筛选标签）+ 紧凑全选切换按钮（28×22），标签名超 8 字截断；与右侧导航栏同行水平对齐
-- 右侧 ActivityContentView：顶部导航栏（◀ ▶ │ #标签名 (序号/总数)，靠左，28×22 箭头按钮）+ 1px 分隔线 + 有序列表活动内容；点击箭头在勾选标签队列中循环切换
-- 搜索框实时过滤内容 + 导出（MD/Excel/TXT，按勾选标签全量导出，文件名含分区+日期范围+标签数，Excel 分列）
-- 时段选择 + 标签点击/勾选 + 搜索 + 导航按钮联动
-- 热力图日期点击 → 设置自定义日期范围
-
-#### 实现方案
-
-- `CalendarHeatmapWidget`（紧凑常量 + 配色方案 `heatmap_gradient()`，支持 4 组方案切换）
-- `HeatmapStatsPanel`、`PeriodSelectorBar`（`_CalendarDateEdit` 子类 + CalendarPopup）
-- `TaskTreePanel`：FlowLayout 胶囊标签云 + 搜索框 `_apply_tag_filter()` 实时过滤 + 紧凑全选按钮（`toggle_all_checked()`） + `tag_selected`/`checked_tags_changed` 信号 + `select_prev()`/`select_next()` 循环切换
-- `ActivityContentView`：顶部导航栏（`prev_requested`/`next_requested` 信号）+ QTextBrowser HTML 有序列表 + `set_current_tag(tag, pos, total)` 显示序号 + `set_search_text`/`get_plain_text`
-- 导出默认文件名 `{分区}_{日期范围}_{N}个标签.{ext}`，按勾选标签全量导出，Excel 分列（序号/任务/状态变更/进度变更/活动信息）
-
-### 2.7 任务管理控制台
-
-**文件**：[src/ui/main_window.py](src/ui/main_window.py)（`_switch_view("manage")` / 侧栏「任务管理」/ <kbd>Ctrl</kbd>+<kbd>5</kbd>）
-
-#### 定位
-
-任务管理控制台 = 审视全局 → 定位问题 → 批量处置。区别于任务页(Ctrl+2)的「浏览编辑单任务」，管理页侧重「批量审视、处置多任务」。
-
-与任务页的差异：
-
-| | 任务页 (Ctrl+2) | 任务管理 (Ctrl+5) |
-|---|---|---|
-| 核心任务 | 浏览、编辑单个任务 | 批量审视、处置多任务 |
-| 表格 | 半栏 + 编辑面板 | 全宽 9 列（含归档列） |
-| 筛选 | 时间轴工具行 (粒度+搜索+状态+优先级+排序) | 仅关键词搜索 |
-| 批量操作 | BatchToolbar（辅助） | BatchToolbar + 导出下拉（核心） |
-| 导入导出 | 无 | 导出 MD / 导出 Excel |
-| 清理 | 无 | 手动归档 + 清除已归档 |
-
-#### 需求
-
-- Ctrl+5 切换，左右分栏：左侧管理面板(180px) + 中间任务表格 + 右侧标签管理面板(30%)
-- 左侧面板：关键词搜索框 + 归档/清理操作按钮 + 筛选条件（状态/时间/进度/标签/归档状态）
-- 右侧面板：标签管理（重命名/合并），帮助快速规范化统一标签
-- 表格 9 列：复选框(36px)、序号(36px)、创建时间(100px)、任务内容(Stretch)、截止时间(105px)、进度(55px)、状态(65px)、标签(90px)、归档(55px)
-- 归档列：已完成(archived=1)显示「已归档」、已完成(archived=0)显示「未归档」、未完成显示「/」
-- BatchToolbar 新增「导出▾」下拉按钮（导出 MD / 导出 Excel）
-- 分页（20条/页）+ ConfirmBar 确认机制
-- 手动归档：立即归档当前分区所有已完成任务（不受 `archive_days` 阈值限制）
-- 清除已归档：永久删除当前分区所有 `archived=1` 任务（需二次确认）
-
-#### 手动归档 vs 自动归档
-
-| | 自动归档 (TaskArchiver) | 手动归档 (管理控制台) |
-|---|---|---|
-| 触发 | 每日 02:07 Cron | 用户点击按钮 |
-| 范围 | 受分区 `archive_days` 阈值限制 | 当前分区**全部**已完成任务 |
-| 依赖 | 仅 `archive_days` 控制（0=即时，9999=永不） | 不依赖配置，随时可用 |
-| 定位 | 日常自动维护 | 用户主动即时清理 |
-
-两者互补：自动归档负责日常按规则静默维护，手动归档给用户随时清理的自由。
-
-#### 实现方案
-
-- 左侧面板 `_manage_sidebar`（QWidget, fixedWidth=180）：QVBoxLayout 排列筛选区 + 操作区
-- 搜索框 `_batch_search`（QLineEdit + 300ms 防抖）+ 状态下拉 `_batch_status_combo` + 优先级下拉 `_batch_priority_combo`
-- 标签搜索框 `_batch_tag_input`（QLineEdit），placeholder 为 `#标签1 #标签2`，输入自动剥离 `#` 前缀后转为 filter.tags 集合
-- 归档按钮 → `_on_manual_archive()`：获取当前分区所有 DONE 任务 → `repository.archive_batch(ids)` → 刷新表格
-- 清除按钮 → `_on_clear_archived()`：QMessageBox 二次确认 → `repository.batch_delete(archived_ids)` → 刷新表格
-- 独立 `TaskListModel`（9 列）+ `TaskListView` 实例
-- BatchToolbar 新增导出下拉 `_export_menu`（QMenu + `export_requested(str)` 信号），复用 MarkdownExporter / ReportExporter
-- 确认浮层 `_confirm_bar`：QWidget 显隐控制 + 操作委派
-- `_batch_pending_action` dict 存储待执行操作
-- 右侧标签管理面板 `_batch_tag_panel`（TagManagementPanel）：QSplitter 70:30 布局，标签列表 + 搜索 + 重命名/合并按钮
-
-#### 预览效果
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ 任务管理控制台                                          [← 返回]  │
-├────────────┬─────────────────────────────────────────────────────┤
-│  搜索       │ [全选][更改状态▾][删除][中止][重启][导出▾] 已选3项  │
-│ [________] │                                                     │
-│            ├─────────────────────────────────────────────────────┤
-│  清理       │ ┌──┬──┬──────────┬──────────┬──┬────┬──────┬──┬──┐ │
-│ [归档已完成]│ │☐ │ #│ 任务内容  │ 截止时间  │进度│状态│ 标签 │归档│ │
-│ [清除已归档]│ ├──┼──┼──────────┼──────────┼──┼────┼──────┼──┼──┤ │
-│            │ │  │  │重构认证模块│ 05-30    │80%│进行中│ #后端│ / │ │
-│            │ │  │  │阅读系统设计│ 06-05    │ 0%│ 待办 │ #学习│ / │ │
-│            │ │  │  │整理本月开支│ 04-25    │ 0%│ 逾期 │ #生活│ / │ │
-│            │ │✓ │  │已完成项目  │ 05-20    │100%│已完成│ #工作│未归档│ │
-│            │ │  │  │旧版重构    │ 03-15    │100%│已完成│ #归档│已归档│ │
-│            │ └──┴──┴──────────┴──────────┴──┴────┴──────┴──┴──┘ │
-│            ├─────────────────────────────────────────────────────┤
-│            │          ‹ 上一页  1 / 3 页  下一页 ›   共 18 项     │
-│            │  [确认栏: 确认删除 3 项任务？    是 / 否]             │
-└────────────┴─────────────────────────────────────────────────────┘
-     180px                           stretch
-```
-
-#### 与设置中归档配置的关系
-
-- 设置 → 自动化 → 启用自动归档：仅控制 TaskArchiver 定时任务，不影响手动归档按钮
-- 设置 → 分区管理 → 归档天数：仅影响自动归档的筛选阈值，手动归档不受此限制
-- 手动归档和清除已归档始终作用于当前分区，与配置开关无关
-
-#### 标签管理面板
-
-**文件**：[src/ui/widgets/tag_management_panel.py](src/ui/widgets/tag_management_panel.py)
-
-**定位**：帮助用户快速规范化统一标签，提供标签重命名和合并功能，操作自动同步更新所有关联任务。
-
-**需求**：
-- 右侧 30% 面板，与左侧内容通过 QSplitter(70:30) 分隔
-- 标签列表按使用次数降序排列，显示格式 `#标签名 (N)`
-- 搜索框实时过滤标签（300ms 防抖）
-- 重命名：选中标签 → 弹窗输入新名 → 自动更新所有含该标签的任务（raw_md + tags JSON + FTS5）
-- 合并：多选标签(Ctrl+click) → 弹窗选择合并目标 → 批量替换 + 去重
-- 右键菜单：快捷重命名 / 合并选中到此
-- 重命名/合并操作涵盖所有任务（含已归档），标签列表同步显示全部任务的标签计数
-- 操作后发射 `tag_changed` 信号 → 桥接 `SignalBus.tag_changed` → `TimelineController`（主视图）+ `BatchController.refresh_page()`（批量页面任务表格）
-
-**实现方案**：
-- `TagManagementPanel(QWidget)`：外层容器(bg_secondary + border-left) + QVBoxLayout
-- 标题栏 "🏷 标签管理" + 搜索框 + QListWidget(ExtendedSelection) + 按钮行(重命名/合并/刷新)
-- 空态显示 "暂无标签"
-- 重命名流程：`QInputDialog.getText()` → 校验(# 字符/冲突检测) → `_execute_rename()` 逐任务替换并 `MarkdownTaskFormatter.format()` 再生 raw_md → 发射信号
-- 合并流程：自定义 QDialog(QComboBox 选目标) → `_execute_merge()` 逐任务替换源标签 → 去重 → 再生 raw_md → 发射信号
-- 分区感知：`set_partition_id()` 限定标签范围，`refresh()` 调用 `repository.get_all_tags_with_counts(partition_id)`；分区激活时 `BatchController.set_active_partition()` 传播，视图切换时同步
-- 仓库新增方法：`get_all_tags_with_counts()`、`get_tasks_by_tag()`、`get_tasks_by_tags()` — 均不做 `archived` 过滤，确保标签操作全局生效
-- 任务-标签双向联动：点击任务行 → 标签面板中该任务关联的标签加粗+accent 色高亮；点击标签项 → 任务列表中含该标签的任务前置（再次点击同一标签取消前置）；鼠标悬停标签列显示全部标签信息
-- 信号：`tag_clicked(str)` (QListWidget itemClicked → emit tag_clicked) + `highlight_tags(set[str])` (字体加粗+accent色)；`TaskListView.selection_cleared()` 清空选中时取消高亮
-
-**最终更新预览**：
-
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ 任务管理控制台                                                     [← 返回]  │
-├────────────┬──────────────────────────────────────┬──────────────────────────┤
-│  筛选       │ [全选][更改状态▾][删除][中止]...       │ 🏷 标签管理               │
-│ [关键词]    │                                      │                          │
-│ [状态]      │ ┌──┬──┬──────────┬──────────┬──┬──┐ │ 🔍 搜索标签...            │
-│ [创建时间]  │ │☐ │ #│ 任务内容  │ 截止时间  │..│..│ │                          │
-│ [截止时间]  │ ├──┼──┼──────────┼──────────┼──┼──┤ │ #work        (12)        │
-│ [进度]      │ │  │  │重构认证模块│ 05-30    │..│..│ │ #personal     (8)        │
-│ #标签1 #标签2│ │  │  │阅读系统设计│ 06-05    │..│..│ │ #health       (5)        │
-│ [归档状态]  │ │  │  │整理本月开支│ 04-25    │..│..│ │                          │
-│             │ └──┴──┴──────────┴──────────┴──┴──┘ │ [✏ 重命名] [🔗 合并]      │
-│  操作       │                                      │ [🔄 刷新]                │
-│ [归档已完成]│  ‹ 上一页  1 / 3 页  下一页 ›  共18项 │                          │
-│ [清除已归档]│                                      │                          │
-└────────────┴──────────────────────────────────────┴──────────────────────────┘
-   180px                  ~50%                               ~30%
-```
-
-### 2.8 日历热图（基础组件）
-
-#### 需求
-
-- 12 月 × 7 天(行) × 5 周(列) 矩阵布局
-- 配色方案渐变（4 组可选，`heatmap_gradient()` 8 级，空单元格→高活跃）
-- 月份标题横轴、星期标签纵轴
-- 日期悬浮 Tooltip：显示日期 + 条目数 + 任务数 + 标签分解
-- 标签筛选下拉 + 年份切换(< 2026 >)
-- 点击日期可创建任务
-- 活动报告面板：按标签分组进度摘要，支持 Markdown/Excel 导出
-- 高亮范围：来自速览栏预设的列背景色调
-
-#### 实现方案
-
-- **CalendarHeatmapWidget** (QWidget) — `nav_bar`(标签筛选+年份切换+返回按钮) + `_HeatmapGrid`(自定义 paintEvent)
-- **_HeatmapGrid** — `paintEvent()` 中逐单元格绘制：12 列(月)×5 列(周)=60 列矩阵。`_cell_step` / `_cell_size` 在 `resizeEvent()` 中自适应。`_date_at_pos()` 像素坐标→日期
-- **HeatmapModel** (非 QT) — 加载 `get_heatmap_activity_data()` 返回 `(entry_counts, task_counts)` 字典，8 级对数刻度分桶。统计：总计/活跃天/最长连续/当前连续/日均/月均/周均
-- **HeatmapTooltip** (QDialog) — 无边框置顶浮动卡片，`tag_breakdown_for_date()` 显示明细
-- **ActivityReportPanel** — QTreeWidget(标签→任务树)+QTextBrowser(HTML 详情)，Export 按钮调用 `export_markdown()` / `export_excel()`
-- **HeatmapCollapsePanel** — 可折叠封装器，零边距 QVBoxLayout
-
-#### 预览效果
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ [全部标签 ▾ ▼]  ‹ 2026 ›  [返回任务]                       │ ← NavBar
-├──────────────────────────────────────────────────────────────┤
-│      1月    2月    3月    4月    5月    6月  ...  12月       │ ← 月份标签
-│  一  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  ...  □□□□□  │ ← Mon
-│  二  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  ...  □□□□□  │
-│  三  □■■□□  □■■□□  □■■□□  □■■□□  □■■□□  □■■□□  ...  □■■□□  │
-│  四  □■■□□  □■■□□  □■■□□  □■■□□  □■■□□  □■■□□  ...  □■■□□  │
-│  五  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  ...  □□□□□  │
-│  六  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  ...  □□□□□  │
-│  日  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  □□□□□  ...  □□□□□  │
-│                                                              │
-│  悬浮 Tooltip:                                               │
-│  ┌──────────────────────┐                                   │
-│  │ 2026年5月30日 星期六  │                                   │
-│  │ 条目: 5  任务: 3     │                                   │
-│  │ #后端: 1  #学习: 2   │                                   │
-│  └──────────────────────┘                                   │
-│                                                              │
-│  图例: □ □ ■ ■ ■ ■ ■ ■                                      │
-│        0   1   2   3   4   5   6   7+   → accent 渐变        │
-├──────────────────────────────────────────────────────────────┤
-│  ┌─ 活动报告 ───────────────────────────────────────────┐   │
-│  │ 1. #后端 重构认证模块 (30%→80%)：完成JWT验证…      │   │
-│  │ 2. #学习 阅读系统设计 (50%→90%)：优化查询…         │   │
-│  │                                [导出MD] [导出Excel]  │   │
-│  └──────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 2.7 分区管理
-
-**文件**：[src/models/partition.py](src/models/partition.py)、[src/models/repository.py](src/models/repository.py)（分区 CRUD 方法）、[src/ui/main_window.py](src/ui/main_window.py)（密码锁定 UI）
-
-#### 需求
-
-- 分区 CRUD：增删改查，**禁止删除最后一个分区**（至少保留一个）
-- 默认分区：设置中设定，运行时启动激活链 `last_partition_id → default_partition → first_unlocked`，确保状态栏始终有活动分区
-- 首次启动：`ensure_default_partition()` 自动创建名为"功能演示"的默认分区
-- 密码保护：设置/清除密码，解锁后内存中保留；**切换分区立即恢复锁定**（2026-06-04 修复：此前解锁后切换分区不会重新锁定，为严重安全漏洞）；**状态栏分区按钮/菜单显示 🔒（锁定）/🔓（已解锁）双态**，与 ✓ 选中标记互不冲突
-- 自动锁定：按分区独立设置（默认 3 分钟），空闲超过 `auto_lock_minutes/2` 时自动锁定；仅对有密码的分区生效；**使用 DB 直接查询密码状态，解锁后仍可正常触发重新锁定**（2026-06-04 修复：此前解锁后 `_partition_passwords[pid]=""` 导致锁定条件永远为 False）
-- 分区切换：QToolButton 下拉菜单，切换后刷新任务列表
-- 归档天数：每分区独立配置，默认值 0。0=完成任务后即时归档，1~9998=完成后N天午夜归档，9999=永不归档
-
-#### 实现方案
-
-- SQLite `partitions` 表：id, name, sort_order, password, archive_days, auto_lock_minutes, created_at
-- `_partition_passwords: dict[str, str]` — 主窗口内存管理(空字符串=已解锁)，`_load_partitions()` 从 DB 同步
-- `_partition_auto_lock: dict[str, int]` — 按分区独立自动锁定分钟数(默认 3)，`_check_idle_lock()` 读取
-- `_partition_mask` (QStackedLayout index 1) — 密码蒙版覆盖 QSplitter，含提示标签+解锁按钮
-- 空闲检测：`_check_idle_lock()` 每 30s 运行，`now - _last_activity > auto_lock_minutes/2` → `_lock_partition()`
-- **默认分区激活链**：`_load_partitions()` 中按 `last_partition_id → default_partition → first_unlocked` 优先级激活；若当前激活分区被删除（不存在于 DB），自动重置为 None 落入激活链
-- **分区过滤一致性**：`_refresh_all_views` 和 `_build_filter_with_sort` 中 `partition_id` 空字符串统一转 `None`，避免 SQL `WHERE partition_id=''` 不匹配 `NULL`
-
-#### 预览效果
-
-```
-分区切换按钮:  [📁 工作 ▾ ▼]
-               ├───────────
-               │ 📁 工作    ← 当前
-               │ 📁 个人
-               │ 📁 学习
-               │ ──────────
-               │ ⊕ 新建分区
-               └───────────
-
-未解锁分区蒙版:
-┌──────────────────────────────────────────────┐
-│                                              │
-│          🔒 此分区已锁定                      │
-│          请输入密码解锁                        │
-│          [________] [解锁]                    │
-│                                              │
-└──────────────────────────────────────────────┘
-```
-
----
-
-### 2.8 设置对话框
-
-**文件**：[src/ui/dialogs/settings_dialog.py](src/ui/dialogs/settings_dialog.py)
-
-#### 需求
-
-单页布局，4 个功能区块，QGridLayout 双列统一对齐：
-
-| 区块 | 配置项 | 控件 |
-|------|--------|------|
-| 外观 | 主题、最小化到托盘、开机自动启动 | 下拉(120px) / 复选框 / 复选框 |
-| 任务列表 | 每页条数、默认排序、已完成置底 | 下拉(120px) / 下拉(120px) / 复选框，同列显示 |
-| 活动热力图 | 起始年份、配色方案 | 下拉(当前年份±5) / 下拉(4组方案)，同行显示 |
-| 归档 / 分区管理 | 分区设定表格 | 5列：名称、默认分区、归档阈值(天)、自动锁定(分)、密码；工具栏"+ 新增""− 删除"；表格最大高度 300px，表头固定 |
-
-归档阈值 >= 0，默认 0。0=完成任务后即时归档，1~9998=完成后N天午夜归档，9999=永不归档。双击单元格编辑数值。复选框改用标准 QCheckBox（无动画）。
-
-#### 实现方案
-
-- QGridLayout 双列布局：列 0 标签（100px 右对齐）、列 1 字段（自适应），section header 跨两列
-- 归档分区表格使用 `_CenterHost`（stretch-sandwich 布局：VBox+stretch+HBox+stretch+widget+stretch+stretch）包裹 QCheckBox/QPushButton 实现水平垂直居中，避免 `sizeHint()` 受全局 QSS 污染
-- QCheckBox 设置 `spacing: 0px;` 消除全局 QSS 的 8px 文本间距对无文字复选框的偏移
-- QPushButton（密码按钮）设置 `padding: 0px;` 覆盖全局 QSS 内边距
-- `_update_table_height()` 设置 `setMaximumHeight(300)` + `setMinimumHeight(min(content, 300))`，表头固定、表体内部滚动
-- 工具栏（+ 新增 / − 删除）位于表格上方、ScrollArea 内，始终可见
-- 默认分区 QCheckBox 单选互斥（`_on_default_toggled`），**禁止取消最后一个默认分区**
-- 删除分区校验：`count_tasks_in_partition()` > 0 时阻止；**仅剩一个分区时禁止删除**
-- **保存前校验**：`_on_accept` 验证有且仅有一个默认分区，不通过则拒绝关闭
-- **兜底修复**：`_populate_partition_table` 若无默认分区被勾选（default_id 失效），自动勾选首个
-- 确认时调用 `_config.set()` → `_config.save()` → 发射 `config_changed`
-
----
-
-### 2.9 系统托盘
-
-**文件**：[src/ui/system_tray.py](src/ui/system_tray.py)
-
-#### 需求
-
-- 系统托盘图标(QSystemTrayIcon)
-- 右键菜单：显示/隐藏窗口、新建任务(打开+聚焦输入)、退出
-- 双击托盘图标切换窗口可见性
-- `show_message()` 用于每日摘要推送（TaskNotifier 调用）
-
-#### 实现方案
-
-- `SystemTrayManager`(非 QWidget) — `_build_menu()` 构建 QMenu，`activated` 信号→`_on_activated()`(DoubleClick→`_toggle_window()`)
-- 图标通过 `IconLoader.app_icon()` 加载多分辨率 .ico
-
-#### 预览效果
-
-```
-任务栏托盘:
-  [📋] ← 右键 ┌──────────────┐
-              │ 显示/隐藏窗口 │
-              │ 新建任务...   │
-              │ ──────────── │
-              │ 退出          │
-              └──────────────┘
-  每日摘要气泡:
-  ┌──────────────────────────┐
-  │ Tadado 每日摘要          │
-  │ 逾期 2 项，今日到期 5 项 │
-  │ 写报告、修Bug、开会      │
-  │ …等 7 项                 │
-  └──────────────────────────┘
-```
-
----
-
-### 2.10 版本与更新
-
-**文件**：[src/services/update_checker.py](src/services/update_checker.py)、[src/ui/dialogs/about_dialog.py](src/ui/dialogs/about_dialog.py)
-
-#### 需求
-
-帮助 → 关于对话框提供版本追溯和更新检测：
-- 显示当前版本号（统一来源 `src/_version_data.py`，通过 `src/version.py` 公开 API 访问）
-- [检查更新] 按钮：先查 GitHub Release API，不可达则自动回退到阿里云盘（通过本地 `aliyunpan` CLI 查询文件夹内安装包文件名解析最新版本）
-- 20 秒超时，超时按"无更新"处理
-- 检测到新版本时，下载渠道区标注 ⭐ 推荐
-- 提供 GitHub Releases + 阿里云盘双下载渠道
-- 交流方式：邮箱 + 微信公众号 + GitHub 项目地址
-
-#### 实现方案
-
-- `UpdateChecker(QObject)`：`QNetworkAccessManager` 异步查询 GitHub API，失败时通过 `QProcess` 调 `aliyunpan ls` 解析云盘文件版本
-- `AboutPage`（设置抽屉「关于」页签）接收 `update_checker`，[检查更新] 按钮禁用态、结果文字、下载渠道动态 ⭐ 标注
-- 版本比较：`tuple(int,int,int)` 去 `v` 前缀
-- 阿里云盘上传：`release.ps1` + `upload_aliyun.ps1`（本地脚本，不入库）通过 `aliyunpan` CLI 上传至资源库 `/Tadado/`
-
----
-
-### 2.11 后台服务
-
-**文件**：[src/services/scheduler.py](src/services/scheduler.py)、[notifier.py](src/services/notifier.py)、[archiver.py](src/services/archiver.py)、[recurrence.py](src/services/recurrence.py)
-
-#### 2.10.1 TaskScheduler — 定时调度
-
-**需求**：每分钟 `refresh_overdue_status()` 自动设置/恢复 OVERDUE 状态。每天在配置时间（`daily_digest_time`，默认 09:00）发射 `daily_digest` 信号供 Notifier 发送每日摘要。
-
-**实现方案**：APScheduler `QtScheduler` + 双 job：(1) IntervalTrigger(1min) 做 overdue 刷新，(2) CronTrigger(hour, minute) 做每日摘要。（2.0 阶段 3 起任务页的轮播栏 / 进度动态栏已退役，提醒能力改由状态栏统计与时间轴色条表达。）
-
-#### 2.10.2 TaskNotifier — 每日摘要
-
-**需求**：监听 `daily_digest`，遵守安静时段与 `reminders.enabled` 开关，查询今日到期+逾期任务，合并为单条托盘摘要通知。
-
-**实现方案**：`_on_daily_digest()` → 查 `get_due_today()` + `get_overdue()` → 拼装 "逾期 N 项，今日到期 M 项\nA、B、C…等 X 项" → `tray.show_message()`。安静时段逻辑不变。
-
-#### 2.10.3 TaskArchiver — 自动归档
-
-**需求**：每日 02:07(Cron) 运行，按分区 `archive_days` 阈值归档已完成任务。
-
-**归档规则**：
-- `archive_days = 0`：任务标记 DONE 时即时归档（通过监听 `task_status_changed` 信号触发，覆盖单任务、批量操作、新建即 DONE 三条路径）
-- `archive_days = 1~9998`：完成后 N 天，午夜自动归档。筛选条件：`completed_at ≤ today - archive_days`
-- `archive_days ≥ 9999`：永不归档
-- 切换分区或设置中改阈值为 0 时，追溯归档该分区所有已有 DONE 任务
-- 归档任务从 DONE 改为其他状态时，自动取消归档（`archived=1 → archived=0`）
-
-**实现方案**：APScheduler CronTrigger(hour=2, minute=7)。遍历分区 → `get_tasks_for_archive(cutoff)` → `archive_batch(task_ids)` → 发射 `archive_completed(count)`。即时归档和取消归档由 TaskService 监听 SignalBus 信号处理。
-
-#### 2.10.4 TaskRecurrence — 循环任务
-
-**需求**：任务完成(DONE)时，根据 `recurrence_rule`(+1d/+1w/+1m/+1y)自动创建下一实例。
-
-**实现方案**：监听 `task_status_changed`(仅 DONE 触发)。`_parse_rule()`：`timedelta(d/w)` 或 `dateutil.relativedelta(m/y)`。新任务：TODO 状态 + 偏移日期 + 继承标题/标签/规则。
-
-#### 服务间交互
-
-```
-每分钟 ──→ TaskScheduler._check_due_tasks()
-              └─ refresh_overdue_status()
-
-每日 09:00 ──→ TaskScheduler._emit_daily_digest()
-                 └─ emit(daily_digest) ──→ TaskNotifier
-                                            └─ 检查 enabled + quiet_hours → 查询到期/逾期 → 合并为单条托盘摘要
-
-每日 02:07 ──→ TaskArchiver._run_archive()
-                 └─ 按分区 archive_days 归档 → emit(archive_completed)
-
-任务 DONE ──→ TaskRecurrence._on_status_changed()
-                └─ 解析 recurrence_rule → 创建新任务实例 → emit(task_created)
-```
-
----
-
-### 2.11 导入/导出
-
-**文件**：[src/services/](src/services/)（md_importer / md_exporter）、[src/ui/calendar_heatmap/report_exporter.py](src/ui/calendar_heatmap/report_exporter.py)
-
-#### 需求
-
-- 导入 Markdown：文件对话框 → 逐行解析 → 批量入库
-- 导出 Markdown：遍历任务 → 每行 raw_md 写入文件
-- 活动报告导出：Markdown(紧凑文本) / Excel(openpyxl 格式化工作簿)
-
-#### 实现方案
-
-- 导入：`QFileDialog.getOpenFileName()` → 逐行 `MarkdownTaskParser.parse()` → `TaskRepository.insert()` 批量
-- 导出：`QFileDialog.getSaveFileName()` → 遍历 `Task.raw_md` → 写入文件
-- 活动报告：`export_markdown(report_data)` 字符串拼接 / `export_excel(report_data, filepath)` openpyxl Workbook
-
----
-
-### 2.12 窗口管理
-
-**文件**：[src/ui/main_window.py](src/ui/main_window.py)、[src/ui/icon_draw.py](src/ui/icon_draw.py)、[src/utils/win32_theme.py](src/utils/win32_theme.py)
-
-#### 需求
-
-- 无边框窗口(`FramelessWindowHint`)
-- 自定义标题栏(36px)：App 图标（返回主界面）+ 全局热键提示 + 右侧常驻置顶按钮 + 4 个窗口按钮（缩小到托盘/最小化/切换全屏/关闭）
-- 页面导航集中到左侧 NavShell 图标栏（工作 / 洞察 / 管理三组 + 设置齿轮），标题栏不再承载页面切换按钮
-- Windows Aero Snap 支持（左右停靠、四分之一分屏、拖拽到顶部最大化、Win+方向键快捷键）
-- Win32 原生拖拽 + 边缘缩放(8px 热区边框，与 Win10/11 标准一致)
-- 固定默认尺寸：1050×680，用户可通过全屏按钮调整
-- 图标运行时绘制（Phosphor 风格填充 PRIMARY 蓝），主题色适配（`design_tokens.text_primary`）
-- 分区选择器位于状态栏左侧（accent 色加粗按钮）
-- 最小化行为受 `minimize_to_tray` 配置控制：开启时最小化→隐藏到托盘，关闭时正常最小化到任务栏
-
-#### 实现方案
-
-- `_setup_custom_title_bar()` — 固定 36px QWidget，QHBoxLayout：AppIcon → 热键提示 → stretch → 置顶按钮 → 4×窗口按钮
-- `_setup_central_widget()` — `NavShell`（左）+ `QStackedWidget`（右）；页面经 `VIEW_REGISTRY` 注册表懒构建，`_switch_view()` 处理别名与侧栏高亮
-- `_ThemedIconEngine` (icon_loader.py)：运行时 QPainter 绘制，颜色自 `design_tokens`
-- `enable_window_snap()` ([src/utils/win32_theme.py](src/utils/win32_theme.py)) — 通过 `SetWindowLongW` 恢复 `WS_THICKFRAME | WS_CAPTION` 窗口样式，启用 Aero Snap；`DWMWA_NCRENDERING_DISABLED` 阻止 DWM 实际绘制原生标题栏
-- `nativeEvent()` 处理三种消息：
-  - `WM_NCHITTEST`：用 `childAt()` 精确识别光标下方是否有按钮控件，有按钮→`HTCLIENT`（可点击），无按钮→`HTCAPTION`（整条标题栏空白区域均可拖拽触发 Snap）
-  - `WM_NCCALCSIZE` (wParam 0 和 1 均处理)：扩展客户区覆盖整个窗口，防止隐形边框压缩内容
-  - `WM_GETMINMAXINFO`：交给 DefWindowProc 默认处理，最大化时适配显示器工作区
-- `changeEvent()` 拦截 `WindowStateChange`：`minimize_to_tray=True` 时最小化→`hide()` 隐藏到托盘
-- 标题栏命中测试：靠 `menuWidget().childAt()` 判定光标是否在按钮上（按钮→`HTCLIENT`，空白→`HTCAPTION`），不依赖固定宽度
-- 状态栏 `_status_partition_btn` + `_status_partition_menu` 替代原菜单栏分区项
-
-#### 启动残影防护
-
-**问题**：Win11 上 `FramelessWindowHint` 无边框窗口启动时，DWM 在 Qt 自定义渲染就绪前短暂绘制原生标题栏按钮（`_ □ X`）。经 8 轮排查，根因在 DWM 首次合成时机 — 之前所有 DWM 层方案均在 `show()` 之后设置，为时已晚。
-
-**解决方案** — 三层纵深防御：
-
-| 层级 | 机制 | 文件 | 说明 |
-|------|------|------|------|
-| 1 | **启动遮罩** `StartupShield` | [src/ui/splash_screen.py](src/ui/splash_screen.py) | 主题色 QWidget（`Tool`+`WindowStaysOnTopHint`），在任何耗时初始化前显示，覆盖整个启动过程 |
-| 2 | **DWM NC 渲染禁用** | [src/ui/main_window.py](src/ui/main_window.py) | `DWMWA_NCRENDERING_POLICY = DWMNCRP_DISABLED`，在 `show()` 前通过 `winId()` 强制创建 HWND 后立即设置，从 DWM 层禁止绘制原生 NC 按钮 |
-| 3 | **DWM CLOAK** | [src/ui/main_window.py](src/ui/main_window.py) | `DWMWA_CLOAK`，在 `show()` 前设置，窗口对 DWM 完全不可见；`_finish_startup()` 中解除 + 50ms 延迟后关闭遮罩，确保首帧即为完整自定义界面 |
-
-**启动时序**：
-```
-QApplication → AppConfig + init_tokens() + _load_theme() → StartupShield.show()
-  → TaskRepository / MainWindow (含 DWM 预配置) / 后台服务
-  → WA_DontShowOnScreen=False → show() → QTimer.singleShot(0, _finish_startup)
-  → uncloak → 50ms → shield.dismiss() → tray.show()
-```
-
-#### 预览效果
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ [I] [📝单] [📋多] [📊分析] [📋管理] [⚙设置] [❓帮助▾] ... [⤓] [—] [⛶] [✕] │ ← 36px
-├──────────────────────────────────────────────────────────────┤
-│                        中央区域                               │
-├──────────────────────────────────────────────────────────────┤
-│ 📁 工作 ▾ │ 逾期 X | 进行中 X | ...              时钟      │ ← 底部工具条（Toast 浮层承载瞬时提示，已无 QStatusBar）
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 2.13 主题系统
-
-**文件**：[src/utils/design_tokens.py](src/utils/design_tokens.py)、[resources/themes/base.qss](resources/themes/base.qss)
-
-> 亮/暗两套颜色都在 `design_tokens.py` 里（`LIGHT_TOKENS` / `DARK_TOKENS`），
-> `base.qss` 是**唯一**的 QSS 文件，颜色一律写成 `{{token}}` 占位符，加载时由
-> `expand_qss()` 按当前主题展开。早期按主题拆分的 `light.qss` / `dark.qss`
-> 已删除——两份文件 95% 内容重复，改一处要同步改两处。
-
-#### 需求
-
-- 浅色/深色双主题，默认浅色
-- DesignTokens 20+ 语义颜色角色
-- QPalette 全局应用 + QSS 层叠
-- 热切换：配置变更 → `config_changed` → 重设 QPalette 和 QSS
-- QSS 中 `__ICONS__` 占位符，加载时替换为实际路径
-
-#### 实现方案
-
-- **DesignTokens** (冻结 dataclass) — 20+ 语义角色：
-
-| 类别 | 令牌 | 用途 |
-|------|------|------|
-| 背景 | `bg_primary`, `bg_secondary`, `bg_tertiary`, `bg_welcome_fallback` | 窗口/面板/输入框背景 |
-| 文本 | `text_primary`, `text_secondary`, `text_disabled`, `text_welcome_accent`, `text_welcome_sub`, `text_on_accent` | 各级文字/强调/禁用 |
-| 边框 | `border_primary`, `border_focus` | 默认边框/聚焦边框 |
-| 语义 | `accent`, `accent_hover`, `danger`, `danger_hover`, `danger_bg`, `success` | 强调/危险/成功 |
-| 热力图 | `heatmap_empty` | 热力图空白单元格 |
-| 其他 | `separator`, `timeline_dot`, `timeline_done` | 分隔线/时间线 |
-
-- **LIGHT_TOKENS**: 暖纸白 `#f5f4f0` 主背景, 柔和蓝 `#5b8def` 强调, `#2c2c2c` 主文字
-- **DARK_TOKENS**: 深炭黑 `#1a1b26` 主背景, 柔和蓝 `#7aa2f7` 强调, `#c9d1d9` 主文字
-- `get_tokens()` 单例, `init_tokens(config)` 绑定, `refresh_tokens()` 重新解析
-- `build_palette()` — 构造 QPalette(Window/Base/Button/Highlight/Link/ToolTip/BrightText/Disabled 等色组)
-- `heatmap_gradient(levels)` — 基于当前配色方案（`HEATMAP_SCHEMES` 注册表，4 组预设）插值生成渐变，亮/暗双主题各 8 级色阶
-- `base.qss` 覆盖：全局字体栈/菜单/自定义标题栏/工具栏/按钮/复选框/选项卡/输入框/下拉框/文本编辑/表格/标签/热力图/对话框/日期时间/分区蒙版/卡片/弹窗
-- 圆角与控件几何直接写 px（对齐 `resources/ui-mockup/tadado-2.0.html`）：卡片 10px、按钮与输入 8px、内部元素 6–7px、胶囊 999px；颜色则**禁止**写死，必须走 `{{token}}`
-
-#### 主题切换流程
-
-```
-AppConfig 主题变更
-  → config_changed 信号
-  → TadadoApp._load_theme()
-  → DesignTokens.refresh_tokens()
-  → build_palette() → QApplication.setPalette()
-  → 加载 base.qss（expand_qss 展开 {{token}} 占位符）
-  → 所有 UI 组件自动重绘
-```
-
-#### 原生标题栏暗色适配
-
-**文件**：[src/utils/win32_theme.py](src/utils/win32_theme.py)
-
-通过 Windows DWM API 为非无框对话框设置暗色原生标题栏，弥补 QPalette/QSS 无法控制原生窗口装饰的局限：
-
-| 条件 | 机制 | 效果 |
-|------|------|------|
-| Win11 (build ≥ 22000) | `DWMWA_USE_IMMERSIVE_DARK_MODE` + `DWMWA_CAPTION_COLOR` | 标题栏精确匹配 `surface_raised`（与主窗口自定义标题栏一致） |
-| Win10 1809+ (17763–22000) | `DWMWA_USE_IMMERSIVE_DARK_MODE` | 标题栏为系统暗灰色（接近但不完全一致） |
-| Win10 < 1809 / 非 Windows | — | 无操作，标题栏保持系统默认 |
-
-适用窗口：设置抽屉（`SettingsDrawer`）与关于页（`AboutPage`）——二者带原生窗口边框。在 `showEvent` 中根据当前主题自动调用，非 Windows 平台零副作用。
-
-> 原先的模态 `SettingsDialog` / `AboutDialog` 已移除：设置改为右侧抽屉，
-> 关于并入抽屉的第四个页签。
-
----
-### 2.14 批量操作
-
-**文件**：[src/ui/task_list/batch_toolbar.py](src/ui/task_list/batch_toolbar.py)、[src/models/repository.py](src/models/repository.py)（批量方法）
-
-#### 需求
-
-- 全选/取消全选按钮
-- 5 个操作按钮：更改状态(进行中/已完成)、删除、中止、重启、延后处理(+1/+5/+7/+10/+20/+30天)
-- 延后处理：调整选中任务的 deadline_date，无截止时间的任务以今天为基准；执行后自动刷新逾期状态；活动日志格式 `[批量操作] 延后处理: 截止时间 {旧} -> {新}（+{N}天）`
-- 选中计数标签："已选 N 项"（纯显示，无交互，位于操作按钮之后）
-- 无选中时 hover 显示 Toast 提示
-- 操作后刷新所有关联视图
-- 编辑视图批处理操作通过 QMessageBox 确认，批量视图通过 QMessageBox 确认（批量管理页面额外调用 `_refresh_batch_page()` 刷新表格）
-
-#### 实现方案
-
-- BatchToolbar(QWidget) — 水平布局：全选按钮 + 更改状态下拉 + 删除/中止/重启/延后处理按钮 + 导出下拉 + 计数标签
-- 信号：`select_all_requested` / `deselect_all_requested` / `batch_status_change` / `batch_urgency_change`(list, int) / `batch_delete` / `batch_suspend` / `batch_restart` / `batch_postpone`(list, int) / `export_requested`(str)
-- ~~编辑视图 `_batch_toolbar`~~ — 已随旧列表退役（2.0 阶段 3）；批量操作统一由管理页 BatchController 承担
-- 延后处理（2026-06-02 新增）：Repository `batch_postpone(ids, days)` 逐任务更新 deadline_date + 记录 activity_log + refresh_overdue_status()
-- 调整分区（2026-06-04 新增）：右键菜单"调整分区"，将选中任务迁移至其他分区；FROM 和 TO 分区若设有密码需依次验证；密码验证通过 + 确认弹窗后执行 `batch_move_partition(ids, to_partition_id)`；迁移后视图受底部状态栏当前分区控制（已迁移任务从当前分区消失）
-- 编辑视图和批量视图均使用 QMessageBox 确认
-- Repository 批量方法使用事务 + 逐条记录 activity_log（显示中文状态名）
-- `_warn_if_empty()` — 空选中时 2 秒 QToolTip 提示
-
-#### 预览效果
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ [☐ 全选] [更改状态 ▾] [删除] [中止] [重启] [延后处理 ▾] [导出 ▾] 已选 3 项      │
-└──────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 2.15 任务输入
-
-**文件**：[src/ui/widgets/task_input.py](src/ui/widgets/task_input.py)
-
-#### 需求
-
-- 单行 QLineEdit，Enter 创建任务
-- Markdown 语法输入：`- [   ] <YYYY-MM-DD HH:MM> 标题 #标签`（规范格式，无状态关键字）
-- 解析失败时红色边框闪烁(400ms QTimer)
-- 创建后清空并发射 `task_created`
-- Ctrl+N 全局快捷键聚焦
-
-#### 实现方案
-
-- TaskInputWidget(QWidget)：`_input`(QLineEdit) + `returnPressed`→`_on_text_entered()`
-- `MarkdownTaskParser.parse()` → 构造 Task → `repository.insert()` → emit(task_created)
-- 闪烁：`_flash_error()` 设置红色 border → 400ms QTimer 恢复
-
-#### 预览效果
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│ - [ ] TODO <2026-05-30> 输入Markdown任务，Enter创建   │ Ctrl+N │
-└──────────────────────────────────────────────────────────────┘
-  QLineEdit (#taskInput)                              快捷键提示
-```
-
----
-
-## 3. 附录
-
-### 3.1 关键数据流
-
-#### Markdown 创建流
-
-```
-用户输入 raw_md
-  → MarkdownTaskParser.parse()
-  → ParsedTask(checkbox, status, dates, title, tags)
-  → Task 数据类构造
-  → TaskRepository.insert()
-  → SQLite tasks 表 + FTS5 索引更新
-  → SignalBus.task_created.emit(Task)
-  → MainWindow._on_task_created()
-  → 若速览按钮非"今天"则自动切换 activate_preset("today")
-  → 筛选栏 reset() → 刷新列表 → 新任务置顶 → 自动选中定位
-```
-
-#### 编辑保存流
-
-```
-TaskEditPanel._source_edit 文本变更
-  → _on_raw_md_changed() (300ms debounce)
-  → MarkdownTaskParser.parse()
-  → MarkdownTaskFormatter.format() 规范化
-  → TaskRepository.update()
-  → SignalBus.task_updated.emit(Task)
-  → 所有监听组件刷新
-```
-
-#### 状态循环流
-
-```
-用户点击状态标签
-  → TaskStatus.next_status
-     TODO → DOING → DONE → DOING (循环)
-     OVERDUE 锁定 (仅系统可改)
-  → formatter.format() 重新生成 raw_md
-  → TaskRepository.update()
-  → SignalBus.task_status_changed.emit(Task, old_status)
-  → 回调: TaskRecurrence (DONE→新实例), MainWindow 刷新
-```
-
-### 3.2 数据库 Schema
+### 3.1 存储形态
 
 ```sql
--- tasks (主表, 28 列)
-CREATE TABLE tasks (
-    id TEXT PRIMARY KEY,
-    raw_md TEXT NOT NULL,         -- 规范 Markdown 行
-    title TEXT NOT NULL,
-    status TEXT NOT NULL,
-    priority INTEGER DEFAULT 0,   -- 已弃用
-    tags TEXT DEFAULT '[]',       -- JSON 数组
-    scheduled_date TEXT,
-    deadline_date TEXT,
-    deadline_time TEXT,           -- HH:MM
-    created_at TEXT,
-    updated_at TEXT,
-    completed_at TEXT,
-    archived INTEGER DEFAULT 0,
-    archived_at TEXT,
-    recurrence_rule TEXT,         -- +1d, +1w, +1m, +1y
-    parent_id TEXT REFERENCES tasks(id),
-    partition_id TEXT,
-    notes TEXT,
-    activity_log TEXT DEFAULT '[]',  -- JSON 数组 [{ts, status, progress, content, urgency}]
-    progress INTEGER DEFAULT 0,      -- 0-100
-    activity_yesterday INTEGER DEFAULT 0,
-    activity_today INTEGER DEFAULT 0,
-    activity_week INTEGER DEFAULT 0,
-    activity_last_week INTEGER DEFAULT 0,
-    activity_month INTEGER DEFAULT 0,
-    activity_last_month INTEGER DEFAULT 0,
-    suspended INTEGER DEFAULT 0,
-    urgency INTEGER DEFAULT 3     -- 0=紧急, 1=重要, 2=关注, 3=普通
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY NOT NULL,
+  partition TEXT NOT NULL,
+  archived INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL,
+  start TEXT NOT NULL,      -- MM-DD
+  end   TEXT NOT NULL,      -- MM-DD
+  data  TEXT NOT NULL       -- 其余业务字段整条 JSON
 );
-
--- FTS5 全文索引
-CREATE VIRTUAL TABLE tasks_fts USING fts5(
-    raw_md, title, notes, tags,
-    content='tasks', tokenize='unicode61'
+CREATE TABLE IF NOT EXISTS kv (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL
 );
-
--- 分区
-CREATE TABLE partitions (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    sort_order INTEGER DEFAULT 0,
-    password TEXT DEFAULT '',
-    archive_days INTEGER NOT NULL DEFAULT 0,
-    auto_lock_minutes INTEGER NOT NULL DEFAULT 3,
-    created_at TEXT DEFAULT (datetime('now'))
-);
-
--- 通知去重
-CREATE TABLE notification_log (
-    task_id TEXT NOT NULL,
-    interval_minutes INTEGER NOT NULL,
-    sent_at TEXT NOT NULL,
-    PRIMARY KEY (task_id, interval_minutes)
-);
-
--- 索引
-CREATE INDEX idx_tasks_status ON tasks(status);
-CREATE INDEX idx_tasks_deadline ON tasks(deadline_date);
-CREATE INDEX idx_tasks_archived ON tasks(archived);
-CREATE INDEX idx_tasks_partition ON tasks(partition_id);
-CREATE INDEX idx_tasks_suspended ON tasks(suspended);
 ```
 
-### 3.2.1 打包数据库
+**只有六个字段立在列上**（够用来筛选、排序、分组），其余业务字段整条塞进 `tasks.data`。
+这么分的理由：列一旦立起来就要跟着迁移走，而业务字段还在长（加一个字段就得写一次迁移，
+不值当）。代价是「列里的结构」没有版本号管 —— 由 §3.3 的读入口负责。
 
-**设计目的**：打包版使用预制数据库替代开发版自动 seeding，确保最终用户获得干净的初始体验。
+写策略是**全量覆盖**（先 `DELETE FROM tasks` 再逐条 `INSERT`，防抖 400ms）。
 
-**生成脚本**：[scripts/create_package_db.py](scripts/create_package_db.py)
+### 3.2 版本与迁移
 
-**分区设计**：
+- 版本号走 `PRAGMA user_version`，**跟数据库文件走**（和 Py 版同一套来源）。没有版本号就等于
+  每次启动都可能对着一个未知结构跑 —— 「现在能用」不等于「结构受控」。
+- `MIGRATIONS: {from, to, sql?, run?}[]` 是**线性链**，启动时读当前版本顺序跑完写回。
+  规矩照搬 Py 版 `src/models/migrations.py`：**只能加不能改**（只 `ALTER TABLE ADD COLUMN`，
+  不删列、不改列类型）。
+- 链的第一环 `0 → 1` 就是「确保这套表在」。**老库的 `user_version` 读出来也是 0**，
+  于是它一启动就被带上版本号、数据一条没动 —— 这是存量库零成本升级的路子。
+- `setVersion` 写完 PRAGMA 会**在同一条连接上读回核对**，不一致直接抛。PRAGMA 万一被忽略
+  是静默的，而机制静默退化（每次启动重跑一遍迁移）要等某天真加了破坏性迁移才会暴露 ——
+  那时它已经在用户的库上跑过好几遍了。
 
-| 排序 | 名称 | 密码 | 内容 |
-|------|------|------|------|
-| 0 | 工作 | 空 | 无 |
-| 1 | 学习 | 空 | 无 |
-| 2 | 个人 | 空 | 无 |
-| 3 | 演示空间 | 空 | 15 个生活场景演示任务 |
+> **一条教训**（值得单独记）：曾经我直接读库文件头判断 `user_version`，读到 0 就断定「PRAGMA 写不生效」，
+> 还把版本号搬去了 kv 表。结论是错的 —— 应用当时还开着，最新写入躺在 `-wal` 里没 checkpoint。
+> **外部读到的值可能是陈旧视图，别拿它去推翻一个还在运行的进程。**
 
-**演示空间任务覆盖**：TODO(7) / DOING(4) / DONE(2) / OVERDUE(2) / SUSPENDED(1)，4 级紧急度全覆盖，含循环规则 +1w、活动时间线、多标签。
+浏览器预览没有 SQLite，版本号落在 localStorage 的 `tadado.schema.version`，但**迁移链是同一条**，
+所以 e2e 能真的把迁移跑一遍。
 
-**构建流程**：[pack_scripts/build.bat](pack_scripts/build.bat) 在 PyInstaller 编译前：
-1. 备份 dev DB → 删除 dev DB
-2. 运行 `uv run python scripts/create_package_db.py` 生成 package DB
-3. PyInstaller 编译（`--add-data="resources;resources"` 自动包含 package DB）
-4. 删除 package DB → 恢复 dev DB
+### 3.3 读入口归位（`normalizeTasks`）
 
-**运行时隔离**：
-- Dev 模式（`python main.py`）：`ensure_default_partition()` 若无分区则自动创建"功能演示"分区
-- Frozen 模式（exe）：`ensure_default_partition()` 发现已有 package DB 中的 4 个分区，返回首个现有分区 ID
-- 安全保护：`create_package_db.py` 检测到"测试分区"标记时拒绝覆盖，防止误删 dev DB
+`tasks.data` 里的结构版本号管不到，只能靠读入口：缺字段补默认、类型不对的救回来、
+旧格式（活动时刻曾是「昨天 17:20」这类展示串）换成时间戳、认不出的活动类型退成 `log`、
+连 `id` 或标题都没有的整条丢掉并计数（**不静默**，控制台有记录）。
 
-### 3.3 关键常量
+原来这里是 `JSON.parse(...) as Task` —— **断言不是校验**：少一个字段就是 `undefined` 一路带到界面
+（`tags.join()` 直接抛）。同类处理还有 kv 值的取证：`asStringRecord` / `asNumberRecord` /
+`asArchiveRecord` / `asPartitionList`，形状不对就当没设过，而不是读出来直接用。
 
-| 常量 | 值 | 位置 |
-|------|------|------|
-| 标题栏高度 | 36px | main_window.py `_TITLE_BAR_HEIGHT` |
-| 窗口热区边框 | 6px | main_window.py `nativeEvent` |
-| 窗口默认尺寸 | 1050×680 | app.py `__init__` |
-| 窗口最小尺寸 | 900×600 | main_window.py `apply_screen_size()` |
-| 窗口最大尺寸 | 1400×900 | main_window.py `apply_screen_size()` |
-| 编辑器分栏比例 | 50/50 | main_window.py `_splitter.setStretchFactor` |
-| 热力图目标单元格 | 14px | calendar_heatmap_widget.py `_TARGET_CELL` |
-| 热力图月间隙 | 4px | calendar_heatmap_widget.py `_MONTH_GAP` |
-| 热力图左边距 | 42px | calendar_heatmap_widget.py |
-| 分页选项 | [20, 50, 100] | DropdownWidget |
-| 默认分页 | 20 | config.py |
-| 空闲锁定检查间隔 | 30s | main_window.py `_setup_idle_lock` |
-| 搜索防抖 | 300ms | filter_bar.py |
-| 轮播间隔 | 5s | quick_overview_bar.py |
-| 自动归档时间 | 02:07 | archiver.py |
-| 状态徽章圆角 | 12px | task_list_delegate.py |
-| 下拉框宽度 | `max_chars*12+36` | widget_utils.py `combo_width()` |
-| 每日摘要推送时间 | 09:00 | config.py |
-| 默认安静时段 | 22:00-08:00 | config.py |
+⚠️ **归档档位为什么单独一份 `asArchiveRecord`**：它这一路有**负数**档位（`-1` = 立即，见 §4.10），
+而 `asNumberRecord` 是按「分钟数」写的、把负数当脏数据丢掉。两者共用过一阵，结果是「立即」写下去、
+读回来变成 `undefined` —— 启动时被当成「这个分区从没设过」，于是被 §4.10 那条老库冻结写成「不归档」。
+**「什么值算合法」这个知识属于消费它的那条路**，不是一份通用的「是个数字就行」。
 
-### 3.4 依赖清单
+### 3.4 故障不降级
 
-| 包 | 版本 | 用途 |
-|------|------|------|
-| PySide6 | ≥ 6.5.0 | Qt GUI 框架 |
-| APScheduler | ≥ 3.10.0 | 后台定时任务(QtScheduler) |
-| pynput | ≥ 1.7.0 | 全局键盘监听 |
-| python-dateutil | ≥ 2.8.0 | 循环任务月份偏移(relativedelta) |
-| openpyxl | ≥ 3.1.0 | Excel 报告导出 |
-| pytest | ≥ 7.4.0 | 测试框架(开发) |
-| pytest-qt | ≥ 4.2.0 | Qt 测试支持(开发) |
-| pytest-mock | ≥ 3.11.0 | Mock 支持(开发) |
-| PyInstaller | ≥ 6.0.0 | standalone 打包(开发) |
-| black | — | 代码格式化(开发) |
-| ruff | — | Linting(开发) |
+`db.ts` 的 `backend` 有四个取值，其中一个是**终态**：
 
-### 3.5 测试策略
+| 值 | 含义 | 行为 |
+|----|------|------|
+| `sqlite` | 宿主在、库打开成功 | 正常读写 |
+| `local` | 不在 Tauri 里（浏览器预览） | 降级 localStorage |
+| `error` | **宿主在、库却打不开** | **终态**：不降级、不重试、不写入 |
+| `unknown` | 初始值 | —— |
 
-| 测试文件 | 用例数 | 覆盖范围 |
-|----------|--------|----------|
-| `test_md_parser.py` | 20 | 标准格式、最小格式、回退解析、批量解析、截止时间、错误处理、OVERDUE |
-| `test_md_formatter.py` | 7 | 完整/最小/无标签格式化、往返稳定性 |
-| `test_repository.py` | 21 | CRUD、搜索过滤、排序、分页、聚合(热力图/统计)、OVERDUE 自动检测/恢复、优先级排序 |
-| `test_task.py` | 7 | Task.urgency_score: 逾期/今天/未来/DONE/无截止日/OVERDUE |
+判断顺序是**先看有没有宿主，再看库能不能开**。以前那个 `catch` 把这两种情况当成同一件事，
+一律退回 localStorage —— 后果是用户的库静静地不被读取、界面一个字不说、此后所有写入都落到
+另一个地方（数据被劈成两半，而表面上一切正常）。
 
-**往返测试关键**：`test_md_formatter.py::TestRoundTrip` — `Task → format() → parse() → Task` 字段必须等价，保证 raw_md 是可靠的规范数据源。
+配套两道闸：`readIssue` 非 null 时调用方**不能**当空库处理（`bootStore` 只清内存 + 广播，不播种，
+否则「读不出来」会被种子数据**顶替**掉，看起来像正常）；读失败后 `writeBlocked` 禁止写入 ——
+少了这条，「坏存档原样留着」只是句好话：界面继续跑，用户随手一点就触发 `dataChanged` 全量覆盖，
+那份还能人工捞回来的存档当场没了。外壳用 toast 把原因说出来。
+
+### 3.5 kv 的 key 清单
+
+| key | 用途 |
+|-----|------|
+| `archive.afterDays` | 各分区的**完成后归档**档位（`{分区id: 天数}`：`0` = 不归档 / `-1` = 立即 / `N` = 完成后 N 天。**负数编码见 §4.10** —— 老数据里 `0` 就是「关」，沿用才不会把老用户的设置读歪） |
+| `partitions.list` / `partitions.default` | 分区列表、启动进哪个分区 |
+| `lock.passwords` / `lock.idleMinutes` | 各分区口令、空闲锁定分钟数 |
+| `tadado.tasks.v1` / `tadado.kv.` / `tadado.schema.version` | **仅浏览器后端**：任务存档 / 设置 / 版本号 |
+
+### 3.6 演示数据与分区
+
+- 样例数据**只有一份，全部落在演示空间**：100 条 = 28 条原型手写（与 `resources/ui-mockup/tadado-2.0.html`
+  逐字一致，方便并排比对）+ 72 条按序号**确定性**生成（随机会让「刚才那条去哪了」变成没法回答的问题）。
+  生成器同时是「一屏画多少条」这类上限的真实输入。
+- **默认分区就是演示空间**：否则开机进「工作」是一片空，看起来像数据没加载。
+- **其他分区交付时为空**。空分区不是「数据没加载出来」，而是「这里本来就还没东西」。
+- 早先种子按标签匀在四个区（「每区都得有东西可看」），结果是每区都只有几条、看不出规模、压测也压不出东西。
+  老库里散出去的种子由 `store.ts` 的 `adoptSeedPartitions` 在启动时搬回来 —— **只动种子 id**，
+  用户自己建的任务一条都不碰。光改种子只对全新安装成立，归位才让这个口径在任何一台机器上都成立。
+- `TODAY` 读**真实时钟**；`DEMO_TODAY = [9, 12]` 只是**样品本身的排布锚点**（活动里的相对日期都相对它写）。
+  两者混用会导致「今天」出现两种口径。
 
 ---
 
-> 本文档关联 [CLAUDE.md](CLAUDE.md) 和 [CHANGELOG.md](CHANGELOG.md)。
+## 4. 功能模块
+
+### 4.1 总览
+
+**需求**：一眼看出「今天要做什么」与「最近发生了什么」。
+
+**布局**：问候条 → 五张指标卡 → 下半页**两列**。
+
+- 右列整条归**近期活动**（分页）：它就是这页最需要空间的那张表。
+- 左列是「今天」：**焦点时间轴** + **优先级分布**。
+
+**近期活动按任务聚合**（2026-09-20）：**一个任务一行**，行内给的是它**最新**的一条活动，
+后面标出「共 N 条」。以前是一条活动一行 —— 同一个任务连着记三条进展就占三行、标题重复
+三遍，扫一眼看见的其实只是「有个任务动了很多次」，而它明明一行就说得清。
+**折叠而不报数同样不行**：「动过一次」和「动过八次、只看见最后一条」在这一行上会长得
+一模一样，那折叠就成了丢信息。排序按**最新一次活动**倒序（聚成任务之后，「每条活动的
+时间」这个排序键就没有了）；完整过程在抽屉的时间线里，点这一行就到那儿。
+（焦点时间轴随后也改成了同样的按任务聚合，见下。）
+**这张卡有上限：只摆最近 50 个任务**（`FEED_LIMIT`，2026-09-20 用户定的 —— 「只想显示
+近期的 50 条，不想显示太多」）。上限是这张卡的**定位**：一眼看最近发生了什么；想翻遍历史
+（按标签、按时间范围、带分页）去活动分析页。截断发生在聚合排序**之后**，所以「最近的 50」
+就是真的最近 50 个动过的任务；分页器只在**这 50 条以内**翻。
+
+聚合之后这张卡会出现两个不同的单位，**数字要少报、单位要写清**（2026-09-20 用户报的）：
+卡片头的后缀给的是**窗口**而不是总数 —— `按最近活动倒序 · 前 50 个任务`。原来那里写
+「共 88 个任务」，88 是聚合后的任务总数，会被读成「这一屏显示了 88 条」，跟每屏行数
+（分页器档位 20/30/50，默认 **50** = 上限，见 §4.7）不是一回事；空表时不带这句。
+分页器同样**只报范围**（「第 1–50 个任务」），不带「共 N」。每行右端那个「共 N 条」是
+**另一个单位**（这一个任务的活动条数），两者不要并排比对。
+
+**为什么分两列**：原来四块纵向堆叠，常见窗口高度下装不下 —— 近期活动只剩三行（实测列表区 100px），
+要翻页得先滚。分列之后左列两块正好填满，近期活动列表从 100px 涨到 404px。
+
+**焦点时间轴**是这页最花心思的一块，几条判据都是踩出来的：
+
+- **只列这一天的活动记录**（含「新建任务」那一条），没动静的任务不占位置。它回答的是
+  「**发生了什么**」，不是「该做什么」——后者归任务页与那排指标卡。
+- **气泡也是按任务聚合**（2026-09-20）：一个任务占一个位置，写作「任务名 `+N`」（N = 它
+  这一天更新了几条，绿字 `.tdt-cn`）。最初写的是活动原文，后来改成「任务名 · 更新了 N 条
+  记录」，还是太长 —— 气泡是轴上的**标记**，一句完整的话会把整条轴挤满，数字才是重点。
+  明细仍在抽屉的时间线里，点气泡就到。
+- **「已过期未完成」与「逾期」是同一个口径**（2026-09-20 收紧）：这一栏的判据就是
+  `status === "overdue"`（`store.refreshOverdue` 的产物）。以前写「未完成 && end < 今天」，
+  把「进行中但已过期」也算进去（系统**故意不动** doing，见 store），于是栏上报 47、点
+  「等 N 个」过去逾期清单只有 40 —— 两个数各自都没算错，摆在一起就像数据坏了。收进同一
+  个谓词后：这一栏 = 「逾期」指标卡 = 任务页的逾期筛选，三处同一个数（与 `isDueToday`、
+  `isOngoing` 同一条「一个谓词多个消费方」的规矩）。
+- **逾期一多，这一栏只摆前 3 条，其余折成「等 N 个」**（2026-09-20）：它是**提示**不是
+  清单，摆全了就把上面的轴挤没了。两个前提：① N 是**总数**（中文「A、B、C 等 N 个」的 N
+  含前面摆出的，不是减出来的剩余数）；② 折掉的部分**有去处** —— 「等 N 个」可点，落到
+  任务页的逾期筛选，且那里的数与栏上的总数相等（e2e 把这个等式量住）。总条数也仍在
+  卡片头「过期 N 项未清」里 —— 折的是位置，不是数。
+- 判据**不能**是「起止日期盖住今天」：那样结束在 9/12 的任务会杵在 9/16 的轴上写着 08:30，
+  而旁边卡片写着「今日到期 2」—— 两个数各自都没算错，摆一起就是同一个「今天」两种口径。
+- 「今日到期」加了 `due !== null` 判据：迁移来的旧数据里有一批**没有截止**的任务，它们的 `end`
+  只能落今天，只看 `end` 会把「没有这个信息」显示成一个具体的日子。
+- **气泡挤在一起时同侧自动多开一条道**（`spreadPills`）。分道只能在进了文档之后做 —— 气泡的
+  `left` 是百分比，真实像素要等容器有宽度才量得出来；量不到（页面不可见）就保持原样。
+  **不采用「重合就切甘特」**：甘特的粒度是**天**、当日轴的粒度是**分钟**，今天的十几条活动切过去
+  全落在同一格，照样叠着，还顺带把时刻弄丢了。重合是「同一粒度里放不下」，解法只能是加道。
+- 轴的基准高度由 CSS 与 JS **共用一个常量**（`AXIS_H`）：多开的道是在这个基准上往外加的，
+  两处对不上就会要么压着气泡、要么白白空一截。
+- 轴的量程固定 **06:00–24:00**，「现在」标记读真实时钟。**算出来的百分比必须钳在 0–100**：
+  凌晨的「现在」是负数（01:00 → -27.8%），不钳就会画到轴的左边之外 —— 压在别的区块上或者
+  被裁掉，看着像页面坏了。钳到 0 之后它贴在左端，标题里仍写着真实时刻（「现在 01:00」），
+  信息不丢。对气泡没有影响：它们本来就在 `pct < 1 || pct > 99` 时转到轴下面那条去。
+
+**五张指标卡都是入口**（今日到期 / 逾期 / 进行中 / 已完成 / 归档）：卡上的数字就是点开后的
+**筛出总数**。`tile()` 里「可点 / 悬停提示 / 点击监听」三件事同源（给了 `onClick` 才都成立），
+所以漏传 `onClick` 的后果是**整张卡静默失效**：数字摆在那儿，点上去没反应，页面上也没有任何
+地方说得出为什么。「今日到期」就这么漏过一次（2026-09-20 报的），因此有三条规矩：
+
+- 判据抽成 `pages/shared.ts` 的 **`isDueToday(task)`** —— 卡片数它、任务页那条「今日到期」筛选
+  筛它，**同一个函数**。两处各写一份，就是给「卡片上写 1、点进去 0 条」留门；
+- 任务页因此多一枚**不属于状态**的筛选 chip（见 §4.2）；
+- e2e 的判据改成**遍历界面上所有的 `.tile`**，不再是一张写死的清单：有几张卡就验几张。
+  写死清单正是它放走这次问题的原因（原来只列了「逾期 / 进行中 / 已完成」三张）。
+
+**⚠️「待办」这一档删掉了**（2026-09-21 用户定的：「默认就是进行中」）。这条翻过一次面，
+两段历史都留着：
+
+- 2026-09-20 先把「进行中」做成**合并口径（待办 + 进行中）** —— 理由是「待办只是还没动手，
+  它同样是手上没做完的活儿」，当时只数 `status === "doing"` 会让今天刚动过的那条不进卡
+  （卡上写 2、点进去 1）；
+- **2026-09-21 索性把那一档删了**：既然**统计口径**上早已合一，留着它只剩「多按一次状态按钮」
+  的成本，而且它是「用户可选状态」里唯一一个**不代表任何实际差别**的值（新建即进行中、
+  写一条进展也是进行中）。md 写法上 `[ ]` 仍然收（算进行中），见 §4.8。
+
+判据仍抽在 `pages/shared.ts` 的 **`matchesStatus(task, filter)`**：总览那张卡、任务页那排 chip、
+管理页的筛选、图谱页的「进行中」过滤 —— **四个消费方共用**（与 `isDueToday` 同一条理由，
+各写一份就是给「卡上写 41、点进去 17」留门）。它以前是「一个合并口径 + 三个一对一」的混合体，
+**现在是一对一**（那个 `isOngoing` 包装随之删掉）。
+三张状态卡仍然把未归档任务**干净切开**：逾期 / 进行中 / 已完成，互不重叠。
+**逾期不并进「进行中」**：它有自己的一张卡，两张卡数同一批等于把一件事说两遍，还会把
+「最早逾期」这个更急的信息挤掉。
+
+**第五张「已归档」数的是归档的那批**（2026-09-21）。其余四张都只数**未归档**。这张卡的来历是
+一个真问题：默认「完成后归档＝立即」（§4.10）之下，「完成」与「归档」是**同一瞬间** —— 勾完
+「已完成」，它就离开任务页、归档数 +1，而「已完成」那枚数字**先加后减**（同一帧里），看着像
+什么也没发生，其实它只是换了个地方。把归档数摆出来，两处数字此消彼长，收走的东西就是
+**看得见**的，不是凭空少掉的。
+
+它也是唯一**不落在任务页**的数字卡：已归档的任务在任务页根本不列（归档的意思就是「从「任务」
+界面收走」，见 §3.6 的 `activeTasks`），所以点它去**任务管理页的「已归档」**—— 那页是唯一能
+看见这批的地方（§4.5）。这是 e2e 那条「遍历所有 `.tile`」的唯一例外，判据因此单独写：卡片数 =
+那页筛出的总数，且落点那枚 chip 必须亮着「已归档」。
+
+**归档不改其它卡的口径**：四张卡仍是未归档（`activeTasks`），归档单独一张 —— 这样「已完成掉数」
+永远能对上「归档涨数」，不必把归档并进别的卡（并进去的话，那几张卡点开是任务页那批 = 未归档，
+立刻变成「卡上 19、点进去 18」）。活动分析的口径本来就含归档（源码里写明「归档只是列表里不再
+显示」）。
+
+**已完成 / 归档 / 未归档三者的关系**（2026-09-21 用户问的）。`status`（进行中 / 已完成 /
+逾期）与 `archived` 是**两个正交的字段**：前者说「这件事到哪一步了」，后者说「它在不在当前
+工作面」。所以**「归档」不是一种状态** —— 取消归档后它的 `status` 一点没变，归档也不改 `status`
+（种子里那条样例正是「已完成 + 已归档」：`ref`「旧版重构收尾」）。
+
+- 三张状态卡把**未归档**那批干净切开（逾期 / 进行中 / 已完成，互不重叠）；
+- 归档卡是它们的**补集**：`未归档 + 归档 = 本分区全部`（`activeTasks()` + `archived` 就是
+  `partitionTasks()`）。演示数据上算一遍（删掉「待办」、逾期口径放宽成「未完成 + 过期」
+  之后的实测值）：48 + 32 + 0 = 80，加归档 20 = 100；
+- **「今日到期」不参与这个等式**：它是**截止日**维度的卡，与状态卡有交集（今天到期的可能是
+  逾期的，也可能是进行中的）；
+- 自动归档只收 `status === "done"` 的（判据见 §4.10），所以**自动**进去的一定是已完成；
+  **手动**归档（管理页那一排按钮）任何状态都能进 —— 归档那批里不一定全是已完成。
+- 生命周期上的两处相互影响：① `refreshOverdue` **只豁免 `done`**（2026-09-21 改的口径：以前
+  `doing` 也豁免 —— 那是在「待办」还在时写的，删掉它之后继续豁免就**没有任何任务会逾期**了，
+  那张卡会永远归零。现在：**逾期 = 未完成 + 过了截止**，「进行中」= 未过期且未完成）；
+  ② 手动「取消归档」只在**本次会话**有效（`store` 的 `restored`），
+  下次启动若自动归档判据仍成立，它会被再收一次 —— 想改成持久的话得把 `restored` 落进 kv。
+
+副标那句「其中 N 个今日更新」也**只数这批**：以前它数的是**全部未归档任务**，于是那个「其中」
+是假的 —— 卡上 2 条、副标里那个 1 却可能是某条逾期的，点进去当然找不到它。e2e 用
+「**N ≤ 卡上的数字**」把这个不变量钉住（子集不会比全集大）。
+（以前还配一条「进行中 chip ≥ 待办 chip」钉那个合并口径 —— 随「待办」一起撤了。）
+
+**优先级分布**：五行 = 四档优先级，每行都是一个入口（点它去任务页按该档筛出）。标签写
+**名字 + 编号**（`紧急(P0)`，`shared.ts` 的 `urgencyText()`，2026-09-20 改）—— 只写「紧急」的话
+用户得自己记住它对应列表里哪个 `Px`，而列表上那枚徽标偏巧只写 `Px`，两边各说各话。
+
+两处**刻意不带编号**，理由不同：
+- `URGENCY_LABEL` 本身不动 —— 它会被拼进**活动记录的文本**（`紧急 → 关注`，见 `taskForm`），
+  那句话是写进历史的**数据**，读起来该像人话，不该塞进编号；
+- 带彩色徽标的地方（编辑面板那排按钮）不用它 —— 徽标本身就是编号，再写一遍就成了
+  `P0 紧急(P0)`。
+
+规矩一句话：**有徽标 → 徽标 + 名字；没有徽标 → 名字里带编号**。任务页那个筛选下拉也走同一个
+函数，于是「点总览某一档 → 任务页顶部下拉」两处文案逐字相同（e2e 直接拿后者去比前者）。
+`.ubar .un` 的宽度是**一行的宽度**（56px）而不是两个字的宽度：30px 时括号里的编号会被挤到色条上。
+
+### 4.2 任务（甘特时间轴）
+
+**需求**：看清任务的**时间跨度**，并就地增删改。（**进度不在条上** —— 它在行首那枚进度饼、
+悬停小卡与条内那枚白字进度里，理由见下面「条 = 标准甘特」那条。）
+
+- 表格的每一行是一条任务，行内画甘特条：**色条 = 创建日 → 截止日，整块单色 = 状态**
+  （2026-09-21 起：不再填充进度、也不按档位切段 —— 见「条 = 标准甘特」）。
+- ⚠️ **工具行那排档位（全部 / 昨天 / 今天 / 上周 / 本周 / 上月 / 本月）2026-09-21 撤了**
+  （用户：「我突然感觉这些没有用，如果有反而不容易理解，是不是可以直接删除」）。它 2026-09-20
+  的用途是「点一下，除了筛出这段时间**动过**的任务，还把**这一段范围内的进度在条上突出来**」
+  （原话见下面「甘特窗口」那段）；而条在那之后就改回了**标准甘特**（整块实色、不画进度、
+  不按档位切段）—— 这个用途没有承载物了。剩下的那件事（只列这段时间**动过**的任务）读起来
+  像「看哪一段时间」，实际会让任务成批消失，于是变成「我看到的本周」与「我库里有的」两套口径。
+  **想看「最近动过的」有更直白的地方**：总览的**近期活动**卡片本来就是按最新活动聚合的
+  （前 50 个任务，见 §4.1）；任务页要收窄范围，状态筛选 / 搜索 / 排序 / 分页就够了。
+  撤掉之后这一页**没有会自己变的视图状态**：打开就是「这个分区全部未归档任务」。
+  —— 顺带记一处**文案审计**（2026-09-21）：页头那句说明原来写「档位从今天到全年」（关于面板里），
+  而**从来没有「全年」这一档**，与按钮列对不上；页头说明也写过一串操作手势（「单击选中 ·
+  双击打开抽屉 · 右键处置 · 批量迁入在任务管理页」）—— 既没说清这一页是什么，还把别页的入口
+  写进来了。现在页头说明只回答「这里能看到什么」，操作手势交给悬浮提示。
+
+**甘特窗口：固定 32 天 + 拖动平移**（2026-09-20 用户提的大改。原话：「按昨天/今天/上周…呈现的
+效果都不好…按创建时间和截止时间创建进度条…点击快捷时间按钮时，除了原有的筛选任务外，重点突出
+这个时间范围内的当前任务的进度…32 天显示最美观，其他只需要拖动即可」。⚠️ 其中「点快捷时间按钮
+突出这一段范围内的进度」那一半，随那排档位在 2026-09-21 一起撤了）：
+
+- **窗口固定 32 天**（`tasks.ts` 的 `GANTT_DAYS`），不按任务跨度撑开。
+  默认窗口 = **前 16 天 + 今天 + 后 15 天**（`ganttAnchor = TODAY - 16`）：32 天没法在「今天」
+  两侧各放 16 天（那要 33 天），取整必然偏一天，偏给**过去** —— 已经发生的事实要一直看得见。
+  这个 32 后续可能搬进设置做成可配，现在不体现。
+- **看别的时间段靠拖动**：在表格上按住横向拖动 = 平移窗口，**按天吸附**（拖过半格才挪一天）。
+  监听挂在 `.tt-box` 上而**不是** `.tt-scroll` —— 后者每次 render 都被换掉。拖动 5px 以内算
+  点击（否则「选中一行」会变成「窗口挪了一格」），拖过之后的那次 click 在捕获阶段被吃掉。
+- **拖远了有出口**：今天不在窗口里时，表头那句区间变成强调色的「↺ 回到今天」，点它复位。
+  没有出口的话，昨天那批数据可能在屏幕外好几星期。
+- **条上只回答时间**：行里那条日期带（`.tt-band`）、条上的范围分段（`.seg-in` / `.seg-out`）、
+  表头那几格高亮（`.tt-date.in-range`）都撤了 —— 一条上同时压「进度填充 + 范围内外 + 状态底色」
+  三种说法时，最该看清的东西反而被盖住，用户的原话是「**进度和持续时间混合，导致甘特图本身
+  可能失去价值**」。最后撤的是表头高亮那几格：它当时是「档位在哪一段」唯一的出口，档位没了，
+  它也就没有要说的东西了。
+- **条 = 时间 + 状态 + 进度**（三件事各占一个通道）：**长度** = 时间跨度（创建日 → 截止日，
+  见下一条）；**色相** = 状态（进行中 / 已完成 / 逾期 —— 「待办」那档同日删掉，蓝也随色相
+  体系撤了）；**填充**（`--fill`，条内左段）= **进度**。
+  ⚠️ 这一条**翻过两次面**，两次都是用户定的，理由都留着：
+  · 2026-09-21 早些时候：**取消进度填充**（原话「进度和持续时间混合，会导致甘特图失去
+    价值」），改成「标准甘特」—— 位置（时间）与长度（进度）是两个量，叠在一条上读者分不清；
+  · 2026-09-21 晚些：**又请了回来**（原话「不同进度的感觉差异不大」）—— 因为条上除了
+    「哪段时间、什么状态」之外**没有第三个通道**说进度，68% 与 4% 的条长得一模一样。
+    这次的做法是**只填长度、不叠别的**：底（未完成那一段）用同色系很浅的底，填充段是
+    饱满的**状态色纯色**。位置与色相把前两件事说完了，填充再回答「走到哪了」，三者不抢戏。
+  ⚠️ 同一次还修了一处：**逾期延长段改成半透明**（`.seg-late`）—— 它是实色、又在填充层之上，
+  截止日在窗口左侧的逾期条（整条都是延长段）会把填充整个盖住，于是那些条看不出进度、
+  和别的条长得不一样。**进度数字**仍在条内 + 行首那枚**进度饼**
+  （`progressDot()`）+ 悬停小卡 + 条够宽时的条内白字进度。⚠️ 条上**只写 `N%`、不写标题**
+  （2026-09-21 用户提的「没必要再显示任务名称」）：标题在左边任务列里已经占了一整行，条上再写
+  一遍是同一句话说两遍，而条的宽度本来就紧张。阈值也随之从 78px 降到 **40px** —— 文字只剩
+  三四个字符，太高的门槛会让大半条上是空的。
+  另外它**贴条右端**（`right: 7px`）：它在**未完成那一段**上（进度 100% 时才落进填充段），
+  而底色会在这两种之间切换 —— 所以描边要给足：白字四向各一道细描边，压在浅底上是
+  「白字带黑边」、压在饱满的状态色上就是普通的白字。
+- **逾期：条的右端渲染延长到今天**（`.seg-late` 警示色 + 原结束日处一道 `.late-mark` 竖记）。
+  **数据里的结束日一个字节都不动** —— 那是事实，这是解释（与 §4.10 那条「完成日 + N」同源）。
+  不延长的话，逾期与「刚好今天截止」在图上长得一模一样。
+- **跨页请求进来时，窗口对准这批任务**（`focusAnchor`）。2026-09-20 用户报的是另一件事（选
+  「上月」时窗口停在「上月 30 ～ 本月 21」，而任务集中在上月末到本月初 —— 窗口和任务错位，
+  看着就是「点了像没反应」），但结论是通用的：**窗口要跟着任务走**，不是跟着日历走。规则：
+  以这批任务**条形的跨度**（最早创建日 → 最晚截止日）**居中**，32 天装不下也照居中；一条任务
+  都没有 → 回到默认的「今天前 16 天」。只在**请求进来的那一帧**自动挪，之后一律尊重用户的拖动
+  （首页也不挪了：默认窗口 `TODAY - 16` 就是最中性的起点）。
+- **条的时间基准：创建日 → 截止日**（原来用「开始 → 截止」）。创建日才是这条任务**进入视野**
+  的那天，开始日只是它被排上日程的日子；「我手上这摊活儿从哪天起、到哪天必须交」是这一页要
+  回答的问题。悬停小卡同步成「创建 X → 截止 Y」。⚠️ 由此**开始日不再影响条形**（字段仍在
+  表单与数据里）—— 这是有意的取舍，不是漏。
+- **两端跨出窗口时贴边 + 打截断标记**（`.tt-bar .cut`），整条都在窗口外时**两侧都打**：
+  只打一侧会被读成「它从窗口外伸进来、在这里就结束了」。
+- **视觉语言（2026-09-21 配色整理；同日条改成标准甘特）**：一张表上最该跳出来的是**条**和
+  **今天**，坐标系（格线 / 表头 / 周末 / 月首）一律收轻。全部走 `tokens.css` 的变量，
+  深浅两个主题同一套规则：
+  · **条 = 标准甘特条**（9px 圆角，与行首那枚圆形进度饼同族）：颜色只编码状态，**面是
+    状态色纯色**（`--bar-state` ← `--doing` / `--done` / `--danger`），里面填的那一段
+    （`::before`，宽度 = `--fill`）= 进度。
+    ⚠️ **渐变试过、撤了**（2026-09-21）：三段色标（浅 → 本色 → 深）在 100% 填充的长条上会
+    露出**两个折点**，读起来像条被切成几截 —— 用户的原话是「**渐变分层**」，随后要求
+    「放弃渐变色」。前两版也都不成立：斜向 / 水平会被**长度稀释**（几百 px 走完那点差值），
+    垂直只有 **19px** 的跨度、根本铺不开。**纯色才是稳的**：色相直接等于状态，进度交给填充
+    长度 —— 顺带把条与徽标、进度饼、优先级色阶重新对回了同一份色值。
+    **「进行中」的基色**同日从 `#c07f2d` 换成 `#d98b1f`（用户嫌原来那个「不好看」——
+    偏黄、饱和度低，确实像芥末；深色主题同步 `#dfa24e` → `#e8ab45`）。它同时是优先级 P1
+    的停靠点，换掉之后「红 → 亮橙 → 黄绿 → 绿」那条色阶跟着变亮，过渡反而更顺。
+    条内白字的描边保留 —— 它会压在两种底上（饱满的状态色 / 很浅的未完成底）。
+    ⚠️ **进度数字要抬到逾期延长段之上**（`.tt-bar b` 的 `z-index: 3`）：延长段（`.seg-late`，
+    `z-index: 2`）从结束日一直铺到今天、正好压在条的右端，而进度数字也贴右端 —— 不抬起来，
+    **逾期条上的进度会被整个盖掉**（2026-09-21 用户报的「逾期的甘特图上没有进度显示」）。
+    **进度有两种画法**（同日各上过一次，见 §4.2 那条两次翻面的说明）：底 + 填充段
+    （`::before`，宽度 = `--fill`），以及行首那枚进度饼、悬停小卡与条内那道白字进度；
+  · **周末**：表头那格上底色，行里用「7 天一个周期、宽 2 天（周六 + 周日）」的 repeating 渐变
+    + `background-position: var(--tt-wk)` 对齐到窗口里的第一个周六 —— 每格一个节点那种画法
+    在 32 天 × 28 行下要多出近千个只用来铺色的 div；
+  · **月首**：表头那格把「周几」换成「几月」并加一条左分隔线，行里同一列一条 `.tt-moline`
+    （两处指同一根线）；
+  · **今天**：表头一格（底色 + 底线）+ 行里一条 2px 竖线（`.tt-today`），
+    **只在今天确实落在窗口里时才画**（2026-09-21 用户提的）—— 拖到别的月份之后，一条画在
+    屏幕外或被夹在边上的线只会误导人，那时的出口是表头那句「↺ 回到今天」；今天贴到窗口两端时
+    那个「今天」小签贴边对齐（居中的话会伸进任务列、或被吸附列盖掉半截，越过右边界还会把表撑宽）；
+  · **档位那三处高亮都撤了**（行里的日期带 `.tt-band`、条上的分段 `.seg-in` / `.seg-out`、
+    表头那几格 `.tt-date.in-range`）：一条上同时压「进度 / 范围内外 / 状态」三种说法时，最该
+    看清的东西反而被盖住。表头那几格是最后撤的 —— 它当时是「档位在哪一段」唯一的出口，
+    而那排档位 2026-09-21 一起撤了（见 §4.2）。
+- **别再退回「把窗口撑开到装下所有任务」那种做法**（`fitWindow` 曾经无上限）：它会让六个档位
+  算出同一个窗口、点哪个都像没反应，而且跨月数据会把甘特挤成几百根 15px 的细线。
+  也**别再按档位把窗口缩到 1 天 / 7 天**：那是「今天 = 一根线」的来历。
+- **行首那枚「进度饼」**（2026-09-20 改，`tasks.ts` 的 `progressDot()`）：一个圆环 + 按进度从
+  12 点顺时针长出的扇形（CSS `conic-gradient`，百分比由 TS 写进 `--pct`，样式表里不出现 JS 拼的
+  样式串）。它取代了原来那枚 8px 的状态圆点 —— 圆点**只有颜色一个通道**，而它表达的是状态，
+  一个裸色点挂在任务名前面，谁都会以为那是进度（当天就这么被问过一次）。
+  现在**形状说进度、颜色说状态**，两个通道各管一件事：颜色仍走 `statusVar()`
+  （逾期红 / 进行中橙 / 已完成绿；历史上的「待办」与进行中同色）。两端各给一个更好认的记号：
+  **进行中 + 0% → ▶**（还没开始，可以动手）、**100% → ✓**（实心圆 + 白勾）——
+  勾必须固定白色，跟着 `currentColor` 走会和底同色，等于没画。
+  `data-pct` / `data-mark` 把「画出来的那个值」在 DOM 上留一份可读的：进度现在是图形，
+  读屏、调试、以及「与悬停提示对不对得上」这类断言都得有个据。
+  任务列宽度因此 248 → **256**（`.tt-label` 与 `LABEL_W` 必须同步，差 8px 表头那条「今天」
+  竖线就会偏）。管理页那条进度列的写法则不动：它是「条 + 数字」，本来就看得见数值。
+- **任务列两行的分工**（2026-09-20 改，`tasks.ts` 的 `renderRow`）：**第一行只放标题**，
+  第二行是「标签 + 截止 + 优先级」。以前标题与截止共用第一行、优先级徽标另占右端一列，
+  标题只剩半列宽（约 120–150px），稍长一点就成了省略号 —— 列表里看不出这是哪条任务，
+  看不出等于没有。截止与优先级都是**短记号**，让它们去分标题的宽度是本末倒置；并到标签
+  那一排之后，标题吃满整列（207px）。**挤不开时的取舍写在 CSS 注释里**：先缩标签（标签缩掉
+  一截还看得出是标签），截止与优先级 `flex: none` 永不缺席 —— 它们各占一个固定位置，
+  被整条裁掉就再也找不回来。截止 `margin-left:auto` 靠右（标签长短不固定，不靠右这一排会
+  跟着晃），优先级仍钉在**任务列右端**：与行首那枚进度饼一左一右，颜色与位置两个通道不打架。
+- **`seg` 是无状态控件**（`shell/seg.ts` 顶部）：点了之后**调用方要调 `setValue`**，否则高亮
+  停在原处 —— 任务页那排档位当年就漏过这一步，「点了像没反应」其实有两层理由（窗口被撑开 +
+  高亮的是上一个）。现在 seg 只剩总览的焦点时间轴在用，那一处不用补：它整页重建，seg 每次
+  都是新造的。
+- 工具行：搜索、状态与优先级筛选、**排序**、每页条数（那排档位 2026-09-21 撤了，见上）。
+  **归档筛选在管理页那一页**（只有它显示已归档任务），这里没有。
+- **默认排序「按优先级」**（2026-09-21 用户定的，原来默认「按截止日期」）。优先级相同的
+  再按截止日期排（`comparators.urgency`）——「今天必须交的 P1」不会被埋在一堆 P0 后面。
+- **下拉是「点了要切得动」的反面教材**（2026-09-21 用户报的：排序下拉切不到别的选项上）。
+  `dropdown` 与 `seg` 一样是**无状态**控件，而它原来只有 `setValue` 会改显示 —— 菜单行
+  自己点了**不同步**：值换了、表也重排了，按钮上却还写着旧的那一项、勾也还在旧项上，
+  看着就是「切不过去」。现在**菜单行自己同步显示**（`menu.ts` 的 row 回调里先 `apply`
+  再 `onPick`），`setValue` 留给「**别处**改了值」的场合（跨页请求复位优先级筛选那类）。
+  e2e 两条：默认是「按优先级」、切两次之后按钮文案与勾选项都跟着换。
+- **「今日到期」是一枚独立 chip，不是状态那排的第六项**（2026-09-20）：它筛的是**截止日**，
+  与状态是两个维度。两种筛选**互斥** —— 点亮它就把状态复位成「全部」，点状态那排就把它关掉；
+  它开着时状态那排**一个都不高亮**（那时列表是「今天到期」那批，不是「全部」，两个 chip 同时
+  亮着读起来像这次筛选有两层，说不清）。它是总览那张「今日到期」卡的落点：没有它，点进来只
+  看到 1 条，页面上没有任何地方说得清为什么，也没有出口（它的开关就是出口，再点一下退回全部）。
+  判据与卡片同源，见 §4.1 的 `isDueToday`。
+- 页头只有**一个**动作：`＋ 新建任务`（走与编辑同一套的完整表单）。批量入口不在这儿 ——
+  见下面「数据迁入」。
+
+**数据迁入**（`tasks.ts` 的 `openImportDialog`，入口在任务管理页，与「导出 ▾」并排）：
+一次把一批任务连同**它们的活动时间线**建出来 —— 也是迁移旧数据的唯一通道。四件事是刻意的：
+
+1. **只有选文件，没有粘贴框**。转换工具的产物本来就是**一个文件**，中间再绕一趟
+   「打开 → 全选 → 复制 → 切窗口 → 粘贴」只是多几步；而留着粘贴框会让这一屏同时服务
+   「迁移」和「随手录十条」两件事，名字重新变模糊。实现用 `<input type="file">` +
+   `File.text()`：不用 `plugin-dialog` / `plugin-fs`，浏览器里也能跑，e2e 能用
+   `setInputFiles` 真测。
+2. **解析出几条、哪几行认不出、哪几条与库里同名**，都要在点「导入」之前看见。
+   `markdown.ts` 的 `parseTasksDetailed` 就是为这件事拆出来的：解析结果除了草稿，还带
+   `skipped`（行号 + 原文，空行不算）。跟迁移工具那套「先对账」是同一条规矩 ——
+   **少掉的东西必须能看见**。
+3. **重复只提示、不替用户决定**：判重规则只有一条 —— 标题在**当前分区**里已存在。
+   同名不一定同一条，所以给「跳过重复」与「全部导入」两个按钮；旧版里改过标题的认不出，
+   界面上也写了这句。默认动作是「跳过重复」—— 造出重复数据的清理成本比少导几条高。
+4. **只告知当前分区**（`导入到「演示空间」`），不猜也不拦 —— 导到哪个由用户自己切好再进来。
+   旧版本来就是按分区导出的，所以一个文件对应一个目标分区。
+
+这一屏**只留三样**：导到哪儿 / 选文件 / 解析结果。不在这儿讲写法 —— 语法写在
+[`resources/skill/tadado-activity-import/SKILL.md`](resources/skill/tadado-activity-import/SKILL.md)，
+而文件是工具产出的，用户不需要再看一遍。
+
+> 「批量新建任务」这个名字、以及它先后挂在工具行与页头的那两段历史，见 §8.3。
+- **换筛选要回第一页**：消费跨页请求时重置页码。不重置的话，从总览点「逾期 38」进来会停在
+  上一轮翻到的第 2 页，看到的只是后半截。
+- 列宽与格线由 CSS 变量 `--tt-col` 统一（TS 一处算、表头与 `.tt-track` 的格线周期都取它），
+  避免各列自己算。
+
+### 4.3 任务图谱
+
+**需求**：回答「这条任务和什么有关」，而不是再给一张列表。
+
+- 布局是**确定性**的力导向（同一份数据每次画出同一张图，否则「刚才那个节点去哪了」没法回答）。
+- ⚠️ **取数含归档**（2026-09-21 用户报的「图谱只显示进行中，已完成的都不会显示」）：
+  默认「完成后归档＝立即」（§4.10）之下，做完的任务**当场**就离开 `activeTasks()` —— 图谱上
+  于是永远只剩「进行中」，那张图看起来像坏了。**归档只该影响任务页**（那页的定位是「手上的
+  活儿」，`activeTasks` 就是为它写的）；其余模块都是**看全貌**的：活动分析与管理页本来就含
+  归档，图谱跟上（总览那张「已归档」卡也是同一个意思）。取数改成 `partitionTasks()`。
+- 节点三类：**分区**（根）→ **标签** → **任务**；连线表示归属与关联。
+- 悬停高亮相邻关系，双击任务直达维护抽屉。
+- 舞台按可用空间铺开，吃掉主区剩余高度。
+- 图例用语与全应用统一：「分区」不叫「根节点」（后者是图论术语，对用户没有信息量）。
+
+### 4.4 活动分析
+
+**需求**：回顾「时间花在哪」，并按标签切分。
+
+- 上半是**整年热力图**（12 个月块，颜色深浅 = 当天活动数），可换配色方案（`data-scheme`）。
+- 范围条横跨整页：快捷范围（本周 / 本月 / 本年 / 指定）与年份切换；**选「指定范围」才出现日期框**。
+- 点热力图上的一天 = 报告切到那一天。
+- 下半是**分标签报告**：标签列表只留当前范围**有活动**的标签，不解释被隐藏的；`◀ #标签 ▶` 翻页
+  不会翻到没活动的标签。条数文本排在**标签切换组外面**（它数的是当前标签在当前范围的条数，
+  挂在标题旁会被读成「整份报告共几条」）。
+- **「全选」是一枚开关，不是两个单向按钮**（2026-09-20 定稿）：默认全选 → 用户可以逐个调整
+  勾选 → **再点一次 = 取消全选**。原来那枚「清空」撤掉了。
+
+  起因是一句反馈：「清空好像没用，全选再点一次就取消全选了、和清空一样」。实测（一次性探针，
+  依次点：初始 → 全选 → 全选 → 清空 → 全选）：当时的「全选」**只 `add`、从不 `delete`**，
+  并不取消勾选 —— 但它在默认状态下**永远是空操作**，因为默认勾选集就等于「当前范围内有活动的
+  标签」（也就是左侧列表里那几个）。所以真正的病根不是「它和清空重复」，而是**那个按钮在默认
+  状态下没有事可做**：一个点了没反应的按钮，只能引出两种结论 ——「它坏了」或者「它和旁边那个
+  是一回事」，而这两句出现在同一条反馈里。
+
+  开关的形状把病根去掉了：**两边都有活儿干，点下去一定有变化**。代价写清楚：清掉「部分勾选」
+  要点两下（先全选、再取消全选）。状态画在颜色上（`.on` = 强调色）：全勾着时按钮是亮的 ——
+  那一亮就是「现在是全选状态」的说明，不必再拿一个文字标签去讲。只有列表里一个标签都没有
+  （这个范围里没有标签有活动）时才置灰 —— 那时两边都没事可做。
+  e2e 照开关的语义验三段：默认全选（亮）→ 点一次全清（**报告跟着空**，不是「看着没勾、
+  其实还在筛」）→ 再点一次全回来。（中间试过「两个按钮 + 没活儿干时置灰」那一版，最后按
+  这个方向收口。）
+- 导出与范围同行，独立按钮置最右。
+
+### 4.5 任务管理
+
+**需求**：批量处置与标签维护。这是**唯一显示已归档任务**的视图。
+
+- 表格可多选，批量动作：**标记完成 / 归档 / 取消归档 / 删除**（删除走二次确认）。表头有
+  整页勾选框。（这里曾写成「改状态 / 延后 / 中止 / 删除」—— 延后与中止在桌面端**根本不存在**，
+  是从 v0.x 的特性清单里抄过来的。）
+- **「归档」那一列是只读的**（与「状态」「标签」两列同性质）：只摆标 —— `已归档` / `—`
+  （破折号那格悬停补一句「未归档」）。**曾经在这里放过一枚单条「归档 / 取消归档」按钮，撤了**
+  （2026-09-21 用户定的：「只显示归档标签即可，类似于『标签』或者『状态』」）—— 那一列是**看**
+  的，动手的地方是页头那枚**按筛选**的按钮，以及**勾选之后**的批量栏；单条处置就走「勾一行 +
+  批量栏」，与这一页其他批量动作同一条路。
+  **已有数据交给用户自己处置**：不替老库做决定（见 §4.10 的一次性冻结），收哪几条由这两处说了算。
+- **页头「导出」之后是一枚批量归档按钮**（2026-09-21 用户提的「在导出之后增加一个归档按钮
+  即可」）：「批量筛选」这件事表格上那两个筛选（状态 × 归档）已经做完了，这一枚只负责**执行**
+  —— 按**当前筛选（跨页）**归档 / 取消归档。所以它**不需要**先勾选，标签里也**不写条数**
+  （条数是筛选的产物，写进按钮等于把同一件事说两遍）。动作与标签都跟着**归档档位**走，
+  判据是「**不全是已归档**」：只有停在「已归档」那一枚时是「取消归档」，其余（「未归档」，
+  以及点状态那几枚时的 `"all"`）都是「归档」—— 一次只可能做对该做的那件事。
+  ⚠️ 写成 `archiveFilter === "active"` 是错的：点状态那几枚 chip 会把归档维打回 `"all"`，
+  于是**默认进这一页按钮上就挂着「取消归档」**，与眼前这批对不上。
+  走二次确认（标题里写明条数），恢复的那条路同样 `keepActive`；筛出 0 条时给一句提示，不静默
+  无反应（那正是这一页最容易被当成坏了的样子）。
+  （中间试过一版「常驻批量条 + 按钮上写条数」，撤了：「勾选」与「按筛选」是两种输入，
+  挤在同一条里只会让人以为必须先勾选。）
+- **筛选是**一条**单选**（2026-09-21 用户定的）：`全部状态 / 逾期 / 进行中 / 已完成 /
+  未归档 / 已归档` —— **每一枚 = 一个视图**，永远只亮一枚，默认「全部状态」。以前是「状态 ×
+  归档」两组 chip，各自单选却挨在一起 —— 看起来就是一条单选行里亮了两枚，于是被当成坏了
+  （用户那句「默认怎么不是全部状态」就是从这儿来的）。**「待办」那枚同一天撤了** ——
+  状态本身删了（见 §4.1），它和「进行中」本来就是一回事。
+  合单的规则：状态那几枚**不筛归档**（两侧都算，哪条是哪条看「归档」那一列），归档那两枚
+  **不筛状态**。内部仍保留 `archiveFilter` 的第三态 `"all"` —— 它正是状态那几枚在用的。
+  **代价说清楚**：组合筛选表达不出来了（「已完成 × 已归档」这种问法没有入口）。换来的是
+  这一页的筛选一眼就懂。
+- 标签管理：选中标签可重命名，**改为已有名称即为合并**。
+- 导出跟着**当前筛选**走（表格上摆着状态与归档两个筛选，导出的就该是眼前这批）。
+- **「数据迁入」与「导出 ▾」并排**：一进一出。它导的**不是**上面那种给人看的清单（那种本来就
+  回不来），而是**任务行写法** —— 也是唯一能把活动历史一起带进来的通道（见 §4.2）。
+
+### 4.6 维护抽屉与定义表单
+
+**需求**：一条任务的全部信息与它的历史，一处看完。
+
+抽屉分两段：上面「**任务定义**」（这条任务**是什么**），下面「**活动时间线**」（它**经历过什么**）。
+以前这两串字段与记录平铺在一起，中间没有任何边界。
+
+- 改状态、改进度、改优先级都会**写一条活动记录** —— 变更留痕是这套数据模型的核心，
+  否则「本周完成」这类统计只能靠状态字段倒推，改一次状态就丢一段历史。
+- ~~**写一条进展 = 这条活儿动起来了**~~（2026-09-21 加，**同日晚些撤掉**）：它当年做的是
+  「写第一条记录 → 把待办推到进行中」，理由与实现都成立；但那之后**「待办」这一档本身删了**
+  （见 §4.1），新建任务就是「进行中」—— **没有可推的起点**，那段逻辑随之撤掉。留下的只有
+  活动记录里那些 `from: "todo"` 的历史，时间线照旧显示「待办 → 进行中」。
+- 抽屉底部**没有删除与保存按钮**：改动即时生效（删除在右键菜单与表单里），
+  没有页脚就没有「我改了但没保存」的状态。
+- 记录可编辑、可删除，编辑过的标出「已编辑」。
+- 底部是 **Markdown 源**（可折叠）：敲 md 就地渲染成标题 / 标签 / 截止 / 进度，
+  点「按 md 更新任务」才写回。**这条写回路径不采纳状态**（见 §4.8）。
+- 新建走页头的「＋ 新建任务」，打开的是**和编辑同一套表单**（`taskForm.ts`）。
+- **新建时「结束」默认今天 + 当前时刻**（`draftTask()`，2026-09-21 用户提的：「时分默认是
+  当前时间，目前是空，需要手动选择」）。两件事一起修：时刻原本是空的（点完「今天」还得再挑
+  一次时分，而绝大多数新建就是「从现在起」）；日期框本来就显示着今天，模型里的 `due` 却是
+  null —— 字段**看着填好了**、点「创建」却说「还差：结束时间」，显示与模型两个口径。
+  现在 `due` / `at` / `end` 一次给齐。「结束时间是必填」这条规矩仍然成立：点「清除」之后
+  `due` 就是 null，创建时照样拦下来（e2e 两条分别钉住：默认值、以及清掉之后被拦）。
+
+**进度就在活动时间线里，草稿式提交，而且一律手动维护**（2026-09-20 用户提的）：写一句进展、
+把进度挪到哪，本来是同一次动作的两半 —— 以前一个在「任务定义」（滑杆 + 数字框）、一个在时间线
+的输入框，用起来必然漏维护一处。现在：
+
+- **控件搬到活动时间线**（`.tl-prog`，就在「记录一条进展」那一行上方），任务定义里不再重复
+  一份（抽屉传 `taskForm({ withProgress: false })`）。控件抽成 `taskForm.ts` 的
+  `progressControl()`：对话框用 `mode: "immediate"`（那边没有「发送」按钮，表单本来即时保存），
+  抽屉用 `mode: "deferred"`。
+- **左边那条就是滑杆本身**：带填充 = 一眼看出到哪了，拖一下就是改；右边数字框给精确值。
+  不另摆一条只读进度条 —— 两条长得一样，摆在一起只是重复。
+- **拖动不落库，按「发送」才保存**（同日修的两个 bug 之一：「进度条调整后，还没来得及编辑
+  信息，已经被提交了」）。deferred 模式下拖 / 填只改**草稿**，控件把它写在脸上
+  （`.prog-pending`「待保存 65% → 70%」）—— 不写出来，用户拖完就走，改动静默消失，那是同一
+  类毛病的另一面。光改进度不写说明时不保存，给一句提示并聚焦输入框。
+- **说明与进度落在同一条记录上**：提交时那句说明就是这条进度记录的 `text`（`commit(text)`）。
+  另起一条 `log` 等于又把信息与进度拆开，那正是这次要修的毛病。
+- **进度记录可以再编辑**（同日修的第二个 bug：带说明的进度记录长得像 log，却是
+  `kind: "progress"`，当时没有编辑入口）。编辑能改说明**和值**，但值有上界：
+  `progressEditBound()` = **后面（更新的）那条进度记录的 `to`**（它自己是最新则到 100）——
+  时间线是**单调**的，把老记录改到超过后来的值，页面上就会出现「先 80、后 70」这种倒着走的
+  进度，而两条都是「真的」，这条时间线就不再能读。改完把**后面那条的 `from` 跟着挪**
+  （链条必须接得上）；改的是最新那条时，`task.progress` 一起更新。删掉最新那条进度记录时
+  同理：任务的当前进度退回它的 `from`。
+- **不做任何自动推导**：用户用了很多次之后明确定过「**进度手动维护是最好的设置**」——
+  拖到哪、填多少就是多少。
+
+**时间线的读法：正序（追加模式）**（2026-09-20 用户提的「倒序读起来别扭」）：最早的在上面，
+最新的贴着下面那一行输入框 —— 这本台账是往后写的，读到最底下正好接着「记录一条进展」。
+
+- **存储顺序不动**：`activities` 仍然**最新在前**（`data/markdown.ts` 里写明的那条约定，
+  导出、统计、以及「后面那条记录」这个上界判定都依赖它），只在 `renderTimeline` 里反着铺。
+- 因此**就地编辑不能再按 DOM 下标取那条记录**（渲染下标与数组下标刚好相反），卡片引用是
+  直接传进去的。
+- **就地编辑区是两行**：第一行整行给「说明」，第二行才是进度值与保存 / 取消。以前全挤在
+  一行里，说明输入框只剩一百多像素（用户：「再次编辑时信息编辑区域太小了」）。
+
+### 4.7 分页与跨页定位
+
+- 三张表 + 一张活动流共用 `pager.ts` 与同一组档位（20 / 30 / 50 / 100）。档位**不进设置** ——
+  它是「这次看多少条」，不是一项偏好。**默认值各自不同**：三张带日期列的表 20，总览近期活动
+  **50**（`FEED_PAGE_SIZE = FEED_LIMIT`，2026-09-20；那张卡问的是「最近发生了什么」，20 行
+  只够看半天）。
+- **「每页几条」与「上限」是两件事**：总览近期活动另有 `FEED_LIMIT = 50`（只摆最近的 50 个
+  任务，`renderFeed` 里在排序之后截断）。默认档位等于上限，所以平时**只有一页**；档位调到
+  20/30 时是在**这 50 条以内**翻，翻不到第 50 条之外去 —— 「看更早的」归活动分析页。
+- **单位与「报不报总数」都由调用方给**（`pager({ unit, showTotal })`，2026-09-20）：
+  总览的近期活动是按**任务**聚合的 —— ① 用默认的单位「条」会和同一张卡里的「共 N 条」
+  （某个任务的活动条数）串味，所以那张表传 `unit: "个任务"`；② 那句「共 88 个任务」会被
+  读成「这一屏显示了 88 条」（而 88 是聚合后的任务总数），所以它再传 `showTotal: false`，
+  只报范围「第 1–50 个任务」。**空表时两种写法都只写「共 0」/「暂无」**，不写「第 1–0」——
+  那不是一句人话。**档位下拉只写数**（`50/页`）：单位由紧挨着的那句范围说明给，说两遍更挤。
+- **只有一页时不摆翻页件**（2026-09-20 用户提的「分页样式繁琐」）：`◀ 1 / 1 ▶` 一个都按不动，
+  却和真正要读的范围说明一样显眼。这一段同时收紧了间距（10 → 6）与档位下拉的外观 ——
+  它是次级设置，在分页器里不该长得像主按钮。
+- ⚠️ **下拉在下方装不下时要向上翻**（`menu.ts` 的 `openPanel` + `.menu.up`，2026-09-20 用户
+  报的）：分页器贴在卡片底部，而这几张卡的正文是 `overflow: hidden`（撑满场景的硬要求），
+  菜单默认向下展开会落在裁切线以下 —— **看得见一截、点不到任何一项**。判据只看视口：
+  下方放不下整块菜单且上方更宽裕就翻上去。e2e 量两件事：菜单整块落在卡片**以内**、
+  点一项真的生效（`分页器的档位下拉向上翻`）。
+- 跨页请求走 `focus.ts`：**单向请求 + 单点消费**。「点总览的数字跳到任务页」这类动作只表达
+  「要去看这条 / 这一批」，由任务页自己决定怎么落地（排序、筛选、选中、高亮）；
+  反过来让总览去操作任务页的内部状态，两页就耦死了。
+- **请求要把「能把目标挡住的东西」一起复位**：搜索词、页码（当年还有**档位** —— 它非「全部」
+  时只列该范围里动过的任务，从总览点「逾期 40」进来只会看到本周动过的那几条；那排档位本身
+  2026-09-21 撤了，所以现在只剩前两样）。数字都没算错，但看着就是对不上。
+  控件是常驻的，别处改了值要 `setValue` 把显示跟上：seg 与下拉都是**无状态**控件，
+  自己不知道数据被别处改过。
+
+### 4.8 Markdown 写法（与 Py 版的主要分叉点）
+
+一行一条任务，是这个应用与外界交换数据的格式：
+
+```
+- [ ] 标题 #标签 ⏰09-21 14:30 :: 40%
+   - 09-20 08:15 记一条进展
+```
+
+| 写法 | 含义 |
+|------|------|
+| `[~]` / `[x]` | 状态：进行中 / 已完成 |
+| `[ ]` | **也认**（老文件与别处导出的清单里都是它），读进来算「进行中」—— 「待办」那档 2026-09-21 删了。⚠️ 代价：往返会把 `[ ]` 写成 `[~]` |
+| `#标签` | 标签，最多 3 个 |
+| `⏰MM-DD [HH:MM]` | 截止；不写 = 无截止（年份按离今天最近的一年推算） |
+| `:: 40%` | 进度 |
+| 缩进 ≥2 格、`MM-DD HH:MM` 开头 | **活动行**，挂到上一条任务的时间线上 |
+| 行尾 `+1w` 之类 | 旧版遗留的循环标记：字段已删，但解析时仍要**吃掉**它（否则会粘进标题） |
+
+**与 Py 版的分叉**：那边方括号里装的是**优先级**（`[***]`）、日期写在 `<>` 里。两版写法**不通用**。
+
+**活动行为什么存在**：活动分析导出的清单是「标签 → 任务 → 活动」三层，它是迁移旧数据时**唯一
+带着活动历史**的载体 —— 不带这一条，导进来的任务就只有标题，几十上百条流水全丢。
+
+**状态的一处取舍**（这条最容易被误读）：这套写法**是**带状态的 —— `taskToMarkdown` 会写出 `[x]`、
+`parseTasks` 也会读它，**批量新建正是靠它带状态**。**不采纳**状态的只有抽屉那条写回路径
+（`taskDrawer.ts` 的 `mdApply` 只取标题 / 标签 / 进度 / 截止，状态保持原值，toast 会说出来）。
+改状态请在抽屉的表单里改，别指望改 md 那一行。
+
+> 本文档的这一段曾经写反过（说「状态不写回 md，所以导出再导入会把已完成变成待办」），
+> 与代码不符。真实情况如上。
+
+### 4.9 导出
+
+一处定义三种格式，两个用到导出的页面共用（`export.ts`）：
+
+- **md 与 txt 内容一致**（同一段文本，只有扩展名不同，排版与 Py 版对齐），xlsx 是同一批数据的表格形态。
+- 结构是三层：**标签分块 → 任务（有序）→ 该任务的活动（无序）**。管理页按**第一个标签**分块
+  （一条任务只出现一次 —— 这是任务清单，同一条出现两遍会让人以为有两件事）；活动分析那边按标签
+  查活动，天生会重复，所以那边去重。
+- md 里的标签行写 `#标签`（**`#` 后不留空格**）：留了空格 md 就把它当一级标题渲染成一行大号字，
+  比任务本身还抢眼；不留空格它只是一句普通文本，仍一眼看得出分块的开头。缩进用 **3 空格**
+  —— 正好对齐 `1. ` 的内容列（缩 2 格会变成「懒惰续行」，缩 4 格直接变代码块）。
+- txt **一个 md 符号都不用**（`【标签】` / `1)` / `·`）：它的用途就是丢给不认 markdown 的地方
+  （记事本、工单），在那里 `# 标签` 会被原样显示、`- ` 是一串小横杠。
+- **不加 BOM**：任务行文本一旦带上 BOM，首行 `- [ ]` 前面就多一个看不见的字符，
+  再粘回批量新建框时那一条会解析不出来（看起来像「第一条丢了」）。
+- xlsx **自己生成**（zip store + CRC32 + `inlineStr`，无第三方依赖）：为一个按钮往依赖里塞
+  几百 KB 不值当，而它是用户明确要的格式。e2e 里**逐项校验 CRC** —— 下载成功不代表包是好的，
+  CRC 写错时只有 Excel 会报「文件已损坏」。
+- 所有时间戳在导出时换算成**绝对日期**（「今天 / 昨天 / 刚刚」这类相对词一律落成日期）。
+  界面上写「今天 15:00 / 昨天」是对的（更好读），但那是**会变**的：今天导出的「今天」，
+  明天打开就指错了日子，而文件要存档、要发给别人。
+  **日期要从数据取，不能从文案取**（2026-09-20 修，管理页 xlsx 的「截止」列曾直接写
+  `task.due`，于是「今天」进了文件）：日期读 `end`、时刻只有 `due` 文案里有（模型没有
+  单独的截止时刻字段），见 `manage.ts` 的 `exportDue` —— 与 `markdown.ts` 的
+  `taskToMarkdown` 同一条规矩。**反过来按 `due.includes("今天")` 倒推日期的那种写法
+  已经炸过一次**（导出过 `⏰2026-明天`，见 `time.ts`）。e2e 逐格读 xlsx 的 D 列来验：
+  它用 `inlineStr` + 不压缩的 zip 存字符串，单元格原文就躺在字节里，不用解压也读得到。
+- **落文件前先问路径**（2026-09-20，`shell/download.ts`）。桌面端弹**系统「另存为」**
+  （`@tauri-apps/plugin-dialog` 的 `save()`，默认名就是那份文件名、类型只给当前这一种），
+  用户在对话框里选哪就写到哪 —— 以前的写法是 `<a download>`：桌面端它**不问一句**，
+  直接落进 WebView 的默认下载目录，于是「导出成功」之后还得去找文件在哪。浏览器
+  （`vite preview`、e2e）没有宿主对话框，仍走 `<a download>` —— 那里的「下载」本来就是
+  浏览器自己的事，也能在 e2e 里验。
+  **一个副作用必须处理**：fs 插件的作用域默认是**空的**（`tauri.conf.json` 里没有
+  `plugins.fs.scope`），拿对话框给的路径直接 `writeFile` 会被 `path forbidden` 挡下 ——
+  挡掉的正是用户自己刚点的位置。所以写之前先由 Rust 命令 `allow_save_path` 把
+  **这一条**路径放进作用域：只放这一条、不放大整个目录，进程退出即失效。换成在配置里
+  开一片通配作用域（`$HOME/**`）也能写，但那等于把「整个用户目录可写」永久挂在应用身上，
+  而这里要的只是「这一次选中的那个文件」。取消对话框时**一个字节都不写、也不弹提示**
+  —— 点了取消还要被提示一次，等于没让人取消。
+
+### 4.10 分区与口令
+
+- 分区是数据的**隔离边界**：任务属于某个分区，rail 底部切换，切换即换一批数据。
+- **「我在哪个区」不用悬浮就看得见**（2026-09-20）。改之前 rail 底部那个切换器只有一个文件夹
+  图标，当前分区的名字只在它的 `title` 里 —— **要悬浮才知道自己在哪**。现在：
+  ① **图标下面写着分区名**（rail 是 64px，一行放得下四五个汉字；超长截断，全文仍在 `title`
+  里），口令状态画在**图标那一行**（11px 的开锁 / 闭锁）；
+  ② 弹层里当前项带**勾选标记** —— 不能只靠底色，底色同时被 `:hover` 用着，扫一眼分不出
+  「当前项」和「鼠标正停在这一项上」；每项还带**条数**（选之前就知道那一区是不是空的）。
+  锁分三态，按「用户需要知道什么」划：**不画** = 没设过口令（给没口令的区画一把锁，读起来
+  像「它锁着」）、**开锁** = 有口令且本次已解锁（提醒它空闲后会自己锁上）、**闭锁** = 有口令
+  且锁着（正常看不见 —— 锁屏盖着整页；从锁屏进设置重设口令时 `body.lock-suppressed` 让外壳
+  露出来，那时才可见）。
+  **锁的位置改过两次，两次都是「尺寸」问题，值得记**：先是挂在图标角上的 13px 角标 —— 那个
+  尺寸下认不出是锁，看着就是个方点；挪到名字旁边又把名字挤成「演示空…」（56px 的名字行再
+  加一把锁就超了）。最后落在图标那一行：这行有富余，锁能画到 11px。
+  页头一度也有过一枚「分区章」，后来撤了 —— 夹在标题与操作按钮之间像贴上去的；分区显示
+  放在 rail 上（常驻，且切换器本来就在那儿）。总览的问候条里**也**写分区名：那一行是
+  「今天」的**一句话总结**（日期 · 星期 · 分区 · 条数），少一项就不成句 —— 它和 rail 上
+  那处不算重复：一个是「我在哪个区」的常驻状态，一个是这一天的概述。
+- 口令按分区设、空闲若干分钟无输入自动重锁。**它是隐私屏风不是加密保险箱** ——
+  挡的是路过的人瞄一眼，不防拿到数据文件的人，所以**忘记口令没有找回入口**，重设即可。
+- 口令的设 / 改 / 清合成**一个入口**：按钮文字恒为「设口令」，设没设靠**点亮**表示。
+  以前按有无口令在「设口令」与「改口令 + 清口令」之间换按钮，用户每次都得先判断自己处在哪种状态，
+  而答案只有他自己知道。点开是同一个弹窗：填新口令 = 换一个，留着不填 = 不改，`清除`（danger，靠左）。
+  清口令**不再二次确认** —— 弹窗里那个按钮就是明确动作，口令随时能重设，没什么会因此丢掉。
+- 锁屏与设置抽屉的层级：**抽屉压在锁屏之上**，侧栏仍被盖着（忘了口令要能进设置重设）。
+- **完成后归档**（kv 的 `archive.afterDays`）是**分区属性**，收在分区行尾的「**自动 ▾**」里
+  （默认收起 —— 四项分区各挂两个常年不动的 seg 会把设置页挤满）。**名字与档位都是 2026-09-21 改的**：
+  **完成后：不归档 / 立即 / 7 天 / 30 天 / 90 天**，默认**立即**。
+  - 旧名字（「自动归档」，第一档叫「关」）两处都错位：「自动」说不出**什么时候**自动（7/30/90
+    也是自动），而「关」是**功能开关**、不是这条延迟刻度上的 0 —— 0 天那格的意思正是「立即」。
+  - 判据 = **完成日 + N ≤ 今天**，即「**已完成的任务在任务页存活 N 天**」；「立即」= 0 天
+    （完成的那一刻就收走）。**为什么用完成日而不是结束日**：旧规则建立在「结束日只可能晚于
+    完成日」上，而这在「拖到最后才做完」时不成立 —— 于是两个方向都反（截止 09-01、今天才做完、
+    7 天档 → **当场收走**；截止 12-31、今天做完 → 要赖到明年）。该等的是「**你完成之后**」，
+    不是「截止之后」。完成日走 `completedOn()`：取 `setTaskStatus` 写的那条 `status → done`
+    活动（没有则退化为结束日）。它原来在 `pages/overview.ts`（总览「本周完成」在用），归档判据
+    是第二个消费方 → 挪进 `store.ts`。旧注释写「解析函数在 pages 层，store 够不着」，那是
+    **位置**问题、不是**依赖方向**问题，挪一次文件就解决。
+  - 编码：`0` = 不归档（系统永不自动收，只有手动归档才动它）、`-1` = 立即、`N` = 完成后 N 天。
+    **负数是「立即」而不是「不归档」**，因为老版本里 `0` 就是「关」—— 沿用 `0 = 不归档` 才读得懂
+    老数据；只有**没设过**的键才走新默认。读档那一步必须用**允许负数**的校验（`asArchiveRecord`，
+    见 §3.3）：这一路的合法值包含负数，通用的数字校验会把它当脏数据丢掉。
+  - 改档位会**立刻扫一遍**（拨完开关当场能看见哪些任务被收走）；手动「取消归档」的记在 `restored`
+    里，本次会话不再被自动归档碰（`keepActive`）—— 否则刚恢复就没了。
+- ⚠️ **重算的时机与「逾期」一样**（2026-09-21 用户报的「已完成没有立马归档」）：`dataChanged()`
+  里两件事一起做，每次变更都重算。以前只在**启动**与**改档位**时扫过，于是用户点完「已完成」
+  什么也没发生 —— 看起来像这个设置不生效（其实生效了，只是要等下一次启动）。默认「立即」之下，
+  这一步正是「勾完即离开任务页」的实现。
+- ⚠️ **老库一次性冻结**（同一天）：默认改成「立即」之后，**没设过**的分区会拿到「完成即归档」——
+  对一个用了很久的库，那等于开机把历史上所有已完成的任务一次收走（用户看到的是「我的任务少了
+  几十条」，而他并没有改过任何设置）。所以 `bootStore` 在**库里本来就有数据**时，把当时缺席的
+  分区**显式写成「不归档」**（= 它原来的行为）；**新装**（连同演示空间）才拿到新默认「立即」。
+  ⚠️ 新装那条路必须把「立即」**落盘**，不能只靠读取时兜底（`archiveDays[id] ?? ARCHIVE_NOW`）：
+  不写盘的话 `archiveDays` 一直是空的，**下一次启动就会被上面这条当成「从没设过」而冻成「不归档」**
+  —— 新装用户第二次打开，设置里的「完成后归档」自己就变了个样。
+- **归档之后的表现**：任务页不再列它（这正是「完成即归档」想要的效果），管理页是唯一能看到它的
+  地方（「已归档」那一档 + 行尾那枚「已归档」）。总览为此专门摆了第五张卡「**归档**」（见 §4.1）：
+  四张状态卡仍是未归档口径、归档数单独一张 —— 收走的那批始终看得见，「已完成掉数」也总能对上
+  「归档涨数」。（活动分析的口径本来就含归档，源码里写明「归档只是列表里不再显示」。）
+
+### 4.11 设置抽屉
+
+**一页到底**，四组：外观 → 启动 → 分区 → 关于。不再分页签 —— 设置项不多，分页签只是多一次点击。
+
+- 关于面板按**实际功能**写（应用名 + 一句话定位 + 「功能」「特色」两份清单），不写技术栈、不提旧版本。
+- 「窗口置顶」不在设置里重复一份：标题栏的图钉是唯一入口。
+- 启动组：开机自启、全局热键。
+
+---
+
+## 5. 外壳
+
+### 5.1 标题栏
+
+- 无边框 + 自绘，`data-tauri-drag-region="deep"` 让子元素区域也能拖。
+- 左侧**只有软件名**：图标与版本号徽章都撤了（版本号在设置 → 关于里，标题栏放它是装饰）。
+- 右侧：置顶图钉、主题切换、最小化 / 最大化 / 关闭。
+- 关闭 = 收起常驻，真正退出走托盘菜单（`app_exit`）。
+
+### 5.2 托盘、热键、自启
+
+- 托盘由 **Rust 侧**在进程启动时创建（`lib.rs`），前端只通过 `trayBridge.ts` 接收事件后切页 / 开设置。
+- 托盘菜单：显示窗口 / 设置 / 退出 Tadado2。**「新建任务」撤了**（2026-09-17）—— 点它只能把主窗口
+  叫出来再弹浮层，不值当。
+- 全局热键 `Ctrl+Shift+Space` 唤起 / 收起主窗口。它挂了窗口收起后就唤不回，所以 `setupHotkey`
+  失败必须告警。注册**必须幂等**（`isRegistered` → 先摘再注册）：Rust 侧那份注册不随 webview
+  重载消失，直接再 `register` 会以「已注册」失败，于是每次重载都弹一句**假的**「热键不可用」。
+- **跨日续跑**（`rollover.ts`，2026-09-20）：`TODAY` 是模块加载时算一次的（日期坐标见 §3），
+  而托盘常驻意味着「**开着过夜属于正常用法**」—— 不处理的话，过了午夜整个应用还停在昨天：
+  逾期不重算、新建任务的默认截止是昨天、新活动的时刻也记在昨天；而问候语与轴上的「现在」
+  读的是真实时钟，于是页面自相矛盾（问候语说「早上好」，日期还停在昨天）。
+  做法：每分钟看一眼本地日历日，变了就 `location.reload()` —— 走的是**设计里已经有**的那条路
+  （托盘与热键由 Rust 侧持有、与 webview 生命周期解耦，重载本就在预期之内，见 §1.3 表格上方
+  那句注释）。两条约束：① 只在 Tauri 里跑（预览与 e2e 没有常驻这回事，而且跑到一半被重载更
+  难查）；② 有**未提交的输入**（模态框、抽屉里那段还没点「按 md 更新任务」的 md）时跳过，
+  等下一分钟 —— 批量草稿走 kv 丢不了，那段 md 没有别的地方存。
+  为什么不把 `TODAY` 改成取值函数：那要动数据层与二十来个调用点，且每个派生值都得各自订阅
+  一次「跨日」，漏一个就回到同样的问题。
+- 单实例：第二次启动由已运行实例接管并拉回窗口。
+- 开机自启用 `tauri-plugin-autostart`；浏览器里降级为「不可用」并明确标出。
+
+### 5.3 浮层与提示
+
+- **右侧抽屉互斥**（`panels.ts`）：设置与任务抽屉同时最多一个。
+- 破坏性操作二次确认（`confirm.ts`）：默认焦点给「取消」，Esc 与点遮罩都算取消。
+- 提示条（`toast.ts`）显示 2200ms；用于「已导出」「口令错误」这类结果回执。
+
+### 5.4 主题与配色
+
+- 主题 `light` / `dark` / `sys`，落在 `data-theme`；首帧前就要定好，否则闪白。
+- 热力图配色方案落在 `data-scheme`（`tadado-heat-scheme-v2`），即改即生效。
+- 配色方案的取值只能来自 `tokens.css` 里的色阶变量。
+
+---
+
+## 6. 构建与验证
+
+### 6.1 脚本与 CI
+
+```bash
+cd desktop
+npm install
+npm run dev            # 纯前端预览（非 Tauri 环境自动降级，只能调样式）
+npm run build          # tsc + vite build，产物在 dist/
+npm run e2e            # 构建 + 真浏览器冒烟（唯一的验证闸门，约 2–3 分钟）
+npm run tauri dev      # 真实窗口（首次需编译 Rust，约 1–2 分钟）
+npm run tauri build    # 出安装包：NSIS + MSI → src-tauri/target/release/bundle/
+```
+
+`npm run e2e` 的第一件事是 `tsc && vite build` —— 构建不过直接停在那里，所以它同时是
+类型检查的入口。**跑法**（2026-09-21 定的）：一轮改动全写完再跑一次，不要每改一处就跑；
+动手前先 `npx tsc --noEmit` 把编译错误挡在前面；用户没让跑就不跑（理由见 CLAUDE.md）。
+
+另外两个脚本在**仓库根**、与 README 同级 —— 它们服务的是整个仓库，不属于应用本身：
+
+```bash
+node resources/skill/tadado-activity-import/scripts/migrate-activity.mjs <清单>   # 旧数据迁移，见 §7.1
+node resources/screenshots.mjs           # 重拍 README 的界面截图（先 cd desktop && npm run build）
+```
+
+`npm run dev` 下 `@tauri-apps/api` 的窗口调用走本地状态降级，页面与样式都能看，
+只有窗口行为（置顶、托盘、热键）不可用。
+
+CI（`.github/workflows/desktop.yml`）在 `desktop/**` 有改动时跑 `npm ci` → `npm run build`
+→ `npx playwright install --with-deps chromium` → `npm run e2e`。
+
+### 6.2 冒烟测试覆盖什么
+
+`e2e/smoke.mjs` 真开一个 Chromium（1280×860）把主流程点一遍，分这些组：
+
+> 切页只显示一页 · 四张表都能翻页且档位一致 · 交付口径（启动状态演示空间 100 条）·
+> 总览的数字必须点得开且对得上 · 任务页（甘特窗口固定 32 天 / 拖动平移 · 搜索 ·
+> 排序 · 状态与优先级筛选）· 维护抽屉（md 预览与写回 · 时间线正序 · 进度的草稿式提交与再编辑 ·
+> 记录的编辑与删除）· 完成后归档（默认「立即」＝勾完即离开；「7 天」＝在任务页存活）·
+> 标签 · 图谱 · 写法里的活动行 · 导出（md/txt/xlsx）· 数据迁入（含同名提示）·
+> 分区口令与锁屏 · 一屏到底 · 存储版本与读入口归位 · 老存档归位 · 无 console 报错
+
+几条**判据的写法**本身是设计的一部分：
+
+- 「一屏到底」判的不是「没有滚动条」，而是**不用滚就能看到列表与翻页**：页面自身不滚动
+  （`scrollHeight - clientHeight ≈ 0`）、列表区真的吃到了剩余高度、工具行 / 分页器的下沿还在视口里。
+  三条缺一条，用户就还得滚。
+- 「总览的数字 = 点开后的行数」比的是**筛出来的总数**而不是当前页行数 —— 100 条之后一页装不下，
+  比行数会误判。名单**从界面上取**（遍历 `.tile`），不写死清单：写死的那次列了三张卡，于是
+  第四张「今日到期」的 `onClick` 漏了都没人发现 —— 一条只在某些钟点红的断言会被当成时钟问题，
+  一条漏了对象的断言则**永远不会红**。
+- 「导出的 xlsx」逐项校验 CRC；「导出的 md / txt」校验三层数量一一对应。
+- 跟时间沾边的断言有**三条规矩**（这一类踩过三次，每次红起来都像是被测代码坏了，见
+  `smoke.mjs` 顶部）：要「今天」就**现算**；跟本地日历日对齐**别用 `toISOString()`**
+  （那是 UTC，东八区每天 00:00–08:00 会算成昨天 —— 有一条断言就这么每天早红八小时）；
+  挨着日期边界的断言**容许「上一步的值」**（上一分钟 / 上一小时 / 前一天）。文件顶部另有
+  `localIso()` / `todayDay()` / `nearestDay()` 三个助手，日期比较一律走它们（数据里不存年份，
+  直接比 `"MM-DD"` 会在 1 月倒挂）。判据是「**将来还会不会自己红**」，不是「今天跑不跑得过」。
+- 最后一条永远是「**无 console 报错**」。
+
+2026-09-21 那一轮（凌晨跑，red 了 12 条）又添了四条规矩，都是**断言自己的前提**出了问题：
+
+- **口径要跟被测代码一致，不是「跟常识一致」**：判「今天」得按应用的约定算
+  （`TODAY = Date.UTC(本地年月日) / DAY_MS`，见 `data/time.ts`）。写成 `Date.now()` 折天、
+  或 `toDateString()`，量到的是**真实 UTC 时刻**那一天 —— 本地 00:00–08:00 正好差一天，
+  「昨天的活动」会被判成今天。
+- **别把「当前时刻晚于种子里的时刻」当前提**：演示数据的「今天」活动带**固定钟点**
+  （最早 06:20），凌晨跑时那些时刻还没到，于是「新建的任务排在第一条」这类断言不成立。
+  要量的是「它出现在第一页里」—— 那才是「事件驱动重画」想证明的事。
+- **前提要自己造**：分页器在只有一页时不摆翻页件 —— 断言若直接去点 `▶`，等的是一个不存在的
+  元素，表现是**超时 30 秒**而不是一条看得懂的失败。这一条当年要「先切『全部』把页数造出来」
+  （默认档位「本周」常常不足一页）；档位撤了之后，任务页默认就是「全部未归档任务」、页数天然
+  够，但**规矩没变**：点翻页件之前先确认这一屏真的多于一页。
+- **别只数个数，要量不变量**：这条教训来自已经拆掉的档位分段（`.seg-in`）—— 那时「有几个高亮段」
+  取决于那批任务的条形有没有跨过那一格（逾期任务的条整段在今天之前，合法地没有高亮段）→
+  随数据时红时绿，改成结构性不变量才立得住。**那些高亮后来全撤了**（见 §4.2），这条现在的
+  对应物是「条上分段必须**恒为 0**」（`segSplit === 0`）—— 它钉的是「别再退回一条上叠两个量」
+  这条路本身，而不是某个会随数据变的数字。
+
+一句话：红了先分类 —— 是被测行为真的变了、断言的前提没设对、还是数据本身随时间变。
+后两类改断言，第一类才改代码。
+
+### 6.3 为什么必须有 e2e
+
+`tsc` 看不出运行时故障。曾经 `dropdown.setValue` 的回调 `onPick` 造成无限递归
+（`paint → setValue → onPick → paint`），抽屉节点建出来了却永远加不上 `.open`，
+表现是「双击、右键都没反应」—— 类型完全合法、构建照过，只有真点一遍才暴露。
+
+自动化做不到的部分：**样式与视觉的对照**。改完样式记得对着
+[`resources/ui-mockup/tadado-2.0.html`](resources/ui-mockup/tadado-2.0.html) 核一遍差异。
+
+### 6.4 README 的截图（`resources/screenshots.mjs`）
+
+README 里的界面图是**真拍**的，不是示意图 —— 对着一份真实构建跑 Playwright，产到
+`resources/screenshots/`。三条规矩：
+
+1. **视口 1180×760**，正是应用窗口的默认尺寸（§2.4）。截出来的就是用户打开软件看到的那一屏。
+2. **画面里的数据就是演示空间那 100 条样例**，不另造数据：README 展示的必须是用户装上就能看到的东西。
+3. **抽屉那张挑时间线最长的任务**（用搜索框定位到「优化列表页性能」，8 条记录）。列表默认按
+   截止排序，前十几行全是压测生成的任务、每行只有一条「创建任务」—— 而那张图要证明的正是
+   「过程留在时间线上」，拍空历史等于没拍。
+
+同一份脚本还拼出**仓库的社交预览图**（1280×640，`social-preview.png`）：品牌 + tagline +
+一张缩小的真实界面，在 GitHub 的 Settings → Social preview 里上传。
+
+改完界面记得重跑一次 —— 图和界面不符比没有图更糟。
+
+---
+
+## 7. 迁移与交付
+
+### 7.1 从 v0.x 迁移数据
+
+路线：v0.x「活动分析」导出清单 → `resources/skill/tadado-activity-import/scripts/migrate-activity.mjs` 转成任务行 →
+v1.x **任务管理页 →「数据迁入」** 导入。**人手写的活动时间线一起过来**。工具的用法、对账口径与
+导入后的复核见 [`resources/skill/tadado-activity-import/SKILL.md`](resources/skill/tadado-activity-import/SKILL.md)。
+
+工具的设计原则是「**先对账，再动手**」：默认只解析只报告、不写文件；认不出的行必须停下问；
+源里每一行活动都要有去向（输出 / 并入续行 / 重复剔除），数字不平不许写出。
+
+> 转换器的输出必须能被**下游真正的解析器**验一遍。这条来之不易：截止挖掘用了两条正则，
+> 后一条把前一条的结果覆盖回箭头**左边**的旧日期（`截止时间 A -> B` 读成了 A）——
+> 靠「把转换结果再喂回应用数一遍」才看出来。**「数量对」不能只是转换器自己说的。**
+
+带不过来的一律要在导入前说明：**「逾期」**（由截止日期自动算）、优先级；还有旧版**自动写下**
+的系统记录（创建 / 延后 / 状态变更 / 进度变更）—— 转换工具会把它们滤掉，
+因为那几项的**结果已经写在任务行上**（方括号 = 状态、`::` = 进度、`⏰` = 截止），而活动行导入后
+一律是「人手写的一条进展」，带进来等于给系统记录挂个人名。想全留着用 `--keep-system`（默认不开）。
+⚠️ **顺序**：截止与状态正是从这些行里**挖出来**的 —— 工具是**先挖字段、再滤行**；先滤就把字段丢了。
+
+**创建日与起止不用旧版记账，但也不是导入日**：应用在导入时把 `created` 与 `start` 都落成
+**这条任务最早一条活动的日期**（没有活动行才落导入日，见 `data/markdown.ts` 解析收尾那段）。
+理由：迁进来的任务历史全在活动行里，一律落导入日会把整批任务的「创建于」挤在同一天 ——
+**创建日是这次迁移里唯一会被整个抹平的时间维度**（截止 / 进度 / 状态都能从活动文本里挖到）。
+代价是它给的是「第一次动手」那天，不是真正的创建时刻（旧版的「创建任务」记录按上面的规矩
+不转移）；`start` 一起改，否则会出现「创建于 01-05、甘特色条却从 09-20 才开始」这种矛盾。
+
+### 7.2 交付口径
+
+- **演示空间 100 条**（28 原型手写 + 72 生成），其余分区为空 —— e2e 有断言锁住。
+  100 里有 1 条是**已归档**样例（管理页的归档列要有东西看）；**其余已完成的那些会在启动时
+  被「完成后归档＝立即」（§4.10）一并收走** —— 所以任务页列出的**明显少于 99 条**。e2e 因此钉的是
+  恒等式「未归档 + 归档 = 100」与「归档明显不止样例那 1 条」，**不写死两个数**：生成的那 72 条里
+  已完成多少由生成器决定，写死就会一改生成逻辑就红。
+- **三个产物**（`npm run tauri build`）：`bundle.targets = "all"` 在 Windows 上给的是 **NSIS +
+  MSI** 两个 —— `nsis/Tadado2_<版本>_x64-setup.exe`（约 2.6 MB）、
+  `msi/Tadado2_<版本>_x64_en-US.msi`（约 3.6 MB）。**便携版不在 bundler 的目标里**，两步手工：
+  ① 把 `target/release/desktop.exe` 复制到 `bundle/portable/Tadado2.exe`（主程序二进制叫
+  `desktop`、产品名才叫 Tadado2）；② 压成 `bundle/portable/Tadado2-portable.zip`（约 3.3 MB）。
+  **交付出去的是那个 zip，不是裸 exe**：7.7 MB 的 exe 直接发出去，用户拿到的是「一个不知道
+  要不要双击的东西」；zip 3.3 MB，一眼就知道是「下载 → 解压 → 运行」。
+  **每次打包都要记得这两步** —— 漏了第一步，README 承诺的便携版会是一个旧二进制；漏了第二步，
+  zip 里装的是上一次的 exe。两种都**看不出来**（名字一样）。
+- **第四份交付物是 skill 包**（`tadado-activity-import.zip`，约 38 KB）—— 它**不是应用的产物**，
+  而是给用户的那份「旧数据迁移」skill：用户下载 Tadado2 之后，要让自己的 Claude Code / Codex
+  帮忙搬旧数据，就得有它。压的时候**压目录本身**（`-Path resources\skill\tadado-activity-import`），
+  让 zip 里保留 `tadado-activity-import/` 这一层 —— 少了它，解压到 `.claude/skills/` 是加载不到的。
+  它不跟 `npm run tauri build` 走，也不在 `bundle/` 里自己出现，**每次发版都要记得手工压一次**。
+- **用户数据不在安装目录里**，所以重装 / 换路径 / 升级都不影响它。这是设计使然，不是碰巧：
+  Tauri 按 `identifier` 定位 `app_data_dir`，值就是 `%APPDATA%\com.tadado.app\tadado.data`
+  （`db.ts` 里是 `Database.load("sqlite:tadado.data")`）。**这也是 `identifier 不能改` 的
+  真正原因** —— 改它等于换一个数据目录，在用户眼里就是「数据没了」。
+  两条安装路径的实际行为，都是从**生成的脚本**里核的（`target/release/nsis/x64/installer.nsi`、
+  `target/release/wix/x64/main.wxs`），不是照惯例推的：
+  · **NSIS** 默认 `currentUser` → `%LOCALAPPDATA%\Tadado2`（免管理员）。卸载时**只有
+    同时满足两件事**才删数据：勾上「删除应用数据」**且**不是升级（`UpdateMode <> 1`）——
+    也就是升级永远不碰它。
+  · **MSI** → `%ProgramFiles%\Tadado2`（需管理员），`MajorUpgrade AllowDowngrades="yes"`：
+    自动顶掉旧版本、也允许装更旧的版本。它的卸载只删自己装的目录与快捷方式，全文**不出现**
+    `%APPDATA%\com.tadado.app`。另外它会回头找 NSIS 写下的注册表键
+    （`HKCU\Software\tadado\Tadado2`）—— 先装过 NSIS 版再用 MSI 装，会落在同一个目录。
+- **降级读新库安全，但会丢新字段**：`runMigrations` 只跑 `from === current` 的步骤 —— 版本号
+  比链子新就一步不跑（不报错、不改库），数据照读；但旧程序下一次保存会把它**不认识的新字段
+  写没**（保存是全量覆盖）。所以「装回旧版本看看」可以，别在那之后继续录数据。
+- `<productName>` = `Tadado2`，版本从 **v1.0.0** 起（与 Py 版区分）。
+- 版本号四处一起走：`tauri.conf.json` / `Cargo.toml` / `package.json` / 设置里的兜底值。
+  Tauri 回话给的是纯数字，显示时补 `v` 前缀。
+
+---
+
+## 8. 附录
+
+### 8.1 关键常量（`src/pages/shared.ts`）
+
+| 名称 | 值 | 说明 |
+|------|-----|------|
+| `PAGE_SIZES` | `[20, 30, 50, 100]` | 四张表共用的每页档位 |
+| `PAGE_SIZE` / `TASK_PAGE_SIZE` / `REPORT_PAGE_SIZE` | `20` | 各自的默认档位 |
+| `FEED_LIMIT` | `50` | 总览近期活动的**上限**：这张卡只摆最近的 50 个任务（2026-09-20 用户定的：「只想显示近期的 50 条，不想显示太多」）。上限是这张卡的**定位**（一眼看最近发生了什么），不承担「翻遍历史」——那件事归活动分析页 |
+| `FEED_PAGE_SIZE` | `= FEED_LIMIT` | 总览近期活动的默认档位。默认就等于上限，所以平时**只有一页**（一页时不摆翻页箭头）。后续可能**搬到设置里**做成可配项 —— 真搬时改这一处常量 |
+| `GANTT_LIMIT` | `20` | 总览焦点时间轴上限（无分页） |
+| `URGENCY_LABEL` | `["紧急","重要","关注","普通"]` | 优先级**术语**（P0–P3）。只有名字 —— 展示要带编号用下面的 `urgencyText()` |
+| `urgencyText(level)` | `紧急(P0)` | 名字 + 编号。总览的优先级分布、任务页的优先级下拉、任务行悬停小卡 |
+| `URGENCY_LEVELS` | `[0, 1, 2, 3]` | 带类型的档位迭代器 —— 遍历时不用写 `as Urgency`（断言的写法，档位数变了不会报错） |
+| `STATUS_LABEL` | `{overdue:"逾期", todo:"待办", doing:"进行中", done:"已完成"}` | 状态文案。**下标是 `StatusName`（四档）而不是 `TaskStatus`（三档）** —— 「待办」作为当前状态已删，但活动记录里的 `from: "todo"` 还要照原样显示 |
+| `matchesStatus(task, filter)` | — | 状态筛选判定。总览卡 / 任务页 chip / 管理页筛选 / 图谱页过滤，四个消费方共用（「待办」删掉后它就是一对一，不再有合并口径） |
+| `AXIS_H`（`overview.ts`） | `150` | 时间轴基准高度，**必须与 CSS 的 `.tdt` 一致** |
+| `GANTT_DAYS`（`tasks.ts`） | `32` | 任务页甘特窗口固定天数（默认 `ganttAnchor = TODAY - 16`）。后续可能进设置 |
+| `TODAY`（`data/time.ts`） | 真实时钟 | 界面里的「今天」 |
+| `DEMO_TODAY`（`data/mock.ts`） | `[9, 12]` | 仅样例数据排布锚点 |
+
+### 8.2 依赖清单
+
+| 包 | 用途 |
+|----|------|
+| `@tauri-apps/api` | 前端调用宿主能力 |
+| `@tauri-apps/plugin-sql` | SQLite |
+| `plugin-fs` / `plugin-dialog` / `plugin-opener` | 文件读写、系统弹窗、打开外部链接 |
+| `plugin-global-shortcut` / `plugin-autostart` | 全局热键、开机自启 |
+
+Rust 侧另有 `plugin-single-instance`、`plugin-persisted-scope`（**必须排在拥有 scope 的插件之后**）、
+Tauri features `tray-icon` / `image-png` / `image-ico`。
+
+**没有任何前端运行时依赖**（无框架、无 UI 库、无 xlsx 库）—— 这条要守住。
+
+### 8.3 已撤的设计（别再照着旧文档实现）
+
+| 撤掉的 | 时间 | 为什么 |
+|--------|------|--------|
+| 文件级「导出 .md / 导入 .md」 | 2026-09-17 | 导出改成了给人看的清单；导入被批量新建取代（当场看得见解析出几条） |
+| 任务管理「导入 .md」 | 2026-09-17 | 同上 |
+| 工具行的「快速新建」 | — | 新建统一走页头「＋ 新建任务」，打开的是和编辑同一套表单 |
+| 工具行那个只写「批量」的按钮 | 2026-09-18 | 先挪到页头、改名「批量新建任务」，再整体搬到任务管理页、改名「数据迁入」。它更常被用来导一批旧数据，和那页的「导出 ▾」正好一进一出；页头的位置该留给每天都用的「＋ 新建任务」 |
+| 抽屉底部的「删除 / 保存」 | — | 改动即时生效，没有「改了没保存」的状态 |
+| 托盘菜单的「新建任务」 | 2026-09-17 | 只能把窗口叫出来再弹浮层，不值当 |
+| 设置里的时间轴档位 | 2026-09-17 | 工具行是唯一入口（工具行那排本身也在 2026-09-21 撤了） |
+| 设置里的「窗口置顶」 | 2026-09-17 | 标题栏图钉是唯一入口 |
+| 标题栏的图标与版本号徽章 | — | 装饰；版本号在设置 → 关于 |
+| 设置的分页签 | — | 一页到底 |
+| 设置 → AI 助手页签 | — | 7 行没有一行接了后端，其中「专用工作区」还指向已删除的目录 |
+| `registry.ts` 的 `blocks` / `group` | — | 没有消费方 |
+| 循环字段 `+1w` | — | 从来没有行为、界面上也没有编辑入口，只是随 md 文本空转（解析时仍吃掉旧标记） |

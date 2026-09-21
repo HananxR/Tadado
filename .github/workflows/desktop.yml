@@ -8,12 +8,15 @@
 # 这里不为 Rust/Tauri 工具链买单，那是发版打包的事。
 name: desktop
 
+# `resources/skill/tadado-activity-import/**` 也要触发：冒烟里有一条会**真的跑那支转换工具**
+# （它住在 skill 里，见那份 SKILL.md），把输出喂进应用的「数据迁入」并断言
+# 「共 N 条 · 0 行认不出」—— 那条链的两端分处两个目录。
 on:
   push:
     branches: [main]
-    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+    paths: ["desktop/**", "resources/skill/**", ".github/workflows/desktop.yml"]
   pull_request:
-    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+    paths: ["desktop/**", "resources/skill/**", ".github/workflows/desktop.yml"]
 
 jobs:
   build-and-smoke:
