@@ -18,7 +18,7 @@
 // 重建还多。代价是缩放和拖动会被重置 —— 数据都变了，布局本来就该重排。
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { activeTasks } from "../data/mock";
+import { partitionTasks } from "../data/mock";
 import { UNTAGGED, tagsInUse } from "../data/tags";
 import { activePartition } from "../data/partitions";
 import { onDataChange } from "../data/store";
@@ -27,7 +27,7 @@ import { el } from "../shell/dom";
 import { subscribePages } from "../shell/router";
 import { toast } from "../shell/toast";
 import { jumpToTask } from "./focus";
-import { STATUS_LABEL, dayNumber, monthDayText, statusVar } from "./shared";
+import { STATUS_LABEL, dayNumber, matchesStatus, monthDayText, statusVar } from "./shared";
 
 /** 组内任务的角间距。0.125 是「7 个任务不出组」的上界附近。 */
 const TASK_SPREAD = 0.125;
@@ -64,14 +64,20 @@ interface Edge {
 
 // 「紧急与重要」改成「高优先级」：全应用讨论的都是优先级 P0–P3（编辑面板、
 // 列表徽标、总览的优先级分布），这里单独用一组形容词会让人以为不是同一个字段
-const FILTERS = ["全部", "高优先级", "进行中"] as const;
+const FILTERS = ["全部", "高优先级", "进行中", "已完成"] as const;
 type Filter = (typeof FILTERS)[number];
 
 let filter: Filter = "全部";
 
 function passesFilter(task: Task): boolean {
   if (filter === "高优先级") return task.urgency <= 1;
-  if (filter === "进行中") return task.status === "doing";
+  // 「进行中」「已完成」与总览那几张卡、任务页与管理页那条筛选是**同一个谓词**
+  // （shared.ts 的 `matchesStatus`）—— 同一个词在四个页面四种结果是这一页的老毛病。
+  // ⚠️ 「已完成」是 2026-09-21 补的（用户报的「图谱的快捷选项里没有已完成」）：
+  // 取数改成含归档之后（见 render 里那段），已完成的任务**在图上本来就有**，
+  // 却没有一枚 chip 能筛它们 —— 那枚 chip 缺的是入口，不是数据
+  if (filter === "进行中") return matchesStatus(task, "doing");
+  if (filter === "已完成") return matchesStatus(task, "done");
   return true;
 }
 
@@ -150,7 +156,12 @@ export function mount(target: HTMLElement): void {
   const taskRadiusX = Math.min(stageW * 0.35, stageW / 2 - 90);
   const taskRadiusY = Math.min(stageH * 0.42, stageH / 2 - 24);
 
-  const tasks = activeTasks().filter(passesFilter);
+  // ⚠️ **含归档**（2026-09-21 用户报的「图谱只显示进行中、已完成的都不见了」）：
+  // 默认「完成后归档＝立即」（§4.10）之下，做完的任务**当场**就离开 `activeTasks()` ——
+  // 于是图谱上永远只剩「进行中」，那张图看起来像坏了。归档只该影响**任务页**（那页的
+  // 定位就是「手上的活儿」，`activeTasks` 也是为它写的）；其余模块都是**看全貌**的：
+  // 活动分析与管理页本来就含归档，图谱跟上（总览那张「已归档」卡也是这个意思）。
+  const tasks = partitionTasks().filter(passesFilter);
 
   // 标签集合按数据现算：预置的在前，用户在表单里写出来的新标签接在后面
   const liveTags = tagsInUse(tasks);
@@ -322,7 +333,7 @@ export function mount(target: HTMLElement): void {
     if (!point) continue;
 
     const classes = ["node", node.kind];
-    if (node.kind === "task") classes.push(node.task?.status ?? "todo");
+    if (node.kind === "task") classes.push(node.task?.status ?? "doing");
     // 「未分类」不是一个标签，给个虚线框：形状上先分开，不用去读文字
     if (node.kind === "tag" && node.label === UNTAGGED) classes.push("untagged");
 

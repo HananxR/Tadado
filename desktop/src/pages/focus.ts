@@ -22,9 +22,11 @@ export interface TasksRequest {
   taskId: string | null;
   filter: StatusFilter | null;
   urgency: UrgencyFilter | null;
+  /** 只看「今天到期」（总览那张指标卡）。与 `filter` 互斥 —— 一次跳转只表达一个意图。 */
+  dueToday: boolean;
 }
 
-const EMPTY: TasksRequest = { taskId: null, filter: null, urgency: null };
+const EMPTY: TasksRequest = { taskId: null, filter: null, urgency: null, dueToday: false };
 
 let pending: TasksRequest = { ...EMPTY };
 
@@ -42,7 +44,7 @@ export function consumeTasksRequest(): TasksRequest {
  * 结果就是抽屉开了、列表里却没有它 —— 看着像跳转坏了，其实是筛选没复位。
  */
 export function jumpToTask(taskId: string): void {
-  pending = { taskId, filter: "all", urgency: "all" };
+  pending = { taskId, filter: "all", urgency: "all", dueToday: false };
   goPage("tasks");
   openTask(taskId);
 }
@@ -54,12 +56,48 @@ export function jumpToTask(taskId: string): void {
  * 是筛出来的还是漏掉的。一次跳转只表达一个意图。
  */
 export function showTasksWithFilter(filter: StatusFilter): void {
-  pending = { taskId: pending.taskId, filter, urgency: "all" };
+  pending = { taskId: pending.taskId, filter, urgency: "all", dueToday: false };
   goPage("tasks");
 }
 
 /** 跳到任务页并按优先级筛选（总览的优先级分布用）。同上，状态筛选一并清掉。 */
 export function showTasksWithUrgency(urgency: Urgency): void {
-  pending = { taskId: pending.taskId, filter: "all", urgency };
+  pending = { taskId: pending.taskId, filter: "all", urgency, dueToday: false };
   goPage("tasks");
+}
+
+/**
+ * 跳到任务页、只看「今天到期」的（总览的「今日到期」指标卡）。
+ *
+ * 这张卡原先**根本点不动**：`tile()` 只在给了 `onClick` 时才加 `clickable` / 监听，
+ * 而它漏传了 —— 卡片上写着 1 条，点上去没有任何反应，也没有任何地方说得出为什么。
+ * 判据见 `pages/shared.ts` 的 `isDueToday`：卡片数它、这里筛它，**同一个函数**。
+ *
+ * 状态筛选与优先级一并清掉，理由同 `showTasksWithFilter`：一次跳转只表达一个意图。
+ */
+export function showTasksDueToday(): void {
+  pending = { taskId: pending.taskId, filter: "all", urgency: "all", dueToday: true };
+  goPage("tasks");
+}
+
+// ─── 目的地是任务管理页的那一个 ────────────────────────────────────────────────
+//
+// 与上面同一形状（单向请求 + 单点消费），只是落点不同：**已归档的任务在任务页根本不列**
+// （归档的意思就是「从「任务」界面收走」，见 `data/mock.ts` 的 `activeTasks`），所以
+// 总览那张「归档」卡的唯一去处是管理页 —— 那页是唯一显示已归档的视图（§4.5）。
+// 与其让那张卡点了没反应，不如把它送到**能看见那批东西**的地方。
+
+let pendingArchived = false;
+
+/** 跳到任务管理页、只看已归档的（总览的「归档」指标卡）。 */
+export function showArchivedTasks(): void {
+  pendingArchived = true;
+  goPage("manage");
+}
+
+/** 管理页切到前台时取走请求，取走即清空。 */
+export function consumeArchivedRequest(): boolean {
+  const archived = pendingArchived;
+  pendingArchived = false;
+  return archived;
 }

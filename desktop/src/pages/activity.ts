@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { groupedText, type ExportGroup, type ExportTable } from "../data/export";
-import { TASKS } from "../data/mock";
+import { partitionTasks } from "../data/mock";
 import { activePartitionId } from "../data/partitions";
 import { onDataChange } from "../data/store";
 import type { Task } from "../data/types";
@@ -61,6 +61,17 @@ let reportPage = 0;
 /** 报告每页几条。分页器上那个下拉改它。 */
 let reportPageSize = REPORT_PAGE_SIZE;
 let checked: Set<string> | null = null;
+/** 上一次**自动**算出来的默认勾选。「用户有没有手动动过」靠和它比对判断。 */
+let checkedDefault: Set<string> = new Set();
+/** 上一份勾选集是为哪个「分区 + 范围」算的，见 `checkedTags()`。 */
+let checkedKey: string | null = null;
+
+/** 勾选集跟着「分区 + 范围」走 —— 不只是分区。 */
+const selectionKey = (): string =>
+  `${activePartitionId()}|${reportRange}|${customFrom ?? ""}|${customTo ?? ""}`;
+
+const sameSet = (a: Set<string>, b: Set<string>): boolean =>
+  a.size === b.size && [...a].every((item) => b.has(item));
 
 /**
  * 活动报告的搜索词，以及那个输入框本身。
@@ -72,15 +83,36 @@ let checked: Set<string> | null = null;
 let reportQuery = "";
 let searchInput: HTMLInputElement | null = null;
 
-// 刷新后 checked 可能指向已经不存在的标签（比如任务被删掉了）
+/**
+ * 勾选集（`checked`）的默认值 = **当前范围里有活动的标签**。
+ *
+ * 什么时候重算：① 第一次；② 分区或**范围**变了，且用户没手动动过勾选。
+ *
+ * 两条都是踩出来的：
+ * · 只看分区 → 切到一个标签不同的分区时一个都没勾上（下面那个 else 只会**删**、不会补），
+ *   看到的是空报告，像是那个分区没有活动；
+ * · 不看范围 → 换「今天 / 本周 / 点热力图某天」之后，新范围里有活动的标签不会被勾上，
+ *   报告是空的，用户得手动点一次「全选」才看得到东西。用户对「全选」的理解也印证了
+ *   这条：「全选的意思就是对应按钮的查询结果」。
+ *
+ * 手动动过（勾掉几个、或点过全选/清空）之后就尊重他的选择 —— 他正拿这个勾选集筛报告，
+ * 换个范围就把它冲掉才是更烦人的事。判断方式是拿当前集合和上一次的**自动默认**比对，
+ * 不需要额外记一个「用户动过了」的标记。
+ */
 function checkedTags(): Set<string> {
-  const existing = new Set(TASKS.flatMap((task) => task.tags));
-  if (checked === null) {
-    // 默认只勾有活动的标签 —— 一共 6 个标签，全勾上报告里大半是空的
+  const existing = new Set(partitionTasks().flatMap((task) => task.tags));
+  const key = selectionKey();
+
+  if (checked === null || (checkedKey !== key && sameSet(checked, checkedDefault))) {
+    // 默认只勾有活动的标签 —— 全勾上报告里大半是空的
     checked = new Set([...existing].filter((tag) => tagActivities(tag).length > 0));
+    checkedDefault = new Set(checked);
   } else {
     for (const tag of [...checked]) if (!existing.has(tag)) checked.delete(tag);
   }
+
+  // 记在**比较之后**：写前面的话这个分支永远进不来
+  checkedKey = key;
   return checked;
 }
 
@@ -97,8 +129,20 @@ interface ActivityRow {
   text: string;
 }
 
+/**
+ * 本分区的**全部**活动（含已归档任务的）。
+ *
+ * 用 `partitionTasks()` 而不是 `activeTasks()`：归档只是「列表里不再显示」，
+ * 那些活动确实发生过 —— 全年热力图与报告把它们排除掉，历史的账就对不上了。
+ *
+ * ⚠️ 这里原来是 `TASKS.flatMap(...)`（全量、不分分区）：切到空分区时，任务页 /
+ * 总览 / 图谱都空了，这一页却还在统计别的分区的活动，连分区口令那道屏风也一起
+ * 绕过去了。同类的坑在管理页也有一处（见 mock.ts 的 partitionTasks）。
+ */
 const allActivities = (): ActivityRow[] =>
-  TASKS.flatMap((task) => task.activities.map((activity) => ({ task, at: activity.at, text: activity.text })));
+  partitionTasks().flatMap((task) =>
+    task.activities.map((activity) => ({ task, at: activity.at, text: activity.text })),
+  );
 
 function tagActivities(tag: string): ActivityRow[] {
   return allActivities().filter((row) => row.task.tags.includes(tag));
@@ -457,7 +501,7 @@ function datedRowsOf(source: ActivityRow[]): ActivityRow[] {
 
 /** 当前范围内有活动的标签（带条数）。 */
 function tagStatsNow(): { tag: string; count: number }[] {
-  return [...new Set(TASKS.flatMap((task) => task.tags))]
+  return [...new Set(partitionTasks().flatMap((task) => task.tags))]
     .sort()
     .map((tag) => ({ tag, count: datedRowsOf(tagActivities(tag)).length }))
     .filter((item) => item.count > 0);
@@ -644,30 +688,42 @@ export function mount(target: HTMLElement): void {
     tagList.append(row);
   }
 
+  // 「全选」是**一个开关**，不是两个单向动作（2026-09-20 定稿）：
+  //   · 默认就是全选（默认勾选集 = 当前范围内有活动的标签 = 列表里那几个）；
+  //   · 用户可以逐个调整勾选；
+  //   · **再点一次 = 取消全选**。
+  //
+  // 为什么最后落在这个形状：原来这里是「全选 + 清空」两个按钮，而「全选」在默认状态
+  // 下**永远是空操作**（默认已经全勾上了）—— 一个点了没反应的按钮，只能引出两种结论：
+  // 「它坏了」，或者「它和旁边那个是一回事」（反馈里两句都出现了）。开关没有这个问题：
+  // 两边都有活儿干，点下去一定有变化。
+  //
+  // 代价说清楚：清掉「部分勾选」要点两下（先全选、再取消全选）。这是上面那个取舍付的钱，
+  // 换来的是「按钮永远有反应」。
+  //
+  // 状态画在颜色上（`.on` = 强调色，与分区行那个「自动 ▾」同一个写法）：全勾着时按钮
+  // 是亮的 —— 那一亮就是「现在是全选状态」的说明，不必再拿一个文字标签去讲。
+  const allChecked = activeTags.every((item) => selection.has(item.tag));
+
+  const selectAll = el("button", { class: "btn sm", type: "button", text: "全选" });
+  selectAll.classList.toggle("on", allChecked && activeTags.length > 0);
+  selectAll.title = allChecked ? "取消全选（清掉全部勾选）" : "勾上列表里的全部标签";
+  // 列表里一个标签都没有（这个范围里没有标签有活动）时它才无事可做 —— 唯一该置灰的情况
+  selectAll.disabled = activeTags.length === 0;
+  selectAll.addEventListener("click", () => {
+    // 全选也只勾「当前范围内有活动」的那些：选上没有活动的标签，报告里也看不到
+    if (allChecked) selection.clear();
+    else for (const item of activeTags) selection.add(item.tag);
+    reportCursor = 0;
+    remount();
+  });
+
   const filterCard = el("div", { class: "card" }, [
     el("div", { class: "card-h" }, [
       el("span", { class: "t", text: "标签筛选" }),
       el("span", { class: "d", text: `已选 ${reportTags.length}` }),
       el("span", { class: "grow" }),
-      (() => {
-        const button = el("button", { class: "btn sm", type: "button", text: "全选" });
-        button.addEventListener("click", () => {
-          // 只全选「当前范围内有活动」的那些：选上没有活动的标签，报告里也看不到
-          for (const item of activeTags) selection.add(item.tag);
-          reportCursor = 0;
-          remount();
-        });
-        return button;
-      })(),
-      (() => {
-        const button = el("button", { class: "btn sm", type: "button", text: "清空" });
-        button.addEventListener("click", () => {
-          selection.clear();
-          reportCursor = 0;
-          remount();
-        });
-        return button;
-      })(),
+      selectAll,
     ]),
     el("div", { class: "card-b" }, [tagList]),
   ]);

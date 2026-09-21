@@ -18,8 +18,8 @@ import * as tasks from "./tasks";
 export interface PageView {
   /** 往宿主容器里画页面。宿主已经被 nav 清空，实现里不需要自己清理。 */
   mount(host: HTMLElement): void;
-  /** 页头主按钮的行为。缺省时 nav 给出「尚未接入」的提示而不是静默失败。 */
-  onAction?: () => void;
+  /** 页头动作的行为（`id` 来自 registry 的 PageAction）。缺省时 nav 会提示「尚未接入」。 */
+  onAction?: (id: string) => void;
 }
 
 export const PAGE_VIEWS: Record<PageId, PageView> = {

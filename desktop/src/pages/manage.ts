@@ -1,8 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // 任务管理页：可多选的表格 + 标签管理。
 //
-// 表格是唯一会显示**已归档**任务的视图（其余视图一律 activeTasks()），
-// 所以这里用 TASKS 并给归档单独一列和一个筛选，而不是复用别处的取数。
+// 表格是唯一会显示**已归档**任务的视图（其余视图一律 activeTasks()），所以取数走
+// `partitionTasks()` —— 它是「本分区的全部任务（含归档）」。
+//
+// ⚠️ 这里曾经直接读 `TASKS`：当初只想放开「不看归档」这一个条件，却把**分区过滤也
+// 一起放开了** —— 于是切到空分区时总览 / 任务 / 图谱都空了，管理页还列着别的分区的
+// 任务，连分区口令那道屏风也一起绕过去了。要放开归档就只放开归档：`partitionTasks()`
+// 与 `activeTasks()` 只差这一个条件。
 //
 // 「合并」不是一个独立按钮：把 A 改名为一个已经存在的 B，语义上就是合并。
 // 单独做一个合并按钮反而要引入「再选第二个标签」的两段式交互，
@@ -10,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { groupedText, type ExportGroup } from "../data/export";
-import { TASKS } from "../data/mock";
+import { TASKS, partitionTasks } from "../data/mock";
 import { activePartitionId } from "../data/partitions";
 import { dataChanged, keepActive, onDataChange } from "../data/store";
 import { UNTAGGED } from "../data/tags";
@@ -18,8 +23,9 @@ import type { Task, TaskStatus } from "../data/types";
 import { el } from "../shell/dom";
 import { confirmAction } from "../shell/confirm";
 import { exportButton } from "../shell/exportMenu";
+import { subscribePages } from "../shell/router";
 import { toast } from "../shell/toast";
-import { jumpToTask } from "./focus";
+import { consumeArchivedRequest, jumpToTask } from "./focus";
 import { pager } from "./pager";
 import {
   PAGE_SIZE,
@@ -27,35 +33,71 @@ import {
   TODAY,
   dayNumber,
   isoDay,
+  matchesStatus,
+  monthDayText,
   pad2,
   setTaskStatus,
 } from "./shared";
+import { openImportDialog } from "./tasks";
 
 /** 当前每页几条。分页器上那个下拉改它（默认 PAGE_SIZE）。 */
 let pageSize = PAGE_SIZE;
 
-const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
+/**
+ * 一条单选：**每一枚 = 一个视图**（2026-09-21 用户定的）。
+ *
+ * 以前这里是**两组** chip ——「状态」一排（全部状态 / 逾期 / 待办 / 进行中 / 已完成）+
+ * 「归档」一排（未归档 / 已归档），各自单选。两组都「只亮一枚」、又挨在一起，看起来就是
+ * **一条**单选行里亮了两枚 —— 于是被当成坏了（用户问「默认怎么不是全部状态」）。
+ *
+ * 现在合成一条：「全部状态 / 逾期 / 待办 / 进行中 / 已完成」不筛归档（两侧都算，归档列那
+ * 一列会告诉你哪条是哪条），「未归档 / 已归档」不筛状态。点一枚 = 同时定下这两件事 ——
+ * 所以永远只有一枚亮着，默认就是**全部状态**。
+ *
+ * 代价（说清楚，不是没代价）：**组合筛选没了** —— 「已完成 × 已归档」这种问法在这条行里
+ * 表达不出来。换来的是这一页的筛选一眼就懂。
+ */
+type ManageView = TaskStatus | "all" | "active" | "archived";
+
+const VIEW_OPTIONS: { value: ManageView; label: string }[] = [
   { value: "all", label: "全部状态" },
+  // 顺序写死：「逾期」排在最前（它最急），后面两个按进展排 —— 不写成遍历
+  // `STATUS_LABEL`，那样顺序取决于对象的键序，改个定义就悄悄变了。
+  // （「待办」那枚 2026-09-21 撤了：它和「进行中」是同一件事的两面，见 types.ts）
   { value: "overdue", label: STATUS_LABEL.overdue },
-  { value: "todo", label: STATUS_LABEL.todo },
   { value: "doing", label: STATUS_LABEL.doing },
   { value: "done", label: STATUS_LABEL.done },
-];
-
-const ARCHIVE_OPTIONS: { value: "active" | "archived" | "all"; label: string }[] = [
   { value: "active", label: "未归档" },
   { value: "archived", label: "已归档" },
-  { value: "all", label: "含归档" },
 ];
 
 // ─── 页面状态 ────────────────────────────────────────────────────────────────
 
 let statusFilter: TaskStatus | "all" = "all";
-let archiveFilter: "active" | "archived" | "all" = "active";
+/**
+ * 归档那一维。只有两枚 chip（未归档 / 已归档），但这里要有**第三态** `"all"` ——
+ * 它是状态那几枚在用的：点了「已完成」就意味着「不筛归档（两侧都算）」。
+ * 两维默认都清空 = 亮着那枚「全部状态」。
+ */
+let archiveFilter: "active" | "archived" | "all" = "all";
 let page = 0;
 let selected = new Set<string>();
 let tagQuery = "";
 let selectedTag: string | null = null;
+
+/** 这一页当前是哪一个视图（哪一枚 chip 亮着）。 */
+const viewOf = (): ManageView =>
+  statusFilter !== "all" ? statusFilter : archiveFilter === "all" ? "all" : archiveFilter;
+
+/**
+ * 点某一枚 chip：它**同时**定下状态与归档两件事 —— 状态那几枚不筛归档、归档那两枚不筛状态。
+ * 所以永远只有一枚亮着（真·单选），不会出现「一行里亮了两枚」那种读起来像坏了的画面。
+ */
+const applyView = (view: ManageView): void => {
+  statusFilter = view === "active" || view === "archived" || view === "all" ? "all" : view;
+  archiveFilter = view === "active" || view === "archived" ? view : "all";
+  page = 0;
+};
 
 /**
  * 只影响本页表格的渲染（翻页、勾选、换筛选），不广播给别的页面。
@@ -70,8 +112,11 @@ let refreshTagCard: (() => void) | null = null;
 // ─── 取数 ────────────────────────────────────────────────────────────────────
 
 function tableRows(): Task[] {
-  return TASKS.filter((task) => {
-    if (statusFilter !== "all" && task.status !== statusFilter) return false;
+  return partitionTasks().filter((task) => {
+    // 「进行中」是**合并口径**（待办 + 进行中），判定在 shared.ts 的 `matchesStatus`
+    // —— 与总览那张卡、任务页那排 chip 是同一个函数。三处各写一份，管理页就会是
+    // 「点同一件事，这边 17 条、那边 41 条」
+    if (!matchesStatus(task, statusFilter)) return false;
     if (archiveFilter === "active" && task.archived) return false;
     if (archiveFilter === "archived" && !task.archived) return false;
     return true;
@@ -80,7 +125,7 @@ function tableRows(): Task[] {
 
 function tagRows(): { tag: string; tasks: number; activities: number }[] {
   const counts = new Map<string, { tasks: number; activities: number }>();
-  for (const task of TASKS) {
+  for (const task of partitionTasks()) {
     for (const tag of task.tags) {
       const entry = counts.get(tag) ?? { tasks: 0, activities: 0 };
       entry.tasks += 1;
@@ -96,7 +141,7 @@ function tagRows(): { tag: string; tasks: number; activities: number }[] {
 // ─── 批量处置 ────────────────────────────────────────────────────────────────
 
 function applyToSelected(action: (task: Task) => void, message: (count: number) => string): void {
-  const targets = TASKS.filter((task) => selected.has(task.id));
+  const targets = partitionTasks().filter((task) => selected.has(task.id));
   if (targets.length === 0) return;
   for (const task of targets) action(task);
   selected.clear();
@@ -114,7 +159,7 @@ function renameTag(from: string, raw: string): void {
   }
 
   let absorbed = 0;
-  for (const task of TASKS) {
+  for (const task of partitionTasks()) {
     if (!task.tags.includes(from)) continue;
     task.tags = task.tags.filter((tag) => tag !== from);
     if (task.tags.includes(to)) absorbed += 1;
@@ -167,6 +212,23 @@ function exportGroups(list: Task[]): ExportGroup[] {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([tag, tasks]) => ({ tag, tasks }));
 }
+
+/**
+ * 导出里的「截止」：必须是**绝对日期**。
+ *
+ * 表格上写「今天 15:00 / 昨天」是对的（界面上更好读），但那是**会变**的 ——
+ * 今天导出的「今天」，明天打开就指错了日子，而文件是要存档、要发给别人的。
+ * 日期本身在 `end`（数据），时刻只写在 `due`（文案）里：模型没有单独的截止时刻
+ * 字段，所以 `HH:MM` 只在那里取，日期一律按 `end` 算。
+ * 与 `data/markdown.ts` 的 `taskToMarkdown` 同一条规矩（见 time.ts 的
+ * 「md 导出直接读 end + at」）—— 反过来按 `due.includes("今天")` 倒推日期的那种
+ * 写法已经炸过一次（导出过 `⏰2026-明天`）。
+ */
+const exportDue = (task: Task): string => {
+  if (!task.due) return "";
+  const time = /\d{2}:\d{2}/.exec(task.due)?.[0] ?? task.at ?? "";
+  return `${monthDayText(dayNumber(task.end))}${time ? ` ${time}` : ""}`;
+};
 
 function renderTable(): HTMLElement {
   const rows = tableRows();
@@ -233,7 +295,10 @@ function renderTable(): HTMLElement {
       el("td", {}, [badge]),
       el("td", {}, [tags]),
       el("td", {}, [
-        task.archived ? el("span", { class: "arch-tag", text: "已归档" }) : el("span", { class: "dim", text: "—" }),
+        task.archived
+          ? el("span", { class: "arch-tag", text: "已归档" })
+          : // 破折号就是「未归档」，但一个孤零零的符号没人看得懂 —— 补一句悬浮提示
+            el("span", { class: "dim", text: "—", title: "未归档" }),
       ]),
     );
 
@@ -272,6 +337,7 @@ function renderTable(): HTMLElement {
 
 // ─── 卡片 ────────────────────────────────────────────────────────────────────
 
+/** 一组单选 chip：调用方给「当前值」，这里只负责高亮与回调（值本身由页面的状态持有）。 */
 function filterChips<T extends string>(
   options: { value: T; label: string }[],
   current: T,
@@ -290,7 +356,67 @@ function filterChips<T extends string>(
   return root;
 }
 
+/**
+ * 页头那枚**批量归档 / 取消归档**（2026-09-21 用户提的「在导出之后增加一个归档按钮即可」）。
+ *
+ * 为什么不放进批量条：批量条回答的是「我勾了这几条，要对它们做什么」；这一枚回答的是
+ * 「**当前筛选下这一批，整体收走 / 放回来**」—— 两者的输入不同（勾选 vs 筛选条件），
+ * 混在同一条里会让人以为必须先勾选。既然筛选已经把「哪一批」讲清楚了（状态 × 归档），
+ * 这里只负责执行，**标签里不再重复写条数**。
+ *
+ * 动作与标签都跟着**归档档位**走：在看「未归档」时是「归档」，在看「已归档」时是
+ * 「取消归档」—— 一次只可能做对该做的那件事（不会出现在已归档的一批上再按归档）。
+ * 一条也筛不出来时给一句提示，不静默无反应。
+ */
+function archiveBatchButton(): HTMLElement {
+  // 判据是「**不全是已归档**」而不是「正好是未归档」：点状态那几枚 chip 时
+  // `archiveFilter` 会回到 `"all"`（两侧都算），而那一批的主体正是未归档的那批 ——
+  // 写成 `=== "active"` 的话，**默认**进这一页（"all"）按钮上就挂着「取消归档」，
+  // 与眼前这批对不上（也与上面那条说明相悖）
+  const archiving = archiveFilter !== "archived";
+  const button = el("button", {
+    // 带个明确的类名：页头里还有「未归档 / 已归档」两枚 chip，按文字找会撞上它们
+    class: "btn sm archive-batch",
+    type: "button",
+    text: archiving ? "归档" : "取消归档",
+    title: archiving
+      ? "把当前筛选下的任务收进归档（跨页）· 任务页不再列它们"
+      : "把当前筛选下的任务放回未归档（跨页）",
+  });
+  button.addEventListener("click", async () => {
+    const targets = tableRows();
+    if (targets.length === 0) {
+      toast("当前筛选下没有任务");
+      return;
+    }
+    const ok = await confirmAction({
+      title: `${archiving ? "归档" : "取消归档"}当前筛出的 ${targets.length} 条？`,
+      detail: archiving
+        ? "任务页不再列它们；这一页仍留着记录，切到「已归档」就能看见、也能放回来。"
+        : "它们会重新出现在其余视图里；本次会话内不会再被自动归档收走。",
+      confirmText: archiving ? `归档 ${targets.length} 条` : `恢复 ${targets.length} 条`,
+    });
+    if (!ok) return;
+    for (const task of targets) {
+      task.archived = archiving;
+      // 恢复的走 keepActive：否则「完成后归档＝立即」下一次数据变更又把它们收走
+      if (!archiving) keepActive(task.id);
+    }
+    // 勾选可能落在这批之外，清掉免得让人以为还选着
+    selected.clear();
+    dataChanged();
+    toast(
+      archiving
+        ? `已归档 ${targets.length} 个任务 · 任务页不再列它们`
+        : `已恢复 ${targets.length} 个任务`,
+    );
+  });
+  return button;
+}
+
 function renderBatchBar(): HTMLElement | null {
+  // 勾选了才出现。**批量归档**不在这里（见页头「导出」后面那枚）—— 它是「按筛选执行」的
+  // 动作，与「你已经勾了哪几条」是两件事，混在同一条里会让人以为必须先勾选
   if (selected.size === 0) return null;
 
   const action = (button: HTMLElement): HTMLElement => {
@@ -333,6 +459,9 @@ function renderBatchBar(): HTMLElement | null {
     });
     if (!ok) return;
 
+    // 这一处是**写**：按 id 从真数组里删，所以用的是 `TASKS` 而不是 `partitionTasks()`。
+    // 选中的 id 全来自本页表格（表格已经分区过滤过），不需要再筛一遍；
+    // 反过来拿 `partitionTasks()` 的结果去 splice 会删错下标。
     for (let index = TASKS.length - 1; index >= 0; index -= 1) {
       if (ids.has(TASKS[index].id)) TASKS.splice(index, 1);
     }
@@ -414,7 +543,7 @@ function renderTagCard(): HTMLElement {
     const remove = el("button", { class: "btn danger sm", type: "button", text: "删除标签" });
     remove.addEventListener("click", async () => {
       const tag = selectedTag as string;
-      const affected = TASKS.filter((task) => task.tags.includes(tag)).length;
+      const affected = partitionTasks().filter((task) => task.tags.includes(tag)).length;
       const ok = await confirmAction({
         title: `从 ${affected} 个任务上移除「${tag}」？`,
         detail: "标签本身会被删掉，任务不动。这个操作撤销不了。",
@@ -423,7 +552,7 @@ function renderTagCard(): HTMLElement {
       if (!ok) return;
 
       let touched = 0;
-      for (const task of TASKS) {
+      for (const task of partitionTasks()) {
         if (!task.tags.includes(tag)) continue;
         task.tags = task.tags.filter((item) => item !== tag);
         touched += 1;
@@ -444,6 +573,9 @@ function renderTagCard(): HTMLElement {
   }
 
   function refreshTagList(): void {
+    // 选中的标签可能已经不在这一批里了（换了分区，或最后一条带它的任务改了）——
+    // 那种情况下编辑区还开着，就是在「改一个这里根本没有的标签」
+    if (selectedTag && !tagRows().some((row) => row.tag === selectedTag)) selectedTag = null;
     refreshList();
     refreshEditor();
   }
@@ -470,11 +602,17 @@ function renderTagCard(): HTMLElement {
 export function mount(host: HTMLElement): void {
   const tableCard = el("div", { class: "card" });
 
-  // ── 导出（md / txt / xlsx 三选一，见 shell/exportMenu.ts）─────────────────
-  // 「导入 .md」撤了（2026-09-17）：方言本来就带不回状态（导出再导入会把已完成
-  // 变成待办，见 data/markdown.ts 顶部），而任务页的批量新建框吃的是**同一套
-  // 方言**、当场就能看见解析出几条 —— 先存成文件再导回来只是多绕一圈。
+  // ── 迁入 / 导出 ───────────────────────────────────────────────────────────
+  // 「导入 .md」曾在 2026-09-17 撤掉：那时导出改成了给人看的清单（标签 → 任务 →
+  // 活动三层），本来就回不来。现在「数据迁入」回来了，但导的**不是**那种清单，而是
+  // **任务行写法**的文件 —— 也就是 `tadado-activity-import` skill 里那支转换工具产出的东西，
+  // 是迁移旧数据的通道。
   //
+  // 放在这一页而不是任务页页头：一进一出是同一类动作（这页本来就有「导出 ▾」），
+  // 而页头的位置该留给每天都用的「＋ 新建任务」。
+  const importBtn = el("button", { class: "btn", type: "button", text: "数据迁入" });
+  importBtn.addEventListener("click", openImportDialog);
+
   // 导出跟着**当前筛选**走：表格上摆着状态与归档两个筛选，导出的就该是眼前这批，
   // 而不是「这个分区全部」—— 后者会让人以为筛选压根没生效。
   const exportBtn = exportButton({
@@ -482,7 +620,7 @@ export function mount(host: HTMLElement): void {
       const list = tableRows();
       return {
         // 与活动分析的导出**同一套三层结构**（标签 → 任务 → 活动），生成逻辑也共用
-        // data/export.ts 的 groupedText。以前这里是 md 方言行（`- [ ] 标题 #标签`），
+        // data/export.ts 的 groupedText。以前这里是 md 任务行（`- [ ] 标题 #标签`），
         // 那是为了让文件能导回来；导入在 2026-09-17 撤了，这个约束也就没了 ——
         // 两份导出统一之后，用户不用再记「哪个页面给的是哪种格式」
         text: {
@@ -494,7 +632,7 @@ export function mount(host: HTMLElement): void {
           String(index + 1),
           `${pad2(task.created[0])}-${pad2(task.created[1])}`,
           task.title,
-          task.due ?? "",
+          exportDue(task),
           `${task.progress}%`,
           STATUS_LABEL[task.status],
           task.tags.join(" "),
@@ -514,20 +652,25 @@ export function mount(host: HTMLElement): void {
         el("span", { class: "t", text: "任务表格" }),
         el("span", { class: "d", text: `${pageSize} 条/页 · 行点击打开维护抽屉` }),
         el("span", { class: "grow" }),
-        filterChips(STATUS_OPTIONS, statusFilter, (value) => {
-          statusFilter = value;
-          page = 0;
+        // **一条**单选：全部状态 / 逾期 / 待办 / 进行中 / 已完成 / 未归档 / 已归档
+        // （每一枚 = 一个视图，见 VIEW_OPTIONS 的说明）
+        filterChips(VIEW_OPTIONS, viewOf(), (value) => {
+          applyView(value);
           refreshTable?.();
         }),
-        filterChips(ARCHIVE_OPTIONS, archiveFilter, (value) => {
-          archiveFilter = value;
-          page = 0;
-          refreshTable?.();
-        }),
+        importBtn,
         exportBtn,
+        // 「导出」之后的批量归档按钮（见 archiveBatchButton 的说明）。放在 render 里现建：
+        // 它的标签跟着**归档档位**走，档位一换就得跟着换
+        archiveBatchButton(),
       ]),
       el("div", { class: "card-b" }, [...(batch ? [batch] : []), renderTable()]),
     );
+
+    // 标签卡跟着一起重建。它和表格是**同一份数据（本分区）的两种看法**，但它的取数
+    // 原来只在 mount 时算过一次 —— 于是换了分区之后，表格空了、标签卡还列着上个分区的
+    // 标签（同一个「分区没隔离干净」的坑，只是换了个入口）。
+    refreshTagCard?.();
   };
 
   const root = el("div", { class: "split-manage" }, [tableCard, renderTagCard()]);
@@ -536,4 +679,22 @@ export function mount(host: HTMLElement): void {
   refreshTable = render;
   render();
   onDataChange(render);
+
+  // 从总览的「归档」卡切进来时，把筛选复位成「已归档」。页面是**常驻**的、切回来不会
+  // 自己重画，所以得在这儿看一眼有没有请求（与任务页消费请求同一形状）。
+  // 一次跳转只表达一个意图：状态与页码复位、勾选清掉。标签卡那套（搜索词 / 选中项）是
+  // **标签管理**的口子，不影响表格列哪些行，不动它。
+  subscribePages((id) => {
+    if (id !== "manage") return;
+    if (!consumeArchivedRequest()) {
+      // 普通切页：重画一遍 —— 别的页面改过数据、或这一页上次是隐藏着画的
+      render();
+      return;
+    }
+    archiveFilter = "archived";
+    statusFilter = "all";
+    selected.clear();
+    page = 0;
+    render();
+  });
 }

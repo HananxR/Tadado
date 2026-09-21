@@ -11,12 +11,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { MAX_TAGS, normalizeTags } from "../data/tags";
-import { dueTextOf, dayNumber, monthDayOf, TODAY, todayMonthDay } from "../data/time";
-import type { Task, TaskStatus, Urgency } from "../data/types";
+import {
+  dueTextOf,
+  dayNumber,
+  monthDayOf,
+  nowMinutes,
+  nowStamp,
+  TODAY,
+  todayMonthDay,
+} from "../data/time";
+import type { Activity, Task, TaskStatus, Urgency } from "../data/types";
 import { dateTimeField } from "../shell/dateTime";
 import { el } from "../shell/dom";
 import { toast } from "../shell/toast";
-import { STATUS_LABEL, URGENCY_LABEL, setTaskStatus, urgencyBadge } from "./shared";
+import { STATUS_LABEL, URGENCY_LABEL, pad2, setTaskStatus, urgencyBadge } from "./shared";
 
 export interface TaskFormOptions {
   task: Task;
@@ -24,12 +32,192 @@ export interface TaskFormOptions {
   onEdit: (field: "title" | "tags" | "start" | "end" | "status" | "urgency" | "progress") => void;
   /** 抽屉里给状态变更额外提示用；对话框里不需要。 */
   onStatusChange?: (next: TaskStatus) => void;
+  /**
+   * 要不要带上「进度」这一行，默认带。
+   *
+   * 抽屉传 `false`：进度控件已经搬到**活动时间线**里（见 taskDrawer 的 .tl-prog）——
+   * 写一句进展和把进度挪到哪，本来就是同一次动作的两半，分在两个区就会漏维护一处
+   * （2026-09-20 用户提的）。对话框仍带：新任务还没有时间线，字段得先在表单里填完。
+   */
+  withProgress?: boolean;
 }
 
 export interface TaskForm {
   root: HTMLElement;
   /** 外部数据变了（别处改了这条、逾期自动标记）时回写显示。不触发 onEdit。 */
   paint: (task: Task) => void;
+}
+
+export interface ProgressControl {
+  /** 「滑杆 + 数字框 + %」一行，标签由调用方加（两处的字段名不一样）。 */
+  root: HTMLElement;
+  paint: (task: Task) => void;
+  /** 还没提交的改动（`50% → 65%`）；没有改动时为 null。 */
+  pendingText: () => string | null;
+  /**
+   * 提交一次：改掉 `task.progress` 并往时间线写一条记录，返回那条记录（没有改动则 null）。
+   * `text` 是随它一起记下的那句话 —— 抽屉里就是「记录一条进展」那一行写的内容。
+   */
+  commit: (text?: string) => ProgressActivity | null;
+  /** 丢掉未提交的改动，显示拉回任务当前值（换任务时用）。 */
+  reset: () => void;
+}
+
+/** 时间线上的一条**进度**记录（`from → to`）。 */
+export type ProgressActivity = Extract<Activity, { kind: "progress" }>;
+
+/**
+ * 进度维护控件：滑杆（大概拖一下）+ 数字框（就要 65%）。
+ *
+ * 两个消费方：**新建任务对话框**放在「任务定义」里（immediate）；**任务抽屉**放在
+ * 活动时间线里（deferred，见 taskDrawer 的 .tl-prog）。抽成一份是因为 from 的抓取
+ * 时机、钳位、以及「拖回原值不留记录」这几条规则一旦各写一份，迟早会分叉。
+ *
+ * ⚠️ **进度一律手动维护**（用户用了很多次之后明确定的）：这里没有任何「按活动内容
+ * 推导进度」的自动逻辑 —— 拖到哪、填多少就是多少。
+ */
+export function progressControl(options: {
+  task: Task;
+  /**
+   * `"immediate"`（默认，对话框用）：松手 / 回车即提交 —— 那边没有「发送」按钮，
+   * 表单本来就是即时保存的。
+   *
+   * `"deferred"`（抽屉用）：**只改草稿**，由调用方在「发送」时提交。用户的口径是
+   * 「进度条修改后需要手动添加进度信息，点击发送才能保存」—— 拖着放着就被记下来，
+   * 那是 bug（2026-09-20 报的：信息还没写完就已经提交了）。
+   */
+  mode?: "immediate" | "deferred";
+  /** 提交后把那条记录交出去（调用方落库 / 刷新）。 */
+  onCommit?: (activity: ProgressActivity) => void;
+  /** deferred 模式下「数字框里按回车」：交给调用方当一次提交（抽屉走的就是「发送」那条路）。 */
+  onSubmit?: () => void;
+}): ProgressControl {
+  let task = options.task;
+  const deferred = options.mode === "deferred";
+
+  const range = el("input", { type: "range", class: "range", min: "0", max: "100" });
+  const input = el("input", { type: "number", class: "pct-input", min: "0", max: "100" });
+  /**
+   * 「待保存 65% → 70%」。deferred 模式必须把「还没保存」写在脸上：改动不落库，
+   * 用户拖完就走的话，改动静默消失 —— 那和「拖着就被提交」是同一类毛病的两面。
+   */
+  const pendingNote = el("span", { class: "prog-pending" });
+  const root = el("div", { class: "prog-ctl" }, [
+    range,
+    input,
+    el("span", { class: "dim", text: "%" }),
+    pendingNote,
+  ]);
+
+  /** 草稿的起点（改动前的值）。null = 当前没有未提交的改动。 */
+  let base: number | null = null;
+  /** 草稿值。 */
+  let draft = task.progress;
+
+  const clamp = (raw: number): number =>
+    Math.max(0, Math.min(100, Math.round(Number.isNaN(raw) ? 0 : raw)));
+
+  const dirty = (): boolean => base !== null && draft !== base;
+
+  /** 滑杆的填充就是「一眼看出进度到哪了」——只有滑杆头没有填充时，它读起来像个开关。 */
+  const paintRange = (value: number): void => {
+    range.value = String(value);
+    range.style.background = `linear-gradient(to right, var(--accent) ${value}%, var(--border) ${value}%)`;
+  };
+
+  const paintPending = (): void => {
+    const on = dirty();
+    root.classList.toggle("dirty", on);
+    pendingNote.textContent = on ? `待保存 ${base}% → ${draft}%` : "";
+  };
+
+  /**
+   * 记一笔草稿。
+   *
+   * `base` 在**开始改之前**抓一次：滑杆的 `input` 每动一下都发一次，拿「上一次的值」
+   * 当起点的话，时间线会刷出「50→51、51→52……」一串噪声。on`syncInput` 让数字框跟着
+   * 拖动走（一边拖一边能看到具体到多少）。
+   */
+  const setDraft = (raw: number, syncInput: boolean): void => {
+    if (base === null) base = task.progress;
+    draft = clamp(raw);
+    paintRange(draft);
+    if (syncInput) input.value = String(draft);
+    paintPending();
+  };
+
+  const commit = (text?: string): ProgressActivity | null => {
+    // 没有改动就不提交：时间线上不留「30% → 30%」这种记录
+    if (!dirty()) return null;
+    const start = base as number;
+    const next = draft;
+    task.progress = next;
+    const activity: ProgressActivity = {
+      at: nowStamp(),
+      kind: "progress",
+      from: start,
+      to: next,
+      // 一句说明由调用方给（抽屉里就是输入框里那句话）；没给就退回数字落差
+      text: text?.trim() || `${start}% → ${next}%`,
+    };
+    // **存储**仍然最新在前（unshift）：导出、统计与「后面那条记录」的判定都按这个约定
+    // 走。抽屉里的**显示**是正序（最早的在上），渲染时反着铺 —— 见 renderTimeline
+    task.activities.unshift(activity);
+    base = null;
+    paintRange(next);
+    input.value = String(next);
+    paintPending();
+    options.onCommit?.(activity);
+    return activity;
+  };
+
+  range.addEventListener("input", () => setDraft(Number(range.value), true));
+  range.addEventListener("change", () => {
+    if (!deferred) commit();
+  });
+  input.addEventListener("change", () => {
+    // deferred：只把草稿收下来，保存交给「发送」
+    if (deferred) {
+      setDraft(Number(input.value), false);
+      return;
+    }
+    commit();
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    if (deferred) {
+      // 先把框里的数收进草稿，再交出去 —— 回车和点「发送」是同一条路
+      setDraft(Number(input.value), false);
+      options.onSubmit?.();
+      return;
+    }
+    commit();
+    input.blur();
+  });
+
+  return {
+    root,
+    paint: (next) => {
+      task = next;
+      // 有未提交的草稿就不回写：拖/填到一半被别处的重画冲掉，等于白改
+      if (dirty()) return;
+      base = null;
+      draft = task.progress;
+      paintRange(draft);
+      // 正在改数字框的人不该被外面的重画把字带走
+      if (document.activeElement !== input) input.value = String(draft);
+      paintPending();
+    },
+    pendingText: () => (dirty() ? `${base}% → ${draft}%` : null),
+    commit,
+    reset: () => {
+      base = null;
+      draft = task.progress;
+      paintRange(draft);
+      input.value = String(draft);
+      paintPending();
+    },
+  };
 }
 
 export function taskForm(options: TaskFormOptions): TaskForm {
@@ -122,7 +310,7 @@ export function taskForm(options: TaskFormOptions): TaskForm {
 
   // ── 状态 ──
   const statusRow = el("div", { class: "chips" });
-  const statusButtons = (["todo", "doing", "done"] as const).map((status) => {
+  const statusButtons = (["doing", "done"] as const).map((status) => {
     const button = el("button", {
       class: "chip",
       type: "button",
@@ -150,7 +338,20 @@ export function taskForm(options: TaskFormOptions): TaskForm {
       el("span", { text: label }),
     ]);
     button.addEventListener("click", () => {
-      task.urgency = level as Urgency;
+      const from = task.urgency;
+      const to = level as Urgency;
+      // 点当前那一档 = 没改，不留记录（否则时间线会被「关注 → 关注」刷屏）
+      if (from === to) return;
+      task.urgency = to;
+      // 与状态同一套处理：改优先级也是一次决定，时间线要记得住。
+      // 「关于」面板里那句「改优先级也会写进活动时间线」就是对这条的承诺
+      task.activities.unshift({
+        at: nowStamp(),
+        kind: "urgency",
+        from,
+        to,
+        text: `${URGENCY_LABEL[from]} → ${URGENCY_LABEL[to]}`,
+      });
       paint(task);
       options.onEdit("urgency");
     });
@@ -159,32 +360,11 @@ export function taskForm(options: TaskFormOptions): TaskForm {
   });
 
   // ── 进度 ──
-  // 滑杆负责「大概拖一下」，数字框负责「就要 65%」。只能拖的时候，
-  // 想精确到某个数就得来回蹭 —— 用户直接说了「无法直接指定」。
-  const progressRange = el("input", { type: "range", class: "range", min: "0", max: "100" });
-  // 数字框就是读数，不再另起一个「65%」的文字 —— 输入框 + 单位已经说完了
-  const progressInput = el("input", {
-    type: "number",
-    class: "pct-input",
-    min: "0",
-    max: "100",
-  });
-
-  const setProgress = (raw: number, commit: boolean): void => {
-    const next = Math.max(0, Math.min(100, Math.round(Number.isNaN(raw) ? 0 : raw)));
-    task.progress = next;
-    paint(task);
-    if (commit) options.onEdit("progress");
-  };
-
-  progressRange.addEventListener("input", () => setProgress(Number(progressRange.value), false));
-  progressRange.addEventListener("change", () => setProgress(Number(progressRange.value), true));
-  progressInput.addEventListener("change", () => setProgress(Number(progressInput.value), true));
-  progressInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      setProgress(Number(progressInput.value), true);
-      progressInput.blur();
-    }
+  // 控件本身在 progressControl 里（对话框与抽屉共用一份）。这里只负责「改完落库」：
+  // 那条进度记录由控件写进 task.activities，表单不重复实现一遍。
+  const progress = progressControl({
+    task,
+    onCommit: () => options.onEdit("progress"),
   });
 
   const root = el("div", { class: "tform" }, [
@@ -194,12 +374,9 @@ export function taskForm(options: TaskFormOptions): TaskForm {
     endField.root,
     el("div", { class: "tf-row" }, [el("span", { class: "tf-k", text: "状态" }), statusRow, overdueNote]),
     el("div", { class: "tf-row" }, [el("span", { class: "tf-k", text: "优先级" }), urgencyRow]),
-    el("div", { class: "tf-row" }, [
-      el("span", { class: "tf-k", text: "进度" }),
-      progressRange,
-      progressInput,
-      el("span", { class: "dim", text: "%" }),
-    ]),
+    ...(options.withProgress === false
+      ? []
+      : [el("div", { class: "tf-row" }, [el("span", { class: "tf-k", text: "进度" }), progress.root])]),
   ]);
 
   const paint = (next: Task): void => {
@@ -221,8 +398,7 @@ export function taskForm(options: TaskFormOptions): TaskForm {
       button.classList.toggle("on", task.urgency === level);
     }
 
-    progressRange.value = String(task.progress);
-    if (document.activeElement !== progressInput) progressInput.value = String(task.progress);
+    progress.paint(task);
   };
 
   // 对话框里直接调 paint 初始化；抽屉里由 openTask 传入真实任务后再调
@@ -231,24 +407,44 @@ export function taskForm(options: TaskFormOptions): TaskForm {
   return { root, paint };
 }
 
-/** 新建任务用的空白草稿：字段齐全但没有 id / 分区，入库前由调用方补齐。 */
-export const draftTask = (): Task => ({
-  id: "",
-  title: "",
-  status: "todo",
-  tags: [],
-  due: null,
-  at: null,
-  start: todayMonthDay(),
-  end: todayMonthDay(),
-  progress: 0,
-  urgency: 2,
-  created: todayMonthDay(),
-  archived: false,
-  partition: "",
-  related: [],
-  activities: [],
-});
+/** 「现在」的 `HH:MM`。新建任务的「结束」时刻默认用它。 */
+const nowTime = (): string => {
+  const minutes = nowMinutes();
+  return `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
+};
+
+/**
+ * 新建任务用的空白草稿：字段齐全但没有 id / 分区，入库前由调用方补齐。
+ *
+ * 「结束」默认 **今天 + 当前时刻**（2026-09-21 用户提的：「时分默认是当前时间，目前是空，
+ * 需要手动选择」）。两件事一起修：
+ *  · 时刻原本是空的 —— 点完「今天」还得再挑一次时分，而绝大多数新建就是「从现在起」；
+ *  · 日期框本来就显示着今天（`value: { day: dayNumber(task.end) }`），但 `due` 是 null，
+ *    于是字段**看着填好了**、点「创建」却说「还差：结束时间」—— 显示与模型两个口径。
+ *    现在 `due` / `at` / `end` 一次给齐，字段显示的就是模型里的那件事。
+ *
+ * 「结束时间是必填」这条规矩仍然成立：点「清除」之后 `due` 就是 null，创建时照样拦下来。
+ */
+export const draftTask = (): Task => {
+  const at = nowTime();
+  return {
+    id: "",
+    title: "",
+    status: "doing",
+    tags: [],
+    due: dueTextOf(TODAY, at),
+    at,
+    start: todayMonthDay(),
+    end: todayMonthDay(),
+    progress: 0,
+    urgency: 2,
+    created: todayMonthDay(),
+    archived: false,
+    partition: "",
+    related: [],
+    activities: [],
+  };
+};
 
 /** 今天（面板上「开始」的默认值）。单独导出是因为对话框要用它做初始值。 */
 export const TODAY_DAY = TODAY;

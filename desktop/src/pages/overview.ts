@@ -11,27 +11,36 @@
 // 逐处做增量更新的收益在这个规模上不如「一眼看出渲染结果 = 数据」。
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { activeTasks, countByStatus, partitionTasks } from "../data/mock";
 import { activePartition } from "../data/partitions";
-import { activeTasks, countByStatus } from "../data/mock";
-import { onDataChange } from "../data/store";
+import { completedOn, onDataChange } from "../data/store";
 import { TIMELINE_RANGES, timelineWindow, type TimelineRange } from "../data/timeline";
-import type { Task, Urgency } from "../data/types";
+import type { Activity, Task } from "../data/types";
 import { el } from "../shell/dom";
-import { currentPage } from "../shell/router";
+import { currentPage, subscribePages } from "../shell/router";
 import { seg } from "../shell/seg";
 import { toast } from "../shell/toast";
-import { jumpToTask, showTasksWithFilter, showTasksWithUrgency } from "./focus";
+import {
+  jumpToTask,
+  showArchivedTasks,
+  showTasksDueToday,
+  showTasksWithFilter,
+  showTasksWithUrgency,
+} from "./focus";
 import { pager } from "./pager";
 import {
   DAY_MS,
+  FEED_LIMIT,
   FEED_PAGE_SIZE,
   GANTT_LIMIT,
   TODAY,
   URGENCY_COLORS,
-  URGENCY_LABEL,
+  URGENCY_LEVELS,
   dayNumber,
   dayOfStamp,
+  isDueToday,
   isoDay,
+  matchesStatus,
   minuteOfStamp,
   monthDayText,
   nowMinutes,
@@ -39,7 +48,7 @@ import {
   setTaskStatus,
   stampText,
   statusVar,
-  todayMonthDay,
+  urgencyText,
   weekdayOf,
 } from "./shared";
 
@@ -78,22 +87,27 @@ function statusLegend(): HTMLElement {
   return el("div", { class: "legend" }, [
     legendItem("已完成", statusVar("done")),
     legendItem("进行中", statusVar("doing")),
-    legendItem("待办", statusVar("todo")),
     legendItem("逾期", statusVar("overdue")),
   ]);
 }
 
 // ─── 焦点时间轴：当日轴 ──────────────────────────────────────────────────────
 
-/** 这一天的一条活动（已换算成当天的分钟数）。 */
+/**
+ * 这一天的一个任务（已换算成当天的分钟数）。
+ *
+ * 不是「一条活动」：一个任务今天记三笔就占三个气泡、标题重复三遍，而它一行（一个气泡）
+ * 就说得清 —— 与近期活动同一个理由，那张卡也是一个任务一行。
+ */
 interface AxisEntry {
   task: Task;
+  /** 落点：这个任务这一天**最后**一次动的时刻。 */
   minutes: number;
-  /** 活动记录的文本（「创建任务」/「进行中 → 已完成」/ 人写的进展）。 */
-  text: string;
+  /** 这个任务这一天的活动条数。 */
+  count: number;
 }
 
-/** 轴上的一个位置：要么是一条活动，要么是挤在一起的一簇。 */
+/** 轴上的一个位置：要么是一个任务，要么是挤在一起的一簇。 */
 type AxisItem =
   | ({ kind: "one" } & AxisEntry)
   | { kind: "cluster"; start: number; end: number; items: AxisEntry[] };
@@ -105,6 +119,9 @@ type AxisItem =
  */
 const CLUSTER_GAP = 30;
 const CLUSTER_MIN = 3;
+
+/** 「已过期未完成」那一栏最多摆几条，其余折成「等 N 个」（点它去逾期清单）。 */
+const LATE_SHOWN = 3;
 
 function clusterize(entries: AxisEntry[]): AxisItem[] {
   const items: AxisItem[] = [];
@@ -160,8 +177,19 @@ const AXIS_FROM = 6;
 const AXIS_TO = 24;
 const AXIS_SPAN = (AXIS_TO - AXIS_FROM) * 60;
 
+/**
+ * 分钟 → 轴上的百分比。
+ *
+ * **结果钳在 0–100**：轴只覆盖 06:00–24:00，凌晨的「现在」算出来是负数
+ * （01:00 → -27.8%），标记会跑到轴的左边之外 —— 压在别的区块上或者被裁掉，
+ * 看着像页面坏了。钳到 0 之后它贴在左端，标题里仍然是真实时刻（「现在 01:00」），
+ * 信息不丢。
+ *
+ * 对气泡没有影响：它们在 `pct < 1 || pct > 99` 时本来就要转到轴下面那条去
+ * （见下面的 offAxis），钳制不会把它们留在轴上。
+ */
 const axisPct = (minutes: number): number =>
-  ((minutes - AXIS_FROM * 60) / AXIS_SPAN) * 100;
+  Math.max(0, Math.min(100, ((minutes - AXIS_FROM * 60) / AXIS_SPAN) * 100));
 
 const hhmm = (minutes: number): string =>
   `${pad2(Math.floor(minutes / 60))}:${pad2(minutes % 60)}`;
@@ -176,7 +204,7 @@ function statusBox(task: Task): HTMLElement {
   box.addEventListener("click", (event) => {
     event.stopPropagation();
     const reopen = task.status === "done";
-    setTaskStatus(task, reopen ? "todo" : "done");
+    setTaskStatus(task, reopen ? "doing" : "done");
     toast(reopen ? `「${task.title}」已重新打开` : `「${task.title}」已完成 · 指标卡已更新`);
   });
   return box;
@@ -200,15 +228,16 @@ function renderDayAxis(mode: "today" | "yesterday", refresh: () => void): AxisVi
   }
 
   /**
-   * 轴上只放**活动**：这一天的活动记录（含新建任务那一条）。
+   * 轴上放的是**任务**，不是一条条活动（2026-09-20 改）：气泡写「任务名 · 更新了 N 条记录」，
+   * N 是这个任务这一天的活动条数，明细不给 —— 一条活动一个气泡时，同一个任务今天记三笔
+   * 就占三个位置、标题重复三遍，扫一眼看见的只是「有个任务动了很多次」。
    *
-   * 以前这里放的是任务本身 —— 判据是「起止日期盖住今天」+ 有没有填 at。于是结束在
-   * 9/12 的任务会杵在 9/16 的轴上写着「08:30」，而旁边的卡片写着「今日到期 2」：
+   * 更远的来历：这一块最早放的是任务本身，判据是「起止日期盖住今天」+ 有没有填 at。
+   * 于是结束在 9/12 的任务会杵在 9/16 的轴上写着「08:30」，而旁边的卡片写着「今日到期 2」：
    * 两个数各自都没算错，摆在一起就是同一个「今天」两种口径。
    *
-   * 这条轴要回答的是「这一天发生了什么」，不是「这一天该做什么」——后者是任务页
-   * 和上面四张指标卡的事。所以没动静的任务不占位置：未完成、当前粒度下接下来
-   * 也没有活动的，就不显示。
+   * 这条轴要回答的是「这一天**哪些任务**动过」，不是「这一天该做什么」——后者是任务页
+   * 和上面那排指标卡的事。所以没动静的任务不占位置：这一天没有活动的，就不显示。
    */
   const entries: AxisEntry[] = [];
   /** 这一天的活动，但时刻落在 6:00–24:00 之外（或只有日期、没有时刻）的。 */
@@ -216,12 +245,22 @@ function renderDayAxis(mode: "today" | "yesterday", refresh: () => void): AxisVi
   /** 结束日已经过去、但还没做完的任务 —— 窗口外的任务提示，另起一条。 */
   const late: { task: Task; days: number }[] = [];
 
+  /** 同一个任务这一天的活动收在一起：轴上一个位置只代表一个任务。 */
+  const byTask = new Map<string, AxisEntry>();
+
   for (const task of activeTasks()) {
     const to = dayNumber(task.end);
     // 过期**只记一笔提示**，不把这个任务的活动一起埋掉：它今天确实动过，「这一天
     // 发生了什么」就该有它。以前这里 continue，于是给一个已过期的任务补一条进展，
     // 那条进展在轴上反而消失了 —— 越忙一天，轴越空
-    if (task.status !== "done" && to < target) late.push({ task, days: target - to });
+    // 口径与「逾期」**同一个谓词**（`status === "overdue"`，即 store.refreshOverdue
+    // 的产物）。以前这里写 `status !== "done" && end < target` —— 比「逾期」宽：把
+    // 「进行中但已过期」也算进去（refreshOverdue 故意不动 doing，见 store），于是
+    // 这一栏报「过期 47 项未清」、点「等 N 个」过去，逾期清单却写着 40 —— 两个数
+    // 各自都没算错，摆在一起就像数据坏了。收进同一个口径后：这一栏 = 「逾期」指标卡
+    // = 任务页的逾期筛选，三处同一个数。「进行中但已过期」的那些不在这里出现，
+    // 是**既有设计**（系统不抢用户手动设的状态），不是漏
+    if (task.status === "overdue" && to < target) late.push({ task, days: target - to });
 
     for (const activity of task.activities) {
       // 时间戳直接拆成「第几天 + 当天第几分钟」，只有落在这一天的才进轴
@@ -233,10 +272,19 @@ function renderDayAxis(mode: "today" | "yesterday", refresh: () => void): AxisVi
         offAxis.push({ task, note: minutes === 0 ? "无时刻" : hhmm(minutes) });
         continue;
       }
-      entries.push({ task, minutes, text: activity.text });
+      const current = byTask.get(task.id);
+      if (!current) {
+        byTask.set(task.id, { task, minutes, count: 1 });
+        continue;
+      }
+      current.count += 1;
+      // 落点取**最后**一笔：那是这个任务今天最后一次动的时间。早些时候那几笔
+      // 不另外占位置 —— 一整天的流水铺在轴上，就没有「一眼看出动过什么」了
+      if (minutes > current.minutes) current.minutes = minutes;
     }
   }
 
+  entries.push(...byTask.values());
   entries.sort((a, b) => a.minutes - b.minutes);
 
   // 挤在一起的先合成簇，剩下的再靠 spreadPills 分道 —— 先把数量降下来，分道才
@@ -254,9 +302,10 @@ function renderDayAxis(mode: "today" | "yesterday", refresh: () => void): AxisVi
       pill.style.left = `${axisPct(Math.round((item.start + item.end) / 2))}%`;
       pill.append(
         el("span", { class: "tdt-tm", text: `${hhmm(item.start)}–${hhmm(item.end)}` }),
-        el("span", { class: "tdt-tx", text: `${item.items.length} 条` }),
+        // 簇里装的是**任务**（一个位置一个任务），不是活动条数
+        el("span", { class: "tdt-tx", text: `${item.items.length} 个任务` }),
       );
-      pill.title = `${hhmm(item.start)}–${hhmm(item.end)} 这 ${item.items.length} 条挨得太近 · 点击展开`;
+      pill.title = `${hhmm(item.start)}–${hhmm(item.end)} 这 ${item.items.length} 个任务挨得太近 · 点击展开`;
       pill.addEventListener("click", () => {
         openCluster = openCluster === item.start ? null : item.start;
         refresh();
@@ -272,11 +321,16 @@ function renderDayAxis(mode: "today" | "yesterday", refresh: () => void): AxisVi
     pill.style.left = `${axisPct(item.minutes)}%`;
     pill.append(
       el("span", { class: "tdt-tm", text: hhmm(item.minutes) }),
-      el("span", { class: "tdt-tx", text: item.text }),
+      // 只报**条数**，不铺活动明细：明细在抽屉的时间线里，点这一下就到那儿。
+      // 「+N」绿字（2026-09-20）：以前写「任务名 · 更新了 N 条记录」，气泡一宽，
+      // 轴上就摆不下几个 —— 一句完整的话挤占了它作为**标记**的空间，数字才是重点
+      el("span", { class: "tdt-tx", text: item.task.title }),
+      el("span", { class: "tdt-cn", text: `+${item.count}`, title: `今天更新了 ${item.count} 条记录` }),
     );
-    // 气泡是一条活动、不是任务本身，所以没有勾选框 —— 勾一条「已经发生的事」
-    // 没有意义。要改状态去列表或抽屉，那里会留一条新的活动，下一分钟就出现在这条轴上
-    pill.title = `${hhmm(item.minutes)} · ${item.task.title} · ${item.text}`;
+    // 气泡是**这一天最新的那一笔**的时刻，不是任务本身，所以没有勾选框 —— 勾一条
+    // 「已经发生的事」没有意义。要改状态去列表或抽屉，那里会留一条新的活动，
+    // 下一分钟就出现在这条轴上
+    pill.title = `${hhmm(item.minutes)} · ${item.task.title} · 今天更新了 ${item.count} 条记录`;
     pill.addEventListener("click", () => jumpToTask(item.task.id));
     node.append(pill);
   }
@@ -307,11 +361,24 @@ function renderDayAxis(mode: "today" | "yesterday", refresh: () => void): AxisVi
     return chip;
   };
 
-  const rowOf = (label: string, items: { task: Task; note: string }[]): HTMLElement =>
-    el("div", { class: "tdt-untimed" }, [
+  const rowOf = (
+    label: string,
+    items: { task: Task; note: string }[],
+    /** 折叠掉的那部分：给个数、给去处（没有去处的话，折叠就是丢信息）。 */
+    more?: { text: string; onClick: () => void },
+  ): HTMLElement => {
+    const row = el("div", { class: "tdt-untimed" }, [
       el("span", { class: "lbl", text: label }),
       ...items.map(({ task, note }) => chipOf(task, note)),
     ]);
+    if (more) {
+      const rest = el("button", { class: "tdt-more", type: "button", text: more.text });
+      rest.title = "到任务页查看完整的逾期清单";
+      rest.addEventListener("click", more.onClick);
+      row.append(rest);
+    }
+    return row;
+  };
 
   // 同一个任务可能有多条无时刻的活动，去重后再列
   const offRows: { task: Task; note: string }[] = [];
@@ -331,12 +398,14 @@ function renderDayAxis(mode: "today" | "yesterday", refresh: () => void): AxisVi
       wrap.append(
         el("div", { class: "tdt-untimed" }, [
           el("span", { class: "lbl", text: `${hhmm(open.start)}–${hhmm(open.end)}` }),
-          ...open.items.map(({ task, minutes, text }) => {
+          // 展开的也是**任务**：与轴上同一个说法（「+N」报条数，不给明细）
+          ...open.items.map(({ task, minutes, count }) => {
             const chip = el("span", { class: `tdt-chip st-${task.status}` }, [
               el("span", { class: "tdt-tm", text: hhmm(minutes) }),
-              el("span", { class: "tdt-tx", text: `${task.title} · ${text}` }),
+              el("span", { class: "tdt-tx", text: task.title }),
+              el("span", { class: "tdt-cn", text: `+${count}` }),
             ]);
-            chip.title = `${hhmm(minutes)} · ${task.title} · ${text}`;
+            chip.title = `${hhmm(minutes)} · ${task.title} · 今天更新了 ${count} 条记录`;
             chip.addEventListener("click", () => jumpToTask(task.id));
             return chip;
           }),
@@ -345,12 +414,30 @@ function renderDayAxis(mode: "today" | "yesterday", refresh: () => void): AxisVi
     }
   }
   if (late.length > 0) {
+    // 只摆前 LATE_SHOWN 条，其余折成一个「等 N 个」（2026-09-20）：
+    // 这一栏是**提示**，不是清单 —— 逾期一多就把它撑成第二张表，把上面的轴挤没了。
+    // 而旁边就有「逾期」那张指标卡，点进去是完整清单，所以折叠掉的那些**有去处**；
+    // 总条数也还在卡片头那个「过期 N 项未清」里 —— 折的是位置，不是数。
+    // 排序按**拖得越久越靠前**（days 大在前）：只留三个位置时，该先看见的是最久的
+    late.sort((a, b) => b.days - a.days);
+    const head = late.slice(0, LATE_SHOWN).map(({ task, days }) => ({ task, note: `已超 ${days} 天` }));
+    // 「等 N 个」的 N 是**总数**（含摆出来的这几条）—— 中文里「A、B、C 等 N 个」
+    // 的 N 就是全部；写成「剩余 37 个」那种减出来的数，读者还得自己做一遍减法
     wrap.append(
-      rowOf("已过期未完成", late.map(({ task, days }) => ({ task, note: `已超 ${days} 天` }))),
+      rowOf(
+        "已过期未完成",
+        head,
+        late.length > head.length
+          ? {
+              text: `等 ${late.length} 个`,
+              onClick: () => showTasksWithFilter("overdue"),
+            }
+          : undefined,
+      ),
     );
   }
 
-  // 计数是「轴上占了几处」：一簇算一处（它代表好几条，簇上写着 N 条，点开看明细）。
+  // 计数是「轴上占了几处」：一簇算一处（它代表好几个任务，簇上写着 N 个任务，点开看明细）。
   // 写「N 条活动」会在有簇的时候对不上 —— 轴上明明只有 3 个气泡，却说 10 条
   const label = `${items.length + offRows.length} 处`;
   return {
@@ -562,49 +649,32 @@ function tile(
   return root;
 }
 
-/**
- * 任务真正完成的那一天（绝对天数）。
- *
- * 改成「已完成」会写一条活动，那条活动的日期才是完成日 —— 用它算「本周完成」
- * 才对得上用户的心智（「我是昨天做的」，昨天的记录里就有）。没有这条活动时
- * （导入的 md、老数据直接改状态）退化为结束日，总比把任务从统计里漏掉好。
- *
- * 活动在数组里是新的在前，所以取第一条命中的。
- */
-function completedOn(task: Task): number {
-  for (const activity of task.activities) {
-    if (activity.kind !== "status" || activity.to !== "done") continue;
-    return dayOfStamp(activity.at);
-  }
-  return dayNumber(task.end);
-}
-
 function renderTiles(): HTMLElement {
   const counts = countByStatus();
 
-  // 今日到期 = **有截止**、截止在今天、且未完成。判断用「结束日」而不是截止文案：
-  // 「今天 15:00」和「今天」都得算进来，文案会变，日期不会。
-  // 比对的是**真实的今天**（DEMO_TODAY 是演示数据的排布锚点，不是日期）
-  //
-  // `due !== null` 这条不能省：导入的旧数据里有一批**没有截止**的任务，它们的
-  // end 落在今天（没有别的值可落），只看 end 会把它们全算成「今日到期」——
-  // 那是把「没有这个信息」显示成了一个具体的日子
-  const today = todayMonthDay();
-  const dueToday = activeTasks().filter(
-    (task) =>
-      task.due !== null &&
-      task.end[0] === today[0] &&
-      task.end[1] === today[1] &&
-      task.status !== "done",
-  );
+  // 「归档」那张卡数的是**已归档**的那批（其余四张都只数未归档）。归档不是「不存在」，
+  // 是「收进另一处」，所以它得有个看得见的位置 —— 见下面那张卡的说明
+  const archived = partitionTasks().filter((task) => task.archived);
+
+  // 今日到期。判据在 pages/shared.ts 的 `isDueToday` —— 任务页那条「今日到期」筛选
+  // 用的是**同一个函数**（卡片数它、点进去筛它）。两处各写一份，就等于给「卡片上
+  // 写 1、点进去 0 条」留了门，而那正是这一页最容易被投诉的一类问题
+  const dueToday = activeTasks().filter(isDueToday);
   // 副标写「已排时刻 N 项」而不是编一个「较昨日 +2」：这个值点开下面的轴就能对上
   // （排了时刻的会进轴，没排的在「未落在轴上」那条里），编出来的差值对不上任何东西
   const scheduledToday = dueToday.filter((task) => task.at !== null).length;
 
-  // 「其中 N 个今日更新」直接数活动流，不另外维护一个计数器。
-  // 判据是活动时刻**落在今天**（以前是拿展示串 startsWith("今天") —— 那句话
+  // 「进行中」= 还没做完、也还没过期的那批。判据走 shared.ts 的 `matchesStatus` ——
+  // 任务页与管理页那条「进行中」筛选用的是**同一个谓词**。
+  // （「待办」删掉之前这里是个合并口径「待办 + 进行中」；两者现在是同一档，见 types.ts）
+  const ongoing = activeTasks().filter((task) => matchesStatus(task, "doing"));
+
+  // 「其中 N 个今日更新」也必须只数**这批**：以前它数的是**全部未归档任务**，于是
+  // 那个「其中」是假的 —— 卡上 2 条进行中，副标里那个 1 却可能是某条逾期的，
+  // 点进去当然找不到它，只会以为「今天更新过的那条丢了」。
+  // 判据仍是活动时刻**落在今天**（以前是拿展示串 startsWith("今天") —— 那句话
   // 只在当天成立，而数据里存的就是这句话，于是隔一天这个数就全错了）
-  const touchedToday = activeTasks().filter((task) =>
+  const touchedToday = ongoing.filter((task) =>
     task.activities.some((activity) => dayOfStamp(activity.at) === TODAY),
   ).length;
 
@@ -632,9 +702,13 @@ function renderTiles(): HTMLElement {
       [
         dueToday.length === 0
           ? "今天没有到期的任务"
-          : `其中 ${scheduledToday} 项已排时刻`,
+          : `其中 ${scheduledToday} 项已排时刻 · 点击查看`,
       ],
       "",
+      // 这张卡曾经**点不动**：`tile()` 只在给了 onClick 时才加 clickable / 监听，
+      // 而它漏传了 —— 卡片上写着 1 条，点上去没有任何反应。这几张卡现在都是入口，
+      // e2e 也改成**遍历界面上所有的 .tile**（不再是一张写死的清单），漏一张就红
+      () => showTasksDueToday(),
     ),
     tile(
       "逾期",
@@ -645,7 +719,7 @@ function renderTiles(): HTMLElement {
     ),
     tile(
       "进行中",
-      counts.doing,
+      ongoing.length,
       [touchedToday > 0 ? `其中 ${touchedToday} 个今日更新` : "今日暂无更新"],
       "focus",
       () => showTasksWithFilter("doing"),
@@ -663,33 +737,85 @@ function renderTiles(): HTMLElement {
       "",
       () => showTasksWithFilter("done"),
     ),
+    // 归档（2026-09-21 加的第五张）。两个理由：
+    // ① 开着自动归档时，一条任务的「完成」与「归档」几乎同时发生 —— 「已完成」那枚数字
+    //    会先加后减、看着像什么也没发生，其实它只是**换了个地方**。把归档数摆出来，两处
+    //    数字此消彼长，收走的东西就是看得见的，而不是凭空少掉的；
+    // ② 它是唯一**不落在任务页**的数字卡：已归档的任务在任务页根本不列（归档的意思就是
+    //    「从「任务」界面收走」），所以点它去任务管理页的「已归档」—— 那页是唯一能看见
+    //    这批的地方（§4.5）。与其让这张卡点了没反应，不如把它送到能看见那批东西的地方
+    tile(
+      // 叫「已归档」而不是「归档」：与旁边三张同一句式（已完成 / 进行中 / 逾期），
+      // 卡上那个数是「**已经是这个状态的**」有多少
+      "已归档",
+      archived.length,
+      archived.length === 0 ? ["还没有归档的任务"] : ["任务页不再列它 · 点击查看"],
+      "",
+      () => showArchivedTasks(),
+    ),
   ]);
 }
 
 // ─── 近期活动 ────────────────────────────────────────────────────────────────
+//
+// **一个任务一行**，不是一条活动一行（2026-09-20 改）。这是一张「最近哪些任务动过」
+// 的清单：同一个任务连着记三条进展就占三行、标题跟着重复三遍，扫一眼看见的其实只是
+// 「有一个任务动了很多次」—— 它明明一行就说得清。
+//
+// 一行里给的是这个任务**最新**的一条活动，折叠掉的条数写在它后面（不写出来就成了
+// 丢信息：「动过一次」和「动过八次、只看见最后一条」在页面上长得一模一样）；
+// 完整的过程在抽屉的时间线里，点这一行就到那儿。
+//
+// 排序跟着**最新一次活动**走：聚成任务之后，「每一条活动的时间」这个排序键就没有了。
+
+/** 近期活动的一行 = 一个任务（+ 它最新的一条活动 + 它被折叠了几条）。 */
+interface FeedEntry {
+  task: Task;
+  /** 这个任务最新的一条活动。 */
+  latest: Activity;
+  /** 这个任务一共有几条活动。 */
+  count: number;
+}
 
 function renderFeed(refresh: () => void): HTMLElement {
   // 只看当前分区：切了分区还看见别处的动态，属于「显示不全」的另一面 —— 显示多余。
   // 归档任务也一并排除，与其余四个页面的口径一致（见 mock.ts 的 activeTasks）
-  const entries = activeTasks()
-    .flatMap((task) => task.activities.map((activity) => ({ task, activity })))
-    .sort(
-    // 时间戳直接比大小（以前要比「昨天 / 今天」这些文案的排序键）
-    (a, b) => b.activity.at - a.activity.at,
-  );
+  const entries: FeedEntry[] = [];
+
+  for (const task of activeTasks()) {
+    // 一条活动都没有的任务没有「近期」可言 —— 它还没动过
+    if (task.activities.length === 0) continue;
+    entries.push({
+      task,
+      latest: task.activities.reduce((newest, item) => (item.at > newest.at ? item : newest)),
+      count: task.activities.length,
+    });
+  }
+
+  // 时间戳直接比大小（以前要比「昨天 / 今天」这些文案的排序键）
+  entries.sort((a, b) => b.latest.at - a.latest.at);
+
+  // 只留**最近的 FEED_LIMIT 个任务**（2026-09-20 用户定的：这张卡只显示近期 50 条，
+  // 不想显示太多）。上限是这张卡的定位 —— 一眼看最近发生了什么，**不承担「翻遍历史」
+  // 的职责**（那件事归活动分析页，那边有标签/时间范围/分页）。所以这里直接截断，
+  // 分页器只在**这 50 条以内**翻（默认每屏就摆满，平时只有一页、连箭头都不出现）
+  const recent = entries.slice(0, FEED_LIMIT);
 
   const list = el("div", { class: "feed" });
 
-  const pageCount = Math.max(1, Math.ceil(entries.length / feedPageSize));
+  const pageCount = Math.max(1, Math.ceil(recent.length / feedPageSize));
   if (feedPage >= pageCount) feedPage = pageCount - 1;
-  const shown = entries.slice(feedPage * feedPageSize, (feedPage + 1) * feedPageSize);
+  const shown = recent.slice(feedPage * feedPageSize, (feedPage + 1) * feedPageSize);
+  /** 这一屏看到「最近第几个任务」（末页按实际条数收口）。卡片头那句「前 N 个」用它。 */
+  const shownTo = Math.min((feedPage + 1) * feedPageSize, recent.length);
 
-  for (const { task, activity } of shown) {
+  for (const { task, latest, count } of shown) {
     const row = el("div", { class: "feed-item" }, [
-      el("span", { class: "tm", text: stampText(activity.at) }),
+      el("span", { class: "tm", text: stampText(latest.at) }),
       // 状态色点：一条流里混着已完成和进行中的任务，光看标题分不出来
       el("i", { class: "dot" }),
-      el("span", { class: "tx" }, [el("b", { text: task.title }), ` · ${activity.text}`]),
+      el("span", { class: "tx" }, [el("b", { text: task.title }), ` · ${latest.text}`]),
+      ...(count > 1 ? [el("span", { class: "cn", text: `共 ${count} 条` })] : []),
       // 标签挂到右端：这一行本来只有一句「标题 · 进展」，右侧空着也是空着
       ...(task.tags.length > 0
         ? [el("span", { class: "tags", text: task.tags.join(" ") })]
@@ -706,16 +832,28 @@ function renderFeed(refresh: () => void): HTMLElement {
   return el("div", { class: "card" }, [
     el("div", { class: "card-h" }, [
       el("span", { class: "t", text: "近期活动" }),
-      el("span", { class: "d", text: `按时间倒序 · 共 ${entries.length} 条` }),
+      // 后缀这句给的是**窗口**，不是总数（2026-09-20 用户改的）：原来写「共 88 个任务」，
+      // 88 是聚合后的任务总数 —— 会被读成「这一屏显示了 88 条」，跟每屏行数（20/50）
+      // 不是一回事。现在写「前 50 个任务」：读者一眼知道这份清单是**最近的、截到这里**
+      // （上限见 shared.ts 的 FEED_LIMIT）。空表时不带这句（「前 0 个」不是人话）
+      el("span", {
+        class: "d",
+        text: recent.length === 0 ? "按最近活动倒序" : `按最近活动倒序 · 前 ${shownTo} 个任务`,
+      }),
     ]),
     el("div", { class: "card-b" }, [
       list,
-      // 和其余三张表同一个分页器：一次查询可能上百条，全倒进卡片会把下面整页撑开
+      // 和其余三张表同一个分页器（各自的上限由 total 决定：这张卡就是 FEED_LIMIT）
       pager({
         page: feedPage,
         pageCount,
-        total: entries.length,
+        total: recent.length,
         size: feedPageSize,
+        // 这张表按**任务**聚合，单位就得是「个任务」：按默认的「条」写，
+        // 会和同一张卡里的「共 N 条」（那是某个任务的活动条数）串味
+        unit: "个任务",
+        // 也不报总数：只写「第 1–50 个任务」。带「共」字那句会被读成「这一屏有 88 条」
+        showTotal: false,
         onGo: (next) => {
           feedPage = next;
           refresh();
@@ -740,7 +878,9 @@ function renderPriority(): HTMLElement {
   const max = Math.max(1, ...buckets);
 
   const list = el("div");
-  URGENCY_LABEL.forEach((label, level) => {
+  for (const level of URGENCY_LEVELS) {
+    // 名字带上编号（`紧急(P0)`）：只写「紧急」，用户得自己猜它对应列表里哪个 Px
+    const label = urgencyText(level);
     const fill = el("i");
     fill.style.width = `${(buckets[level] / max) * 100}%`;
     fill.style.background = URGENCY_COLORS[level];
@@ -752,9 +892,9 @@ function renderPriority(): HTMLElement {
     ]);
     // 以前这一整块点了没反应 —— 一行数字摆在那里，谁都会去点它
     row.title = `点击查看「${label}」的 ${buckets[level]} 个任务`;
-    row.addEventListener("click", () => showTasksWithUrgency(level as Urgency));
+    row.addEventListener("click", () => showTasksWithUrgency(level));
     list.append(row);
-  });
+  }
 
   return el("div", { class: "card" }, [
     el("div", { class: "card-h" }, [
@@ -799,7 +939,10 @@ function renderGreet(): HTMLElement {
       el("div", { class: "g1", text: greeting() }),
       el("div", {
         class: "g2",
-        // 年份从天数里读（isoDay），不在页面里写死 2026 —— 跨年之后这一行会一直说 2026
+        // 年份从天数里读（isoDay），不在页面里写死 2026 —— 跨年之后这一行会一直说 2026。
+        // 分区名也写在这一行：rail 上虽然有（图标下面那行），但这里是「今天」的**一句话
+        // 总结** —— 日期 · 星期 · 分区 · 条数 连起来读才成句，少一项就不成句。
+        // 口径就是**当前分区**（切分区时这一页跟着 dataChanged 重画）
         text: `${isoDay(TODAY)} · ${weekdayOf(TODAY)} · ${activePartition().name} 分区 · ${activeTasks().length} 个未归档任务`,
       }),
     ]),
@@ -837,6 +980,11 @@ export function mount(host: HTMLElement): void {
   host.append(root);
   render();
   onDataChange(render);
+  // 切回这一页时立刻重画一次。下面那个定时器只在**本页可见**时才画，于是留了一个
+  // 最长 60 秒的窗口：页面在 10:59 装载、11:00 切回来，问候语还停在「早上好」，
+  // 「现在」标记也停在上一分钟（e2e 就是在这个窗口里抓到的）。图谱 / 任务页都是
+  // 「切回前台重画一次」，这里跟上。
+  subscribePages(render);
 
   // 「现在」标记要跟着钟走：这一页只在数据变化时重画，页面开着不动的话，标记会
   // 一直停在打开那一刻 —— 修掉「写死 09:30」之后，仍然要防它变成「写死打开时刻」。
