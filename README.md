@@ -89,8 +89,14 @@
 | 便携版 | `Tadado2-portable.zip`（3.3 MB），解压即用、放在哪都能跑（WebView2 由 Win10/11 自带） |
 | 从源码构建 | `cd desktop && npm install && npm run tauri build` |
 
-> **国内下载**（不用访问 GitHub）：阿里云盘 <https://www.alipan.com/s/MA7w54XvNWY>，提取码 `tfaq`。
-> 与 Releases 上的文件完全相同 —— 安装包 SHA256 `C8741BC0DBB3860875741DD17C7D819A77CDFE7CBCBFBA27CC31194256CB5AD6`，
+> **国内下载**（不用访问 GitHub）：阿里云盘 <https://www.alipan.com/s/S6kDK8xJGVt>，提取码 `wccn`。
+> 这是**整个下载目录**的分享链接，能一直用下去，不必每次发版回来换。
+>
+> 进去认准 **`Tadado2_setup_v1.0.0.exe`**（2.6 MB）。目录里那些 `Tadado_setup_v0.x.x.exe`、
+> `Tadado_v0.x.x_portable.zip` 是**初版（v0.x，基于 PySide6）**的历史包，**已停止更新** ——
+> 只有要翻旧版本时才需要它们。
+>
+> 新版与 Releases 上的文件完全相同 —— 安装包 SHA256 `C8741BC0DBB3860875741DD17C7D819A77CDFE7CBCBFBA27CC31194256CB5AD6`，
 > 下完可以自己核一下（`Get-FileHash <文件> -Algorithm SHA256`）。
 
 首次运行可能弹 SmartScreen 提示 —— 这个安装包**没有买代码签名证书**，与它的内容无关，
