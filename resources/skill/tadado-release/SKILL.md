@@ -29,6 +29,9 @@ description: |
 - **推送是用户的动作，不是你的。** `git push`、`gh release create` 必须在用户**明确要求**后才做。
   用户只说「提交」时，做到 commit 为止，然后把该敲的推送命令**原样打给他**，不要自己补上。
 - **绝不 force push** —— `--force`、`--force-with-lease` 都不行，`main` 上尤其不行。
+  （`main` 在 GitHub 上**已经开了分支保护**：`Block force pushes` + `Restrict deletions`，
+  enforcement = Active。真去 force push 会被远端拒掉 —— 但**别把它当挡箭牌**，本地这一层也要守住；
+  也**不要**为了绕开它去点 `Allow force pushes`。）
 - **绝不 `--no-verify`**。hook 拦下来就去看为什么，不要绕过。
 - **绝不改 `git config`**（用户名、邮箱、remote 一个都不动）。
 - **`--amend` 只在用户明确要求时用**；用之前先 `git log -1 --format='%an %ae'` 确认那条提交是自己的。
