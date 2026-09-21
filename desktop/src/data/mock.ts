@@ -114,12 +114,17 @@ const SEED: SeedTask[] = [
     created: [9, 11],
     archived: false,
     related: ["data"],
-    activities: [{ at: "今天 08:40", text: "完成镜像构建", kind: "progress", from: 20, to: 50 }],
+    // 第二条落在下午那段里：与 perf 的 15:03、mentor 的 14:58 一起，让「同一时段
+    // 三个任务都动过」这件事在种子里就有（轴上要合成一簇，不能靠加道把轴撑高）
+    activities: [
+      { at: "今天 08:40", text: "完成镜像构建", kind: "progress", from: 20, to: 50 },
+      { at: "今天 14:55", text: "灰度放到 20%", kind: "log" },
+    ],
   },
   {
     id: "login",
     title: "修复登录页样式",
-    status: "todo",
+    status: "doing",
     tags: ["#前端"],
     due: "09-16",
     at: null,
@@ -135,7 +140,7 @@ const SEED: SeedTask[] = [
   {
     id: "pr",
     title: "评审团队 PR",
-    status: "todo",
+    status: "doing",
     tags: ["#后端", "#前端"],
     due: "今天 15:00",
     at: "15:00",
@@ -151,7 +156,7 @@ const SEED: SeedTask[] = [
   {
     id: "mtg",
     title: "准备周会材料",
-    status: "todo",
+    status: "doing",
     tags: ["#后端"],
     due: "09-15",
     at: null,
@@ -167,7 +172,7 @@ const SEED: SeedTask[] = [
   {
     id: "week",
     title: "写周报",
-    status: "todo",
+    status: "doing",
     tags: ["#工作"],
     due: "今天 17:00",
     at: "17:00",
@@ -183,7 +188,7 @@ const SEED: SeedTask[] = [
   {
     id: "budget",
     title: "核对家庭预算",
-    status: "todo",
+    status: "doing",
     tags: ["#生活"],
     due: "今天 20:00",
     at: "20:00",
@@ -199,7 +204,7 @@ const SEED: SeedTask[] = [
   {
     id: "gym",
     title: "健身房训练",
-    status: "todo",
+    status: "doing",
     tags: ["#健康"],
     due: "今天 19:30",
     at: "19:30",
@@ -274,8 +279,10 @@ const SEED: SeedTask[] = [
     created: [9, 9],
     archived: false,
     related: ["ui", "login"],
-    // 下午这一串是刻意造的密集数据：7 条挤在 14:02–15:03，用来验证轴会把挨得太近的
-    // 活动合成一簇，而不是靠加道把轴撑高
+    // 下午这一串是刻意造的密集数据：一个任务 7 条挤在 14:02–15:03（→ 轴上只占
+    // 一个位置，写着「更新了 8 条记录」）。「挨太近」的另一种样子在下面 deploy /
+    // mentor 那里：同一段里**三个任务**都动过 —— 那才是轴上合成一簇的情形
+    // （轴是一个任务一个位置，簇说的是「几个任务挨太近」，不是「一个任务记了好几笔」）
     activities: [
       { at: "今天 09:12", text: "虚拟滚动方案评审", kind: "log" },
       { at: "今天 14:02", text: "对齐分页阈值", kind: "log" },
@@ -317,12 +324,16 @@ const SEED: SeedTask[] = [
     created: [9, 12],
     archived: false,
     related: ["hr", "week"],
-    activities: [{ at: "今天 07:50", text: "准备环境清单", kind: "progress", from: 0, to: 30 }],
+    // 同上：下午那段里的第三个任务（14:55 / 14:58 / 15:03 三个任务挤在一起）
+    activities: [
+      { at: "今天 07:50", text: "准备环境清单", kind: "progress", from: 0, to: 30 },
+      { at: "今天 14:58", text: "带了一遍提测流程", kind: "log" },
+    ],
   },
   {
     id: "book",
     title: "阅读《系统设计》第 5 章",
-    status: "todo",
+    status: "doing",
     tags: ["#学习"],
     due: "09-15",
     at: null,
@@ -338,7 +349,7 @@ const SEED: SeedTask[] = [
   {
     id: "ui",
     title: "图标统一",
-    status: "todo",
+    status: "doing",
     tags: ["#前端"],
     due: "09-18",
     at: null,
@@ -354,7 +365,7 @@ const SEED: SeedTask[] = [
   {
     id: "blog",
     title: "撰写技术博客",
-    status: "todo",
+    status: "doing",
     tags: ["#学习"],
     due: "09-19",
     at: null,
@@ -370,7 +381,7 @@ const SEED: SeedTask[] = [
   {
     id: "hr",
     title: "面试前端候选人",
-    status: "todo",
+    status: "doing",
     tags: ["#工作"],
     due: "09-14 10:30",
     at: null,
@@ -386,7 +397,7 @@ const SEED: SeedTask[] = [
   {
     id: "med",
     title: "预约年度体检",
-    status: "todo",
+    status: "doing",
     tags: ["#健康"],
     due: "09-20",
     at: null,
@@ -402,7 +413,7 @@ const SEED: SeedTask[] = [
   {
     id: "travel",
     title: "订国庆车票",
-    status: "todo",
+    status: "doing",
     tags: ["#生活"],
     due: "09-15",
     at: null,
@@ -418,7 +429,7 @@ const SEED: SeedTask[] = [
   {
     id: "data",
     title: "数据备份演练",
-    status: "todo",
+    status: "doing",
     tags: ["#后端"],
     due: "09-21",
     at: null,
@@ -434,7 +445,7 @@ const SEED: SeedTask[] = [
   {
     id: "rev",
     title: "季度总结 PPT",
-    status: "todo",
+    status: "doing",
     tags: ["#工作"],
     due: "09-25",
     at: null,
@@ -591,9 +602,9 @@ function stressTasks(count: number): SeedTask[] {
     // 因为 due 和它共用 hour）—— 导出去看着就像「创建于截止日」
     const created = Math.min(start, TODAY - 1 - (index % 5));
     // 状态跟日期对得上：过去的要么做完了、要么逾期（逾期由 store 标），
-    // 未来的才谈得上「进行中 / 待办」—— 不然会造出一批「截止已过却还在进行中」
-    const status: TaskStatus =
-      end < TODAY ? (index % 3 === 0 ? "done" : "todo") : index % 3 === 0 ? "doing" : "todo";
+    // 过去的里挑三分之一标成已完成，其余都是进行中 —— 不然会造出一批「截止已过却还在进行中」
+    // （「待办」删掉之后这里只剩两档，见 types.ts 的 TaskStatus）
+    const status: TaskStatus = end < TODAY && index % 3 === 0 ? "done" : "doing";
     const hour = 8 + ((index * 3) % 13);
 
     out.push({
@@ -708,16 +719,26 @@ function clampSeedClock(seed: SeedTask[]): void {
 export const byId = (id: string): Task | undefined => TASKS.find((task) => task.id === id);
 
 /**
+ * 当前分区里的**全部**任务（含已归档）—— 只有管理页用它：那页要单列一列归档。
+ *
+ * 为什么单独立一个：`activeTasks()` 把「只看本分区」和「不看归档」两重过滤揉在一起。
+ * 管理页当初为了放开归档而绕开它、直接读 `TASKS`，结果**把分区过滤也一起放开了** ——
+ * 表现就是「切到一个空分区，总览 / 任务 / 图谱都空了，管理页却还列着别的分区的任务」，
+ * 顺带把分区口令那道屏风也绕了过去。要放开归档，就只放开归档。
+ */
+export const partitionTasks = (): Task[] =>
+  TASKS.filter((task) => task.partition === activePartitionId());
+
+/**
  * 当前分区里的未归档任务 —— 除管理页的归档列之外，所有视图都只看这批。
  *
  * 分区过滤写在这里而不是各页面里：漏掉一处的后果是「切了分区，某个页面还显示
  * 别的分区的任务」，这种错误比性能问题难查得多。
  */
-export const activeTasks = (): Task[] =>
-  TASKS.filter((task) => !task.archived && task.partition === activePartitionId());
+export const activeTasks = (): Task[] => partitionTasks().filter((task) => !task.archived);
 
 export const countByStatus = (): Record<TaskStatus, number> => {
-  const counts: Record<TaskStatus, number> = { overdue: 0, todo: 0, doing: 0, done: 0 };
+  const counts: Record<TaskStatus, number> = { overdue: 0, doing: 0, done: 0 };
   for (const task of activeTasks()) counts[task.status] += 1;
   return counts;
 };

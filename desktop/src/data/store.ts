@@ -14,9 +14,9 @@
 
 import { loadSetting, loadTasks, saveSetting, saveTasks } from "./db";
 import { TASKS, seedTasks, stressExtra } from "./mock";
-import { DEMO_PARTITION_ID, activePartitionId } from "./partitions";
-import { asNumberRecord } from "./schema";
-import { TODAY, dayNumber } from "./time";
+import { DEMO_PARTITION_ID, PARTITIONS, activePartitionId } from "./partitions";
+import { asArchiveRecord } from "./schema";
+import { TODAY, dayNumber, dayOfStamp } from "./time";
 import type { Task } from "./types";
 
 type Listener = () => void;
@@ -35,9 +35,13 @@ const listeners = new Set<Listener>();
  */
 function refreshOverdue(tasks: Task[]): void {
   for (const task of tasks) {
-    if (task.status === "done" || task.status === "doing") continue;
+    // ⚠️ 口径 2026-09-21 改了：**只有「已完成」豁免**。以前「进行中」也豁免（系统故意
+    // 不把「正在做但晚了」标成逾期），而「待办」删掉之后新建任务就是「进行中」——
+    // 继续豁免的话**没有任何任务会变成逾期**，那张卡会永远归零。
+    // 现在的口径：**逾期 = 未完成 + 过了截止**，「进行中」= 未过期且未完成。
+    if (task.status === "done") continue;
     if (dayNumber(task.end) < TODAY) task.status = "overdue";
-    else if (task.status === "overdue") task.status = "todo";
+    else if (task.status === "overdue") task.status = "doing";
   }
 }
 
@@ -71,33 +75,68 @@ function adoptSeedPartitions(tasks: Task[]): number {
 const KEY_ARCHIVE = "archive.afterDays";
 
 /**
- * 自动归档：分区 id → 已完成任务结束 N 天后收进归档，0 = 不自动归档（默认）。
+ * 完成后多久收进归档（**按分区**设）：
  *
- * **按分区**设：工作区的任务过期就该收走，个人区那几条想留着翻 —— 一个全局值只能
+ * - `0`（不归档）—— 系统永不自动收：做完的留在任务页，只有手动归档才动它；
+ * - `-1`（立即）—— 完成的那一刻就收走（**默认**）；
+ * - `N > 0` —— 完成日 + N ≤ 今天时收走，也就是「**已完成的任务在任务页存活 N 天**」。
+ *
+ * 为什么用**完成日**而不是结束日（2026-09-21 改，用户提的）：那条规则建立在「结束日
+ * 只可能晚于完成日」上，而这个假设在「拖到最后才做完」时不成立 —— 于是规则两个方向
+ * 都反：完成晚了（截止 09-01、今天才做完、7 天档）会被**当场收走**；完成早了（截止
+ * 12-31、今天做完）反而要赖到明年。该等的是「**你完成之后**」，不是「截止之后」。
+ *
+ * **按分区**设：工作区的东西做完就该收走，个人区那几条想留着翻 —— 一个全局值只能
  * 取折中，结果两头都不对。
+ *
+ * 编码为什么是「负数 = 立即、0 = 不归档」而不是反过来：老版本里 `0` 就是「关」，
+ * 沿用 `0 = 不归档` 才**读得懂老数据**（升级上来的人不会被悄悄改成「立即」）；
+ * 只有**没设过**的键才走新默认。
  */
 let archiveDays: Record<string, number> = {};
+
+/** 不归档：系统不碰归档状态。 */
+export const ARCHIVE_NEVER = 0;
+/** 立即：完成即归档。没设过的分区拿到的默认值（见 `archiveDays` 的说明）。 */
+export const ARCHIVE_NOW = -1;
 
 /** 这次会话里被手动「取消归档」的任务 —— 自动归档不再碰，否则刚恢复就没了。 */
 const restored = new Set<string>();
 
 /**
- * 已完成、且结束日过了 N 天的任务自动归档。
+ * 任务真正完成的那一天（绝对天数）。
  *
- * 用**结束日**而不是完成日：完成日要从活动记录里反推，而解析函数在 pages 层，
- * store 在 data 层，反过来 import 会把依赖方向搞乱。结束日只可能晚于完成日，
- * 晚几天归档，比把还在用的数据收走安全。
+ * 改成「已完成」会写一条活动，那条活动的日期才是完成日 —— 「本周完成」那张卡与归档
+ * 判据都按这个算。没有这条活动时（粘贴 `[x]` 进来的任务、老数据直接改状态）退化为
+ * 结束日，总比把任务从统计里漏掉好。
+ *
+ * 活动在数组里是新的在前，所以取第一条命中的。
+ *
+ * 它原来在 `pages/overview.ts`（只有「本周完成」一个消费方）。归档判据是第二个消费方，
+ * 于是挪到数据层来 —— 旧注释说「解析函数在 pages 层、store 够不着」，那是**位置**问题，
+ * 不是**依赖方向**问题：挪一次文件就解决。
  */
+export function completedOn(task: Task): number {
+  for (const activity of task.activities) {
+    if (activity.kind !== "status" || activity.to !== "done") continue;
+    return dayOfStamp(activity.at);
+  }
+  return dayNumber(task.end);
+}
+
+/** 按分区的规则收进归档。三档口径见 `archiveDays` 的说明。 */
 function refreshArchive(tasks: Task[]): void {
   for (const task of tasks) {
     if (task.archived || task.status !== "done" || restored.has(task.id)) continue;
-    const days = archiveDays[task.partition] ?? 0;
-    if (days > 0 && dayNumber(task.end) + days <= TODAY) task.archived = true;
+    const days = archiveDays[task.partition] ?? ARCHIVE_NOW;
+    if (days === ARCHIVE_NEVER) continue;
+    // 「立即」不看日期：完成的那一刻就该走（它等价于 `完成日 + 0 ≤ 今天`，只是不必绕）
+    if (days === ARCHIVE_NOW || completedOn(task) + days <= TODAY) task.archived = true;
   }
 }
 
 export const archiveAfterDays = (id: string = activePartitionId()): number =>
-  archiveDays[id] ?? 0;
+  archiveDays[id] ?? ARCHIVE_NOW;
 
 /** 手动取消归档：本次会话内自动归档不再动这条。 */
 export const keepActive = (id: string): void => {
@@ -129,7 +168,9 @@ export async function bootStore(): Promise<void> {
   }
 
   const saved = result.tasks;
-  if (saved && saved.length > 0) {
+  /** 库本来就有数据（= 老用户），不是这次刚种进去的 —— 归档默认值要用到（见下面那段）。 */
+  const existing = Boolean(saved && saved.length > 0);
+  if (existing && saved) {
     TASKS.length = 0;
     TASKS.push(...saved);
 
@@ -161,7 +202,31 @@ export async function bootStore(): Promise<void> {
   refreshOverdue(TASKS);
   // 存档的形状不对就当没设过：以前是读出来直接用，存档要是个数组，
   // `archiveDays[id]` 全是 undefined，界面上一片空白却不报错
-  archiveDays = asNumberRecord(await loadSetting<Record<string, number>>(KEY_ARCHIVE));
+  archiveDays = asArchiveRecord(await loadSetting<Record<string, number>>(KEY_ARCHIVE));
+
+  // 老库**一次性冻结**（2026-09-21）。默认值改成「立即」之后，没设过的分区会拿到
+  // 「完成即归档」—— 对一个用了很久的库，那等于**开机把历史上所有已完成的任务一次
+  // 收走**（用户看到的是「我的任务少了几十条」，而且他并没有改过任何设置）。
+  // 所以：库里本来就有数据的分区，第一次跑到这里时把当前值**显式写成「不归档」**
+  // （= 它原来的行为，老版本里 0 就是「关」），之后由用户自己去改；**新装**（下面
+  // else 那条路，连同演示空间）才拿到新默认「立即」。
+  if (existing) {
+    let frozen = 0;
+    for (const partition of PARTITIONS) {
+      if (archiveDays[partition.id] !== undefined) continue;
+      archiveDays[partition.id] = ARCHIVE_NEVER;
+      frozen += 1;
+    }
+    if (frozen > 0) await saveSetting(KEY_ARCHIVE, archiveDays);
+  } else {
+    // 新装：把新默认（「立即」）**落盘**。默认值平时是读取时兜底的
+    // （`archiveDays[id] ?? ARCHIVE_NOW`），不写盘的话 `archiveDays` 一直是空的 ——
+    // 下一次启动，上面那段老库冻结会把它当成「从没设过」而冻成「不归档」，
+    // 于是新装用户第二次打开，设置里的「完成后归档」自己就变了个样。
+    for (const partition of PARTITIONS) archiveDays[partition.id] = ARCHIVE_NOW;
+    await saveSetting(KEY_ARCHIVE, archiveDays);
+  }
+
   refreshArchive(TASKS);
   dataChanged();
 }
@@ -187,6 +252,12 @@ export function dataChanged(): void {
   // 每次变更都重算一遍逾期：改了截止（往前挪到今天之前）要立刻看出来，
   // 把截止挪回未来则要退回待办。一百条数据扫一遍不值一提
   refreshOverdue(TASKS);
+  // 自动归档**同理**（2026-09-21 用户报的「已完成没有立马归档」）：判据是「已完成 +
+  // 结束日已过 N 天」，而这两件事都会在对话里被改掉 —— 把一条结束日早就过去了的老任务
+  // 标记完成、或者把它的截止往前挪，都该**当场**收走。以前只在**启动**与**改归档天数**
+  // 时扫一遍，于是用户点完「已完成」什么也没发生，看起来像这个设置不生效（其实生效了，
+  // 只是等下一次启动）。没开自动归档的分区（默认 0）这里什么也不做
+  refreshArchive(TASKS);
   saveTasks(TASKS);
   broadcast();
 }

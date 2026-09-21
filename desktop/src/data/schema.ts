@@ -107,9 +107,11 @@ export interface NormalizeReport {
   dropped: number;
 }
 
-const STATUSES: TaskStatus[] = ["todo", "doing", "done", "overdue"];
+const STATUSES: TaskStatus[] = ["doing", "done", "overdue"];
 const isStatus = (value: unknown): value is TaskStatus =>
   STATUSES.includes(value as TaskStatus);
+const URGENCIES: Urgency[] = [0, 1, 2, 3];
+const isUrgency = (value: unknown): value is Urgency => URGENCIES.includes(value as Urgency);
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const isStamp = (value: unknown): value is number =>
@@ -168,6 +170,10 @@ function normalizeActivity(raw: unknown, fallbackStamp: number): { value: Activi
     return { value: { at, text: body, kind: "progress", from: raw.from, to: raw.to }, fixed };
   }
 
+  if (kind === "urgency" && isUrgency(raw.from) && isUrgency(raw.to)) {
+    return { value: { at, text: body, kind: "urgency", from: raw.from, to: raw.to }, fixed };
+  }
+
   // 认不出的类型退成「手写的一条进展」：内容还在，只是不再声称自己是状态 / 进度
   // 变化 —— 假装它是，会让「本周完成」这类统计算错
   if (raw.edited === true) {
@@ -194,8 +200,12 @@ function normalizeTask(raw: unknown): { value: Task | null; fixed: number } {
   const end = normalizeMonthDay(raw.end, created.value);
   fixed += Number(created.fixed) + Number(start.fixed) + Number(end.fixed);
 
-  const status = isStatus(raw.status) ? raw.status : "todo";
-  if (!isStatus(raw.status)) fixed += 1;
+  // 「待办」是**删掉的那一档**（2026-09-21）：老库里写着 todo 的任务一律归一到「进行中」，
+  // 与 md 里 `[ ]` 的处理一致（见 data/markdown.ts）。归位同样要计数 —— 它的值变了，
+  // 那一行控制台记录得说得出来；认不出的状态也落到「进行中」（最接近「还没做完」的那档）
+  const wasTodo = raw.status === "todo";
+  const status: TaskStatus = wasTodo || !isStatus(raw.status) ? "doing" : raw.status;
+  if (wasTodo || !isStatus(raw.status)) fixed += 1;
 
   const tags = Array.isArray(raw.tags)
     ? raw.tags.filter((tag): tag is string => typeof tag === "string")
@@ -293,11 +303,25 @@ function pickByType<T extends string | number>(
 export const asStringRecord = (value: unknown): Record<string, string> =>
   pickByType(value, (item): item is string => typeof item === "string");
 
-/** 空闲锁定 / 自动归档：`{ 分区id: 数字 }`。 */
+/** 空闲锁定：`{ 分区id: 分钟数 }`（真正的非负量）。 */
 export const asNumberRecord = (value: unknown): Record<string, number> =>
   pickByType(
     value,
     (item): item is number => typeof item === "number" && Number.isFinite(item) && item >= 0,
+  );
+
+/**
+ * 完成归档档位：`{ 分区id: 天数 }`。
+ *
+ * 为什么不复用 `asNumberRecord`：这一路有**负数**档位（`-1` = 「立即」，见 store 的
+ * `ARCHIVE_NOW`），而那一份是按「分钟数」写的、把负数当脏数据丢掉。两者共用过一阵，
+ * 结果是「立即」写下去、读回来变成 `undefined` —— 启动时被当成「这个分区从没设过」，
+ * 于是新装用户第二次打开，设置里的「完成后归档」自己从「立即」变成了「不归档」。
+ */
+export const asArchiveRecord = (value: unknown): Record<string, number> =>
+  pickByType(
+    value,
+    (item): item is number => typeof item === "number" && Number.isFinite(item) && item >= -1,
   );
 
 /** 分区列表：`[{ id, name }]`。形状不对返回 null，调用方据此保留内置那几个。 */

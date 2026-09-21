@@ -9,8 +9,25 @@
 // DEMO_TODAY）。真实数据接入后由后端给出，这里只保证样例自洽。
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 任务状态。`overdue` 由系统标记，不提供手动选择（DESIGN.md 2.x）。 */
-export type TaskStatus = "todo" | "doing" | "done" | "overdue";
+/**
+ * 任务状态。`overdue` 由系统标记，不提供手动选择（DESIGN.md 2.x）。
+ *
+ * ⚠️ **「待办」2026-09-21 删掉了**（用户：默认就是进行中）：新建任务直接是「进行中」——
+ * 「待办」与「进行中」的差别只是「有没有动过」，而这件事写一条进展就在做了，再让用户
+ * 手动按一次状态是多一步。用户**可选**的状态因此只剩两个：进行中 / 已完成（逾期由系统标）。
+ */
+export type TaskStatus = "doing" | "done" | "overdue";
+
+/**
+ * 状态**名**：比 `TaskStatus` 多一个 `"todo"`。
+ *
+ * 留着它是因为**历史**：老任务的状态、以及活动记录里的 `from` / `to` 都可能写着「待办」，
+ * 那是当时的事实，不能改写（也不能让读入口把活动里的它悄悄抹掉）。所以：
+ *  · **当前状态**（`Task.status`）只有三种，老数据里的 `todo` 在读入口归一到 `doing`（data/schema.ts）；
+ *  · **活动的 from / to** 用这个更宽的类型，四档都能出现（界面上照旧显示「待办 → 进行中」）；
+ *  · `STATUS_LABEL` 也按它对，所以文案表里保留「待办」这一格。
+ */
+export type StatusName = TaskStatus | "todo";
 
 /** 紧迫度档位，数字越小越紧迫。 */
 export type Urgency = 0 | 1 | 2 | 3;
@@ -35,9 +52,16 @@ export type At = number;
  */
 export type Activity =
   | { at: At; text: string; kind: "create" }
-  | { at: At; text: string; kind: "status"; from: TaskStatus; to: TaskStatus }
+  | { at: At; text: string; kind: "status"; from: StatusName; to: StatusName }
   | { at: At; text: string; kind: "progress"; from: number; to: number }
-  /** 人手写的一条进展。只有这一类可改可删 —— 另外三类是既成事实，改它等于篡改历史。 */
+  /**
+   * 优先级变更。和 status / progress 同类：**系统记的既成事实**，不给编辑入口。
+   *
+   * 为什么单开一类而不是复用 `log`：`log` 是唯一可改可删的一类（见下），
+   * 把自动记录塞进去就等于允许用户删掉「我什么时候把它提上来的」这条事实。
+   */
+  | { at: At; text: string; kind: "urgency"; from: Urgency; to: Urgency }
+  /** 人手写的一条进展。只有这一类可改可删 —— 另外几类是既成事实，改它等于篡改历史。 */
   | { at: At; text: string; kind: "log"; edited?: boolean };
 
 export interface Task {
