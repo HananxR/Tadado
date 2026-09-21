@@ -3,12 +3,30 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
+use tauri_plugin_fs::FsExt;
 
 /// 退出应用。托盘菜单的「退出 Tadado」走这里 —— 前端只调 `getCurrentWindow()`
 /// 的话只会关掉窗口，常驻进程还在。
 #[tauri::command]
 fn app_exit(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+/// 把一条路径放进 fs 作用域，好让前端写它。
+///
+/// 导出走的是「另存为」对话框（前端 `@tauri-apps/plugin-dialog`），用户选哪就
+/// 该写到哪。而 fs 插件的作用域默认是**空的**（`tauri.conf.json` 里没有
+/// `plugins.fs.scope`），于是写用户刚选的那条路径会被 `path forbidden` 挡下 ——
+/// 挡掉的正是用户自己点的位置。
+///
+/// 所以写之前先放这一条：**只放这一条、不放大整个目录**，进程退出即失效。
+/// 换成在配置里开一片通配作用域（`$HOME/**` 之类）也能写，但那样就把「整个用户
+/// 目录可写」永久挂在应用身上了，而这里要的只是「这一次选中的那个文件」。
+#[tauri::command]
+fn allow_save_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    app.fs_scope()
+        .allow_file(&path)
+        .map_err(|error| format!("无法写入 {path}：{error}"))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,7 +150,7 @@ pub fn run() {
         ))
         // persisted-scope 必须排在拥有 scope 的插件之后。
         .plugin(tauri_plugin_persisted_scope::init())
-        .invoke_handler(tauri::generate_handler![app_exit])
+        .invoke_handler(tauri::generate_handler![app_exit, allow_save_path])
         .setup(|app| build_tray(app.handle()).map_err(|e| e.into()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
