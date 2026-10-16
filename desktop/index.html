@@ -167,8 +167,12 @@
           </div>
 
           <!-- 用了带齿的齿轮，不是「圆 + 8 根放射线」：后者在 19px 下和顶栏的
-               主题太阳图标几乎一模一样，两个按钮长得像才是真正让人犹豫的地方 -->
-          <button class="rail-btn" id="set-btn" title="设置">
+               主题太阳图标几乎一模一样，两个按钮长得像才是真正让人犹豫的地方。
+               data-panel-keep="settings"：它是设置抽屉的**打开手势**，而抽屉现在
+               「点外部就收起」（shell/panels.ts）。不标这一下，按下会先被当成
+               「点外部」关掉，抬起时 toggleSettings 看到的又是「没开」→ 再开一次，
+               按钮就成了摆设。值写的是它服务的那块面板 id（见 panels.ts 的 KEEP_ATTR） -->
+          <button class="rail-btn" id="set-btn" title="设置" data-panel-keep="settings">
             <svg
               viewBox="0 0 24 24"
               fill="none"

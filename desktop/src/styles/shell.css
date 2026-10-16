@@ -664,6 +664,145 @@
   color: var(--text-3);
 }
 
+/* ── 关于：检查更新 / 下载渠道 / 联系方式 ────────────────────────────────────
+   介绍块讲「是什么」，这几段讲「还能做什么」：检查更新是动作，渠道是出口，联系
+   方式压在最下面。字级仍在小字区间，和设置项的调性一致 */
+.about-upd {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 结果一句话：还没点过时是灰的，出结果才按语义着色。
+   空着时**不占位**（:empty），否则这一行会凭空高出一截，抽屉跟着抖 */
+.about-state {
+  font-size: 11.5px;
+  color: var(--text-3);
+  transition: color 0.15s;
+}
+
+.about-state:empty {
+  display: none;
+}
+
+.about-state.done {
+  color: var(--done);
+}
+
+.about-state.newer {
+  color: var(--accent);
+}
+
+.about-state.error {
+  color: var(--danger);
+}
+
+.about-foot {
+  margin-top: 12px;
+}
+
+.about-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 两枚按钮等分宽度、跟着抽屉走；长标签自己换行，不撑破 420px */
+.about-links .btn {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+/* 发现新版本时把国内渠道点亮：只加一圈强调色，**不动几何** ——
+   位置不变，用户才看得懂是「同一个按钮变亮了」而不是「冒出个新按钮」 */
+.about-links .btn.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.about-tip,
+.about-lic {
+  margin: 7px 0 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+
+/* 新版本那一行：只在发现新版时有内容，空着整行收起 */
+.about-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 7px;
+  font-size: 11.5px;
+  color: var(--accent);
+}
+
+.about-note:empty {
+  display: none;
+}
+
+.about-note-link {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.about-note-link:hover {
+  color: var(--accent-h);
+}
+
+/* 联系方式：和设置项一样的键值行，但右端是**可点的**（复制 / 打开浏览器） */
+.about-kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+}
+
+.about-kv:last-of-type {
+  border-bottom: 0;
+}
+
+.about-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.about-value:hover {
+  color: var(--accent);
+}
+
+.about-copied {
+  display: none;
+  font-size: 10.5px;
+  color: var(--done);
+}
+
+.about-value.copied .about-copied {
+  display: inline;
+}
+
 
 
 .set-row .v {

@@ -5,6 +5,8 @@ use tauri::{
 };
 use tauri_plugin_fs::FsExt;
 
+mod update;
+
 /// 退出应用。托盘菜单的「退出 Tadado」走这里 —— 前端只调 `getCurrentWindow()`
 /// 的话只会关掉窗口，常驻进程还在。
 #[tauri::command]
@@ -150,7 +152,11 @@ pub fn run() {
         ))
         // persisted-scope 必须排在拥有 scope 的插件之后。
         .plugin(tauri_plugin_persisted_scope::init())
-        .invoke_handler(tauri::generate_handler![app_exit, allow_save_path])
+        .invoke_handler(tauri::generate_handler![
+            app_exit,
+            allow_save_path,
+            update::check_update
+        ])
         .setup(|app| build_tray(app.handle()).map_err(|e| e.into()))
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

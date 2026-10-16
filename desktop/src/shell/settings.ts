@@ -54,12 +54,27 @@ import {
   setPassword,
   suppressLockScreen,
 } from "./lock";
+import {
+  ALIYUN_URL,
+  RELEASES_URL,
+  REPO_URL,
+  WECHAT,
+  copyText,
+  openExternal,
+} from "./links";
 import { panelClosed, panelOpened, registerOpen, registerPanel } from "./panels";
 import { promptText, promptWithExtra } from "./prompt";
 import { subscribePages } from "./router";
 import { seg } from "./seg";
 import { toast } from "./toast";
 import { getThemeMode, setThemeMode, type ThemeMode } from "./theme";
+import {
+  UPDATE_ERRORS,
+  UPDATE_UNSUPPORTED,
+  checkForUpdate,
+  dateOf,
+  type UpdateState,
+} from "./update";
 
 interface SettingRow {
   label: string;
@@ -76,6 +91,8 @@ interface SettingGroup {
   rows: SettingRow[];
   /** 组标题下的一段自定义内容（目前只有「关于」用得上）。 */
   intro?: () => HTMLElement;
+  /** 行下面的一段自定义内容（「关于」的下载渠道与联系方式）。 */
+  footer?: () => HTMLElement;
 }
 
 const PLACEHOLDER = "—";
@@ -473,9 +490,13 @@ const TOP_GROUPS: SettingGroup[] = [
 /**
  * 「关于」的介绍块。
  *
- * 按**实际能做什么**逐条写：对着五个页面和那十几条真做出来的能力列，不写愿景、
+ * 按**实际能做什么**逐条写：对着五个页面和那几项真做出来的能力列，不写愿景、
  * 不写「基于 XX 框架」—— 用户点开这里想知道的是「它能替我做什么」，技术栈是
  * 开发文档的事。
+ *
+ * 两组各三条（2026-10-16 精简）：原来两组共十条，一路读下来像产品说明书，而它
+ * 就压在设置抽屉的最下面，没人会当正文读完。砍掉的不是没做（分区口令、Markdown
+ * 迁入、图谱双击直达都还在），只是不值得在这个宽度里逐条列。
  *
  * 也不另开一个「关于」对话框：想知道版本和数据在哪的人，本来就会来设置里找，
  * 再套一层只是让这几句话住进一个更大的房间。
@@ -496,23 +517,174 @@ function aboutIntro(): HTMLElement {
       "五个视图：总览、任务、任务图谱、活动分析、任务管理",
       // 这行原来写「色条为起止区间…档位从今天到全年」：条形 2026-09-20 已改成
       // **创建 → 截止**，档位也从来没有「全年」这一档（是 昨天 / 今天 / 上周 / 本周 /
-      // 上月 / 本月 + 全部）。对着界面核对一遍再写（2026-09-21）
-      "任务页是甘特时间轴：条 = 创建 → 截止那一段时间，颜色只编码状态，窗口固定 32 天、按住可拖动平移",
-      "图谱把「任务 × 标签 × 分区」铺成关系网络，悬停高亮、双击直达",
+      // 上月 / 本月 + 全部）。精简时把图谱并进来——两者都是「同一批数据换个形状看」，
+      // 拆成两条只是把清单撑长，信息反而更稀
+      "任务页是甘特时间轴（条 = 创建 → 截止，颜色只编码状态）；任务图谱把「任务 × 标签 × 分区」铺成关系网络",
       "活动分析：整年热力图 + 分标签报告，可按当前范围导出 md / txt / xlsx",
-      "分区是数据的隔离边界，每个分区可单独设口令、空闲锁定与完成后归档",
-      // 界面上的按钮叫「数据迁入」（原来这里写「批量迁入」，与按钮对不上）
-      "Markdown 写法：一行一条任务（- [ ] 标题 #标签 ⏰09-20 :: 30%），任务管理页可「数据迁入」",
     ]),
 
     el("div", { class: "about-h", text: "特色" }),
     list([
-      "本地存储：单文件 SQLite，无账号、无云端同步",
-      "一屏到底：五个页面都撑满窗口，筛选与翻页不必整页滚动",
+      "本地优先：单文件 SQLite，无账号、无云端同步",
       "键盘优先：Ctrl+1–5 切页，Ctrl+Shift+Space 全局唤起",
       "变更留痕：状态、进度、优先级的每一次改动都写进活动时间线",
     ]),
   ]);
+}
+
+// ─── 检查更新 ────────────────────────────────────────────────────────────────
+//
+// 只在点击时联网，不做启动时的静默检查：一个本地优先、无账号的工具，没有任何
+// 理由每次启动都偷偷发一个请求出去。版本比较在 Rust 侧（`src/update.rs`），
+// 这里只把结果落成一句话。
+
+/**
+ * 「检查更新」行右侧：一句状态 + 一枚按钮。
+ *
+ * 结果**内联**在按钮左边，不另开弹窗、也不用底部提示条 —— 提示条 2.2 秒就没了，
+ * 而「发现新版本」是要用户去下载的，得留在界面上直到他做完这件事。
+ */
+function updateControl(): HTMLElement {
+  const state = el("span", { class: "about-state", id: "set-upd" });
+  const button = el("button", { class: "btn sm", text: "检查更新" });
+
+  button.addEventListener("click", () => {
+    if (button.disabled) return;
+    button.disabled = true;
+    button.textContent = "检查中…";
+    state.className = "about-state";
+    state.textContent = "";
+
+    void checkForUpdate()
+      .then(showUpdateResult)
+      .finally(() => {
+        button.disabled = false;
+        button.textContent = "检查更新";
+      });
+  });
+
+  return el("div", { class: "about-upd" }, [state, button]);
+}
+
+/** 把四种状态渲染成一句话；发现新版时顺带把下载渠道点亮。 */
+function showUpdateResult(result: UpdateState): void {
+  const state = document.getElementById("set-upd");
+  if (!state) return;
+
+  if (result.kind === "newer") {
+    state.className = "about-state newer";
+    state.textContent = `发现新版本 v${result.latest}`;
+    markNewRelease(result);
+    return;
+  }
+
+  if (result.kind === "latest") {
+    state.className = "about-state done";
+    // Tauri 回话给的是纯数字，前面的 v 是给这一行看的（念作「已是最新 v1.0.0」）
+    state.textContent = `已是最新 v${result.current}`;
+    return;
+  }
+
+  if (result.kind === "unsupported") {
+    state.className = "about-state";
+    state.textContent = UPDATE_UNSUPPORTED;
+    return;
+  }
+
+  state.className = "about-state error";
+  state.textContent = UPDATE_ERRORS[result.reason];
+}
+
+/**
+ * 发现新版时的两个动作：在渠道块里补一行「哪一版、什么时候发的」，并把阿里云盘
+ * 那一枚点亮（`.on` 只是一圈描边，不动布局）。
+ *
+ * 不在这里另给下载按钮：下面常驻的渠道块就是干这个的，摆两份只会让人犹豫点哪个。
+ * 检测失败时也一样 —— 渠道块常驻，那条「去云盘比对文件名里的版本号」的路永远在。
+ */
+function markNewRelease(release: Extract<UpdateState, { kind: "newer" }>): void {
+  document.getElementById("about-aliyun")?.classList.add("on");
+
+  const note = document.getElementById("about-note");
+  if (!note) return;
+
+  const detail = el("button", { class: "about-note-link", text: "查看更新说明 ↗" });
+  detail.addEventListener("click", () => void openLink(release.url));
+  note.replaceChildren(
+    el("span", { text: `${dateOf(release.publishedAt)} 已发布 v${release.latest}` }),
+    detail,
+  );
+}
+
+// ─── 下载渠道与联系方式 ──────────────────────────────────────────────────────
+
+/**
+ * 「关于」的尾部：下载渠道 + 联系方式。
+ *
+ * **常驻**，不随检查结果增减：一是「检测失败」时它仍是用户唯一的出口，二是按钮
+ * 忽隐忽现会让抽屉每检查一次就抖一下。
+ *
+ * 渠道顺序按**能不能打开**排，不按官方不官方：阿里云盘在国内可直达，GitHub
+ * Releases 经常打不开。链接与公众号都从 shell/links.ts 取，这里不写字面量。
+ */
+function aboutFooter(): HTMLElement {
+  return el("div", { class: "about-foot" }, [
+    el("div", { class: "about-h", text: "下载渠道" }),
+    el("div", { class: "about-links" }, [
+      channelButton("阿里云盘 · 国内推荐", ALIYUN_URL, "about-aliyun", "btn primary"),
+      channelButton("GitHub Releases", RELEASES_URL, undefined, "btn"),
+    ]),
+    el("p", {
+      class: "about-tip",
+      text: "阿里云盘是国内可直达的公开分享、无需提取码，认准文件名里带版本号的那个安装包；GitHub 打不开时用它。",
+    }),
+    el("div", { class: "about-note", id: "about-note" }),
+
+    el("div", { class: "about-h", text: "反馈与联系" }),
+    el("div", { class: "about-kv" }, [el("span", { text: "微信公众号" }), copyValue(WECHAT)]),
+    el("div", { class: "about-kv" }, [
+      el("span", { text: "GitHub 仓库" }),
+      linkValue("HananxR/Tadado", REPO_URL),
+    ]),
+    el("p", { class: "about-lic", text: "MIT License © HananxR" }),
+  ]);
+}
+
+function channelButton(label: string, url: string, id?: string, className = "btn"): HTMLElement {
+  const button = el("button", { class: className, text: label, id, "data-url": url });
+  button.addEventListener("click", () => void openLink(url));
+  return button;
+}
+
+/** 点开外链；交不出去时说一句 —— 点了没反应会被当成按钮坏了。 */
+async function openLink(url: string): Promise<void> {
+  if (!(await openExternal(url))) toast("打不开链接，请在浏览器里手动打开");
+}
+
+/** 可复制的值（公众号）：复制完在行尾闪一下「已复制」，两秒后收回。 */
+function copyValue(text: string): HTMLElement {
+  const hint = el("span", { class: "about-copied", text: "已复制" });
+  const button = el("button", { class: "about-value", title: "点击复制" }, [
+    el("span", { text }),
+    hint,
+  ]);
+
+  button.addEventListener("click", () => {
+    void copyText(text).then((ok) => {
+      hint.textContent = ok ? "已复制" : "复制失败";
+      button.classList.add("copied");
+      window.setTimeout(() => button.classList.remove("copied"), 2000);
+    });
+  });
+
+  return button;
+}
+
+/** 可点开的值（仓库地址）。 */
+function linkValue(label: string, url: string): HTMLElement {
+  const button = el("button", { class: "about-value", text: `${label} ↗`, "data-url": url });
+  button.addEventListener("click", () => void openLink(url));
+  return button;
 }
 
 const ABOUT: SettingGroup = {
@@ -523,7 +695,11 @@ const ABOUT: SettingGroup = {
     // 兜底（浏览器预览），与 package.json / tauri.conf.json 保持一致
     { label: "版本", value: "v1.0.0", id: "set-ver" },
     { label: "运行环境", value: "Windows 桌面应用" },
+    // 检查更新单独一行，不塞进版本行右侧：版本行回答「我是什么版本」，而检查是一个
+    // 动作 —— 混在一行里，那个版本号看着就像个能点的按钮
+    { label: "检查更新", control: updateControl },
   ],
+  footer: aboutFooter,
 };
 
 function renderRow(row: SettingRow): HTMLElement {
@@ -548,6 +724,7 @@ function renderGroup(group: SettingGroup): HTMLElement {
     el("div", { class: "set-sec-t", text: group.title }),
     ...(group.intro ? [group.intro()] : []),
     ...group.rows.map(renderRow),
+    ...(group.footer ? [group.footer()] : []),
   ]);
 }
 
@@ -598,7 +775,12 @@ export function mountSettings(): void {
 
   need("#set-close").addEventListener("click", closeSettings);
   need("#set-btn").addEventListener("click", toggleSettings);
-  registerPanel("settings", closeSettings);
+  // 第三参是「这块面板的根节点」：shell/panels.ts 靠它判断「点在某块面板里还是外」，
+  // 点在面板外就收起（2026-10-16 加）。用 getElementById 而不是 need()——那是事件
+  // 回调，节点万一没了也不该炸；而 #set-btn 同时也是「打开手势」，所以它在
+  // index.html 上打了 data-panel-keep，不会被外部关闭抢先（否则 toggle 会失效：
+  // 按下先关、抬起又开）。
+  registerPanel("settings", closeSettings, () => document.getElementById("set-drawer"));
   // 锁屏上那个「设置」按钮走这里（它不能直接 import 本模块：本模块依赖 lock）
   registerOpen("settings", openSettings);
 

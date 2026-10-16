@@ -1042,16 +1042,141 @@ try {
   await page.click("#set-close");
   await sleep(250);
 
+  // ── 点面板外收起 · 换一条任务先滑出完再滑入（2026-10-16 加）─────────────────
+  // 抽屉没有遮罩，点「面板以外的任何地方」都该收起它；但**打开手势**本身不算「外部」
+  // （行上标了 data-panel-keep），否则「同一条再双击一次收起」会当场失效。
+
+  await page.locator(".tt-row").first().dblclick();
+  await page.waitForSelector("#task-drawer.open");
+  // 单击另一行只是「选中」——它落在打开手势的表面上，不该把抽屉带走
+  await page.locator(".tt-row").nth(1).click();
+  await sleep(200);
+  check("单击任务行不收起抽屉", (await page.locator("#task-drawer.open").count()) === 1);
+
+  // 换一条：整块滑出 → 换成新内容 → 滑入。不是原地 replaceChildren。
+  // 光看「结束时开着、内容是新的」验不出两段动画——原来那版原地换内容也长这样，
+  // 所以这里用 MutationObserver 把 `.open` 的进出场时间线记下来，量中间空了多久。
+  const titleA = ((await page.locator("#task-drawer .dr-name").textContent()) ?? "").trim();
+  const titleB =
+    (await page.locator(".tt-row").nth(1).locator(".lt1 .t").getAttribute("title")) ?? "";
+  await page.evaluate(() => {
+    window.__phase = [];
+    const drawer = document.querySelector("#task-drawer");
+    if (!drawer) return;
+    window.__phase.push({ at: performance.now(), open: drawer.classList.contains("open") });
+    new MutationObserver(() => {
+      window.__phase.push({ at: performance.now(), open: drawer.classList.contains("open") });
+    }).observe(drawer, { attributes: true, attributeFilter: ["class"] });
+  });
+  await page.locator(".tt-row").nth(1).dblclick();
+  // 300ms 滑出 + 300ms 滑入，再留一点余量（滑出期间的判定靠上面那份时间线，不靠这里）
+  await sleep(700);
+  await page.waitForSelector("#task-drawer.open");
+  const phase = await page.evaluate(() => {
+    const list = window.__phase ?? [];
+    const out = list.findIndex((item) => !item.open);
+    const back = list.findIndex((item, index) => index > out && item.open);
+    return {
+      out,
+      back,
+      gap: out >= 0 && back > out ? Math.round(list[back].at - list[out].at) : -1,
+    };
+  });
+  const titleAfter = ((await page.locator("#task-drawer .dr-name").textContent()) ?? "").trim();
+  check(
+    "换一条任务：先滑出完再滑入新的",
+    phase.out >= 0 && phase.back > phase.out && phase.gap >= 200,
+    `滑出到滑入之间空了 ${phase.gap}ms`,
+  );
+  check(
+    "换一条任务后内容是新的那条",
+    titleAfter === titleB.trim() && titleA !== titleAfter,
+    `「${titleA}」→「${titleAfter}」`,
+  );
+
+  // 点面板外收起（这里点的是页头那块文字，肯定在抽屉之外）
+  await page.click("#page-tasks .ph-t");
+  await sleep(250);
+  check("点面板外收起任务抽屉", (await page.locator("#task-drawer.open").count()) === 0);
+
+  // 设置抽屉同理；而 rail 上那个入口本身是**开关**，不能被「点外部」抢先关掉
+  await page.click("#set-btn");
+  await page.waitForSelector("#set-drawer.open");
+  await page.click("#page-tasks .ph-t");
+  await sleep(250);
+  check("点面板外收起设置抽屉", (await page.locator("#set-drawer.open").count()) === 0);
+
+  // 任务行只是**任务抽屉**的打开手势。设置开着时点一行，那是真的「点了外面」，该收起
+  // （`data-panel-keep` 的值是它服务的那块面板 id —— 不是「一律豁免」）
+  await page.click("#set-btn");
+  await page.waitForSelector("#set-drawer.open");
+  await page.locator(".tt-row").first().click();
+  await sleep(250);
+  check(
+    "设置抽屉开着时点任务行收起设置",
+    (await page.locator("#set-drawer.open").count()) === 0 &&
+      (await page.locator("#task-drawer.open").count()) === 0,
+  );
+
+  await page.click("#set-btn");
+  await page.waitForSelector("#set-drawer.open");
+  await page.click("#set-btn");
+  await sleep(250);
+  check(
+    "设置入口仍是开关（不被外部关闭抢先）",
+    (await page.locator("#set-drawer.open").count()) === 0,
+  );
+
+  // 图谱：点画布空白收起右上角的详情卡，节点高亮一起清掉
+  await page.locator('.rail-btn[data-page="graph"]').click();
+  await page.waitForSelector(".gcanvas .node");
+  await page.locator(".gcanvas .node").first().click();
+  await sleep(200);
+  const picked = ((await page.locator(".gdetail .dn").textContent()) ?? "").trim();
+  // 空白点取右下角：左上角压着 `.gstats`（统计小卡）、右上角是 `.gpart` 与详情卡本身、
+  // 左下角是 `.gzoom` —— 那几块都是豁免区，点它们按设计**不**收起卡片
+  const gwrap = await page.locator(".gwrap").boundingBox();
+  await page.mouse.click(gwrap.x + gwrap.width - 40, gwrap.y + gwrap.height - 40);
+  await sleep(200);
+  const cleared = await page.evaluate(() => ({
+    head: (document.querySelector(".gdetail .dn")?.textContent ?? "").trim(),
+    selected: document.querySelectorAll(".node.selected").length,
+  }));
+  check(
+    "点图谱空白收起详情卡",
+    picked !== "选择一个节点" && cleared.head === "选择一个节点" && cleared.selected === 0,
+    `选中「${picked}」→ 收起后「${cleared.head}」· 高亮 ${cleared.selected}`,
+  );
+  await page.locator('.rail-btn[data-page="tasks"]').click();
+  await sleep(250);
+
   // 编辑标题（回归：标题、标签、截止曾经全是只读节点）
   // 挑一条**未完成**的：已完成的任务按设计不会被标成逾期（`refreshOverdue` 只豁免它），
   // 拿它测逾期等于测了个空。压测数据下先筛出「进行中」—— 排序默认按优先级，
   // 最前面那批未必是未完成的，得先把它筛出来才看得见
   await page.click("#page-tasks .tools .chip:has-text('进行中')");
   await sleep(300);
-  const todoRow = page
+  //
+  // ⚠️ 顺序不能倒（2026-10-16）：「恢复全部」那个筛选 chip 在抽屉**外面**，而现在
+  // 点抽屉外的任何地方都会把抽屉收起来（shell/panels.ts 的「点外部收起」）。原来是
+  // 「先开抽屉、再恢复全部」，那一下会把刚打开的抽屉关掉，下面整段（改日期、验逾期、
+  // md 写回）就全落在一条已经收起的抽屉上，而且从「清除」那个按钮起会直接抛错。
+  // 所以先把样本**定下来**（用行的 data-task），再放开筛选，然后按 id 把它找回来。
+  const sample = page
     .locator(".tt-row")
     .filter({ has: page.locator(".tt-bar.st-doing") })
     .first();
+  const todoId = (await sample.getAttribute("data-task")) ?? "";
+  // 先把这条**选中**（单击，抽屉这时是关的）。换到「全部」之后表格会自动翻到选中那条
+  // 所在的页（tasks.ts 的 render：「翻到定位的那条所在的页，抽屉开了、列表里却没有它，
+  // 看着就像跳转坏了」）—— 不先选中它，页数会跟着上一次选中的那条走，这条就不在 DOM 里，
+  // 下面按 data-task 找会一直等到超时。
+  await sample.click();
+  await sleep(150);
+  // 恢复「全部」：下面要测「截止挪到过去 → 自动逾期」，而逾期在「进行中」筛选下看不见
+  await page.click("#page-tasks .tools .chip:has-text('全部')");
+  await sleep(300);
+  const todoRow = page.locator(`.tt-row[data-task="${todoId}"]`);
   await todoRow.dblclick();
   await page.waitForSelector("#task-drawer.open");
   await page.fill(".dr-title", "改过标题的任务");
@@ -1061,9 +1186,6 @@ try {
     "抽屉可改标题",
     (await page.locator(".tt-label", { hasText: "改过标题的任务" }).count()) >= 1,
   );
-  // 恢复「全部」：下面要测「截止挪到过去 → 自动逾期」，而逾期在「进行中」筛选下看不见
-  await page.click("#page-tasks .tools .chip:has-text('全部')");
-  await sleep(300);
 
   // 设成过去的日期 → 应被自动标为逾期。
   // 起点是带时分的那一行（容器里有时刻框），开始那行没有 —— 这就是
@@ -2883,6 +3005,9 @@ try {
 
   // 「关于」是按实际功能写的介绍：应用名 / 一句话定位 / 功能与特色两份清单 /
   // 版本号（浏览器预览拿不到 Tauri 的版本，这里显示的是兜底值，同样带 v）
+  //
+  // 2026-10-16 精简：两组各十条砍成各三条 —— 断言跟着从「>= 8 条」收紧成
+  // 「恰好 6 条」。原来的宽松断言在砍完之后照样会绿，那种断言等于没写。
   const about = await page.evaluate(() => {
     const sec = [...document.querySelectorAll("#set-body .set-sec")].find((node) =>
       node.querySelector(".about"),
@@ -2890,7 +3015,7 @@ try {
     return {
       name: sec?.querySelector(".about-name")?.textContent?.trim() ?? "",
       lead: sec?.querySelector(".about-lead")?.textContent?.trim() ?? "",
-      groups: [...(sec?.querySelectorAll(".about-h") ?? [])].map((n) => n.textContent?.trim()),
+      groups: [...(sec?.querySelectorAll(".about .about-h") ?? [])].map((n) => n.textContent?.trim()),
       items: sec?.querySelectorAll(".about-list li").length ?? 0,
       list: [...(sec?.querySelectorAll(".about-list li") ?? [])].map((n) =>
         (n.textContent ?? "").trim(),
@@ -2899,23 +3024,77 @@ try {
     };
   });
   check(
-    "关于：应用名 / 定位 / 功能与特色清单都在",
+    "关于：应用名 / 定位 / 功能与特色清单都在（两组各三条）",
     about.name === "Tadado2" &&
       about.lead.length > 10 &&
       about.groups.join("/") === "功能/特色" &&
-      about.items >= 8 &&
+      about.items === 6 &&
       /^v\d/.test(about.ver),
     JSON.stringify(about),
   );
 
+  // 检查更新：浏览器预览里**没有 Tauri 宿主**，那一行必须老实说不可用 ——
+  // 点了没反应、或者假装「已是最新」，都比不做这个功能更误导人
+  await page.click("#set-body .about-upd .btn");
+  await sleep(200);
+  const updateRow = await page.evaluate(() => {
+    const button = document.querySelector("#set-body .about-upd .btn");
+    return {
+      state: document.getElementById("set-upd")?.textContent?.trim() ?? "",
+      label: button?.textContent?.trim() ?? "",
+      disabled: button?.disabled ?? false,
+    };
+  });
+  check(
+    "检查更新：预览环境明说「仅桌面版」，按钮检查完能再点",
+    updateRow.state.includes("仅桌面版") && updateRow.label === "检查更新" && !updateRow.disabled,
+    JSON.stringify(updateRow),
+  );
+
+  // 下载渠道与联系方式：渠道按**能不能打开**排序（阿里云盘在前，GitHub 在后），
+  // 且必须写明「无需提取码」—— 看见网盘链接的人第一反应就是找提取码
+  const aboutFoot = await page.evaluate(() => {
+    const sec = [...document.querySelectorAll("#set-body .set-sec")].find((node) =>
+      node.querySelector(".about"),
+    );
+    const foot = sec?.querySelector(".about-foot");
+    return {
+      groups: [...(foot?.querySelectorAll(".about-h") ?? [])].map((n) => (n.textContent ?? "").trim()),
+      channels: [...(foot?.querySelectorAll(".about-links .btn") ?? [])].map((n) => ({
+        text: (n.textContent ?? "").trim(),
+        url: n.getAttribute("data-url") ?? "",
+      })),
+      repo: foot?.querySelector(".about-value[data-url]")?.getAttribute("data-url") ?? "",
+      text: (foot?.textContent ?? "").trim(),
+    };
+  });
+  check(
+    "关于：下载渠道国内优先（阿里云盘第一、GitHub Releases 备选）",
+    aboutFoot.channels.length === 2 &&
+      aboutFoot.channels[0].url.includes("alipan.com") &&
+      aboutFoot.channels[0].text.includes("国内") &&
+      aboutFoot.channels[1].url === "https://github.com/HananxR/Tadado/releases",
+    JSON.stringify(aboutFoot.channels),
+  );
+  check(
+    "关于：联系方式含公众号与仓库，且写明无需提取码",
+    aboutFoot.groups.join("/") === "下载渠道/反馈与联系" &&
+      aboutFoot.text.includes("Pyvan") &&
+      aboutFoot.text.includes("无需提取码") &&
+      aboutFoot.repo === "https://github.com/HananxR/Tadado",
+    `${aboutFoot.groups.join("/")} · repo=${aboutFoot.repo}`,
+  );
+
   // 清单里的功能名要对得上**界面现状**（2026-09-21 小字审计）：这行原来写
   // 「色条为起止区间、填充为进度，档位从今天到全年」—— 条形早已改成创建 → 截止，
-  // 而档位根本没有「全年」这一档（是 昨天/今天/上周/本周/上月/本月 + 全部）
+  // 而档位根本没有「全年」这一档（是 昨天/今天/上周/本周/上月/本月 + 全部）。
+  //
+  // 「数据迁入」那条 2026-10-16 撤掉：精简后 Markdown 写法不再进「关于」。功能仍
+  // 在（任务管理页那个按钮），只是这条清单不再承诺它 —— 断言跟着承诺走。
   check(
     "「关于」的功能清单与界面一致（没有不存在的档位 / 过期的条形口径）",
     about.list.every((text) => !text.includes("全年")) &&
-      about.list.some((text) => text.includes("创建 → 截止")) &&
-      about.list.some((text) => text.includes("数据迁入")),
+      about.list.some((text) => text.includes("创建 → 截止")),
     about.list.join(" | ").slice(0, 160),
   );
 

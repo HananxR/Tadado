@@ -124,7 +124,12 @@ try {
     await page.waitForSelector("#task-drawer.open");
 
     // 筛完再把搜索框清掉：截图里挂着一个搜索词，看起来像「这是搜索结果」，
-    // 而这张图要说的是「打开一条任务」。抽屉挂在自己的任务上，清搜索不影响它
+    // 而这张图要说的是「打开一条任务」。抽屉挂在自己的任务上，清搜索不影响它。
+    //
+    // ⚠️ 这里**必须是 fill**，不能改成 click + Ctrl+A + Delete（2026-10-16）：抽屉
+    // 现在「点面板外就收起」（shell/panels.ts），而搜索框正在抽屉外面 —— 一按下去
+    // 抽屉就关了。而 drawer.png 没有任何断言兜着，坏掉只会静默变成一张「抽屉关着、
+    // 搜索被清空」的图。
     await page.locator("#page-tasks .tools input").fill("");
     console.log(
       `     （抽屉打开了「优化列表页性能」，${await page.locator("#task-drawer .tl-entry").count()} 条记录）`,

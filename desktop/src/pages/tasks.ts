@@ -838,9 +838,18 @@ function renderRow(
   // 19px 的条上只会把最该看清的东西盖住。整排档位按钮也在同一天一起撤（见 data/timeline.ts）
   track.append(bar);
 
+  // data-panel-keep="task"：这一行是任务抽屉的**打开手势**，而抽屉现在「点面板外就
+  // 收起」（shell/panels.ts）。不标这一下，下面那个「同一条再双击一次收起」会当场
+  // 失效——双击的第一下先把抽屉关掉，第二下 isTaskOpen 已经是 false，于是又打开，
+  // 净效果是闪一下、抽屉还开着。换一条任务不走这条路：openTask 自己会先滑出再滑入。
+  // 值写 `task` 而不是裸属性：设置抽屉开着时点一行，那不是它的打开手势，该收起来
   const row = el(
     "div",
-    { class: `tt-row ${task.id === selectedId ? "selected" : ""}`, "data-task": task.id },
+    {
+      class: `tt-row ${task.id === selectedId ? "selected" : ""}`,
+      "data-task": task.id,
+      "data-panel-keep": "task",
+    },
     [label, track],
   );
 

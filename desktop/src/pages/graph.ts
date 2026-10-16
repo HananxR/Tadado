@@ -384,6 +384,17 @@ export function mount(target: HTMLElement): void {
   const detail = el("div", { class: "gdetail" });
   const stats = el("div", { class: "gstats" });
 
+  /**
+   * 详情卡的初始态：什么都没选。
+   *
+   * 抽成函数是因为它有两个消费者 —— 首次装配，以及「点画布空白把卡片收起来」
+   * （2026-10-16 加，见下面 stage 的 click）。两处各抄一份，改文案时必然只改一处。
+   */
+  const emptyDetail = (): HTMLElement[] => [
+    el("div", { class: "dn", text: "选择一个节点" }),
+    el("div", { class: "ds", text: "悬停高亮相邻关系 · 双击任务直达维护抽屉" }),
+  ];
+
   function select(node: GraphNode): void {
     for (const [id, element] of elements) {
       element.classList.toggle("selected", id === node.id);
@@ -441,10 +452,19 @@ export function mount(target: HTMLElement): void {
     detail.append(open);
   }
 
-  detail.append(
-    el("div", { class: "dn", text: "选择一个节点" }),
-    el("div", { class: "ds", text: "悬停高亮相邻关系 · 双击任务直达维护抽屉" }),
-  );
+  /**
+   * 收起详情卡：节点高亮一起清掉，卡片退回初始提示。
+   *
+   * 为什么卡片自己管这一手、不放进 shell/panels.ts：它不是从右侧滑出的抽屉，
+   * 也不参与「同一时刻最多一块」那条互斥 —— 它是画布右上角一块跟着**选中**走的
+   * 浮层。塞进面板层只会让那一层多认识一个概念。
+   */
+  function clearDetail(): void {
+    for (const element of elements.values()) element.classList.remove("selected");
+    detail.replaceChildren(...emptyDetail());
+  }
+
+  detail.append(...emptyDetail());
 
   // ── 5. 工具行与缩放 ───────────────────────────────────────────────────────
   const applyZoom = (): void => {
@@ -502,6 +522,21 @@ export function mount(target: HTMLElement): void {
       }),
     ]),
   );
+
+  /**
+   * 点画布空白处收起详情卡（2026-10-16 加）。
+   *
+   * 节点自己的 click 已经 `stopPropagation`（选中即展示，不能同一次点击里又被清掉），
+   * 所以冒泡到这里的就是「空白」。右上角那几块浮动件必须豁免：点缩放按钮、读统计、
+   * 点卡片里的标签 chip 都不该把选中清掉 —— 尤其 `.gzoom`，它就在卡片正下方，
+   * 是最容易被误伤的一个。
+   */
+  stage.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".gdetail, .gstats, .gpart, .gzoom")) return;
+    clearDetail();
+  });
 
   paintEdges();
 }

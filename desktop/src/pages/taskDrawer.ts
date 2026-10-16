@@ -22,6 +22,9 @@
 //
 // 它属于「页面层」而不是「外壳层」：抽屉的内容完全跟着任务域走，
 // 外壳不该知道什么是「优先级」。
+//
+// 2026-10-16：换一条任务改成**先滑出完、再滑入新的**（原来是在原地把内容换掉），
+// 见下面 openTask 那一节；「点面板之外就收起」在 shell/panels.ts。
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { parseTasks, taskToMarkdown } from "../data/markdown";
@@ -35,7 +38,7 @@ import {
 } from "../data/store";
 import type { Activity, Task, TaskStatus } from "../data/types";
 import { el } from "../shell/dom";
-import { panelClosed, panelOpened, registerPanel } from "../shell/panels";
+import { PANEL_LEAVE_MS, openedPanel, panelClosed, panelOpened, registerPanel } from "../shell/panels";
 import { subscribePages } from "../shell/router";
 import { toast } from "../shell/toast";
 import {
@@ -695,17 +698,48 @@ function build(task: Task): Drawer {
 
 // ─── 对外接口 ────────────────────────────────────────────────────────────────
 
-export function openTask(taskId: string): void {
-  const task = byId(taskId);
-  if (!task) {
-    toast("任务不存在");
-    return;
-  }
+/**
+ * 等抽屉的滑出过渡结束。
+ *
+ * 以 `transitionend` 为准、定时器兜底：过渡事件在三种情况下不会到 ——
+ * `prefers-reduced-motion` 关掉了过渡、元素被中途移出文档、以及上一次过渡还没走完
+ * 就被改回原值（浏览器会直接跳到终点，不发事件）。兜底时长与 styles/shell.css 的
+ * `.drawer` 过渡对齐（shell/panels.ts 的 PANEL_LEAVE_MS）。
+ *
+ * 返回「取消」：连点第三条、Esc、切页、开设置抽屉时都要能把这一手撤掉，
+ * 否则会出现「人已经翻页了，抽屉才自己滑回来」。
+ */
+function waitDrawerLeave(root: HTMLElement, done: () => void): () => void {
+  let timer = 0;
+  let settled = false;
 
-  if (!drawer) {
-    drawer = build(task);
-    document.body.append(drawer.root);
-  }
+  const settle = (): void => {
+    // transitionend 与兜底定时器可能都要来，先到的算数，后到的直接丢掉
+    if (settled) return;
+    settled = true;
+    window.clearTimeout(timer);
+    root.removeEventListener("transitionend", onEnd);
+    done();
+  };
+
+  const onEnd = (event: TransitionEvent): void => {
+    // 只认它自己的 transform：抽屉里任何一处子过渡结束都不算
+    if (event.target === root && event.propertyName === "transform") settle();
+  };
+
+  root.addEventListener("transitionend", onEnd);
+  timer = window.setTimeout(settle, PANEL_LEAVE_MS);
+
+  return () => {
+    settled = true;
+    window.clearTimeout(timer);
+    root.removeEventListener("transitionend", onEnd);
+  };
+}
+
+/** 真正把抽屉打开在某条任务上：首次打开、同一条重开、以及切换的后半程都走它。 */
+function showTask(task: Task): void {
+  if (!drawer) return;
 
   // 换了任务：进度控件里没提交的草稿属于上一条任务，丢掉
   // （否则新任务里会顶着一个来自上一条任务的「待保存 65% → 70%」）
@@ -720,7 +754,77 @@ export function openTask(taskId: string): void {
   for (const listener of openListeners) listener(task);
 }
 
+// ─── 换一条任务：先滑出完，再滑入新的 ────────────────────────────────────────
+//
+// 用户的原话（2026-10-16）：「查看第一个任务时点第二个，先关闭第一个的滑窗，然后
+// 才是第二个的弹窗，**而不是原地更换内容**」。原地 paint 在这里读不通：动画走的是
+// 同一个元素，前一条的内容会跟着一起滑进滑出，看上去只是抖了一下。
+
+/** 滑出结束后要打开的任务 id。null = 没有在等（见 cancelLeave）。 */
+let switchTo: string | null = null;
+/** 撤掉「等滑出结束」这一手（摘监听、清定时器）。null = 没有切换在进行。 */
+let cancelLeave: (() => void) | null = null;
+
+/** 撤掉进行中的切换。滑出途中被打断时用（见 closeTask）。 */
+function cancelSwitch(): void {
+  cancelLeave?.();
+  cancelLeave = null;
+  switchTo = null;
+}
+
+export function openTask(taskId: string): void {
+  const task = byId(taskId);
+  if (!task) {
+    toast("任务不存在");
+    return;
+  }
+
+  if (!drawer) {
+    drawer = build(task);
+    document.body.append(drawer.root);
+  }
+
+  // 正在滑出：只换目标，动画不重头再来 —— 每点一下都重新滑一次，看着像在原地抽搐
+  if (cancelLeave) {
+    switchTo = taskId;
+    return;
+  }
+
+  // 抽屉正开着、看的是**另一条**任务：先整块滑出，滑完再把内容换成新的滑回来
+  if (drawer.root.classList.contains("open") && current?.id !== task.id) {
+    switchTo = taskId;
+    drawer.root.classList.remove("open");
+    // 滑出期间 openedPanel() **仍然是 "task"**：这样「点面板外」「开设置」「切页」
+    // 走的都是既有的那几条路，而它们最后都会落到 closeTask —— closeTask 会把这一手
+    // 撤掉。反过来，滑出时就把面板标成「已关」的话，这几条路全都拦不住这次滑入。
+    cancelLeave = waitDrawerLeave(drawer.root, () => {
+      cancelLeave = null;
+      const id = switchTo;
+      switchTo = null;
+      if (!id) return;
+
+      if (openedPanel() !== "task") {
+        // 正常到不了这儿（能接管的那几条路都会先经 closeTask 撤掉这一手）。真到了
+        // 就把状态收干净 —— 在设置抽屉之上再滑出任务抽屉，会破掉「同一时刻最多
+        // 一块右侧抽屉」这条不变量；留下一个「关着却自称开着」的抽屉同样不行
+        current = null;
+        for (const listener of openListeners) listener(null);
+        return;
+      }
+
+      const next = byId(id);
+      if (next) showTask(next);
+    });
+    return;
+  }
+
+  showTask(task);
+}
+
 export function closeTask(): void {
+  // 先撤掉待执行的「滑回来」。此刻 .open 已经摘了，正是最容易被误判成「没开」而
+  // 直接 return 的时候 —— 那会让切换滑到一半自己又滑回来
+  cancelSwitch();
   if (!drawer) return;
   drawer.root.classList.remove("open");
   current = null;
@@ -746,8 +850,10 @@ document.addEventListener("keydown", (event) => {
   closeTask();
 });
 
-// 与设置抽屉互斥：右侧只有一块地方（shell/panels.ts）
-registerPanel("task", closeTask);
+// 与设置抽屉互斥 + 「点面板外就收起」，右侧只有一块地方（shell/panels.ts）。
+// 第三参是这块面板的根节点，panels.ts 靠它判断「点在面板里还是外」——抽屉的 DOM
+// 是懒建的（第一次 openTask 才 build），所以传的是 getter 而不是元素
+registerPanel("task", closeTask, () => drawer?.root ?? null);
 
 /**
  * 切页就收起。
