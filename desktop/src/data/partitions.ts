@@ -139,6 +139,17 @@ export function setDefaultPartition(id: string): void {
   emitList();
 }
 
+/**
+ * 新建一个分区。**只管列表，不管归档档位** —— 这里在依赖更下面一层，反向 import
+ * store 会成环。档位的补齐由 store 订阅 `onPartitionListChange` 来做（补成「立即」并
+ * 落盘，见 store 里那段说明）：`emitList()` 就是那个接缝。
+ *
+ * ⚠️ 顺带记一笔已知的顺序脆弱点（2026-10-16 查 BUG 时发现，**当前不可达**）：
+ * `main.ts` 是 `bootStore()` 在前、`bootPartitions()` 在后，而 store 里那段「老库冻结」
+ * 遍历的正是当时的 `PARTITIONS` —— 此刻它还是内置那四个，所以自建分区**不会**被冻成
+ * 「不归档」。这个正确性完全依赖那两行的顺序；哪天调过来，自建分区就会在下次启动时
+ * 悄悄从「立即」变成「不归档」。真要动顺序，先看 store 的 `archiveLoaded` 护栏。
+ */
 export function addPartition(name: string): Partition {
   const partition: Partition = { id: `p${Date.now().toString(36)}`, name };
   PARTITIONS.push(partition);

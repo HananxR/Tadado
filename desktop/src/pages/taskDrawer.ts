@@ -26,7 +26,13 @@
 
 import { parseTasks, taskToMarkdown } from "../data/markdown";
 import { byId } from "../data/mock";
-import { dataChanged, onDataChange } from "../data/store";
+import {
+  ARCHIVE_NEVER,
+  archiveAfterDays,
+  dataChanged,
+  isKeptActive,
+  onDataChange,
+} from "../data/store";
 import type { Activity, Task, TaskStatus } from "../data/types";
 import { el } from "../shell/dom";
 import { panelClosed, panelOpened, registerPanel } from "../shell/panels";
@@ -41,6 +47,7 @@ import {
   monthDayText,
   nowStamp,
   pad2,
+  setProgress,
   stampText,
   statusVar,
 } from "./shared";
@@ -120,6 +127,31 @@ type LogActivity = Extract<Activity, { kind: "log" }>;
 // ─── 时间线 ──────────────────────────────────────────────────────────────────
 
 /**
+ * 状态**跟着进度**变了之后，把落点说清楚（2026-10-16）。
+ *
+ * 为什么非说不可：「进度满 ⇒ 自动标记为已完成 ⇒ 按分区档位可能**当场归档**」—— 任务会从
+ * 任务页列表里消失，而抽屉背后那一行也没了。一句解释都没有的话，那看起来就是「任务被我
+ * 弄丢了」。四种落点里第二种正是用户报的那类现象（「明明做完了、却没进归档」）。
+ *
+ * 调用方传**改动前**的状态，没变就返回空串。
+ */
+function progressShiftNote(task: Task, before: TaskStatus): string {
+  if (before === task.status) return "";
+
+  // 退回那一头（已完成 → 进行中；结束日已过的话紧接着被系统标成「逾期」）
+  if (task.status !== "done") return ` · 状态已退回「${STATUS_LABEL[task.status]}」`;
+
+  if (task.archived) return " · 已标记为已完成，并按归档设置收进归档";
+  if (isKeptActive(task.id)) {
+    return " · 已标记为已完成 · 本次会话内取消过归档，它不会被自动收走";
+  }
+  const days = archiveAfterDays(task.partition);
+  return days === ARCHIVE_NEVER
+    ? " · 已标记为已完成（该分区未开自动归档）"
+    : ` · 已标记为已完成（该分区「完成后 ${days} 天归档」，先留在任务页）`;
+}
+
+/**
  * 一条记录右侧的操作（编辑 / 删除）。
  *
  * 可改可删的有两类：人手写的 `log`，以及**进度记录**（2026-09-20 用户报的第二个 bug：
@@ -140,15 +172,22 @@ function entryOps(
 
   edit.addEventListener("click", () => startEdit(task, index, activity, card));
   remove.addEventListener("click", () => {
+    const before = task.status;
     // 删掉的是**最新**那条进度记录时，任务的当前进度跟着退回它的起点 ——
-    // 否则任务还停在一个已经不存在的记录上（时间线里也没有任何一条能解释这个数）
+    // 否则任务还停在一个已经不存在的记录上（时间线里也没有任何一条能解释这个数）。
+    // 走唯一入口：进度退回去，状态也得跟着退（不然双向口径会在这次 dataChanged 里
+    // 立刻把它改回「已完成」，删掉一条记录看起来就像没反应）
     const latestProgress = task.activities.findIndex((item) => item.kind === "progress");
     if (activity.kind === "progress" && latestProgress === index) {
-      task.progress = activity.from;
+      setProgress(task, activity.from);
     }
     task.activities.splice(index, 1);
     dataChanged();
-    toast(activity.kind === "progress" ? "已删除这条进度记录" : "已删除这条记录");
+    toast(
+      activity.kind === "progress"
+        ? `已删除这条进度记录${progressShiftNote(task, before)}`
+        : "已删除这条记录",
+    );
   });
 
   return row;
@@ -241,6 +280,7 @@ function startEdit(
         box.focus();
         return;
       }
+      const before = task.status;
       const changed = activity.to !== to;
       activity.to = to;
       activity.text = next;
@@ -251,11 +291,12 @@ function startEdit(
         );
         const nextNewer = newer >= 0 ? task.activities[newer] : null;
         if (nextNewer?.kind === "progress") nextNewer.from = to;
-        // 它自己就是最新那条 → 任务的当前进度就是它
-        else task.progress = to;
+        // 它自己就是最新那条 → 任务的当前进度就是它。走唯一入口：改到 100% 就是完成，
+        // 从 100% 改下来就不是（状态与进度是同一个口径的两面，见 data/status.ts）
+        else setProgress(task, to);
       }
       dataChanged();
-      toast("已更新这条进度记录");
+      toast(`已更新这条进度记录${progressShiftNote(task, before)}`);
       return;
     }
 
@@ -469,6 +510,9 @@ function build(task: Task): Drawer {
     }
     if (!text) return;
 
+    // 改动前的状态：进度满会**自动**把它标成已完成（见 data/status.ts），
+    // 下面那句 toast 得能解释这个变化（尤其是随之而来的归档）
+    const before = current.status;
     const recorded = progress.commit(text);
     if (!recorded) current.activities.unshift({ at: nowStamp(), text, kind: "log" });
 
@@ -481,7 +525,11 @@ function build(task: Task): Drawer {
     renderTimeline(current);
     // 「发送」本来就是保存 —— 以前这条已经落库了，只是没有任何反馈，
     // 让人以为还得再点一次什么才算存上
-    toast(recorded ? `已记下 ${recorded.from}% → ${recorded.to}%` : "已保存到活动时间线");
+    toast(
+      recorded
+        ? `已记下 ${recorded.from}% → ${recorded.to}%${progressShiftNote(current, before)}`
+        : "已保存到活动时间线",
+    );
   }
 
   send.addEventListener("click", submit);
@@ -550,9 +598,12 @@ function build(task: Task): Drawer {
       return;
     }
 
+    const before = current.status;
     current.title = draft.title;
     current.tags = draft.tags;
-    current.progress = draft.progress;
+    // 进度走唯一入口：md 里的 `:: 100%` 会**顺带**把状态置成已完成（见 data/status.ts）。
+    // 与「状态不从 md 读」不冲突 —— 不采纳的是 md 里那个复选框（`[x]`），不是进度的语义。
+    setProgress(current, draft.progress);
     // start 不在写法里（md 只带一个截止日）。一律填今天会把跨天任务的起点抹平，
     // 所以起点、以及没写截止时的终点都照旧不动。
     //
@@ -576,10 +627,13 @@ function build(task: Task): Drawer {
 
     dataChanged();
     paint(current);
+    // 状态没变就照旧说「保持」；变了（进度满 ⇒ 已完成，可能顺带归档）由 progressShiftNote
+    // 说清落到哪 —— 两句话都写的话，同一个变化会被说两遍
+    const shift = progressShiftNote(current, before);
     toast(
       dueInverted
-        ? `已按 md 更新「${draft.title}」· 截止 ${monthDayText(mdEndDay)} 早于开始 ${monthDayText(startDay)}，这条没写回`
-        : `已按 md 更新「${draft.title}」· 状态保持「${STATUS_LABEL[current.status]}」`,
+        ? `已按 md 更新「${draft.title}」· 截止 ${monthDayText(mdEndDay)} 早于开始 ${monthDayText(startDay)}，这条没写回${shift}`
+        : `已按 md 更新「${draft.title}」${shift || ` · 状态保持「${STATUS_LABEL[current.status]}」`}`,
     );
   });
 
@@ -587,7 +641,7 @@ function build(task: Task): Drawer {
     el("summary", { text: "Markdown 源（规范数据源）" }),
     el("div", {
       class: "md-note dim",
-      text: "修改后不会立即写入任务，需点击「按 md 更新任务」；状态不参与 md，写回时保留原值。",
+      text: "修改后不会立即写入任务，需点击「按 md 更新任务」；状态不参与 md（方括号那个勾不采纳），但进度写满 100% 会按口径标记为已完成。",
     }),
     mdPreview,
     markdown,

@@ -14,7 +14,19 @@ import { toast } from "../shell/toast";
 // 时间基准住在 data/time.ts（data/markdown.ts 也要用，数据层不该反向依赖页面层），
 // 这里取进来再原样转出，各页面继续从 shared 拿，import 一行都不用改。
 // 只把本文件自己要用的取进作用域，其余纯转发（都 import 进来会触发 unused 报错）
-import { nowStamp, todayMonthDay } from "../data/time";
+import { todayMonthDay } from "../data/time";
+// 进度与状态的双向口径住在 data/status.ts：store 的自愈扫描要复用同一份规则，而数据层
+// 不该反向依赖页面层（与上面那排时间基准同一条规矩，见下面 setTaskStatus 那段注释）。
+// 只把本文件自己要用的取进作用域，其余纯转发。
+import {
+  FULL_PROGRESS,
+  coreSetStatus,
+  rollbackProgressForStatus,
+  setProgress,
+} from "../data/status";
+
+export { STATUS_LABEL, setProgress } from "../data/status";
+export { FULL_PROGRESS };
 
 export {
   DAY_MS,
@@ -75,15 +87,13 @@ export function matchesStatus(task: Task, filter: TaskStatus | "all"): boolean {
 }
 
 /**
- * 状态文案。**下标是 `StatusName` 而不是 `TaskStatus`** —— 「待办」作为当前状态已经删了，
- * 但活动记录里还写着它（`from: "todo"`），时间线上要照原样显示「待办 → 进行中」。
+ * 状态文案住在 **data/status.ts**，在文件顶部原样转出（下标是 `StatusName` 而不是
+ * `TaskStatus` —— 「待办」作为当前状态已经删了，但活动记录里还写着它（`from: "todo"`），
+ * 时间线上要照原样显示「待办 → 进行中」）。
+ *
+ * 进度与状态的**规则本体**也住在那里（`data/status.ts`）：store 的自愈扫描要复用同一份，
+ * 而数据层不该反向依赖页面层。这里只剩「算 + 广播」。
  */
-export const STATUS_LABEL: Record<StatusName, string> = {
-  overdue: "逾期",
-  todo: "待办",
-  doing: "进行中",
-  done: "已完成",
-};
 
 /**
  * 改任务状态 —— 全应用只有这一条路径。
@@ -95,20 +105,24 @@ export const STATUS_LABEL: Record<StatusName, string> = {
  *
  * 留痕不只是为了统计：活动时间是这条任务唯一的「什么时候发生的」证据，写下来的
  * 才是历史，没写下来就只能靠日期字段去猜。
+ *
+ * 2026-10-16 迁移：规则本体搬到 `data/status.ts`（store 的自愈扫描要复用同一份），这里
+ * 只剩「算 + 广播」。顺带把**进度**那一半也管住 —— 状态与进度是同一个口径的两面
+ * （见 data/status.ts）：
+ *  · 置为「已完成」⇒ 进度写 100%（留个 30% 的「已完成」在列表上自相矛盾）；
+ *  · 从「已完成」改回未完成 ⇒ 进度退到「完成前那一格」。**不退不行**：同一次
+ *    dataChanged 里的 syncStatusForProgress 会看到「进度仍满、状态却不是已完成」，
+ *    立刻把它改回「已完成」，于是「标记未完成」成了空操作。
  */
 export function setTaskStatus(task: Task, status: TaskStatus): void {
   if (task.status === status) return;
-  const from = task.status;
-  task.status = status;
-  // 已完成就是 100%：留个 30% 的「已完成」在列表上自相矛盾
-  if (status === "done") task.progress = 100;
-  task.activities.unshift({
-    at: nowStamp(),
-    kind: "status",
-    from,
-    to: status,
-    text: `${STATUS_LABEL[from]} → ${STATUS_LABEL[status]}`,
-  });
+  const wasDone = task.status === "done";
+  // 进度这一半也走**同一个入口**（`setProgress` 里含「满格 ⇒ 已完成」的同步）：
+  // 置为已完成时它会顺手把状态改好，下面那次 coreSetStatus 就变成空转 —— 不亏，
+  // 换来的是「进度没有第二处写法」。回退那一头必须先退回进度再改状态
+  if (status === "done") setProgress(task, FULL_PROGRESS);
+  else if (wasDone) rollbackProgressForStatus(task);
+  coreSetStatus(task, status);
   dataChanged();
 }
 

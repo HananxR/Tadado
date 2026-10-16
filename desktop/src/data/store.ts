@@ -14,9 +14,15 @@
 
 import { loadSetting, loadTasks, saveSetting, saveTasks } from "./db";
 import { TASKS, seedTasks, stressExtra } from "./mock";
-import { DEMO_PARTITION_ID, PARTITIONS, activePartitionId } from "./partitions";
+import {
+  DEMO_PARTITION_ID,
+  PARTITIONS,
+  activePartitionId,
+  onPartitionListChange,
+} from "./partitions";
 import { asArchiveRecord } from "./schema";
-import { TODAY, dayNumber, dayOfStamp } from "./time";
+import { FULL_PROGRESS, syncStatusForProgress } from "./status";
+import { TODAY, dayNumber, dayOfStamp, nowStamp, stampOf } from "./time";
 import type { Task } from "./types";
 
 type Listener = () => void;
@@ -43,6 +49,72 @@ function refreshOverdue(tasks: Task[]): void {
     if (dayNumber(task.end) < TODAY) task.status = "overdue";
     else if (task.status === "overdue") task.status = "doing";
   }
+}
+
+/** 自愈扫描的结果（id 而不是条数：归档之后还要回头数有多少条真被收走了）。 */
+interface HealResult {
+  /** 被补成「已完成」的（原来不是已完成） */
+  finished: string[];
+  /** 被退回「进行中」的（原来已完成，进度却不满） */
+  reverted: string[];
+}
+
+/**
+ * 「进度」与「状态」的一致性扫描。写法与 `refreshOverdue` 同一路子：**它是数据自身的
+ * 自洽性**，所有页面都该看到同一份，改完数据的人不必各自记得去同步。
+ *
+ * 为什么必须有（2026-10-16 用户报的 BUG）：自动归档只认 `status === "done"`
+ * （见 refreshArchive），而「把进度拖到 100%」以前从来不碰状态 —— 于是一条「结束日已过 +
+ * 进度 100%」的任务被 refreshOverdue 标成逾期之后**永远收不进归档**，列表上行首还挂着
+ * 一枚「红色 ✓」（颜色说状态、形状说进度）。用户实测：手动点一下「已完成」就当场归档 ——
+ * 缺的正是这一步连接。
+ *
+ * 规则本体在 data/status.ts（与页面层共用同一份）；这里多做两件「扫全表才做得了」的事：
+ *
+ *   · **跳过已归档的**：归档 = 已离开工作面，不该被新一轮口径翻动（也就不会把管理页里
+ *     的历史记录突然翻成「进行中」，那批用户根本看不见，改了只会困惑）；
+ *   · **往「已完成」补的时候，活动日期取结束日**：归档判据（`completedOn + N ≤ 今天`）与
+ *     总览的「本周完成」都读那条活动的日期。写成「升级那一天」会让 7/30/90 天档位的任务
+ *     **再等 N 天**才走（与「结束时间已经到了」正相反），还会把一批历史任务算进本周。
+ *     取结束日是相对最诚实的：这条任务「最晚那会儿就该做完」。
+ *
+ * 幂等：三个规则函数都以当前值为输入、只在矛盾时动手，所以跑第二遍一定什么都不做
+ * （e2e 有一条收敛断言钉着这点）。
+ */
+function refreshProgressStatus(tasks: Task[]): HealResult {
+  const finished: string[] = [];
+  const reverted: string[] = [];
+
+  for (const task of tasks) {
+    if (task.archived) continue;
+    // 退回那一头没有「什么时候退的」可考，就用此刻 —— 它不参与 completedOn，
+    // 只出现在活动时间线上（写个假日期反而更难查）
+    const at = task.progress >= FULL_PROGRESS ? stampOf(dayNumber(task.end), 0) : nowStamp();
+    if (!syncStatusForProgress(task, at)) continue;
+    if (task.status === "done") finished.push(task.id);
+    else reverted.push(task.id);
+  }
+
+  return { finished, reverted };
+}
+
+/**
+ * 启动自愈的报告，供外壳提示一次（读过就清）。
+ *
+ * 只报**启动**这一次：这批归一发生在「升级后第一次打开」，用户看到的是任务成批变成
+ * 已完成、成批从任务页消失 —— 一句都不说，那看起来就是数据坏了。运行时每次编辑触发的
+ * 扫描都是 0 条（幂等），没有什么可报的。
+ */
+let healReport: { done: number; rolledBack: number; archived: number } | null = null;
+
+export function progressHealReport(): {
+  done: number;
+  rolledBack: number;
+  archived: number;
+} | null {
+  const report = healReport;
+  healReport = null;
+  return report;
 }
 
 // 活动时刻的归一化（展示串 → 时间戳）已经搬到**读入口**：data/schema.ts 的
@@ -143,6 +215,9 @@ export const keepActive = (id: string): void => {
   restored.add(id);
 };
 
+/** 这条任务是不是本次会话里被「取消归档」过 —— 抽屉要靠它解释「为什么拖满了也没收走」。 */
+export const isKeptActive = (id: string): boolean => restored.has(id);
+
 /** 改归档天数会立刻扫一遍 —— 拨完开关当场能看见哪些任务被收走了。 */
 export async function setArchiveDays(days: number, id: string = activePartitionId()): Promise<void> {
   archiveDays[id] = days;
@@ -198,11 +273,19 @@ export async function bootStore(): Promise<void> {
   // 回到演示空间
   if (adoptSeedPartitions(TASKS) > 0) saveTasks(TASKS);
 
+  // 「进度满 = 已完成」先补齐（2026-10-16 口径），**必须排在逾期判定之前** ——
+  // 顺序反过来会把「结束日已过 + 进度已满」的这条先标成逾期，再想补成就已完成的归档就要
+  // 多绕一步（而且那一帧页面上已经闪出过红色逾期色）。这一步也是升级后「打开即自行适配」
+  // 的那一下：库里卡着的「进度 100% + 逾期」在这里被收进归档
+  const healed = refreshProgressStatus(TASKS);
+
   // 隔夜再打开时，昨天「待办」的任务今天可能已经过期了
   refreshOverdue(TASKS);
   // 存档的形状不对就当没设过：以前是读出来直接用，存档要是个数组，
   // `archiveDays[id]` 全是 undefined，界面上一片空白却不报错
   archiveDays = asArchiveRecord(await loadSetting<Record<string, number>>(KEY_ARCHIVE));
+  // 档位到手了，下面那段分区变更订阅才准写盘（见订阅处的两道护栏）
+  archiveLoaded = true;
 
   // 老库**一次性冻结**（2026-09-21）。默认值改成「立即」之后，没设过的分区会拿到
   // 「完成即归档」—— 对一个用了很久的库，那等于**开机把历史上所有已完成的任务一次
@@ -228,8 +311,53 @@ export async function bootStore(): Promise<void> {
   }
 
   refreshArchive(TASKS);
+
+  // 自愈报告：补成已完成的那批里，有几条当场按档位被收走了（给外壳提示一次用）。
+  // 只报启动这一次 —— 运行时每改一次数据都会扫，但那时是 0 条
+  if (healed.finished.length > 0 || healed.reverted.length > 0) {
+    const byId = new Map(TASKS.map((task) => [task.id, task]));
+    healReport = {
+      done: healed.finished.length,
+      rolledBack: healed.reverted.length,
+      archived: healed.finished.filter((id) => byId.get(id)?.archived).length,
+    };
+  }
+
   dataChanged();
 }
+
+/** 归档档位读到没有。没读到之前，分区列表的变更回调不许写盘（说明见下面的订阅）。 */
+let archiveLoaded = false;
+
+/**
+ * 新建的分区默认「立即」，并且**当场落盘** —— 不再只靠读取时兜底（2026-10-16 用户提的）。
+ *
+ * 为什么不写在 data/partitions.ts 的 `addPartition` 里：那个文件在依赖更下面一层，反过来
+ * import store 会成环。它留了现成的接缝 —— `onPartitionListChange`（新增分区、启动读档
+ * 之后都会发）。这里只补**缺失**的档位，所以：
+ *   · 老库被上面那段冻结成「不归档」的分区不会被碰（那是已定义的值）；
+ *   · 历史上一直靠 `?? ARCHIVE_NOW` 兜底、从没落过盘的自建分区，顺手补成显式值
+ *     （行为不变，只是设置面板里那个值从此有了出处）。
+ *
+ * ⚠️ 两道护栏：
+ *   · `archiveLoaded`：`main.ts` 是 `await bootStore().catch(() => {})`，读档要是抛在
+ *     `loadSetting(KEY_ARCHIVE)` **之前**，`archiveDays` 还停在 `{}`；这时候按「缺失」
+ *     补一遍会把**所有**分区写成「立即」，正好冲掉老库冻结那道保护（用户明确要求不动它）；
+ *   · 不走 `setArchiveDays()`（它内部 refreshArchive + dataChanged）—— 启动期会在读档与
+ *     首帧之间多插一轮全量重画与写盘，这里只要把值存下来。
+ */
+onPartitionListChange(() => {
+  if (!archiveLoaded) return;
+  let filled = false;
+  for (const partition of PARTITIONS) {
+    if (archiveDays[partition.id] !== undefined) continue;
+    archiveDays[partition.id] = ARCHIVE_NOW;
+    filled = true;
+  }
+  // 显式用遍历到的 id，不靠 setArchiveDays / archiveAfterDays 的默认参数（那是
+  // activePartitionId()，启动期活动分区可能还没定下来）
+  if (filled) void saveSetting(KEY_ARCHIVE, archiveDays);
+});
 
 /** 订阅数据变更，返回退订函数。 */
 export function onDataChange(listener: Listener): () => void {
@@ -249,6 +377,10 @@ function broadcast(): void {
  * 先落盘再广播：万一落盘抛错，至少页面这一帧还是对的，而不是「改了但没存上」。
  */
 export function dataChanged(): void {
+  // 进度与状态先对齐（2026-10-16），再判逾期、最后归档 —— **顺序就是正确性**：
+  // 反过来会出现「刚补成已完成的任务被上一轮的逾期判定挡住」这种口径错位。
+  // 幂等，所以每次变更都跑来兜底也不亏（改一个数字，绝不放过全表其余的不一致）
+  refreshProgressStatus(TASKS);
   // 每次变更都重算一遍逾期：改了截止（往前挪到今天之前）要立刻看出来，
   // 把截止挪回未来则要退回待办。一百条数据扫一遍不值一提
   refreshOverdue(TASKS);

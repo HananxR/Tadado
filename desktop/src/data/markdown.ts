@@ -19,6 +19,11 @@
 // pages/taskDrawer.ts 的 `mdApply`：它只取标题 / 标签 / 进度 / 截止，状态保持原值
 // （toast 会说出来）。改状态请在抽屉的表单里改，别指望改 md 那一行。
 //
+// ⚠️ 但**进度**例外（2026-10-16）：进度写满 100% 会顺带把状态置成已完成 —— 因为进度与
+// 状态是同一个口径的两面（见 data/status.ts）。所以 `mdApply` 不采纳的是那个复选框，
+// 不是进度的语义；`parseTasks` 这边则把两者一起归一（复选框优先），让导入进来的形态
+// 与界面里的形态一致。
+//
 // 「循环」（`+1w`）这个字段已经删除：它从来没有行为，界面上也没有编辑入口，
 // 只是随 md 文本空转。但**老文件里那段标记必须继续吃掉**（见 LEGACY_REPEAT），
 // 否则它会粘进标题、变成「写周报 +1w」——删字段不该把用户导出的文件弄脏。
@@ -34,6 +39,8 @@ import {
   parseStampText,
   todayMonthDay,
 } from "./time";
+// 进度满格那一格（100）的唯一定义，别在这里再写字面量
+import { FULL_PROGRESS } from "./status";
 import type { MonthDay, Task, TaskStatus } from "./types";
 
 /**
@@ -177,8 +184,13 @@ export function parseTasksDetailed(md: string): ParseReport {
     // `[ ]` 仍然**收得进来**（它是最通用的「没画勾」记号，老文件和别处导出的清单里都有），
     // 但算「进行中」—— 待办那档 2026-09-21 删了。代价说在明处：**往返会把 `[ ]` 写成 `[~]`**
     // （见上面 BOX 的说明）
-    const status: TaskStatus =
-      box === "~" || box === " " || box === "" ? "doing" : "done";
+    //
+    // 2026-10-16 起这里是**复选框优先**的双向归一（与 data/status.ts 同一口径）：`[x]` ⇒
+    // 已完成 + 100%；空格子写 `:: 100%` ⇒ 也算完成。不归一的话，`- [~] x :: 100%` 会产出
+    // 「进行中 + 100%」—— 自愈扫描下一次就把它改成已完成，于是「导进来又自己变回去」。
+    const boxDone = !(box === "~" || box === " " || box === "");
+    const written = progress ? Math.min(FULL_PROGRESS, Number(progress[1])) : null;
+    const status: TaskStatus = boxDone || written === FULL_PROGRESS ? "done" : "doing";
     // 没有 ⏰ 就是**没有截止**：due 留空（界面显示「无截止」），end 落今天 ——
     // 总览的「今日到期」按 due 判，不会把它算进去（见 overview.ts 的 renderTiles）
     const end: MonthDay = due ? [Number(due[1]), Number(due[2])] : today;
@@ -192,7 +204,7 @@ export function parseTasksDetailed(md: string): ParseReport {
       at: due?.[3] ? `${due[3]}:${due[4]}` : null,
       start: today,
       end,
-      progress: progress ? Math.min(100, Number(progress[1])) : status === "done" ? 100 : 0,
+      progress: status === "done" ? FULL_PROGRESS : (written ?? 0),
       urgency: 2,
       created: today,
       archived: false,

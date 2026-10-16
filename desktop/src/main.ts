@@ -8,7 +8,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { storageIssue } from "./data/db";
 import { bootPartitions } from "./data/partitions";
-import { bootStore } from "./data/store";
+import { bootStore, progressHealReport } from "./data/store";
 import { setupHotkey } from "./shell/hotkey";
 import { bootLock } from "./shell/lock";
 import { mountNav } from "./shell/nav";
@@ -48,6 +48,18 @@ async function boot(): Promise<void> {
   // 用户看到的是「我的任务全没了」，然后开始怀疑自己 —— 而数据其实还在
   const issue = storageIssue();
   if (issue !== null) toast(`${issue}（数据没有被覆盖，请联系维护者）`);
+  // 升级口径带来的批量归一（2026-10-16：「进度满 = 已完成」）要说一句 ——
+  // 不说的话，用户看到的是任务成批变色、成批从任务页消失，那看起来就是数据坏了。
+  // 只在启动扫到东西时才有报告（运行时每次编辑都是 0 条）
+  const healed = progressHealReport();
+  if (healed !== null) {
+    const parts = [`已把 ${healed.done} 条进度已满的任务标记为已完成`];
+    if (healed.archived > 0) parts.push(`其中 ${healed.archived} 条按归档设置收进归档`);
+    if (healed.rolledBack > 0) {
+      parts.push(`${healed.rolledBack} 条「已完成但进度不足 100%」的退回进行中`);
+    }
+    toast(parts.join(" · "));
+  }
   // 托盘菜单里的「新建任务 / 设置」要落到前端来做（见 shell/trayBridge.ts）
   mountTrayBridge();
 

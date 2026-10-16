@@ -25,7 +25,15 @@ import type { Activity, Task, TaskStatus, Urgency } from "../data/types";
 import { dateTimeField } from "../shell/dateTime";
 import { el } from "../shell/dom";
 import { toast } from "../shell/toast";
-import { STATUS_LABEL, URGENCY_LABEL, pad2, setTaskStatus, urgencyBadge } from "./shared";
+import {
+  FULL_PROGRESS,
+  STATUS_LABEL,
+  URGENCY_LABEL,
+  pad2,
+  setProgress,
+  setTaskStatus,
+  urgencyBadge,
+} from "./shared";
 
 export interface TaskFormOptions {
   task: Task;
@@ -76,6 +84,10 @@ export type ProgressActivity = Extract<Activity, { kind: "progress" }>;
  *
  * ⚠️ **进度一律手动维护**（用户用了很多次之后明确定的）：这里没有任何「按活动内容
  * 推导进度」的自动逻辑 —— 拖到哪、填多少就是多少。
+ *
+ * ⚠️ 但「进度」与「状态」是**同一个口径的两面**（2026-10-16）：提交时走 `setProgress()`，
+ * 满格 ⇒ 自动标记为已完成、退回 100 以下 ⇒ 自动退回进行中（见 data/status.ts）。
+ * 这跟上面那条不冲突 —— 禁的是「按活动**内容**猜进度」，不是「进度满了就是做完了」。
  */
 export function progressControl(options: {
   task: Task;
@@ -129,7 +141,11 @@ export function progressControl(options: {
   const paintPending = (): void => {
     const on = dirty();
     root.classList.toggle("dirty", on);
-    pendingNote.textContent = on ? `待保存 ${base}% → ${draft}%` : "";
+    // 满格这一格必须把「发送之后会发生什么」写在脸上（2026-10-16）：抽屉是 deferred
+    // （点「发送」才落库），而进度满 = 自动标记为已完成（见 data/status.ts）。不写出来，
+    // 用户拖到 100% 就走 —— 什么都没发生，看着还是「口径没生效」。
+    const hint = on && draft >= FULL_PROGRESS ? " · 发送后自动标记为已完成" : "";
+    pendingNote.textContent = on ? `待保存 ${base}% → ${draft}%${hint}` : "";
   };
 
   /**
@@ -152,7 +168,10 @@ export function progressControl(options: {
     if (!dirty()) return null;
     const start = base as number;
     const next = draft;
-    task.progress = next;
+    // 走唯一入口：改进度 + 让状态跟上（100% ⇒ 已完成、退回 100 以下 ⇒ 进行中）。
+    // 活动仍由这里写 —— 抽屉要把「说明」和进度记在**同一条**记录里。
+    // 状态是不是跟着变了，调用方自己比 `task.status` 前后值即可（不必再返回一个对象）。
+    setProgress(task, next);
     const activity: ProgressActivity = {
       at: nowStamp(),
       kind: "progress",

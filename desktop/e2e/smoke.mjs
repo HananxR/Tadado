@@ -4041,6 +4041,246 @@ try {
   await page.fill("#page-tasks .searchbox input", "");
   await setArchiveFor("立即");
 
+  // ── 进度与状态是同一个口径（2026-10-16 用户报的「进度满了却没进归档」）──────────
+  // 起因：任务页上「进度 100% + 结束日已过」的任务，结束日一过就被系统标成「逾期」，
+  // 而**归档只认 `status === "done"`**、「拖进度」从来不碰状态 —— 于是它永远收不走，
+  // 行首还挂着一枚「红色 ✓」（颜色说状态、形状说进度，见 pages/tasks.ts 的 progressDot）。
+  // 用户实测反证：手动点一下「已完成」就当场归档。
+  //
+  // 这一组放在**末尾**、每条自己造样本：它们会改任务列表（归档、退回、建删分区），
+  // 摆在前面会把别的用例的前提搅掉。整段收尾把档位拨回「立即」（= 默认）。
+  await page.locator('.rail-btn[data-page="tasks"]').click();
+  await sleep(320);
+  await page.click('#page-tasks .chips .chip:has-text("全部")');
+  await sleep(260);
+  await page.fill("#page-tasks .searchbox input", "");
+  await sleep(300);
+
+  /** 库里挑一条「演示空间 + 未归档 + 逾期（结束日已过）+ 进度不满」的任务。 */
+  const pickStuck = (skipTitle) =>
+    page.evaluate((skip) => {
+      const tasks = JSON.parse(localStorage.getItem("tadado.tasks.v1") ?? "[]");
+      const hit = tasks.find(
+        (task) =>
+          task.partition === "demo" &&
+          task.archived !== true &&
+          task.status === "overdue" &&
+          task.progress < 100 &&
+          task.title !== skip,
+      );
+      return hit ? { title: hit.title, progress: hit.progress } : null;
+    }, skipTitle ?? "");
+
+  /** 搜出这条任务、双击打开抽屉。返回搜到几行（0 = 没搜到，后面几条会空跑）。 */
+  const openTaskDrawer = async (title) => {
+    await page.locator('.rail-btn[data-page="tasks"]').click();
+    await sleep(320);
+    await page.fill("#page-tasks .searchbox input", title);
+    await sleep(430);
+    const row = page.locator("#page-tasks .tt-row").filter({ hasText: title }).first();
+    const found = await row.count();
+    if (found === 0) return 0;
+    await row.dblclick();
+    await page.waitForSelector("#task-drawer.open");
+    await sleep(340);
+    return found;
+  };
+
+  /** 抽屉里改进度 + 写一句说明回车（抽屉是 deferred：不点发送不落库）。 */
+  const pushProgress = async (value, note) => {
+    await page.fill("#task-drawer .pct-input", String(value));
+    await page.locator("#task-drawer .pct-input").blur();
+    await sleep(230);
+    await page.fill("#task-drawer .tl-compose input", note);
+    await page.locator("#task-drawer .tl-compose input").press("Enter");
+    await sleep(540);
+  };
+
+  /** 读库里某条任务的状态 / 进度 / 归档位。 */
+  const storedOf = (title) =>
+    page.evaluate((text) => {
+      const tasks = JSON.parse(localStorage.getItem("tadado.tasks.v1") ?? "[]");
+      const hit = tasks.find((task) => task.title === text);
+      return hit
+        ? { status: hit.status, progress: hit.progress, archived: hit.archived === true }
+        : null;
+    }, title);
+
+  // ① 进度拖满 ⇒ 自动「已完成」⇒ 按「立即」**当场**离开任务页（就是用户报的那一条）
+  const stuck = await pickStuck("");
+  check(
+    "样本：演示空间里有一条「逾期 + 进度不满」的任务（否则下面几条空跑）",
+    stuck !== null,
+    stuck ? `${stuck.title}（进度 ${stuck.progress}%）` : "没找到",
+  );
+  const beforeStuck = await archivedCount();
+  const openedStuck = await openTaskDrawer(stuck?.title ?? "");
+  await page.fill("#task-drawer .pct-input", "100");
+  await page.locator("#task-drawer .pct-input").blur();
+  await sleep(260);
+  // 满格那一格必须把「发送之后会发生什么」写在脸上：抽屉是 deferred，不写就等于没发生
+  const fullPending = await page.evaluate(
+    () => document.querySelector("#task-drawer .prog-pending")?.textContent?.trim() ?? "",
+  );
+  check(
+    "进度拨到 100% 时，待保存提示写明「发送后自动标记为已完成」",
+    fullPending.includes("发送后自动标记为已完成"),
+    `「${fullPending}」`,
+  );
+  await page.fill("#task-drawer .tl-compose input", "进度拖满（口径用例）");
+  await page.locator("#task-drawer .tl-compose input").press("Enter");
+  await sleep(560);
+  // 用关闭按钮而不是 Esc：回车之后焦点还在说明框里，Esc 会被那一层拦下（见 taskDrawer 的 onKey）
+  await page.click("#task-drawer .dr-close");
+  await sleep(320);
+  const stuckAfter = await storedOf(stuck?.title ?? "");
+  const listedStuck = await listedRows(stuck?.title ?? "");
+  const afterStuck = await archivedCount();
+  check(
+    "进度拖满 100% ⇒ 状态自动变「已完成」，并按「立即」当场收进归档",
+    openedStuck === 1 &&
+      stuckAfter?.status === "done" &&
+      stuckAfter.progress === 100 &&
+      stuckAfter.archived === true &&
+      listedStuck === 0 &&
+      afterStuck === beforeStuck + 1,
+    `打开 ${openedStuck} 行 → 状态 ${stuckAfter?.status} · 进度 ${stuckAfter?.progress}% · 归档 ${stuckAfter?.archived} · 列表剩 ${listedStuck} 行 · 已归档 ${beforeStuck} → ${afterStuck}`,
+  );
+
+  // ② 反向：进度退回 100% 以下 ⇒ 状态跟着退回（这条结束日已过，所以落到「逾期」）。
+  //    档位用「7 天」让它完成之后**仍留在任务页** —— 否则一完成就被收走，连改都改不动
+  await setArchiveFor("7 天");
+  const back = await pickStuck(stuck?.title ?? "");
+  const openedBack = await openTaskDrawer(back?.title ?? "");
+  await page.click("#task-drawer .tf-row .chip:has-text('已完成')");
+  await sleep(430);
+  const doneStored = await storedOf(back?.title ?? "");
+  const listedDone = await listedRows(back?.title ?? "");
+  await pushProgress(60, "退回 60%（口径用例）");
+  await page.click("#task-drawer .dr-close");
+  await sleep(320);
+  const backStored = await storedOf(back?.title ?? "");
+  check(
+    "「7 天」档下完成之后仍留在任务页（反向取样有效）",
+    openedBack === 1 && doneStored?.status === "done" && listedDone === 1,
+    `打开 ${openedBack} 行 · 状态 ${doneStored?.status} · 列表 ${listedDone} 行`,
+  );
+  check(
+    "进度退回 100% 以下 ⇒ 状态跟着退回（结束日已过 ⇒ 逾期）",
+    backStored?.status === "overdue" && backStored.progress === 60,
+    `状态 ${backStored?.status} · 进度 ${backStored?.progress}%`,
+  );
+
+  // ③ 「标记未完成」不能是空操作：进度得跟着退到「完成前那一格」（不是 100、也不是 0）。
+  //    先把进度重新拖满（这会写下一条 `60 → 100` 的进度记录），再点「进行中」
+  await openTaskDrawer(back?.title ?? "");
+  await pushProgress(100, "重新拖满（口径用例）");
+  const refullStored = await storedOf(back?.title ?? "");
+  await page.click("#task-drawer .tf-row .chip:has-text('进行中')");
+  await sleep(470);
+  const undoneStored = await storedOf(back?.title ?? "");
+  await page.click("#task-drawer .dr-close");
+  await sleep(300);
+  check(
+    "「标记未完成」⇒ 进度退回「完成前那一格」，状态一起退（结束日已过 ⇒ 逾期）",
+    refullStored?.status === "done" &&
+      refullStored.progress === 100 &&
+      undoneStored?.progress === 60 &&
+      undoneStored.status === "overdue",
+    `拖满后 ${refullStored?.status}/${refullStored?.progress}% → 点「进行中」后 ${undoneStored?.status}/${undoneStored?.progress}%`,
+  );
+
+  // ④ 新建分区的归档档位默认「立即」，而且要**落盘**：只靠读取兜底的话，设置面板上那个
+  //    值没有出处（2026-10-16 用户提的「各分区默认立即归档」）
+  await page.click("#set-btn");
+  await page.waitForSelector("#set-drawer.open");
+  await page.click("#set-part button:has-text('新建分区')");
+  await page.waitForSelector(".mask .pr-input");
+  await page.fill(".mask .pr-input", "临时归档区");
+  await page.click(".modal-actions button:has-text('创建')");
+  await sleep(430);
+  /** 读「临时归档区」的 id 与它在归档档位表里的值（表本身是明文的 JSON，能直接看）。 */
+  const newPartitionDays = () =>
+    page.evaluate(() => {
+      const decode = (key) => {
+        const raw = localStorage.getItem(key) ?? "";
+        const once = JSON.parse(raw);
+        return typeof once === "string" ? JSON.parse(once) : once;
+      };
+      try {
+        const list = decode("tadado.kv.partitions.list");
+        const hit = list.find((item) => item.name === "临时归档区");
+        if (!hit) return null;
+        const record = decode("tadado.kv.archive.afterDays");
+        return { id: hit.id, days: record?.[hit.id] ?? null };
+      } catch {
+        return null;
+      }
+    });
+  const newPart = await newPartitionDays();
+  check(
+    "新建分区的归档档位默认「立即」，并且真的落盘（不是靠读取兜底）",
+    newPart !== null && newPart.days === -1,
+    JSON.stringify(newPart),
+  );
+
+  // 重启之后它还是「立即」—— 没有任何一处把它当成「从没设过」而冻成「不归档」
+  await page.reload();
+  await page.waitForSelector(".rail-btn");
+  await sleep(800);
+  const keptDays = await page.evaluate((id) => {
+    try {
+      const record = JSON.parse(localStorage.getItem("tadado.kv.archive.afterDays") ?? "{}");
+      return record?.[id] ?? null;
+    } catch {
+      return null;
+    }
+  }, newPart?.id ?? "");
+  check(
+    "重启之后它仍是「立即」（没被「老库冻结」改成「不归档」）",
+    keptDays === -1,
+    `档位 = ${keptDays}`,
+  );
+
+  // 收尾：删掉这个临时分区，别影响后面的用例
+  await page.click("#set-btn");
+  await page.waitForSelector("#set-drawer.open");
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll("#set-part .set-row")].find((r) =>
+      (r.textContent ?? "").trim().startsWith("临时归档区"),
+    );
+    [...(row?.querySelectorAll("button") ?? [])]
+      .find((b) => (b.textContent ?? "").trim() === "删除")
+      ?.click();
+  });
+  await page.waitForSelector(".modal-actions button:has-text('删除')");
+  await page.click(".modal-actions button:has-text('删除')");
+  await sleep(380);
+  await page.click("#set-close");
+  await sleep(250);
+
+  // ⑤ 幂等：自愈只该在**第一次**动手。连着重启两次，存档不再变化 —— 少了这条，
+  //    一个「每次启动都重写一遍」的实现也能让上面全绿。同时直接查「进度与状态打架」
+  //    的组合（满格却不是已完成 / 已完成却不满格），那正是这套口径要消灭的东西
+  await setArchiveFor("立即");
+  await page.reload();
+  await page.waitForSelector(".rail-btn");
+  await sleep(900);
+  const snapA = await page.evaluate(() => localStorage.getItem("tadado.tasks.v1"));
+  await page.reload();
+  await page.waitForSelector(".rail-btn");
+  await sleep(900);
+  const snapB = await page.evaluate(() => localStorage.getItem("tadado.tasks.v1"));
+  const clash = await page.evaluate(() => {
+    const tasks = JSON.parse(localStorage.getItem("tadado.tasks.v1") ?? "[]");
+    return tasks.filter((task) => (task.progress >= 100) !== (task.status === "done")).length;
+  });
+  check(
+    "自愈收敛：连着重启两次存档不再变化，且存档里没有「进度与状态打架」的组合",
+    snapA !== null && snapA === snapB && clash === 0,
+    `两次存档 ${(snapA ?? "").length} / ${(snapB ?? "").length} 字节 · 打架 ${clash} 条`,
+  );
+
   check("无 console 报错", consoleErrors.length === 0, consoleErrors.slice(0, 3).join(" | "));
 
   // ── 存储版本与读入口归位（2026-09-17）──────────────────────────────────────
