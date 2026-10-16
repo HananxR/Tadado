@@ -1153,27 +1153,40 @@ try {
   // md 本来就是**有选择地**被采纳的（状态一直不进 md），而这是最后一条还能把倒挂
   // 带进已有任务的路（2026-10-16 加）。反过来挪开始日去迁就它等于改掉用户写下的历史。
   const invertedIso = isoOfDay(dayOfIso(await startDate.inputValue()) - 1);
-  const beforeInverted = {
-    end: await endDate.inputValue(),
-    progress: await page.locator("#task-drawer .pct-input").inputValue(),
-  };
+  const endBeforeMd = await endDate.inputValue();
   await page.fill("#task-drawer textarea.md", `- [ ] md 改过的名字 #md ⏰${invertedIso} :: 70%`);
   await page.click("#task-drawer button:has-text('按 md 更新任务')");
   await sleep(330);
   const invertedApplied = await page.evaluate(() => ({
     end: document.querySelector("#task-drawer .dt:has(.dt-time) .dt-date")?.value ?? "",
-    progress: document.querySelector("#task-drawer .pct-input")?.value ?? "",
-    // 标题走 .dr-name（详情里那句「md 改过的名字」），进度看定义区旁边那个数字框
     name: document.querySelector("#task-drawer .dr-name")?.textContent?.trim() ?? "",
     toast: document.querySelector("#toast")?.textContent?.trim() ?? "",
   }));
+  // 进度读**库里**的，不读抽屉那个数字框：这之前那次「填 65 + 回车」被「只改进度、
+  // 没写说明不保存」拦下了（taskDrawer 的 submit），控件上留着「待保存 60% → 65%」的
+  // 草稿，而草稿按设计**不重画**（免得冲掉用户正在填的值）。要验的是「md 的其余字段
+  // 照旧写入」，那就看真的写进去了没有 —— 而写库是**排队**的（`db.ts` 的 saveTasks
+  // 有 400ms 防抖），所以这里等它落盘，不拿一个 sleep 去赌
+  const mdStored = await page
+    .waitForFunction(
+      (key) => {
+        const task = JSON.parse(localStorage.getItem(key) ?? "[]").find(
+          (item) => item.title === "md 改过的名字",
+        );
+        return task ? task.progress : false;
+      },
+      "tadado.tasks.v1",
+      { timeout: 4000 },
+    )
+    .then((handle) => handle.jsonValue())
+    .catch(() => null);
   check(
     "md 写回：截止早于开始的那条不写回，其余字段照旧（并说明原因）",
-    invertedApplied.end === beforeInverted.end &&
-      invertedApplied.progress === "70" &&
+    invertedApplied.end === endBeforeMd &&
+      mdStored === 70 &&
       invertedApplied.name === "md 改过的名字" &&
       /没写回/.test(invertedApplied.toast),
-    `截止填 ${invertedIso} → 停在 ${invertedApplied.end}（原 ${beforeInverted.end}）· 进度 ${beforeInverted.progress} → ${invertedApplied.progress} · 「${invertedApplied.toast}」`,
+    `截止填 ${invertedIso} → 停在 ${invertedApplied.end}（原 ${endBeforeMd}）· 进度落库 ${mdStored} · 「${invertedApplied.toast}」`,
   );
 
   await page.keyboard.press("Escape");
@@ -2083,14 +2096,27 @@ try {
   // 「两条都入库了」才是这条断言的意思（归档与否由下面那几条单独管）
   await page.locator("#page-manage .chip:has-text('全部状态')").click();
   await sleep(300);
-  const importedRows = {
-    first: await page.locator("#page-manage .mrow", { hasText: "批量一" }).count(),
-    second: await page.locator("#page-manage .mrow", { hasText: "批量二" }).count(),
-  };
+  // ⚠️ 2026-10-16：**不能只看第一页的行数**。「批量一」的截止写在过去（⏰09-20），它的
+  // 起点与创建日会**按截止日修正**（见 data/markdown.ts），而管理页按**创建日倒序**排
+  // （`manage.ts` 的 tableRows），于是它落到后面几页去了 —— 原来那句「管理页两侧都能看见」
+  // 只在「导入日 = 最新创建日」时成立。要证明的是「两条都入库了」，那就查库；渲染那句另测
+  const importedRows = await page.evaluate((key) => {
+    const tasks = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return {
+      first: tasks.filter((task) => task.title === "批量一").length,
+      second: tasks.filter((task) => task.title === "批量二").length,
+    };
+  }, "tadado.tasks.v1");
   check(
     "批量建出两条（非任务行被跳过）",
     importedRows.first === 1 && importedRows.second === 1,
     JSON.stringify(importedRows),
+  );
+  // 渲染那句用「批量二」验：它没写截止、创建日就是导入日，而且当场被归档 ——
+  // 正是这条路径要看的「已完成的那条在含归档的这一页上看得见」
+  check(
+    "迁进来的已完成任务在管理页看得见（含已归档）",
+    (await page.locator("#page-manage .mrow", { hasText: "批量二" }).count()) === 1,
   );
   // 回任务页把搜索框清干净（下面几条断言还站在这一页上做）
   await page.locator('.rail-btn[data-page="tasks"]').click();
@@ -2151,8 +2177,10 @@ try {
   );
   check(
     "库里没有起止倒挂的任务（新增与维护的每条路都拦住了）",
-    invertedLeft.length === 0,
-    invertedLeft.map((row) => row.title).join(" | ") || "无",
+    // 顺带钉住「这份快照不是空的」：空快照会让这条断言**空跑** —— 而「看起来绿、其实什么
+    // 都没验」正是它要防的那种绿（演示空间本来就有一百来条）
+    storedRanges.length > 50 && invertedLeft.length === 0,
+    `${storedRanges.length} 条 · 倒挂：${invertedLeft.map((row) => row.title).join(" | ") || "无"}`,
   );
 
   // 重复：**只提示、不替用户决定** —— 同名不一定同一条，所以给「跳过 / 全部」两个
@@ -2542,13 +2570,22 @@ try {
   check("点年份回到今年", (await page.locator(".hmyear").textContent()) === yearNow);
 
   // 报告快捷范围：每个档位都要真的换窗口，且条数随之变化
+  //
+  // ⚠️ 期望的天数**按日历现算**（2026-10-16 修）：这里原来写死 `["本月", 30]` /
+  // `["全年", 365]`，那是九月里跑出来的数 —— 一到 10 月（31 天）这条就红，而它的读法像是
+  // 「本月算错了」。档位的定义是**整月 / 整年**（见 `data/timeline.ts` 的 wholeMonth，
+  // 那儿的注释就写着「闰年与 30/31 天都不用自己判」），所以期望值该由日历推出来
+  // 「本月」的天数**复用上面那条断言已经算好的 `monthDays`**（总览「本月」窗口那一处，
+  // 同一层作用域），别再算一遍；「全年」按日历年推（闰年 366、平年 365）
+  const calYear = new Date().getFullYear();
+  const yearDays = (Date.UTC(calYear + 1, 0, 1) - Date.UTC(calYear, 0, 1)) / 86400000;
   const ranges = [
     ["今天", 1],
     ["昨天", 1],
     ["本周", 7],
     ["上周", 7],
-    ["本月", 30],
-    ["全年", 365],
+    ["本月", monthDays],
+    ["全年", yearDays],
   ];
   let rangeBad = "";
   for (const [label, spanDays] of ranges) {
