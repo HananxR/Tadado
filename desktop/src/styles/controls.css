@@ -710,9 +710,10 @@ body.lock-suppressed .mask {
   gap: 9px;
 }
 
-/* 两块「对账」结果：认不出的行、与库里重名的。共用一个壳 */
+/* 三块「对账」结果：认不出的行、与库里重名的、起点被按截止日修正过的。共用一个壳 */
 .batch-skip,
-.batch-dup {
+.batch-dup,
+.batch-adj {
   margin-top: 9px;
   padding: 8px 10px 8px 12px;
   border: 1px solid var(--border);
@@ -739,9 +740,20 @@ body.lock-suppressed .mask {
   color: var(--doing);
 }
 
+/* 起点修正用主色：三块里**唯一动过数据**的一条 —— 它既不是错误（红），
+   也不是「你自己看着办」（暖色），而是一处已经替你做下的决定 */
+.batch-adj {
+  border-left: 3px solid var(--accent);
+}
+
+.batch-adj .bs-h {
+  color: var(--accent);
+}
+
 /* 块里没东西时整块不占位置 */
 .batch-skip:empty,
-.batch-dup:empty {
+.batch-dup:empty,
+.batch-adj:empty {
   display: none;
 }
 

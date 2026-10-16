@@ -232,8 +232,10 @@ const partitionName = (): string =>
  * 粘十行新任务，名字就重新变模糊了。
  *
  * 四条刻意的设计：
- *   1. **解析出几条、哪几行认不出、哪几条与库里同名**，都要在点「导入」之前看见，
- *      而不是导完才发现少了或多了（「先对账，再动手」，与那个迁移工具同一条）；
+ *   1. **解析出几条、哪几行认不出、哪几条与库里同名、哪几条起点被修正过**，都要在点
+ *      「导入」之前看见，而不是导完才发现少了、多了或哪天被挪了（「先对账，再动手」，
+ *      与那个迁移工具同一条。末一项 2026-10-16 加：起点晚于截止日的草稿按截止日修正，
+ *      那是**替用户做的决定**，更得摆在明处）；
  *   2. **重复只提示、不替用户决定**：同名不一定同一条，所以给「跳过重复」与
  *      「全部导入」两个按钮由他挑。判重规则只有一条 —— 标题在当前分区里已存在；
  *      旧版里改过标题的就认不出，这一点也写在界面上；
@@ -265,6 +267,12 @@ export function openImportDialog(): void {
   const skipList = el("div", { class: "batch-skip" });
   /** 与当前分区里已有任务同名的：提示，不拦。 */
   const dupList = el("div", { class: "batch-dup" });
+  /**
+   * 起点被按截止日修正过的（源里的起点晚于截止日，见 data/markdown 的 adjusted）。
+   * 它既不是「认不出」也不是「重名」：那两块是**提示**，而这里是真的动过数据 ——
+   * 替用户做的决定必须摆在他点「导入」之前（2026-10-16 加）。
+   */
+  const adjList = el("div", { class: "batch-adj" });
 
   const cancelBtn = el("button", { class: "btn", type: "button", text: "取消" });
   const skipBtn = el("button", { class: "btn", type: "button" });
@@ -285,6 +293,7 @@ export function openImportDialog(): void {
     count,
     skipList,
     dupList,
+    adjList,
     el("div", { class: "modal-actions" }, [cancelBtn, skipBtn, allBtn]),
   ]);
   const mask = el("div", { class: "mask" }, [card]);
@@ -315,7 +324,7 @@ export function openImportDialog(): void {
   };
 
   const sync = (): void => {
-    const { drafts: parsed, skipped } = report();
+    const { drafts: parsed, skipped, adjusted } = report();
     const dups = duplicates(parsed);
     const dupKeys = new Set(dups.map((draft) => titleKey(draft.title)));
     const fresh = parsed.filter((draft) => !dupKeys.has(titleKey(draft.title)));
@@ -368,6 +377,33 @@ export function openImportDialog(): void {
       }
     }
 
+    // 起点被按截止日修正过的：与上面两块同一套排布（最多 5 条 + 一句折行）。
+    // 放在最后，但它是这块里**唯一动过数据**的一条 —— 左边的色条与标题都用主色，
+    // 与「重名」（暖色，只提示）区分开
+    adjList.replaceChildren();
+    if (adjusted.length > 0) {
+      adjList.append(
+        el("div", {
+          class: "bs-h",
+          text: `${adjusted.length} 条起点晚于截止日，起点与创建日已按截止日修正：`,
+        }),
+      );
+      for (const item of adjusted.slice(0, 5)) {
+        adjList.append(
+          el("div", { class: "bs-row" }, [
+            el("span", { class: "bs-ln", text: item.title }),
+            el("span", {
+              class: "bs-tx",
+              text: `起点 ${monthDayText(dayNumber(item.inferred))} → 截止 ${monthDayText(dayNumber(item.end))}`,
+            }),
+          ]),
+        );
+      }
+      if (adjusted.length > 5) {
+        adjList.append(el("div", { class: "bs-more", text: `…另有 ${adjusted.length - 5} 条` }));
+      }
+    }
+
     // 「跳过重复」只在**真的有得跳**时才出现（整批都是重复时它什么也不做），
     // 并且它是默认动作 —— 造出重复数据的清理成本比少导几条高，想全导的人得自己点第二个
     const canSkip = dups.length > 0 && fresh.length > 0;
@@ -412,15 +448,17 @@ export function openImportDialog(): void {
         partition: activePartitionId(),
       })),
     );
-    const { skipped } = report();
+    const { skipped, adjusted } = report();
     // 导入的这批可能落在当前筛选 / 搜索词之外，先复位，否则切回任务页一条都看不见
     statusFilter = "all";
     query = "";
     dataChanged();
     close();
-    // 回执：导了几条、落在哪个分区、跳过几行认不出的 —— 一次说清
+    // 回执：导了几条、落在哪个分区、跳过几行认不出的、几条起点被修正过 —— 一次说清。
+    // 卡片关掉之后就只剩这一句话了，所以动过数据的那一项必须在这里也留个痕迹
     const miss = skipped.length > 0 ? ` · ${skipped.length} 行未能识别` : "";
-    toast(`已导入 ${picked.length} 条到「${partitionName()}」${miss}`);
+    const fixed = adjusted.length > 0 ? ` · ${adjusted.length} 条起点已按截止日修正` : "";
+    toast(`已导入 ${picked.length} 条到「${partitionName()}」${miss}${fixed}`);
   }
 
   // 选文件：整份读进来就解析，不经过中间的「框」—— 所以也没有草稿这回事

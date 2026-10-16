@@ -14,6 +14,7 @@ import { MAX_TAGS, normalizeTags } from "../data/tags";
 import {
   dueTextOf,
   dayNumber,
+  isRangeInverted,
   monthDayOf,
   nowMinutes,
   nowStamp,
@@ -272,14 +273,29 @@ export function taskForm(options: TaskFormOptions): TaskForm {
   // ── 开始 / 结束 ──
   // 开始只到日期（它决定甘特条的起点）；结束带时分（它才是要提醒的那个点）。
   // 两个字段用同一个组件、同一套排布，所以这两行在抽屉里是齐的。
+  //
+  // 两栏之间**互相是对方的边界**（2026-10-16 加）：开始不能晚于结束、结束不能早于
+  // 开始，越界的那一天控件直接不受理（同日合法，见 data/time 的 isRangeInverted）。
+  // 拦在控件里而不是这里：抽屉是即时落库的，改完再判就得回滚，而回滚意味着
+  // 「先写坏、再改好」——那条路上任何一个岔子都会在库里留下一个倒挂区间。
+  //
+  // 边界传的是**函数**（每次提交前现读）：结束日随时会被「结束」那一栏改掉。
   const startField = dateTimeField({
     label: "开始",
     withTime: false,
     clearable: false,
     value: { day: dayNumber(task.start), time: null },
+    // 没有截止时不设上界：那时 end 只是必填的占位日（见下面 onChange 的说明），
+    // 拿它卡住「开始」等于不让人给没有截止的任务排一个将来的起点
+    bounds: () => ({ max: task.due ? dayNumber(task.end) : null }),
+    peerLabel: "结束",
     onChange: ({ day }) => {
       if (day === null) return;
       task.start = monthDayOf(day);
+      // 没有截止时，end 是**占位日**：模型里必填、甘特条的跨度还要用它，但界面上不显示。
+      // 这一栏没有上界，所以走不到控件的拒绝那一步 —— 开始越过占位日时把它一起带走，
+      // 否则库里就留下一个倒挂区间。
+      if (!task.due && isRangeInverted(day, dayNumber(task.end))) task.end = monthDayOf(day);
       options.onEdit("start");
     },
   });
@@ -288,14 +304,18 @@ export function taskForm(options: TaskFormOptions): TaskForm {
     label: "结束",
     withTime: true,
     value: { day: dayNumber(task.end), time: task.at },
+    bounds: () => ({ min: dayNumber(task.start) }),
+    peerLabel: "开始",
     onChange: ({ day, time }) => {
       if (day === null) {
         // 清除截止：due 是「有没有截止」的唯一开关，at 跟着一起清。
-        // end 必须落回今天 —— 它是甘特条跨度的终点，模型里必填；留在过去那一天
-        // 会让任务继续按「逾期」算（overdue 是按 end < 今天 判的）
+        // end 必须落回**今天** —— 它是甘特条跨度的终点，模型里必填；留在过去那一天
+        // 会让任务继续按「逾期」算（overdue 是按 end < 今天 判的）。但开始日排在
+        // 将来时，落今天会当场造出一个倒挂区间，所以取「今天」与「开始日」里晚的那个。
+        const startDay = dayNumber(task.start);
         task.due = null;
         task.at = null;
-        task.end = todayMonthDay();
+        task.end = isRangeInverted(startDay, TODAY) ? monthDayOf(startDay) : todayMonthDay();
         options.onEdit("end");
         toast("已清除截止");
         return;

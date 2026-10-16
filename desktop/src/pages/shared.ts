@@ -21,6 +21,7 @@ export {
   TODAY,
   dayNumber,
   dayOfStamp,
+  isRangeInverted,
   isWeekend,
   isoDay,
   minuteOfStamp,

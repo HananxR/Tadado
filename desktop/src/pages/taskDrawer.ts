@@ -36,6 +36,9 @@ import {
   STATUS_LABEL,
   URGENCY_COLORS,
   URGENCY_LABEL,
+  dayNumber,
+  isRangeInverted,
+  monthDayText,
   nowStamp,
   pad2,
   stampText,
@@ -551,19 +554,33 @@ function build(task: Task): Drawer {
     current.tags = draft.tags;
     current.progress = draft.progress;
     // start 不在写法里（md 只带一个截止日）。一律填今天会把跨天任务的起点抹平，
-    // 所以起点、以及没写截止时的终点都照旧不动
-    if (draft.due) {
+    // 所以起点、以及没写截止时的终点都照旧不动。
+    //
+    // 但 md 里那个截止日**可能早于这条任务的开始日**（2026-10-16 加）—— 照它写就是
+    // 一个倒挂区间，而表单那边已经被日期控件挡住了，md 是最后一条还能把倒挂带进
+    // 已有任务的路。这条截止不写回（其余照旧），理由和「状态不采纳」同类：md 在这里
+    // 本来就是**有选择地**被采纳的；反过来挪开始日去迁就它，等于改掉一条用户写下的
+    // 历史，那比拒绝更糟。
+    const startDay = dayNumber(current.start);
+    const mdEndDay = dayNumber(draft.end);
+    const dueInverted = Boolean(draft.due) && isRangeInverted(startDay, mdEndDay);
+
+    if (draft.due && !dueInverted) {
       current.due = draft.due;
       current.at = draft.at;
       current.end = draft.end;
-    } else {
+    } else if (!draft.due) {
       current.due = null;
       current.at = null;
     }
 
     dataChanged();
     paint(current);
-    toast(`已按 md 更新「${draft.title}」· 状态保持「${STATUS_LABEL[current.status]}」`);
+    toast(
+      dueInverted
+        ? `已按 md 更新「${draft.title}」· 截止 ${monthDayText(mdEndDay)} 早于开始 ${monthDayText(startDay)}，这条没写回`
+        : `已按 md 更新「${draft.title}」· 状态保持「${STATUS_LABEL[current.status]}」`,
+    );
   });
 
   const markdownBlock = el("details", { class: "md-d" }, [

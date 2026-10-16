@@ -27,6 +27,7 @@
 import {
   dayNumber,
   dayOfStamp,
+  isRangeInverted,
   monthDayOf,
   monthDayText,
   nowStamp,
@@ -87,7 +88,7 @@ const ACTIVITY = /^\s{2,}(?:[-*]\s+)?(\d{2}-\d{2}\s+\d{2}:\d{2})\s+(.+)$/;
  */
 const LEGACY_REPEAT = /\+\d+[dwmy]/;
 
-/** 解析结果：认出来的任务 + **认不出的行**。 */
+/** 解析结果：认出来的任务 + **认不出的行** + **被修正过起点的草稿**。 */
 export interface ParseReport {
   drafts: Omit<Task, "partition">[];
   /**
@@ -98,6 +99,15 @@ export interface ParseReport {
    * 哪些、为什么少。迁移工具那套「先对账」在这里同样成立：少掉的东西必须能看见。
    */
   skipped: { line: number; text: string }[];
+  /**
+   * 起点晚于截止日、起点与创建日被按截止日修正过的草稿（2026-10-16 加）。
+   *
+   * 与 `skipped` 同一条理由：**替用户做的决定必须能看见**。这一处是全应用唯一一次
+   * 改动用户数据（连源里写着的截止日都没动，动的是这里推断出来的起点），
+   * 所以它得在迁入前的那次对账里逐条列出来 —— 否则「导进来的任务时间轴怪怪的」
+   * 会变成一个查不出原因的现象。
+   */
+  adjusted: { title: string; inferred: MonthDay; end: MonthDay }[];
 }
 
 /**
@@ -110,6 +120,7 @@ export interface ParseReport {
 export function parseTasksDetailed(md: string): ParseReport {
   const drafts: Omit<Task, "partition">[] = [];
   const skipped: { line: number; text: string }[] = [];
+  const adjusted: { title: string; inferred: MonthDay; end: MonthDay }[] = [];
   const today = todayMonthDay();
   /** 活动行挂到它名下：这套写法里活动就是缩进在任务下面的子行。 */
   let owner: Omit<Task, "partition"> | null = null;
@@ -218,14 +229,27 @@ export function parseTasksDetailed(md: string): ParseReport {
     // `start` 一起用这个日期：单独留成导入日的话，会出现「创建于 01-05、甘特色条却从
     // 09-20 开始」这种自相矛盾。
     //
-    // 手写的行不受影响：它们没有活动行，上面刚补的那条「导入任务」就是今天。
+    // 手写的行不参与这一步：它们没有活动行，上面刚补的那条「导入任务」就是今天。
+    // （但「今天」可能晚于这一行写的截止日 —— 手写的过期任务正是这样，它会在下面那段
+    // 里被按截止日修正，见 `adjusted`。）
     const earliest = draft.activities[draft.activities.length - 1]!;
     const monthDay = monthDayOf(dayOfStamp(earliest.at));
     draft.created = monthDay;
     draft.start = monthDay;
+
+    // 推断出来的起点晚于截止日 = 这一行自相矛盾（截止写得比最早那条活动还早）。
+    // 挪的是**推断的**那一端：起点连带创建日落到截止日（「它至少在截止日那天就已经
+    // 存在」），而截止日是源里写着的、最早那条活动也是源里写着的 —— 两个事实一个都
+    // 不动。反过来的做法（把截止顺手推后）等于修改用户写下的截止时间，那是另一件事，
+    // 而且没人授权。修正过谁，由 ParseReport.adjusted 带出去给用户看。
+    if (isRangeInverted(dayNumber(draft.start), dayNumber(draft.end))) {
+      adjusted.push({ title: draft.title, inferred: monthDay, end: draft.end });
+      draft.created = draft.end;
+      draft.start = draft.end;
+    }
   }
 
-  return { drafts, skipped };
+  return { drafts, skipped, adjusted };
 }
 
 /**

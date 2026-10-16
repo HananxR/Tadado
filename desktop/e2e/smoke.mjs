@@ -74,6 +74,21 @@ const todayDay = () => {
 };
 
 /**
+ * 绝对天数 ↔ `YYYY-MM-DD`，与 data/time.ts 的 `isoDay` / 日期框的 `dayOf` 同一套换算。
+ *
+ * 用来现算「相对今天第 N 天」：日期框收的是 ISO 串，而校验比较的是天数 ——
+ * 两边口径不一致时，测试会以为自己填的是另一个日子（2026-10-16 加）。
+ */
+const isoOfDay = (day) => {
+  const date = new Date(day * 86400000);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+};
+
+/** `YYYY-MM-DD` → 绝对天数（`isoOfDay` 的逆运算）。 */
+const dayOfIso = (iso) => Math.floor(Date.parse(`${iso}T00:00:00Z`) / 86400000);
+
+/**
  * `[月, 日]` → 绝对天数，年份按「离今天最近的那一年」补。
  *
  * 与 `data/time.ts` 的 `dayNumber` 同一套规则。数据里**不存年**（见 `MonthDay`），
@@ -986,12 +1001,81 @@ try {
 
   // 设成过去的日期 → 应被自动标为逾期。
   // 起点是带时分的那一行（容器里有时刻框），开始那行没有 —— 这就是
-  // 「开始只到日期、结束带时分」在 DOM 上的样子
+  // 「开始只到日期、结束带时分」在 DOM 上的样子。
+  //
+  // ⚠️ 2026-10-16 起「结束」不能再早于「开始」，所以**先把开始让开**：这条断言查的是
+  // 逾期，而这条任务的开始日未必早于要填的截止日（原来直接填一个写死的过去日期就完事，
+  // 那条路现在会被控件挡下）。日期按今天的偏移现算，不写死 —— 见文件头那三条规矩。
+  const startDate = page.locator("#task-drawer .dt:not(:has(.dt-time)) .dt-date");
   const endDate = page.locator("#task-drawer .dt:has(.dt-time) .dt-date");
-  await endDate.fill("2026-09-01");
+  const pastDay = todayDay() - 5;
+  if (dayOfIso(await startDate.inputValue()) > pastDay) {
+    // 开始本来就在截止前面时不必动它（动多了会让这条断言离「用户真会做的事」更远）
+    await startDate.fill(isoOfDay(pastDay - 1));
+    await sleep(250);
+  }
+  await endDate.fill(isoOfDay(pastDay));
   await sleep(350);
   const badge = (await page.locator("#task-drawer .dr-h .st").textContent()) ?? "";
   check("结束早于今天自动标逾期", badge.includes("逾期"), badge.trim());
+
+  // ── 起止倒挂：控件当场拦下（2026-10-16 加）───────────────────────────────────
+  // 判据：结束 >= 开始，**同日合法**（开始的当天就是截止日是最常见的排法之一）。
+  // 拦在日期控件里而不是各页面：抽屉是**即时落库**的，拦在出口之前才不需要
+  // 「先写坏、再回滚」—— 那条路上任何一个岔子都会在库里留下一个倒挂区间。
+  const rangeOf = async () =>
+    page.evaluate(() => {
+      const startEl = document.querySelector("#task-drawer .dt:not(:has(.dt-time)) .dt-date");
+      const endEl = document.querySelector("#task-drawer .dt:has(.dt-time) .dt-date");
+      return {
+        start: startEl?.value ?? "",
+        end: endEl?.value ?? "",
+        startMax: startEl?.getAttribute("max") ?? "",
+        endMin: endEl?.getAttribute("min") ?? "",
+        toast: document.querySelector("#toast")?.textContent?.trim() ?? "",
+      };
+    });
+  const range0 = await rangeOf();
+  check(
+    "两栏互为对方的原生边界（越界的那一天在取色盘里就选不中）",
+    range0.startMax === range0.end && range0.endMin === range0.start,
+    JSON.stringify(range0),
+  );
+
+  // ① 结束填到开始之前 → 不受理，显示退回原值，并说清是被谁卡住的
+  await endDate.fill(isoOfDay(dayOfIso(range0.start) - 1));
+  await sleep(300);
+  const endRejected = await rangeOf();
+  check(
+    "结束早于开始：拒收，显示退回原值",
+    endRejected.end === range0.end && /结束不能早于开始/.test(endRejected.toast),
+    `填 ${isoOfDay(dayOfIso(range0.start) - 1)} → 停在 ${endRejected.end}（原 ${range0.end}）· 「${endRejected.toast}」`,
+  );
+
+  // ② 另一个方向同样拦得住（开始晚于结束）
+  await startDate.fill(isoOfDay(dayOfIso(range0.end) + 1));
+  await sleep(300);
+  const startRejected = await rangeOf();
+  check(
+    "开始晚于结束：拒收，显示退回原值",
+    startRejected.start === range0.start && /开始不能晚于结束/.test(startRejected.toast),
+    `填 ${isoOfDay(dayOfIso(range0.end) + 1)} → 停在 ${startRejected.start}（原 ${range0.start}）· 「${startRejected.toast}」`,
+  );
+
+  // ③ 同日放行：判据最容易写错的那一格（`<` 与 `<=` 之差）
+  // 先把提示条清掉：#toast 只淡出不换字，留着 ② 那句会让下面的「没有新提示」看不出真假
+  await page.evaluate(() => {
+    const node = document.querySelector("#toast");
+    if (node) node.textContent = "";
+  });
+  await endDate.fill(range0.start);
+  await sleep(300);
+  const sameDay = await rangeOf();
+  check(
+    "同一天合法：截止落在开始那一天不被拦（也没有新的拒绝提示）",
+    sameDay.end === range0.start && !/不能早于|不能晚于/.test(sameDay.toast),
+    `截止填 ${range0.start} → ${sameDay.end} · 「${sameDay.toast}」`,
+  );
 
   // 清除结束 → 退回「进行中」（没有截止就谈不上过期，`refreshOverdue` 把它放回去）
   await page.click("#task-drawer .dt:has(.dt-time) .dt-quick button:has-text('清除')");
@@ -1065,6 +1149,33 @@ try {
     `列表里 ${renamedRows} 行 · 徽标 ${badgeBeforeMd}→${badgeAfterMd}`,
   );
 
+  // md 里那条截止**早于这条任务的开始日**：这条截止不写回（其余字段照旧）——
+  // md 本来就是**有选择地**被采纳的（状态一直不进 md），而这是最后一条还能把倒挂
+  // 带进已有任务的路（2026-10-16 加）。反过来挪开始日去迁就它等于改掉用户写下的历史。
+  const invertedIso = isoOfDay(dayOfIso(await startDate.inputValue()) - 1);
+  const beforeInverted = {
+    end: await endDate.inputValue(),
+    progress: await page.locator("#task-drawer .pct-input").inputValue(),
+  };
+  await page.fill("#task-drawer textarea.md", `- [ ] md 改过的名字 #md ⏰${invertedIso} :: 70%`);
+  await page.click("#task-drawer button:has-text('按 md 更新任务')");
+  await sleep(330);
+  const invertedApplied = await page.evaluate(() => ({
+    end: document.querySelector("#task-drawer .dt:has(.dt-time) .dt-date")?.value ?? "",
+    progress: document.querySelector("#task-drawer .pct-input")?.value ?? "",
+    // 标题走 .dr-name（详情里那句「md 改过的名字」），进度看定义区旁边那个数字框
+    name: document.querySelector("#task-drawer .dr-name")?.textContent?.trim() ?? "",
+    toast: document.querySelector("#toast")?.textContent?.trim() ?? "",
+  }));
+  check(
+    "md 写回：截止早于开始的那条不写回，其余字段照旧（并说明原因）",
+    invertedApplied.end === beforeInverted.end &&
+      invertedApplied.progress === "70" &&
+      invertedApplied.name === "md 改过的名字" &&
+      /没写回/.test(invertedApplied.toast),
+    `截止填 ${invertedIso} → 停在 ${invertedApplied.end}（原 ${beforeInverted.end}）· 进度 ${beforeInverted.progress} → ${invertedApplied.progress} · 「${invertedApplied.toast}」`,
+  );
+
   await page.keyboard.press("Escape");
   await sleep(300);
 
@@ -1120,6 +1231,22 @@ try {
   // 结束时间是必填（没有截止的任务在建的时候就不该存在）
   await page.click(".modal-card .dt:has(.dt-time) .dt-quick button:has-text('今天')");
   await sleep(150);
+
+  // 起止倒挂：**新建走的是同一套表单与控件**，所以同一道边界在这里也生效
+  // （2026-10-16 加：以前只有「必填」那一层，倒着的区间照样建得出来）。
+  // 顺带把「同日合法」钉在这一侧：上面刚点了「今天」，草稿的起止就是同一天
+  await page.fill(".modal-card .dt:not(:has(.dt-time)) .dt-date", isoOfDay(todayDay() + 1));
+  await sleep(280);
+  const dialogRange = await page.evaluate(() => ({
+    start: document.querySelector(".modal-card .dt:not(:has(.dt-time)) .dt-date")?.value ?? "",
+    toast: document.querySelector("#toast")?.textContent?.trim() ?? "",
+  }));
+  check(
+    "新建对话框里「开始晚于结束」同样被拦下（显示退回今天）",
+    dialogRange.start === localIso() && /开始不能晚于结束/.test(dialogRange.toast),
+    `填明天 → 停在 ${dialogRange.start} · 「${dialogRange.toast}」`,
+  );
+
   await page.click(".modal-card .modal-actions button:has-text('创建')");
   await sleep(450);
 
@@ -1980,6 +2107,53 @@ try {
   );
   await page.keyboard.press("Escape");
   await sleep(250);
+
+  // 起点晚于截止日的行：**按截止日修正起点（创建日同步）**，并在导入前逐条列出来
+  // （2026-10-16 加）。被挪的只有解析器**推断**出来的那两个日期 —— 截止是源里写着的、
+  // 最早那条活动也是源里写着的，两个事实一个都不动。替用户做的决定必须摆在明处。
+  await openImport();
+  await pickImportFile("- [~] 迁入倒挂样例 #工作 ⏰09-10\n  - 09-20 10:00 一条活动");
+  const adjNote = ((await page.locator(".batch-adj").textContent()) ?? "").trim();
+  check(
+    "迁入：起点晚于截止日的行被列出来（起点 09-20 → 截止 09-10）",
+    adjNote.includes("1 条起点晚于截止日") &&
+      adjNote.includes("迁入倒挂样例") &&
+      adjNote.includes("起点 09-20 → 截止 09-10"),
+    adjNote,
+  );
+  await page.click(".modal-actions .btn.primary");
+  await sleep(420);
+  const adjStored = await page.evaluate((key) => {
+    const task = JSON.parse(localStorage.getItem(key) ?? "[]").find(
+      (item) => item.title === "迁入倒挂样例",
+    );
+    return task ? { start: task.start, end: task.end, created: task.created } : null;
+  }, "tadado.tasks.v1");
+  check(
+    "迁入：修正真的落在库里（起点与创建日 = 截止日）",
+    JSON.stringify(adjStored) === JSON.stringify({ start: [9, 10], end: [9, 10], created: [9, 10] }),
+    JSON.stringify(adjStored),
+  );
+
+  // 这一轮所有入口写下的数据一起过一遍：**库里不该有倒挂的区间**
+  // （表单、md 写回、迁入各自都拦了，这里是它们共同的出口检查）
+  const storedRanges = await page.evaluate(
+    (key) =>
+      JSON.parse(localStorage.getItem(key) ?? "[]").map((task) => ({
+        title: task.title,
+        start: task.start,
+        end: task.end,
+      })),
+    "tadado.tasks.v1",
+  );
+  const invertedLeft = storedRanges.filter(
+    (row) => nearestDay(row.end[0], row.end[1]) < nearestDay(row.start[0], row.start[1]),
+  );
+  check(
+    "库里没有起止倒挂的任务（新增与维护的每条路都拦住了）",
+    invertedLeft.length === 0,
+    invertedLeft.map((row) => row.title).join(" | ") || "无",
+  );
 
   // 重复：**只提示、不替用户决定** —— 同名不一定同一条，所以给「跳过 / 全部」两个
   // 按钮由他挑。判重规则只有一条：标题在当前分区里已存在（旧版里改过标题的认不出，
