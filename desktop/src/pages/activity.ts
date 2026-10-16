@@ -530,7 +530,10 @@ function queryGroups(): ExportGroup[] {
         seen.add(key);
         return true;
       })
-      .sort((a, b) => b.at - a.at);
+      // 活动行**升序**（2026-10-16 用户提的）：导出的是一份台账，同一个任务下的
+      // 几条进展要从早读到晚 —— 倒序是「先看到结果、再看到原因」。页面上的报告
+      // 仍是最新在前（那是「眼下什么情况」），导出与它视角不同，不是不一致
+      .sort((a, b) => a.at - b.at);
     if (rows.length === 0) continue;
 
     // 同一任务的多条活动收在这个任务下面：导出去要能一眼看出「这个任务做了什么」
@@ -547,7 +550,10 @@ function queryGroups(): ExportGroup[] {
         status: STATUS_LABEL[list[0].task.status],
         rows: list,
       }))
-      .sort((a, b) => b.rows[0].at - a.rows[0].at);
+      // 任务分组仍按**最近一次活动**在前。rows 已经是升序，「最近」就从 rows[0]
+      // 挪到了最后一条 —— 键不跟着换，这份清单会按「谁的最早活动更晚」排，
+      // 与「最近在动的任务在上」刚好不是一回事
+      .sort((a, b) => b.rows[b.rows.length - 1].at - a.rows[a.rows.length - 1].at);
 
     groups.push({ tag, tasks });
   }

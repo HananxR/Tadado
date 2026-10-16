@@ -202,8 +202,9 @@ function exportGroups(list: Task[]): ExportGroup[] {
     bucket.push({
       title: task.title,
       status: STATUS_LABEL[task.status],
-      // 活动时间倒序：最新的一条在最上面，和人看时间线的顺序一致
-      rows: [...task.activities].sort((a, b) => b.at - a.at),
+      // 活动时间**升序**（2026-10-16 用户提的，与活动分析页导出同一口径）：
+      // 同一任务下的几条进展按时间从早读到晚，和抽屉时间线的铺法对得上
+      rows: [...task.activities].sort((a, b) => a.at - b.at),
     });
     byTag.set(tag, bucket);
   }

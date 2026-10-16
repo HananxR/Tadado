@@ -3292,6 +3292,47 @@ try {
   await page.waitForSelector("#page-activity .act-item, #page-activity .empty");
   await sleep(250);
 
+  /**
+   * 三层文本里「同一任务下的活动按时间升序」的检查（2026-10-16 用户要求：
+   * 两处导出的活动行都从「最新在前」改成「早的在上」）。
+   *
+   * 按任务行（`1.` / `1)`）切块，块内逐行取时间戳比先后。时间**不能直接比
+   * `MM-DD` 字符串**：跨年时 `12-xx` 排在任何 `01-xx` 之后，可它其实是更早的那条
+   * （与上面「时间都不晚于今天」同一个坑），所以换算成绝对天数再比。
+   *
+   * 只报「含 ≥2 条活动的块」：单条活动的任务没有先后可言，把它算进去，
+   * 断言会在数据稀疏时**空跑**（一条错的都没有，看着像通过）。
+   */
+  const ascCheck = (text, actLine) => {
+    const blocks = [];
+    for (const line of text.split("\n")) {
+      const hit = line.match(actLine);
+      if (hit) {
+        blocks.at(-1)?.push(hit[1]);
+        continue;
+      }
+      if (/^\s*\d+[.)] /.test(line)) blocks.push([]);
+    }
+    const dayOf = (stamp) => {
+      const [month, day] = stamp.slice(0, 5).split("-").map(Number);
+      return nearestDay(month, day);
+    };
+    const multi = blocks.filter((list) => list.length >= 2);
+    const bad = multi.filter((list) =>
+      list.some((stamp, i) => i > 0 && dayOf(list[i - 1]) > dayOf(stamp)),
+    );
+    return { multi: multi.length, bad: bad.length, sample: (bad[0] ?? []).join(" → ") };
+  };
+  const mdActLine = /^ {3}- (\d{2}-\d{2} \d{2}:\d{2}) /;
+  const txtActLine = /^ {5}· (\d{2}-\d{2} \d{2}:\d{2}) /;
+  const orderText = (result) =>
+    Object.entries(result)
+      .map(
+        ([kind, item]) =>
+          `${kind} ${item.multi} 块/坏 ${item.bad}${item.sample ? `（${item.sample}）` : ""}`,
+      )
+      .join(" · ");
+
   const openExport = async (scope) => {
     await page.locator(`${scope} button:has-text('导出')`).first().click();
     await page.waitForSelector(".ctx-menu");
@@ -3362,6 +3403,12 @@ try {
   );
   await page.keyboard.press("Escape");
   await sleep(150);
+
+  // 范围拨回「全年」再导出：下面要量的是「同一任务下活动的先后」，前提是这个
+  // 窗口里真的存在**一个任务多条活动**的块 —— 前面几段把范围切到过「今天」/
+  // 某一天，那种窗口里多活动任务寥寥，断言会退化成空跑（看着像通过）
+  await page.locator(".act-filter .chip:has-text('全年')").click();
+  await sleep(300);
 
   const actMd = await grab(".act-filter", "Markdown");
   const actTxt = await grab(".act-filter", "文本");
@@ -3445,6 +3492,19 @@ try {
     `${JSON.stringify(shapeOf(actMdText))} vs ${JSON.stringify(shapeOf(actTxtText))}`,
   );
 
+  // 活动行**升序**（2026-10-16 用户提的）：导出的是一份台账，同一个任务下的几条
+  // 进展从早读到晚 —— 倒序是「先看到结果、再看到原因」。页面上的报告仍是最新在前
+  // （那是「眼下什么情况」），所以这条只量文件，不量界面
+  const actOrder = {
+    md: ascCheck(actMdText, mdActLine),
+    txt: ascCheck(actTxtText, txtActLine),
+  };
+  check(
+    "活动分析导出：同一任务下的活动按时间升序（md 与 txt 都排）",
+    Object.values(actOrder).every((item) => item.multi > 0 && item.bad === 0),
+    orderText(actOrder),
+  );
+
 
   const xlsxBytes = readFileSync(actXlsx.file);
   check(
@@ -3498,6 +3558,19 @@ try {
       /^ {2}\d+\) /m.test(manageTxtText) &&
       manageTxtText.split("\n").filter((line) => /^#|^- |^\d+\. /.test(line)).length === 0,
     manageTxtText.split("\n").slice(0, 4).join(" ⏎ "),
+  );
+
+  // 与活动分析导出**同一口径**（2026-10-16）：任务下的活动行按时间升序。
+  // 两份导出共用 data/export.ts 的文本生成，但取数各在一页 —— 只改一边，
+  // 这条就会与上面对活动分析的那条一红一绿，正好把「漏改一页」照出来
+  const manageOrder = {
+    md: ascCheck(manageText, mdActLine),
+    txt: ascCheck(manageTxtText, txtActLine),
+  };
+  check(
+    "任务管理导出：同一任务下的活动按时间升序（md 与 txt 都排）",
+    Object.values(manageOrder).every((item) => item.multi > 0 && item.bad === 0),
+    orderText(manageOrder),
   );
 
   const manageXlsx = await grab("#page-manage", "表格");

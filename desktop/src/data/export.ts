@@ -34,7 +34,7 @@ export interface ExportRow {
 export interface ExportGroup {
   /** 标签名（含 `#`）。md 里原样写，txt 里换成 `【】`。 */
   tag: string;
-  /** 一个标签下的若干任务，每个任务带自己的活动（时间倒序）。 */
+  /** 一个标签下的若干任务，每个任务带自己的活动（时间升序：早的在上）。 */
   tasks: { title: string; /** 表格格式（xlsx）要，文本格式不写。 */ status?: string; rows: ExportRow[] }[];
 }
 
