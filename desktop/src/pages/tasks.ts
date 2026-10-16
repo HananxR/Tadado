@@ -714,10 +714,21 @@ function renderRow(
   // （开始日只是它被排上日程的那天，创建日才是它出现的那天）。
   // 两端跨出窗口时夹到边界：一条跨月的任务在这个 32 天窗口里应该是一条顶住边的长条，
   // 而不是溢出到表格外面的怪物。
+  //
+  // ⚠️ 2026-10-16 用户报的「甘特图进度条与背景范围不同步」就是这里**只夹了左端**，原话
+  // 「有的任务中左右滚动时，发现甘特图进度条出现的地方，背景区域无对应的日期表格背景」。
+  // 创建日晚于窗口末日时（把窗口往过去拖之后很常见）`first` 仍是创建日，`left`（下面那句
+  // `(first - win.start) * colW`）于是算到 `.tt-track` 的宽度（`win.days * colW`）**之外**；
+  // 而日期格线与周末带是铺在轨道上的重复渐变、轨道又不裁切 —— 那条就飘在一片没有日期格
+  // 背景的空地上，还顺手把表格撑出横向溢出（所以是「左右滚动时」才发现的）。右端补上这一夹
+  // 之后与左端**对称**：整条在窗口外时贴最近的那一边，两端各打一条截断记号（见下面
+  // `outsideRight` 参与的两处判据）。
   const createdDay = dayNumber(task.created);
   const endDay = dayNumber(task.end);
   const winEnd = win.start + win.days - 1;
-  const first = Math.max(createdDay, win.start);
+  /** 整条落在窗口**右侧**之外（创建日晚于窗口末日）：夹到最后一列，别画到表格外面去。 */
+  const outsideRight = createdDay > winEnd;
+  const first = outsideRight ? winEnd : Math.max(createdDay, win.start);
   /**
    * 逾期：条的右端**渲染**延长到「今天」—— 数据里的结束日一个字节都不动（那是事实，
    * 这是解释，与 §4.10 那条「完成日 + N」同一类规矩）。延长之后「拖了多久」一眼看得见。
@@ -764,12 +775,21 @@ function renderRow(
   // 逾期那一条：条右端**渲染**延长到今天（数据里的结束日一个字节都不动 —— 那是事实，
   // 这是解释，与 §4.10 那条同源），并在原结束日处留一道竖记 ——「还在拖、从哪天开始拖」
   // 一眼看得见（不延长的话，逾期与「刚好今天截止」在图上长得一模一样）。
-  if (overdue) {
+  // 整条在窗口**右侧**之外时这一套不画：真实的起止整段在窗口外，条上没有任何一段是
+  // 「从结束日拖到今天」的延长，画出来只是「一条夹到末列的桩 + 一段盖满它的半透明红」，
+  // 而竖记更会算到条外去（条是 `overflow: visible`）—— 与上面那处修的是同一类「记号落在
+  // 没有日期格背景的地方」。这种条保持状态色，由两端那对截断记号说它在窗口外。
+  if (overdue && !outsideRight) {
     const late = segOf(Math.max(endDay + 1, first), last, "seg-late");
     if (late) bar.append(late);
-    const mark = el("span", { class: "late-mark" });
-    mark.style.left = `${barX(endDay + 1)}px`;
-    bar.append(mark);
+    // 竖记画在**真实结束日**的右边界上；它落到条的时间范围之外时（真实区间整段在窗口
+    // 左侧之外、或区间倒挂的历史数据）就不画 —— 画了是一条飘在条外的灰线
+    const markX = barX(endDay + 1);
+    if (markX >= 0 && markX <= barWidth) {
+      const mark = el("span", { class: "late-mark" });
+      mark.style.left = `${markX}px`;
+      bar.append(mark);
+    }
   }
 
   // 条内白字压在**实色**条上（条本身就是实色），所以只要条够宽就写得下。
@@ -789,11 +809,13 @@ function renderRow(
   // 被窗口截掉的两端各打一条竖记：贴边的一条和「它就这么长」长得一模一样，不标出来
   // 就会被读成「这条任务只干了这几天」。
   // 整条都在窗口**外**时（32 天窗口 + 拖动，这是常事）两侧都打上：只打一侧会被读成
-  // 「它从窗口外伸进来、在这里就结束了」
+  // 「它从窗口外伸进来、在这里就结束了」—— 左侧的判据是「条算出来的时间范围落在窗口起点
+  // 之前」（`last < first`；逾期延长伸进窗口时它自然为假），右侧是 `outsideRight`
   const beforeWin = createdDay < win.start;
   const afterWin = endDay > winEnd;
-  if (beforeWin || last < first) bar.append(el("span", { class: "cut cut-l" }));
-  if (afterWin || last < first) bar.append(el("span", { class: "cut cut-r" }));
+  const offWindow = outsideRight || last < first;
+  if (beforeWin || offWindow) bar.append(el("span", { class: "cut cut-l" }));
+  if (afterWin || offWindow) bar.append(el("span", { class: "cut cut-r" }));
 
   bar.addEventListener("mouseenter", (event) => showTip(task, event.clientX, event.clientY));
   bar.addEventListener("mousemove", (event) => moveTip(event.clientX, event.clientY));

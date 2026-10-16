@@ -910,6 +910,72 @@ try {
     `拖远到 ${away.first}（off=${away.rangeOff}，线 ${away.todayLine}）→ 回到 ${home.first}（线 ${home.todayLine}）`,
   );
 
+  // 条必须永远落在**日期格背景**的范围里（2026-10-16 用户报的「甘特图进度条与背景范围不同步」，
+  // 原话「有的任务中左右滚动时，发现甘特图进度条出现的地方，背景区域无对应的日期表格背景」）。
+  // 根因是 `renderRow` 只把条的左端夹进窗口：创建日**晚于窗口末日**的条（把窗口拖到过去之后
+  // 很常见）`left` 会算到 `.tt-track` 的宽度之外 —— 而日期格线与周末带是铺在轨道上的重复渐变、
+  // 轨道又不裁切，条一旦越出轨道，所在的那段就是一片没有格线的空地。
+  //
+  // 量的是**结构性不变量**（每条 bar 的 box 都在所属 .tt-track 的 box 内），不钉某条样本：
+  // 「有没有落在窗口右侧之外的任务」取决于筛选、排序与分页，所以前提要**自己造实** ——
+  // ① 筛选复位（状态「全部」+「全部优先级」），免得前面用例留下的筛选把样本挡在外面；
+  // ② 每页档位调到 100/页，一页装下全部未归档任务；
+  // ③ 窗口退回过去 18 天 → 窗口 = 今天-34 ~ 今天-3，而演示数据里 `bulk-*` 那批的创建日
+  //    （`min(start, 今天-1-(i%5))`）有 10 条落在今天-1 / 今天-2，必然整条在窗口右侧之外。
+  // `pinnedRight` 是这条前提的**自检**（至少一条「两侧都带截断记号 + 右缘贴着轨道末列」的条）：
+  // 一条都没有就说明样本没进表，断言必须红 —— 否则它可能是一条空跑的空断言。
+  await page.locator("#page-tasks .chips .chip", { hasText: "全部" }).click();
+  await sleep(320);
+  await page.locator("#page-tasks .tools .dd-btn").first().click();
+  await sleep(200);
+  await page.locator("#page-tasks .tools .menu-item", { hasText: "全部优先级" }).click();
+  await sleep(320);
+  await page.locator("#page-tasks .pager .dd-btn").click();
+  await sleep(220);
+  await page.locator("#page-tasks .pager .menu-item", { hasText: "100/页" }).click();
+  await sleep(320);
+  await dragOn(18);
+  const barBoxes = await page.evaluate(() => {
+    const bars = [...document.querySelectorAll("#page-tasks .tt-track")].flatMap((track) => {
+      const trackBox = track.getBoundingClientRect();
+      return [...track.querySelectorAll(".tt-bar")].map((bar) => ({ bar, trackBox }));
+    });
+    const overflow = [];
+    let pinnedRight = 0;
+    for (const { bar, trackBox } of bars) {
+      const box = bar.getBoundingClientRect();
+      // 轨道左缘 - 条左缘 / 条右缘 - 轨道右缘：都在 0 附近（各留 1px 亚像素余量）
+      const left = trackBox.left - box.left;
+      const right = box.right - trackBox.right;
+      if (left > 1 || right > 1) {
+        overflow.push(`${bar.dataset.task}(左 ${Math.round(left)} · 右 ${Math.round(right)})`);
+      }
+      // 整条在窗口外（两侧都打截断记号）且右缘贴着轨道末列 —— 这就是「创建日在窗口右侧
+      // 之外」那批被夹回末列的样子
+      if (bar.querySelectorAll(".cut").length === 2 && Math.abs(trackBox.right - box.right) <= 3) {
+        pinnedRight += 1;
+      }
+    }
+    return {
+      bars: bars.length,
+      overflowCount: overflow.length,
+      overflow: overflow.slice(0, 4).join(" / "),
+      pinnedRight,
+    };
+  });
+  check(
+    "条永远落在日期格背景内（拖动之后量几何，含「创建日在窗口右侧之外」那批）",
+    barBoxes.overflowCount === 0 && barBoxes.pinnedRight > 0,
+    `${barBoxes.bars} 条 · 越界 ${barBoxes.overflowCount} ${barBoxes.overflow} · 贴末列 ${barBoxes.pinnedRight}`,
+  );
+  // 复位：窗口回今天、每页档位回默认（后面的用例按默认档位与默认窗口走）
+  await page.locator("#page-tasks .tt-range").click();
+  await sleep(320);
+  await page.locator("#page-tasks .pager .dd-btn").click();
+  await sleep(220);
+  await page.locator("#page-tasks .pager .menu-item", { hasText: "20/页" }).click();
+  await sleep(320);
+
   // 双击开抽屉（回归：递归 bug 曾让它打不开）
   await page.locator(".tt-row").first().dblclick();
   await sleep(400);
