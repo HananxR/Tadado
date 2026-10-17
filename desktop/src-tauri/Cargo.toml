@@ -1,6 +1,6 @@
 [package]
 name = "desktop"
-version = "1.0.1"
+version = "1.0.2"
 description = "Tadado2 — 本地优先的个人任务管理"
 authors = ["you"]
 edition = "2021"
