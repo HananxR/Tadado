@@ -87,15 +87,15 @@
 - **分区**是数据的隔离边界：可以给某个分区单独设口令、空闲几分钟自动重锁。
   但口令**是隐私屏风，不是加密保险箱** —— 它挡的是路过的人瞄一眼，不防能拿到数据文件的人。
   所以忘了口令没有「找回」，直接重设即可。这句话写在设置里，不藏着。
-- **单文件、无依赖**：安装包 4.2 MB（含随程序分发的离线帮助文档与截图），不需要 Python、Node 或任何运行库 —— 不是把一个浏览器塞进安装包里。
+- **单文件、无依赖**：安装包 3.9 MB（含随程序分发的离线帮助文档与截图），不需要 Python、Node 或任何运行库 —— 不是把一个浏览器塞进安装包里。
 
 ## 安装
 
 | 方式 | 说明 |
 |---|---|
-| Windows 安装包 | Releases 下载 `Tadado2_1.0.2_x64-setup.exe`（4.2 MB），双击即装 |
-| MSI | `Tadado2_1.0.2_x64_en-US.msi`（5.6 MB），适合静默 / 企业分发 |
-| 便携版 | `Tadado2-portable.zip`（5.3 MB），解压即用、放在哪都能跑（WebView2 由 Win10/11 自带） |
+| Windows 安装包 | Releases 下载 `Tadado2_1.0.2_x64-setup.exe`（3.9 MB），双击即装 |
+| MSI | `Tadado2_1.0.2_x64_en-US.msi`（5.1 MB），适合静默 / 企业分发 |
+| 便携版 | `Tadado2-portable.zip`（4.8 MB），解压即用、放在哪都能跑（WebView2 由 Win10/11 自带） |
 | 从源码构建 | `cd desktop && npm install && npm run tauri build` |
 
 > **国内下载**（不用访问 GitHub）：阿里云盘(国内推荐) <https://www.alipan.com/s/E2FBppaMPZj>
