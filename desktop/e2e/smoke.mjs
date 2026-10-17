@@ -1550,7 +1550,8 @@ try {
     () => document.querySelector("#task-drawer .dr-h .st")?.textContent ?? "",
   );
   await page.click("#task-drawer .chip:has-text('已完成')");
-  await sleep(300);
+  // 等落盘防抖（400ms）写完再读存储
+  await sleep(640);
   const entries = await page.evaluate(() =>
     [...document.querySelectorAll("#task-drawer .tl-entry")].map((n) =>
       (n.textContent ?? "").trim(),
@@ -1559,14 +1560,29 @@ try {
   const statusBadge = await page.evaluate(
     () => document.querySelector("#task-drawer .dr-h .st")?.textContent ?? "",
   );
-  // 记的时间戳是「刚刚」那一刻，显示成绝对日期 —— 不再是「刚刚」这个词
-  // （那个词隔一夜就读不通了：「刚刚完成」的记录第二天还写着刚刚）
+  // 状态记录**数据里必须有**（近期活动 / 本周完成 / 完成日都靠它），但 2026-10-17 起
+  // **不再铺进时间线** —— 状态在标题徽标上已经看得见，那行既不能编辑也不能删除，
+  // 留着只是噪音。这条断言同时钉住两头：数据在、界面不在。
+  const statusRecorded = await page.evaluate(() => {
+    const tasks = JSON.parse(localStorage.getItem("tadado.tasks.v1") ?? "[]");
+    const now = Date.now();
+    return tasks.some((task) =>
+      (task.activities ?? []).some(
+        (activity) =>
+          activity.kind === "status" &&
+          activity.to === "done" &&
+          typeof activity.at === "number" &&
+          now - activity.at < 15_000,
+      ),
+    );
+  });
   check(
-    "改状态会留一条活动记录（近期活动 / 本周完成才数得到）",
-    entries.some(
-      (text) => /\d{2}-\d{2} \d{2}:\d{2}/.test(text) && text.includes("→ 已完成"),
-    ),
-    `徽标 ${badgeBefore}→${statusBadge} · ${entries.length} 条 · ${entries.slice(0, 3).join(" / ").slice(0, 70)}`,
+    "改状态会留痕（数据里有，时间线里不再单列一行）",
+    badgeBefore !== "已完成" &&
+      statusBadge === "已完成" &&
+      statusRecorded &&
+      !entries.some((text) => text.includes("→ 已完成")),
+    `徽标 ${badgeBefore}→${statusBadge} · 数据留痕 ${statusRecorded} · ${entries.length} 条 · ${entries.slice(0, 3).join(" / ").slice(0, 70)}`,
   );
 
   // 进度与优先级也要留痕 —— 「关于」面板里那句「状态、进度、优先级的每一次改动都写进
@@ -4980,9 +4996,11 @@ try {
         fixtureTask("heal-manual", "手动归档的未完成任务", "doing", 40, true, [
           { at: stamp - 3600_000, kind: "log", text: "这条从没完成过" },
         ]),
+        // 状态记录是**最新**那条：抽屉时间线与总览「近期活动」都不该显示它，
+        // 两处都应当回落到上一条可见活动（100% → 90%）
         fixtureTask("auto-hide", "系统记录不入时间线", "doing", 90, false, [
+          { at: stamp - 60_000, kind: "status", from: "done", to: "doing", text: "已完成 → 进行中", auto: true },
           { at: stamp - 3600_000, kind: "progress", from: 100, to: 90, text: "100% → 90%" },
-          { at: stamp - 7200_000, kind: "status", from: "done", to: "doing", text: "已完成 → 进行中", auto: true },
           { at: stamp - 9000_000, kind: "log", text: "一条人手写的进展" },
         ]),
       ],
@@ -5017,8 +5035,8 @@ try {
     JSON.stringify(healedLegacy),
   );
 
-  // 由进度回退派生的状态记录（`auto`）不该在时间线里单列 —— 它和旁边那条进度记录
-  // 说的是同一件事。数据仍留着（完成日 / 归档档位要读它），只是不铺
+  // 状态记录（不管是进度派生还是人手点的）一律不铺进时间线：状态在标题徽标上看得见，
+  // 那行又不能编辑 / 删除，留着只是噪音。数据仍留着（完成日 / 归档档位要读它）
   const openedAuto = await openTaskDrawer("系统记录不入时间线");
   const autoHidden = await page.evaluate(() => ({
     count: document.querySelector("#task-drawer .dr-tl .sec-h .dim.mono")?.textContent?.trim() ?? "",
@@ -5027,7 +5045,7 @@ try {
     ),
   }));
   check(
-    "系统派生的「已完成 → 进行中」不铺在时间线里（进度记录与人写进展仍在）",
+    "状态记录不铺在时间线里（进度记录与人写进展仍在）",
     openedAuto === 1 &&
       autoHidden.count === "2 条" &&
       !autoHidden.texts.includes("已完成 → 进行中") &&
@@ -5037,6 +5055,22 @@ try {
   );
   await page.click("#task-drawer .dr-close");
   await sleep(320);
+
+  // 总览「近期活动」同一口径（2026-10-17）：状态记录不算「最近动过」。这条任务的最新
+  // 活动正是状态记录，卡片应当回落到上一条可见活动，而不是显示「已完成 → 进行中」
+  await page.locator('.rail-btn[data-page="overview"]').click();
+  await sleep(420);
+  const feedText = await page.evaluate((title) => {
+    const row = [...document.querySelectorAll("#page-overview .feed-item")].find((node) =>
+      (node.textContent ?? "").includes(title),
+    );
+    return (row?.textContent ?? "").replace(/\s+/g, " ").trim();
+  }, "系统记录不入时间线");
+  check(
+    "总览「近期活动」也不显示状态记录（回落到上一条真实活动）",
+    feedText !== "" && !feedText.includes("已完成 → 进行中") && feedText.includes("100% → 90%"),
+    feedText,
+  );
 
   // 存档彻底坏掉：不能当空库处理（那等于拿演示数据把用户的存档盖掉），
   // 要原样留着 + 给一句人话提示

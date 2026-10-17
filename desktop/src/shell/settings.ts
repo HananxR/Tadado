@@ -121,7 +121,7 @@ interface SettingGroup {
 const PLACEHOLDER = "—";
 
 /** 版本号兜底：`getVersion()` 拿不到时（浏览器预览）显示这个。 */
-const VERSION_FALLBACK = "v1.0.3";
+const VERSION_FALLBACK = "v1.0.4";
 
 function themeControl(): HTMLElement {
   const modes: { id: ThemeMode; label: string }[] = [
@@ -553,7 +553,7 @@ function aboutIntro(): HTMLElement {
     list([
       "本地优先：单文件 SQLite，无账号、无云端同步",
       "键盘优先：Ctrl+1–5 切页，Ctrl+Shift+Space 全局唤起",
-      "变更留痕：状态、进度、优先级的每一次改动都写进活动时间线",
+      "变更留痕：进度与优先级的改动、手写的进展都留在活动时间线",
     ]),
   ]);
 }

@@ -356,13 +356,14 @@ function renderTimeline(task: Task): void {
   // 收窄成局部常量：下面在 forEach 回调里用，模块级 let 的收窄传不进闭包
   const host = drawer;
 
-  // 由进度**派生**的状态记录（`auto`）不铺：把进度从 100% 退到 90% 时，旁边那条进度
-  // 记录已经把这件事说清楚了，「已完成 → 进行中」再占一行只是噪音（2026-10-17 用户提的）。
-  // 数据仍留着 —— 完成日 `completedOn` 与归档档位都读它，只是不在这里显示。
+  // **状态记录一律不铺**（2026-10-17 用户提的）：状态在标题上那枚徽标里已经看得见，
+  // 时间线再单列「已完成 → 进行中」「逾期 → 已完成」只是噪音，而且它既不能编辑也不能删除
+  // （既成事实，删了会丢完成日）。数据仍完整保留 —— `completedOn`、「完成后 N 天归档」与
+  // 「本周完成」都读它；`auto` 标记继续用于区分「进度派生」与「人手点的」。
   // 展开时保留**原数组下标**：台账的编辑/删除入口按它定位（见下面的 entryOps）。
   const visible = task.activities
     .map((activity, index) => ({ activity, index }))
-    .filter(({ activity }) => !(activity.kind === "status" && activity.auto === true));
+    .filter(({ activity }) => activity.kind !== "status");
 
   host.timeline.replaceChildren();
   host.timelineCount.textContent = `${visible.length} 条`;

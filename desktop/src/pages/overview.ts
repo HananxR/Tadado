@@ -768,7 +768,11 @@ function renderTiles(): HTMLElement {
 //
 // 排序跟着**最新一次活动**走：聚成任务之后，「每一条活动的时间」这个排序键就没有了。
 
-/** 近期活动的一行 = 一个任务（+ 它最新的一条活动 + 它被折叠了几条）。 */
+/**
+ * 近期活动的一行 = 一个任务（+ 它最新的一条**可见**活动 + 它被折叠了几条）。
+ *
+ * 「可见」= 不含 `status` 记录：那张卡与抽屉时间线同一口径（2026-10-17）。
+ */
 interface FeedEntry {
   task: Task;
   /** 这个任务最新的一条活动。 */
@@ -783,12 +787,15 @@ function renderFeed(refresh: () => void): HTMLElement {
   const entries: FeedEntry[] = [];
 
   for (const task of activeTasks()) {
-    // 一条活动都没有的任务没有「近期」可言 —— 它还没动过
-    if (task.activities.length === 0) continue;
+    // 状态记录不算「活动」（2026-10-17 与抽屉时间线同一口径）：当前状态在标题徽标上
+    // 已经看得见，而这条流要的是「最近哪个任务动了」。数据里仍保留，完成统计照旧读它
+    const visible = task.activities.filter((activity) => activity.kind !== "status");
+    // 一条可见活动都没有的任务没有「近期」可言 —— 它还没动过
+    if (visible.length === 0) continue;
     entries.push({
       task,
-      latest: task.activities.reduce((newest, item) => (item.at > newest.at ? item : newest)),
-      count: task.activities.length,
+      latest: visible.reduce((newest, item) => (item.at > newest.at ? item : newest)),
+      count: visible.length,
     });
   }
 
