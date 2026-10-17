@@ -565,6 +565,88 @@
   margin-bottom: 4px;
 }
 
+/* 可折叠分组的第一行（目前只有「关于」）：与 .set-row 同级 —— 同字号、同行高、
+   同分隔线，读起来是四行平级条目，而不是一个比行标签还小的小标签。
+   整行可点：右侧常显「展开 / 收起」+ 箭头，hover 整行提亮 */
+.set-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 7px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.set-sec-head:hover {
+  background: var(--surface-2);
+}
+
+.set-sec-head .set-sec-t {
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: 0;
+}
+
+/* 版本号跟在「关于」后面：「关于（v1.0.1）」。比标题轻一档 —— 它是注解，
+   不是另一个可点的东西（不要再拆回单独一行，那会和「检查更新」抢注意力） */
+.set-sec-ver {
+  margin-left: 4px;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* 「下载与反馈」头上的「有新版本」：只在真的查到新版时出现，收起时也看得见 */
+.set-new-badge {
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.set-new-badge[hidden] {
+  display: none;
+}
+
+/* 「展开 / 收起」这一句才是醒目的关键：只转箭头的话，收起时那行仍像个普通标题 */
+.set-sec-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-3);
+  transition: color 0.15s;
+}
+
+.set-sec-arrow {
+  font-size: 12px;
+  color: var(--text-2);
+  transition:
+    transform 0.15s,
+    color 0.15s;
+}
+
+.set-sec-head:hover .set-sec-hint,
+.set-sec-head:hover .set-sec-arrow {
+  color: var(--accent);
+}
+
+/* 箭头按**自己那个头**的状态转：两个折叠头各存一份 aria-expanded，
+   谁展开转谁的，互不联动 */
+.set-sec-head[aria-expanded="true"] .set-sec-arrow {
+  transform: rotate(90deg);
+}
+
+/* 折叠区：收起时整块不渲染。UA 的 [hidden] 本来就是 display:none，这里写明
+   是为了将来别被某条 .about { display: ... } 悄悄覆盖 */
+.set-more[hidden] {
+  display: none;
+}
+
 /* 分区行底下收着的两行（自动归档 / 空闲锁定）：缩进一点、左边一条竖线，
    和上面那个分区行是一组，别看成独立的两项设置 */
 .part-more {
@@ -618,6 +700,35 @@
 
 .set-row:last-child {
   border-bottom: 0;
+}
+
+/* 整行是一个动作（「帮助文档」）：外观与普通行一致，只是整行可点、hover 提亮。
+   不做成主按钮 —— 它旁边就是「检查更新」，两枚主按钮并排会被读成一组同样的操作 */
+.set-row.set-row-link {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.set-row.set-row-link:hover {
+  background: var(--surface-2);
+}
+
+.set-row-link .set-hint {
+  font-size: 11.5px;
+  color: var(--text-3);
+  transition: color 0.15s;
+}
+
+.set-row-link:hover .set-hint {
+  color: var(--accent);
 }
 
 /* ── 关于：介绍块 ───────────────────────────────────────────────────────────
@@ -722,7 +833,30 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.about-tip,
+/* 云盘链接的退路：一行小字 + 两个行内动作。不做成警告条 —— 链接多数时候是好的，
+   常驻一块红黄背景只会让人以为下载坏了 */
+.about-tip {
+  margin: 7px 0 0;
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--text-3);
+}
+
+.about-tip-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.about-tip-link:hover {
+  color: var(--accent);
+}
+
 .about-lic {
   margin: 7px 0 0;
   font-size: 11px;

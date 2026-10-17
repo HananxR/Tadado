@@ -1,0 +1,1352 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tadado2 帮助文档</title>
+    <style>
+      /* ───────────────────────────────────────────────────────────────────────
+         单文件、单一样式表：正文不写行内 style，图片全是本地 JPEG，无脚本、
+         无外部字体、无 CDN —— 断网也能完整阅读。
+         配色沿用应用令牌（暖纸白 + 靛青强调），深色跟随系统偏好。
+         ─────────────────────────────────────────────────────────────────────── */
+
+      :root {
+        --bg: #f4f3ef;
+        --surface: #fbfaf6;
+        --surface-2: #ffffff;
+        --text: #38362f;
+        --text-2: #6e6a5e;
+        --text-3: #a29c8c;
+        --accent: #4c56c0;
+        --accent-h: #40499f;
+        --accent-soft: #e8e9f7;
+        --border: #e3dfd3;
+        --border-2: #d3cebf;
+        --danger: #c24536;
+        --danger-soft: #f6e4e0;
+        --doing: #d98b1f;
+        --doing-soft: #f6ead9;
+        --done: #3c8d5e;
+        --done-soft: #e0efe5;
+        --shadow: 0 10px 32px -8px rgba(40, 36, 28, 0.18);
+        --font: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+        --mono: "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+        --radius: 10px;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #1b1c26;
+          --surface: #21222f;
+          --surface-2: #272834;
+          --text: #c9c5b7;
+          --text-2: #8b8675;
+          --text-3: #676258;
+          --accent: #7b83e8;
+          --accent-h: #939af1;
+          --accent-soft: #262a4d;
+          --border: #2e2f3e;
+          --border-2: #3b3c4c;
+          --danger: #e26b5b;
+          --danger-soft: #3a2622;
+          --doing: #e8ab45;
+          --doing-soft: #3a2f1e;
+          --done: #78bd92;
+          --done-soft: #1f3328;
+          --shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.5);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 15px/1.75 var(--font);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        color: var(--accent-h);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      code,
+      kbd,
+      pre {
+        font-family: var(--mono);
+      }
+
+      code {
+        font-size: 0.9em;
+        padding: 1px 5px;
+        border-radius: 5px;
+        background: var(--accent-soft);
+        color: var(--accent-h);
+        word-break: break-all;
+      }
+
+      /* ── 顶栏 ───────────────────────────────────────────────────────────── */
+
+      .top {
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+      }
+
+      .top-inner {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 26px 32px 22px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        font-size: 24px;
+        font-weight: 600;
+        letter-spacing: -0.2px;
+      }
+
+      .brand .ver {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-3);
+        letter-spacing: 0.3px;
+      }
+
+      .tagline {
+        margin: 6px 0 0;
+        color: var(--text-2);
+        font-size: 14px;
+      }
+
+      /* ── 两栏骨架 ───────────────────────────────────────────────────────── */
+
+      .shell {
+        display: grid;
+        grid-template-columns: 232px minmax(0, 1fr);
+        gap: 44px;
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 32px 32px 88px;
+      }
+
+      .toc {
+        align-self: start;
+        position: sticky;
+        top: 24px;
+        max-height: calc(100vh - 48px);
+        overflow: auto;
+        padding: 14px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        font-size: 13px;
+      }
+
+      .toc summary {
+        cursor: pointer;
+        font-weight: 600;
+        color: var(--text-2);
+        padding: 2px 6px;
+        outline: none;
+      }
+
+      .toc summary::marker {
+        color: var(--accent);
+      }
+
+      .toc nav {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-top: 10px;
+      }
+
+      .toc a {
+        display: block;
+        padding: 5px 8px;
+        border-radius: 6px;
+        color: var(--text-2);
+        border-left: 2px solid transparent;
+      }
+
+      .toc a:hover {
+        background: var(--accent-soft);
+        color: var(--accent-h);
+        text-decoration: none;
+      }
+
+      .toc .group {
+        margin-top: 10px;
+        padding: 6px 8px 2px;
+        font-size: 11px;
+        letter-spacing: 1px;
+        color: var(--text-3);
+      }
+
+      main {
+        max-width: 960px;
+        min-width: 0;
+      }
+
+      @media (min-width: 1100px) {
+        .toc > summary {
+          display: none;
+        }
+
+        /* details 收起来也不影响宽屏阅读：这一栏本身就是常驻目录 */
+        .toc > nav {
+          display: flex !important;
+        }
+      }
+
+      @media (max-width: 1099px) {
+        .shell {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 26px;
+          padding: 24px 20px 64px;
+        }
+
+        .top-inner {
+          padding: 22px 20px 18px;
+        }
+
+        .toc {
+          position: static;
+          max-height: none;
+        }
+      }
+
+      /* ── 章节与正文 ─────────────────────────────────────────────────────── */
+
+      section {
+        scroll-margin-top: 24px;
+        padding-bottom: 14px;
+        margin-bottom: 34px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      section:last-of-type {
+        border-bottom: 0;
+      }
+
+      h1 {
+        margin: 0 0 14px;
+        font-size: 27px;
+        line-height: 1.35;
+        letter-spacing: -0.3px;
+      }
+
+      h2 {
+        margin: 34px 0 12px;
+        font-size: 21px;
+        line-height: 1.4;
+      }
+
+      h3 {
+        margin: 24px 0 8px;
+        font-size: 15.5px;
+      }
+
+      h2:first-child,
+      h3:first-child {
+        margin-top: 0;
+      }
+
+      p {
+        margin: 10px 0;
+      }
+
+      ul,
+      ol {
+        margin: 10px 0;
+        padding-left: 22px;
+      }
+
+      li {
+        margin: 5px 0;
+      }
+
+      li > ul,
+      li > ol {
+        margin: 4px 0;
+      }
+
+      strong {
+        font-weight: 600;
+      }
+
+      .lead {
+        margin: 0 0 16px;
+        padding: 12px 16px;
+        border-left: 3px solid var(--accent);
+        border-radius: 0 8px 8px 0;
+        background: var(--accent-soft);
+        color: var(--text);
+        font-size: 14.5px;
+      }
+
+      .note,
+      .warn {
+        margin: 14px 0;
+        padding: 11px 14px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        font-size: 14px;
+        color: var(--text-2);
+      }
+
+      .warn {
+        border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+        background: var(--danger-soft);
+        color: var(--text);
+      }
+
+      .note b,
+      .warn b {
+        color: var(--text);
+      }
+
+      .steps {
+        counter-reset: step;
+        list-style: none;
+        padding-left: 0;
+        margin: 14px 0;
+      }
+
+      .steps > li {
+        counter-increment: step;
+        position: relative;
+        padding-left: 34px;
+        margin: 9px 0;
+      }
+
+      .steps > li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 3px;
+        width: 21px;
+        height: 21px;
+        border-radius: 50%;
+        background: var(--accent-soft);
+        color: var(--accent-h);
+        font-size: 11.5px;
+        font-weight: 600;
+        line-height: 21px;
+        text-align: center;
+      }
+
+      kbd {
+        display: inline-block;
+        min-width: 20px;
+        padding: 1px 5px;
+        border: 1px solid var(--border-2);
+        border-bottom-width: 2px;
+        border-radius: 5px;
+        background: var(--surface-2);
+        color: var(--text-2);
+        font-size: 12px;
+        line-height: 1.6;
+        text-align: center;
+      }
+
+      /* ── 表格 ───────────────────────────────────────────────────────────── */
+
+      .table-wrap {
+        margin: 14px 0;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+      }
+
+      th,
+      td {
+        padding: 9px 13px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid var(--border);
+      }
+
+      th {
+        background: var(--bg);
+        color: var(--text-2);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      tbody tr:nth-child(even) td {
+        background: color-mix(in srgb, var(--bg) 45%, transparent);
+      }
+
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+
+      /* ── 截图 ───────────────────────────────────────────────────────────── */
+
+      figure {
+        margin: 18px 0;
+      }
+
+      figure img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+      }
+
+      figcaption {
+        margin-top: 8px;
+        font-size: 12.5px;
+        color: var(--text-3);
+      }
+
+      /* ── FAQ ────────────────────────────────────────────────────────────── */
+
+      .faq {
+        margin: 12px 0;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+        padding: 0 16px;
+      }
+
+      .faq summary {
+        cursor: pointer;
+        padding: 13px 0;
+        font-weight: 600;
+        font-size: 14.5px;
+        outline: none;
+      }
+
+      .faq summary:hover {
+        color: var(--accent-h);
+      }
+
+      .faq p {
+        margin: 0 0 13px;
+        color: var(--text-2);
+        font-size: 14px;
+      }
+
+      .faq p:last-child {
+        margin-bottom: 15px;
+      }
+
+      /* ── 版本块 ─────────────────────────────────────────────────────────── */
+
+      .release {
+        margin: 16px 0;
+        padding: 16px 18px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .release h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+
+      .release ul {
+        margin: 0;
+      }
+
+      .release .meta {
+        margin-top: 10px;
+        font-size: 12.5px;
+        color: var(--text-3);
+      }
+
+      footer {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 0 32px 40px;
+        color: var(--text-3);
+        font-size: 12.5px;
+      }
+
+      footer a {
+        color: var(--text-2);
+      }
+
+      /* ── 打印 ───────────────────────────────────────────────────────────── */
+
+      @media print {
+        :root {
+          --bg: #ffffff;
+          --surface: #ffffff;
+          --surface-2: #ffffff;
+          --text: #1c1b18;
+          --text-2: #3a3833;
+          --text-3: #5a574f;
+          --border: #cfcbc0;
+          --accent: #2f3785;
+        }
+
+        body {
+          font-size: 11.5pt;
+        }
+
+        .top {
+          border-bottom: 1px solid #999;
+        }
+
+        .toc {
+          display: none;
+        }
+
+        .shell {
+          display: block;
+          max-width: none;
+          padding: 0 6mm 10mm;
+        }
+
+        main {
+          max-width: none;
+        }
+
+        section {
+          page-break-inside: avoid;
+        }
+
+        figure img {
+          box-shadow: none;
+        }
+
+        .faq {
+          border: 0;
+          padding: 0;
+        }
+
+        .faq[open] summary,
+        .faq summary {
+          font-weight: 600;
+        }
+
+        a {
+          color: inherit;
+          text-decoration: underline;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="top">
+      <div class="top-inner">
+        <div class="brand">Tadado2 <span class="ver">v{{VERSION}}</span></div>
+        <p class="tagline">本地优先的个人任务管理 · 帮助文档</p>
+      </div>
+    </header>
+
+    <div class="shell">
+      <details class="toc" open>
+        <summary>目录</summary>
+        <nav aria-label="目录">
+          <a href="#intro">这是什么</a>
+          <a href="#data">数据在哪里</a>
+          <a href="#install">安装、升级、卸载</a>
+          <a href="#ui">界面总览</a>
+          <a href="#overview">总览页</a>
+          <a href="#tasks">任务页</a>
+          <a href="#drawer">维护抽屉</a>
+          <a href="#graph">任务图谱</a>
+          <a href="#activity">活动分析</a>
+          <a href="#manage">任务管理</a>
+          <a href="#partition">分区与归档</a>
+          <a href="#settings">设置</a>
+          <a href="#backup">数据与备份</a>
+          <a href="#changes">版本更新</a>
+          <a href="#faq">常见问题</a>
+        </nav>
+      </details>
+
+      <main>
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="intro">
+          <h1>这是什么</h1>
+          <p class="lead">
+            Tadado2 是一个<b>本地优先</b>的桌面任务管理器：任务是一行字，过程是一条线。
+            任务、进展与时间线都留在你自己的机器上，没有账号、没有云端同步。
+          </p>
+          <p>
+            五个视图看同一批数据，只是形状不同：<b>总览</b>回答「现在最该做什么」，
+            <b>任务</b>把起止时间铺在一条时间轴上，<b>任务图谱</b>展示任务与标签、分区的关系，
+            <b>活动分析</b>回看一年里动过什么，<b>任务管理</b>负责批量处置、导出与迁入。
+          </p>
+
+          <h2>功能一览</h2>
+          <ul>
+            <li>五个视图：总览、任务、任务图谱、活动分析、任务管理</li>
+            <li>
+              任务页是甘特时间轴（条 = 创建 → 截止，颜色只编码状态）；任务图谱把「任务 × 标签 ×
+              分区」铺成关系网络
+            </li>
+            <li>活动分析：整年热力图 + 分标签报告，可按当前范围导出 md / txt / xlsx</li>
+            <li>本地优先：单文件 SQLite，无账号、无云端同步</li>
+            <li>键盘优先：Ctrl+1–5 切页，Ctrl+Shift+Space 全局唤起</li>
+            <li>变更留痕：状态、进度、优先级的每一次改动都写进活动时间线</li>
+          </ul>
+
+          <figure>
+            <img src="img/overview.jpg" alt="总览页：指标卡、焦点时间轴、近期活动与优先级分布" />
+            <figcaption>总览页。截图使用演示空间的样例数据，与你机器上的真实任务无关。</figcaption>
+          </figure>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="data">
+          <h2>数据在哪里</h2>
+          <p>
+            所有任务、活动记录、分区与设置都写进<b>一个 SQLite 文件</b>。Windows 上的默认位置是：
+          </p>
+          <p><code>%APPDATA%\com.tadado.app\tadado.data</code></p>
+          <p>
+            把 <code>%APPDATA%</code> 粘到文件资源管理器地址栏回车，就能看到
+            <code>com.tadado.app</code> 文件夹。这个文件可以单独拷走、单独备份，卸载程序默认也不会删它。
+          </p>
+          <div class="note">
+            <b>没有云端。</b>软件不会注册账号，也不会把你的任务发到任何服务器。唯一的联网动作是
+            你主动点击「检查更新」时向 GitHub 查询版本号。
+          </div>
+          <p>
+            纯浏览器预览（开发时用 <code>vite preview</code> 打开）没有 SQLite，数据放在浏览器的
+            localStorage 里，只用于预览界面。
+          </p>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="install">
+          <h2>安装、升级、卸载</h2>
+
+          <h3>两种形态</h3>
+          <ul>
+            <li><b>安装包</b>（NSIS 或 MSI）：装进系统，带开始菜单与卸载入口，可以开机自启动。</li>
+            <li><b>便携版</b>（zip 里一个 <code>Tadado2.exe</code>）：解压即可运行，不写安装记录。</li>
+          </ul>
+          <p>两种形态读写的是同一个数据文件，换一种打开也能看到同样的任务。</p>
+
+          <h3>升级</h3>
+          <ol class="steps">
+            <li>下载新版本的安装包。</li>
+            <li>
+              运行安装包。检测到旧版本时会让你选：默认勾选<b>「原地升级（保留任务与分区数据）」</b>，
+              也可以改选「先卸载再安装」。
+            </li>
+            <li>装完打开，任务、分区、口令与设置都还在。</li>
+          </ol>
+          <div class="note">
+            便携版升级就是<b>用新的 exe 覆盖旧的</b>。数据不在 exe 旁边，覆盖不会动到任务。
+          </div>
+
+          <h3>卸载</h3>
+          <p>
+            从「设置 → 应用 → 已安装的应用」卸载即可。卸载页有一个<b>「删除应用数据」</b>选项，默认
+            <b>不勾选</b>；勾选后会再确认一次。想保留任务就别勾它。
+          </p>
+
+          <h3>Windows 的拦截提示</h3>
+          <p>
+            安装包没有购买代码签名证书，首次运行时 Windows SmartScreen 可能提示「已保护你的电脑」。
+            点「更多信息」→「仍要运行」即可。这是签名问题，不是安装包损坏。
+          </p>
+
+          <h3>系统要求</h3>
+          <p>
+            Windows 10 / 11（64 位），需要系统自带的 WebView2 运行时（Windows 11 自带；Windows 10
+            通常随 Edge 一起安装好了）。不需要 Python、Node 或任何额外运行库。
+          </p>
+          <div class="warn">
+            <b>与 v0.x 的数据不共享。</b>旧版（PySide6）的任务在另一个目录，装 Tadado2 不会动它，
+            也不会自动读进来。需要迁移时走「任务管理 → 数据迁入」，见
+            <a href="#backup">数据与备份</a>。
+          </div>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="ui">
+          <h2>界面总览</h2>
+          <p>
+            窗口分三层：最上面是标题栏，左边是导航栏，右边是当前页面。设置与任务详情都是从右侧滑出的抽屉。
+          </p>
+
+          <h3>标题栏</h3>
+          <ul>
+            <li>按住空白处拖动窗口；双击标题栏最大化 / 还原。</li>
+            <li><b>图钉</b>：让窗口浮在其他应用之上，再点一次取消。</li>
+            <li><b>太阳 / 月亮</b>：在亮色与暗色之间切换（「跟随系统」在设置里选）。</li>
+            <li><b>最小化</b>与<b>最大化</b>；右上角的 <b>×</b> 是<b>最小化到托盘</b>，不是退出。</li>
+          </ul>
+
+          <h3>导航栏</h3>
+          <ul>
+            <li>五个页面：总览、任务、任务图谱、活动分析、任务管理。</li>
+            <li>底部的<b>文件夹按钮</b>是分区切换器，按钮下面一行写着当前分区名。</li>
+            <li>再下面是<b>齿轮</b>：打开设置抽屉。</li>
+          </ul>
+
+          <h3>快捷键</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>按键</th>
+                  <th>作用</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd></td><td>总览</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>2</kbd></td><td>任务</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>3</kbd></td><td>任务图谱</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>4</kbd></td><td>活动分析</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>5</kbd></td><td>任务管理</td></tr>
+                <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd></td><td>全局唤起 / 收起主窗口（在任何应用里都生效）</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>关闭抽屉、对话框、菜单或弹层</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>光标停在输入框里时，<kbd>Ctrl</kbd>+数字 不会切页。</p>
+
+          <h3>每个页面回答什么</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>页面</th>
+                  <th>回答的问题</th>
+                  <th>典型用法</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>总览</td><td>现在最该做什么？今天动过什么？</td><td>早上花一分钟看指标卡与焦点时间轴</td></tr>
+                <tr><td>任务</td><td>这段时间里，每条任务压在哪个区间？</td><td>拖动时间窗看排期，右键快速处置</td></tr>
+                <tr><td>任务图谱</td><td>这条任务和哪些标签、分区有关？</td><td>顺着标签找一批相关任务</td></tr>
+                <tr><td>活动分析</td><td>过去一年我都在做什么？</td><td>按标签回看，导出成报告</td></tr>
+                <tr><td>任务管理</td><td>怎么批量改、导出或迁入？</td><td>批量归档、导出表格、迁入旧数据</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="overview">
+          <h2>总览页</h2>
+          <p class="lead">
+            一句话定位：<b>先看结论，再决定进哪一页。</b>五张指标卡是入口，时间轴与近期活动是「最近发生了什么」。
+          </p>
+
+          <h3>指标卡</h3>
+          <p>左起五张，每张都可以点，点完会跳到对应的列表或筛选：</p>
+          <ul>
+            <li><b>今日到期</b>：今天截止的任务数，副标写其中几项排了具体时刻。</li>
+            <li><b>逾期</b>：已过截止时间还没完成，副标写最早那条的日期。</li>
+            <li><b>进行中</b>：当前状态为进行中的任务，副标写今天更新过几个。</li>
+            <li><b>已完成</b>：已完成任务，副标写本周完成数与相比上周的增减。</li>
+            <li><b>已归档</b>：已收进归档的任务，点击跳到任务管理页的「已归档」。</li>
+          </ul>
+          <p>指标卡上的数字就是点开后的<b>筛出总数</b>，两处不会对不上。</p>
+
+          <h3>焦点时间轴</h3>
+          <p>
+            用来回答「今天（或这一周、这一个月）动过什么」。右上角有六档：<b>昨天、今天、上周、本周、
+            上月、本月</b>。
+          </p>
+          <ul>
+            <li><b>昨天 / 今天</b>：6:00–24:00 的时刻轴。气泡是该任务当天最后一次活动的时刻与标题，绿色
+              <b>+N</b> 表示当天一共记了几条；点气泡打开维护抽屉。</li>
+            <li>相邻不到 30 分钟、且数量够多的气泡会合成一簇，显示时间段与「N 个任务」，点开看明细。</li>
+            <li>轴上有一条随真实时钟移动的「现在」标记。</li>
+            <li><b>上周 / 本周 / 上月 / 本月</b>：换成按天的色条，条的范围就是任务的起止区间。</li>
+            <li>轴下的「时刻在轴外」列出没排具体时刻的到期任务；「已过期未完成」最多列 3 条，点「等 N 个」看全部。</li>
+          </ul>
+
+          <h3>近期活动</h3>
+          <p>
+            <b>一个任务一行</b>，按最近活动倒序，最多 50 个任务。每行显示时间、状态色点、任务标题与最新一条
+            进展、共几条记录、标签。点行打开维护抽屉；底部分页器可改成每页 20 / 30 / 50 / 100 个任务。
+          </p>
+
+          <h3>优先级分布</h3>
+          <p>
+            四行：<b>紧急(P0)、重要(P1)、关注(P2)、普通(P3)</b>，每行一条横向长度 + 计数。点某一行会跳到
+            任务页并按该优先级筛选。
+          </p>
+          <div class="note">
+            这一页没有「快速新建」。新建任务统一在任务页页头的「＋ 新建任务」，避免两个入口写出两套字段。
+          </div>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="tasks">
+          <h2>任务页</h2>
+          <p class="lead">
+            一句话定位：<b>把一段时间里的任务排期摊开。</b>横轴是日期，一行一条任务，条的位置就是它的起止区间。
+          </p>
+
+          <h3>怎么读这张甘特图</h3>
+          <ul>
+            <li>时间窗固定 <b>32 天</b>，默认从「今天往前 16 天」开始。</li>
+            <li>条 = <b>创建日 → 截止日</b>那一段时间，不是「从现在到截止」。</li>
+            <li>颜色只编码状态：<b>逾期</b>红、<b>进行中</b>橙、<b>已完成</b>绿。</li>
+            <li>条够宽时，条内直接写进度百分比；窄条只看得到颜色。</li>
+            <li>行首那枚<b>进度饼</b>：扇形大小就是进度，颜色是状态；0% 进行中显示 ▶，100% 显示 ✓。</li>
+            <li>逾期任务的条会向右延伸到今天，并在真实截止日留一道竖记 —— 一眼看出「原本该在哪天结束」。</li>
+            <li>悬停条上会出小卡：起止日期、状态与进度、标签与优先级、以及双击 / 右键的用法。</li>
+          </ul>
+
+          <figure>
+            <img src="img/tasks.jpg" alt="任务页：32 天甘特时间轴，条表示创建到截止，颜色表示状态" />
+            <figcaption>任务页。时间窗可以按住拖动平移，按天吸附。</figcaption>
+          </figure>
+
+          <h3>筛选与排序</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>控件</th>
+                  <th>选项</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>搜索框</td><td>搜索任务名或标签</td><td>与其它筛选叠加</td></tr>
+                <tr><td>状态</td><td>全部 / 逾期 / 进行中 / 已完成</td><td>每枚带条数；<b>今日到期</b>是独立开关，再点一次取消</td></tr>
+                <tr><td>优先级</td><td>全部优先级 / 紧急(P0) / 重要(P1) / 关注(P2) / 普通(P3)</td><td>单选</td></tr>
+                <tr><td>排序</td><td>按截止日期 / 按优先级 / 按进度 / 按创建时间</td><td>默认按优先级</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>计数行写「筛出 N · 共 M」；筛完没有结果时会提示可切换状态或清空搜索。</p>
+
+          <h3>平移与回到今天</h3>
+          <ul>
+            <li>在表格上<b>按住左键横向拖动</b>，时间窗按天平移；移动不超过 5px 仍算点击。</li>
+            <li>今天不在窗口里时，表头右侧的日期区间变成可点的「↺ 回到今天」，点一下恢复默认窗口。</li>
+          </ul>
+
+          <h3>常用操作</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>操作</th>
+                  <th>结果</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>单击一行</td><td>选中该行</td></tr>
+                <tr><td>双击一行</td><td>打开维护抽屉；对同一条再双击一次收起</td></tr>
+                <tr><td>右键一行</td><td><b>打开维护抽屉</b> / <b>标记完成</b>（未完成时）或 <b>标记未完成</b> / <b>删除任务</b></td></tr>
+                <tr><td>页头「＋ 新建任务」</td><td>打新建对话框；任务名、标签、结束时间三项必填</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            新建对话框里，状态默认「进行中」，开始默认今天，结束默认今天当前时刻；创建完可以继续在维护抽屉里改。
+          </p>
+          <figure>
+            <img src="img/task-form.jpg" alt="新建任务对话框：任务名、标签、开始、结束、状态与优先级" />
+            <figcaption>新建任务。日期控件会互相约束：结束不能早于开始。</figcaption>
+          </figure>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="drawer">
+          <h2>维护抽屉</h2>
+          <p class="lead">
+            一句话定位：<b>一条任务的全部信息与它的历史。</b>在任务页双击、总览的时间轴 / 近期活动、图谱节点、
+            活动记录或任务管理的表格行都能打开它。
+          </p>
+
+          <h3>任务定义（改动即时保存）</h3>
+          <p>抽屉上半部分是字段，<b>改完就写盘</b>，没有底部的「保存」按钮：</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>字段</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>任务</td><td>标题</td></tr>
+                <tr><td>标签</td><td>空格分隔，<code>#</code> 可省略</td></tr>
+                <tr><td>开始</td><td>只能选日期；不可清除</td></tr>
+                <tr><td>结束</td><td>日期 + 时分；可清除，缺省为今天当前时刻</td></tr>
+                <tr><td>状态</td><td>进行中 / 已完成；逾期由系统按截止时间标记，不可手选</td></tr>
+                <tr><td>优先级</td><td>紧急(P0) / 重要(P1) / 关注(P2) / 普通(P3)</td></tr>
+                <tr><td>进度</td><td>滑杆 + 数字框；拖满 100% 会同时标记为已完成</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="note">
+            开始与结束<b>互为边界</b>：越界的日期选不中，手输越界值会被拒绝并提示原因（例如「结束不能早于开始」）。
+            进度回退到 100% 以下时，状态会跟着回退；结束日已过就显示为逾期。
+          </div>
+
+          <h3>活动时间线</h3>
+          <ul>
+            <li>按<b>时间正序</b>排列（最早的在上），每条带图标、内容与时间。</li>
+            <li>进度记录显示 <code>from% → to%</code>，状态与优先级记录显示 <code>旧 → 新</code>。</li>
+            <li>手写进展被修改过会标「已编辑」。</li>
+            <li>只有<b>手写进展</b>与<b>进度记录</b>能编辑或删除，按钮是「编辑」「删除」；编辑时 <kbd>Esc</kbd> 只取消这一条，不关抽屉。</li>
+            <li>底部输入框「记录一条进展（回车保存）」：<kbd>Enter</kbd> 或右侧发送按钮保存。</li>
+            <li>只拖了进度、没写说明时，会提示先写一句再一起记下 —— 否则时间线上只会多一条没有上下文的数字。</li>
+          </ul>
+
+          <h3>Markdown 源（规范数据源）</h3>
+          <p>
+            最下面是可折叠的「Markdown 源」。它展示这条任务的单行写法，输入时<b>实时预览</b>解析结果：
+          </p>
+          <p><code>- [ ] 标题 #标签 ⏰09-21 14:30 :: 40%</code></p>
+          <ul>
+            <li>这里改完<b>不会立即写入任务</b>，要点「按 md 更新任务」。</li>
+            <li>「还原」把输入框恢复成当前任务的样子。</li>
+            <li>状态不参与 md（方括号里的勾不采纳）；进度写满 100% 会按统一口径标记为已完成。</li>
+          </ul>
+
+          <h3>关闭方式</h3>
+          <p>右上角的 ×、<kbd>Esc</kbd>、点抽屉外的空白处、切到别的页面，都会收起抽屉。</p>
+
+          <figure>
+            <img src="img/drawer.jpg" alt="维护抽屉：任务字段、进度、活动时间线与 Markdown 源" />
+            <figcaption>维护抽屉。活动时间线保留每一次状态、进度与优先级的变化。</figcaption>
+          </figure>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="graph">
+          <h2>任务图谱</h2>
+          <p class="lead">
+            一句话定位：<b>换个形状看同一批数据。</b>分区在中心，标签在中间，任务在最外层 —— 回答「这条任务
+            和什么有关」。
+          </p>
+
+          <h3>节点与连线</h3>
+          <ul>
+            <li><b>分区</b>：实心强调色圆，名字下挂一个「分区」小签。</li>
+            <li><b>标签</b>：强调色描边空心圆；没有标签的任务会归到虚线框的「未分类」。</li>
+            <li><b>任务</b>：实心圆，颜色表示状态；只有紧急(P0)与重要(P1)常驻名字，其余悬停才显示。</li>
+            <li>分区连到它的每条标签；任务连到它拥有的<b>每一条</b>标签（多标签任务只画一个节点、连多条边）。</li>
+          </ul>
+
+          <h3>操作</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>操作</th>
+                  <th>结果</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>悬停</td><td>高亮自身与相邻节点 / 边，其余置灰</td></tr>
+                <tr><td>单击节点</td><td>右上详情卡：分区看任务与标签数；标签看任务胶囊；任务看状态、进度、起止日期与标签</td></tr>
+                <tr><td>双击任务节点</td><td>直接打开维护抽屉</td></tr>
+                <tr><td>点标签下的任务胶囊 / 详情卡按钮</td><td>打开维护抽屉</td></tr>
+                <tr><td>点画布空白</td><td>收起详情卡并清除高亮</td></tr>
+                <tr><td>拖动节点</td><td>只移动被拖的那一个，布局不会整体重排</td></tr>
+                <tr><td>放大 / 缩小 / 复位布局</td><td>0.6–1.8 倍缩放；复位后提示「布局已复位」</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>工具行的四枚筛选 chip：<b>全部、高优先级、进行中、已完成</b>；右上角还显示当前分区与节点、关联、完成数统计。</p>
+
+          <figure>
+            <img src="img/graph.jpg" alt="任务图谱：分区、标签与任务三层节点及其连线" />
+            <figcaption>任务图谱。悬停一个标签，就能看到它连着的所有任务。</figcaption>
+          </figure>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="activity">
+          <h2>活动分析</h2>
+          <p class="lead">
+            一句话定位：<b>回看。</b>整年热力图告诉你哪几天动得多，分标签报告告诉你那些动作用在了什么上。
+          </p>
+
+          <h3>活动热力图</h3>
+          <ul>
+            <li>一整年、12 个自然月，列 = 自然周（周一起），行 = 周一到周日。</li>
+            <li>年份用 <b>◀ / ▶</b> 翻；看别的年份时，点中间的年份可以回到今年。</li>
+            <li>每格悬停显示「日期 · 周X · N 条活动」；今天带强调色描边，未来的日期显示「还没到」。</li>
+            <li><b>点击某一天</b>：下方活动报告只看那一天。再点一次范围按钮恢复。</li>
+            <li>右下角的<b>配色</b>选择器可以换热力图色阶；底部图例从「少」到「多」五级。</li>
+          </ul>
+
+          <h3>范围与标签</h3>
+          <p>范围七档：<b>今天、昨天、本周、上周、本月、全年、指定范围</b>。选「指定范围」后出现两个日期框，中间是「至」。</p>
+          <p>
+            左侧「标签筛选」卡每行 = 勾选框 + 标签 + 条数，卡头的「全选」可以一键全勾 / 全取消。活动报告与导出
+            都只按<b>当前范围 × 勾选的标签</b>计算。
+          </p>
+
+          <h3>活动报告</h3>
+          <ul>
+            <li>卡头用 ◀ / ▶ 切换标签，中间显示当前标签与记录数。</li>
+            <li>搜索框可以按任务名或活动内容过滤（占位「在报告里搜索任务名或内容…」）。</li>
+            <li>每条记录 = 时间 + 任务标题 · 活动内容；点击打开维护抽屉。</li>
+            <li>默认每页 20 条。</li>
+          </ul>
+
+          <h3>导出</h3>
+          <p>右上角「导出 ▾」有三种格式，导出的都是当前范围与勾选标签下的活动：</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>格式</th>
+                  <th>结构</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>Markdown（.md）</td><td>标签 → 任务 → 活动，三层文本，按时间升序</td></tr>
+                <tr><td>文本（.txt）</td><td>与 md 同一结构，纯文本</td></tr>
+                <tr><td>表格（.xlsx）</td><td>列：标签 / # / 任务 / 状态 / 时间 / 内容</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>没勾标签时会提示「先在左侧勾选标签」；该范围里没有活动会提示没有可导出的内容。</p>
+
+          <figure>
+            <img src="img/activity.jpg" alt="活动分析：整年热力图、标签筛选与分标签活动报告" />
+            <figcaption>活动分析。点热力图上的一天，报告就只看那一天。</figcaption>
+          </figure>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="manage">
+          <h2>任务管理</h2>
+          <p class="lead">
+            一句话定位：<b>逐条审视、批量处置、进出数据。</b>这里也是唯一能看到「已归档」任务的地方。
+          </p>
+
+          <h3>筛选与列表</h3>
+          <ul>
+            <li>状态视图是<b>一条单选</b>：全部状态、逾期、进行中、已完成、未归档、已归档。状态与归档不能叠加筛选。</li>
+            <li>排序固定为<b>创建时间倒序</b>（同日期按 id），没有排序控件 —— 这一页要的是稳定顺序，不是另一种看法。</li>
+            <li>表格列：勾选框、创建、任务内容、截止、进度、状态、标签、归档。</li>
+            <li>点行打开维护抽屉；点标签胶囊会在右侧「标签管理」里选中该标签。</li>
+            <li>分页可选每页 20 / 30 / 50 / 100，默认 20。</li>
+          </ul>
+
+          <h3>批量处置</h3>
+          <p>勾选任意行后，上方出现批量条：<b>已选 N 项</b> + 标记完成 / 归档 / 取消归档 / 删除 / 取消选择。</p>
+          <ul>
+            <li>「删除」是危险操作，会二次确认。</li>
+            <li>页头的「归档 / 取消归档」按钮作用于<b>当前筛选下的全部任务</b>（跨页），同样会先确认。</li>
+            <li>归档不是删除：任务仍在，只是从任务页收走，在「已归档」视图里还能找回来。</li>
+          </ul>
+
+          <h3>导出</h3>
+          <p>
+            「导出 ▾」导出<b>当前筛选结果</b>，格式同样是 Markdown / 文本 / 表格。文件名形如
+            <code>tadado2-分区名-日期</code>；xlsx 的列是 # / 创建 / 任务内容 / 截止 / 进度 / 状态 / 标签 / 归档。
+          </p>
+
+          <h3>数据迁入</h3>
+          <ol class="steps">
+            <li>点「数据迁入」，对话框标题下会写明导入到哪个分区。</li>
+            <li>点「选择文件…」选一个 Markdown 或文本文件。每行一条任务，写法与维护抽屉里的 md 源一致。</li>
+            <li>对话框当场解析并给出计数：共几条、几行没识别、几条同名重复、几条起止日期需要修正。</li>
+            <li>按需要选「跳过重复，导入 N 条」或「全部导入 N 条」。</li>
+          </ol>
+          <div class="note">
+            迁入是<b>单向</b>的：只会往当前分区里加任务，不会改或删已有的任务。正式导入前先导出一份备份更稳。
+          </div>
+
+          <h3>标签管理</h3>
+          <p>
+            右侧「标签管理」卡可以搜索标签，每行显示「N 任务 / M 活动」。选中一个标签后可以改名或删除；
+            <b>改成一个已存在的名字就是合并</b>，合并后重复的标签会自动去重。没有单独的「合并」按钮，因为
+            「改成同名」本身就是最直白的合并操作。
+          </p>
+
+          <figure>
+            <img src="img/manage.jpg" alt="任务管理：状态筛选、批量操作条、表格与标签管理" />
+            <figcaption>任务管理。勾选后出现批量条；右侧是标签改名与合并。</figcaption>
+          </figure>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="partition">
+          <h2>分区与归档</h2>
+          <p class="lead">
+            一句话定位：<b>分区是彼此独立的抽屉，归档是抽屉里收起来的那一层。</b>切分区 = 换一整套任务与活动。
+          </p>
+
+          <h3>分区</h3>
+          <ul>
+            <li>内置四个：<b>工作、学习、个人、演示空间</b>。首次启动落在「演示空间」，那 100 条样例只在那里。</li>
+            <li>rail 底部的文件夹按钮打开切换器：每项显示分区名、条数、有没有口令，当前项带勾。</li>
+            <li>切换后提示「已切换至分区「名称」」。<kbd>Esc</kbd> 关闭弹层。</li>
+            <li>在「设置 → 分区」可以新建、改名、删除；<b>里面有任务的分区不能删</b>，按钮会置灰并写明还剩几条。</li>
+            <li>分区有一个「默认」单选点：它决定<b>启动时进哪个区</b>，不影响你现在切到哪。</li>
+          </ul>
+
+          <h3>口令锁（隐私屏风）</h3>
+          <p>
+            每个分区可以单独设口令。切到设了口令的分区时，会盖上一层<b>锁屏</b>：卡片写着「分区已锁定」，
+            输入口令后「解锁」；口令错误会清空输入并重新聚焦。
+          </p>
+          <div class="warn">
+            <b>口令只用于遮蔽，不加密数据文件。</b>改或清口令都不校验旧口令，也没有找回流程 ——
+            忘了口令可以在别的分区里打开设置，重设这个分区的口令。拿到数据文件的人仍然能直接读库，
+            所以重要的东西请配合系统账户与磁盘加密。
+          </div>
+          <p>
+            每个分区还能设「空闲锁定」：关 / 5 分 / 10 分 / 30 分。到点自动锁当前分区。解锁状态只在本次运行有效，
+            重启后需要重新输入。
+          </p>
+
+          <h3>归档档位</h3>
+          <p>每个分区单独设「完成后归档」：<b>不归档、立即、7 天、30 天、90 天</b>。</p>
+          <ul>
+            <li>「立即」是延迟为 0 天，不是关掉功能；真正关掉是「不归档」。</li>
+            <li>新建分区的默认档位是「立即」。</li>
+            <li>归档后的任务从任务页消失，在任务管理页的「已归档」视图里；批量条与页头按钮都能「取消归档」。</li>
+          </ul>
+          <p>这两项是分区行尾「自动 ▾」里的设置，展开才建控件；只要有一项不是默认值，按钮就会染色提示。</p>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="settings">
+          <h2>设置</h2>
+          <p>
+            齿轮按钮打开右侧设置抽屉。整页从上到下四组：<b>外观、启动、分区、关于</b>；切到别的页面会自动收起。
+          </p>
+
+          <h3>外观</h3>
+          <p>主题三选一：<b>亮色、暗色、跟随系统</b>。标题栏的太阳 / 月亮按钮与这里是同一个设置。</p>
+
+          <h3>启动</h3>
+          <ul>
+            <li><b>开机自启动</b>：写入系统的启动项，开 / 关都立即生效。</li>
+            <li><b>全局热键</b>：只读显示 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd>。它是代码里的固定组合，不是可改项，
+              所以不摆成一个能点的开关。</li>
+          </ul>
+
+          <h3>分区</h3>
+          <p>
+            一个分区一行：默认单选点、名字、条数、锁标记，行尾是「自动 ▾」「设口令」「改名」「删除」。展开「自动 ▾」
+            才有「完成后归档」与「空闲锁定」。
+          </p>
+
+          <h3>关于</h3>
+          <p>「关于」这一组固定四行，顺序不变：</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>行</th>
+                  <th>作用</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>关于（v{{VERSION}}）</td><td>组标题带版本号；点标题行展开 / 收起应用介绍</td></tr>
+                <tr><td>帮助文档</td><td>整行可点的常驻入口：用系统默认浏览器打开你正在读的这份文档</td></tr>
+                <tr><td>检查更新</td><td>点击后查询 GitHub 上的最新正式版本</td></tr>
+                <tr><td>下载与反馈</td><td>有自己的展开 / 收起：阿里云盘(国内推荐)、GitHub Releases、公众号与仓库</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            「关于」的介绍块与「下载与反馈」是<b>两个独立的折叠</b>：展开一个不会带上另一个，各自记住上次的状态。
+            帮助文档入口永远可见，不跟着任何折叠块消失。
+          </p>
+          <p>
+            云盘按钮下面还有一行小字：<b>「链接失效？换 GitHub Releases，或公众号 Pyvan 留言。」</b>
+            云盘分享可能被平台取消，程序<b>不探测</b>它是否还有效（阿里云盘对失效分享同样返回正常页面，
+            内容全靠脚本渲染，客户端判断不了）。打不开时按这行小字换一条路即可。
+          </p>
+
+          <h3>检查更新怎么工作</h3>
+          <ul>
+            <li>只在<b>你点击时</b>联网，不做启动时的静默检查。</li>
+            <li>查询方式是读 GitHub「最新发布」页面的跳转地址，常规点击不消耗 API 配额。</li>
+            <li>结果只有两种：<b>「发现新版本 vX」</b>（强调色）或<b>「没有查到新版本」</b>（中性色）。
+              已是最新、网络不通、超时、GitHub 返回异常，都归入后者 —— 更新检查给不出一屏错误码。</li>
+            <li>检查期间按钮显示「检查中…」并禁用，最长 20 秒必有结果。</li>
+            <li>发现新版本时，「下载与反馈」自动展开并打上「有新版本」标记，日期与「查看更新说明」一并出现；
+              你可以随时把它收起来。下一次查不到时，这些标记会自动清掉。</li>
+            <li>它只负责「告诉你有没有新版」，<b>不下载、不安装</b>。下载走「下载与反馈」里的渠道。</li>
+          </ul>
+
+          <figure>
+            <img src="img/settings-about.jpg" alt="设置抽屉的关于分组：标题带版本、帮助文档、检查更新与下载与反馈" />
+            <figcaption>设置 → 关于。版本号只在标题里出现一次。</figcaption>
+          </figure>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="backup">
+          <h2>数据与备份</h2>
+          <p class="lead">
+            一句话定位：<b>一个文件就是全部。</b>备份 = 复制它，恢复 = 放回去。
+          </p>
+
+          <h3>备份</h3>
+          <ol class="steps">
+            <li>先从托盘菜单退出 Tadado2（右上角的 × 只是最小化到托盘）。</li>
+            <li>打开 <code>%APPDATA%\com.tadado.app\</code>。</li>
+            <li>把 <code>tadado.data</code> 复制到别的位置，按日期命名，例如 <code>tadado-2026-10-17.data</code>。</li>
+          </ol>
+          <div class="note">
+            应用运行时数据库是打开的，直接复制可能拿到写了一半的文件。退出后再拷最稳；实在不想退出，
+            也请至少等界面没有正在保存的改动。
+          </div>
+
+          <h3>恢复</h3>
+          <ol class="steps">
+            <li>退出应用。</li>
+            <li>把备份文件改回 <code>tadado.data</code>，覆盖到同一目录。</li>
+            <li>重新打开。分区、任务、活动与设置都会回来。</li>
+          </ol>
+
+          <h3>Markdown 导入与导出</h3>
+          <ul>
+            <li><b>导出</b>：任务管理页「导出 ▾」导出当前筛选结果；活动分析页导出的是活动报告。格式为 md / txt / xlsx。</li>
+            <li><b>导入</b>：任务管理页「数据迁入」，一行一条任务，可先跳过重复再导入。</li>
+            <li>单条任务也能在维护抽屉底部的「Markdown 源」里直接改，点「按 md 更新任务」生效。</li>
+          </ul>
+
+          <h3>从 v0.x 迁移</h3>
+          <p>
+            旧版 PySide6 的任务不会被自动读取。做法是：在旧版里按分区导出 → 用仓库里的迁移工具转换成
+            「一行一条」的写法 → 在 Tadado2 里切到目标分区，用「数据迁入」导入。两边数据目录不同，装新版
+            不会影响旧库。
+          </p>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="changes">
+          <h2>版本更新</h2>
+          <p>本手册对应 <b>v{{VERSION}}</b>。下面是最近这次发布的要点，完整记录见仓库的更新日志。</p>
+
+          <div class="release">
+            <h3>本次更新（v1.0.1）</h3>
+            <ul>
+              <li><b>检查更新更省事</b>：改读 GitHub 发布页的跳转地址，常规点击不消耗 API 配额；结果只保留
+                「发现新版本」与「没有查到新版本」两种，最长 20 秒出结论。</li>
+              <li><b>「关于」更紧凑</b>：版本号并进标题（关于（v{{VERSION}}）），去掉单独的版本行与运行环境行。</li>
+              <li><b>下载入口独立</b>：「下载与反馈」有自己的展开 / 收起与状态记忆，不再和「关于」共用一个开关；
+                查到新版本时自动展开并打标记。</li>
+              <li><b>本地帮助文档</b>：新增「帮助文档」常驻行，打开随程序一起分发的这份 HTML 文档，离线可用；
+                云盘按钮下方另有一行失效补救提示。</li>
+              <li><b>日期校验</b>：开始与结束互为边界，越界输入会被拒绝并说明原因；新建与维护抽屉共用同一套校验。</li>
+              <li><b>进度与状态统一</b>：进度满 100% 自动标记完成并按分区归档档位处理；回退到 100% 以下时状态同步回退。</li>
+            </ul>
+            <p class="meta">v1.0.0（2026-09-21）是 Tadado2 的首个发布：Tauri 2 重写、五个页面、单文件 SQLite。</p>
+          </div>
+
+          <p>
+            历史版本与完整改动：<a href="https://github.com/HananxR/Tadado/releases">GitHub Releases</a>；
+            更新日志：<a href="https://github.com/HananxR/Tadado/blob/main/CHANGELOG.md">CHANGELOG.md</a>。
+          </p>
+        </section>
+
+        <!-- ─────────────────────────────────────────────────────────────── -->
+        <section id="faq">
+          <h2>常见问题</h2>
+
+          <details class="faq" open>
+            <summary>我的数据到底存在哪？</summary>
+            <p>
+              一个 SQLite 文件：<code>%APPDATA%\com.tadado.app\tadado.data</code>。没有云端副本，也没有隐藏的
+              第二份数据。把这个文件拷走就等于备份了全部任务、活动与设置。
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>升级会不会丢任务？</summary>
+            <p>
+              不会。数据文件在 <code>%APPDATA%</code> 里，安装包只覆盖程序本身。安装时默认选中的就是
+              「原地升级（保留任务与分区数据）」；卸载页的「删除应用数据」默认不勾选。
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>忘了分区口令怎么办？</summary>
+            <p>
+              口令只用于遮蔽，不加密数据。切到另一个分区，打开设置 → 分区，给忘了口令的那个分区重设一个
+              新口令即可 —— 改口令不校验旧口令。没有「找回」流程，因为它本来就不是一把密码锁。
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>检查更新为什么只有两种结果？</summary>
+            <p>
+              这个功能的用途只有一个：告诉你有没有新版本。网络失败、超时、GitHub 临时异常都说明不了
+              「有没有新版」，所以统一显示「没有查到新版本」，而不是让你判断一串错误码。过一会儿再点一次即可。
+              它不下载、不安装，也不会在启动时偷偷联网。
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>安装时提示「Windows 已保护你的电脑」？</summary>
+            <p>
+              安装包没有购买代码签名证书，SmartScreen 因此不认识它。点「更多信息」→「仍要运行」即可。
+              如果你更在意这一点，可以用便携版：解压后直接运行，不改动系统。
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>便携版和安装版的数据是共用的吗？</summary>
+            <p>
+              是。两者都读写 <code>%APPDATA%\com.tadado.app\tadado.data</code>，所以可以先用便携版试用，
+              再装安装版，任务都在。反过来说，如果想让两套数据完全分开，需要手动改数据目录，
+              当前版本不提供这个开关。
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>阿里云盘的下载链接打不开了？</summary>
+            <p>
+              云盘分享可能被平台取消，也可能只是临时抽风。先等一会儿重试；仍然打不开就去
+              <a href="https://github.com/HananxR/Tadado/releases">GitHub Releases</a> 下载，
+              或者在公众号「Pyvan」留言要一份新链接 —— 设置 → 关于 → 下载与反馈 里那行小字也写着这两条路。
+            </p>
+            <p>
+              程序不会替你去试探链接是否有效：阿里云盘对失效分享同样返回正常页面，内容全靠脚本渲染，
+              客户端拿不到可靠判据，硬做只会多一次联网和一次误报。
+            </p>
+          </details>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      Tadado2 v{{VERSION}} · 本帮助文档随程序一起分发，离线可读 ·
+      <a href="https://github.com/HananxR/Tadado">github.com/HananxR/Tadado</a>
+    </footer>
+  </body>
+</html>

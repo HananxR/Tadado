@@ -1,13 +1,14 @@
 {
   "name": "desktop",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "e2e": "npm run build && node e2e/smoke.mjs",
+    "check:help": "node ../resources/help-check.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -74,6 +74,8 @@ npm install
 npm run dev          # 纯前端预览（无 Tauri 宿主，只能调样式）
 npm run build        # tsc + vite build
 npm run e2e          # 构建 + 真浏览器冒烟（唯一的验证闸门，见「工作流程」）
+npm run check:help   # 核对内置帮助文档：目录锚点 / 页面名 / 快捷键 / 版本 / 负向清单
+                     # 改过 src-tauri/resources/help/ 或设置 → 关于时，发版前跑一次
 npm run tauri dev    # 真实窗口（首次需编译 Rust）
 npm run tauri build  # 出安装包：NSIS + MSI → src-tauri/target/release/bundle/
                      # 便携版不在 bundler 的目标里，两步手工：把 target/release/desktop.exe

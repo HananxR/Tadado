@@ -3003,6 +3003,97 @@ try {
     `页签 ${shape.tabs} 个 · ${shape.titles.join("/")}`,
   );
 
+  // 「关于」默认收起（2026-10-17）：介绍与下载块压在抽屉最下面，常显只会把上面
+  // 几组设置挤走。**帮助文档 / 检查更新两行必须留在外面** —— 若连「检查更新」
+  // 一起藏了，这个功能就等于没有入口（折叠的是长内容，不是整个分组）。
+  // 版本号并进标题（「关于（v1.0.1）」）；「版本」「运行环境」两行已撤。
+  const folded = await page.evaluate(() => {
+    const sec = document.querySelector("#set-body .set-sec[data-collapsible]");
+    const head = document.getElementById("set-about-head");
+    const downloads = document.getElementById("set-downloads-head");
+    const row = sec?.querySelector(".set-row");
+    const headStyle = head ? getComputedStyle(head) : null;
+    const rowStyle = row ? getComputedStyle(row) : null;
+    return {
+      head: head?.tagName ?? "",
+      expanded: head?.getAttribute("aria-expanded") ?? "",
+      hint: head?.querySelector(".set-sec-hint")?.textContent?.trim() ?? "",
+      title: head?.querySelector(".set-sec-t")?.textContent?.trim() ?? "",
+      ver: document.getElementById("set-about-ver")?.textContent?.trim() ?? "",
+      // 「关于」与几行是平级条目：字号、行高必须一致，否则又会变成小一号的标题
+      headFont: headStyle?.fontSize ?? "",
+      rowFont: rowStyle?.fontSize ?? "",
+      headPad: `${headStyle?.paddingTop}/${headStyle?.paddingBottom}`,
+      rowPad: `${rowStyle?.paddingTop}/${rowStyle?.paddingBottom}`,
+      hidden: [...(sec?.querySelectorAll(".set-more") ?? [])].map((n) => n.hasAttribute("hidden")),
+      rows: [...(sec?.querySelectorAll(".set-row") ?? [])].map((row) => ({
+        label: row.querySelector("span")?.textContent?.trim() ?? "",
+        shown: row.getBoundingClientRect().height > 0,
+      })),
+      downloadsShown: (downloads?.getBoundingClientRect().height ?? 0) > 0,
+      downloadsExpanded: downloads?.getAttribute("aria-expanded") ?? "",
+      downloadsHint: downloads?.querySelector(".set-sec-hint")?.textContent?.trim() ?? "",
+      // 旧称呼改名为「帮助文档」后，界面上不该再有残留
+      legacy: (document.body.textContent ?? "").includes("软件操作说明"),
+    };
+  });
+  check(
+    "关于：默认收起（介绍与下载块隐藏，标题带版本，说明 / 检查更新两行常显）",
+    folded.head === "BUTTON" &&
+      folded.expanded === "false" &&
+      folded.title === "关于" &&
+      /^（v\d/.test(folded.ver) &&
+      folded.hidden.length === 2 &&
+      folded.hidden.every(Boolean) &&
+      folded.rows.length === 2 &&
+      ["帮助文档", "检查更新"].every((label) =>
+        folded.rows.some((row) => row.label === label && row.shown),
+      ) &&
+      !["版本", "运行环境", "软件操作说明"].some((label) =>
+        folded.rows.some((row) => row.label === label),
+      ) &&
+      folded.downloadsShown &&
+      folded.downloadsExpanded === "false" &&
+      folded.downloadsHint === "展开" &&
+      !folded.legacy,
+    JSON.stringify(folded),
+  );
+  check(
+    "关于：与各行同级（同字号、同行高，不再比行标签小）",
+    folded.headFont === folded.rowFont && folded.headFont === "12.5px" && folded.headPad === folded.rowPad,
+    `head=${folded.headFont} ${folded.headPad} · row=${folded.rowFont} ${folded.rowPad}`,
+  );
+  check("关于：收起时右侧提示「展开」", folded.hint === "展开", `hint=${folded.hint}`);
+
+  // 点标题展开：长内容回来、箭头与 aria-expanded 同步 —— 只改视觉不改语义的话，
+  // 读屏器会把收起的内容当成还在。**下载块不跟着动**：两个折叠头各管各的
+  await page.click("#set-about-head");
+  await sleep(200);
+  const opened = await page.evaluate(() => {
+    const head = document.getElementById("set-about-head");
+    const downloads = document.getElementById("set-downloads-head");
+    return {
+      expanded: head?.getAttribute("aria-expanded") ?? "",
+      hint: head?.querySelector(".set-sec-hint")?.textContent?.trim() ?? "",
+      introShown:
+        (document.getElementById("set-about-intro")?.getBoundingClientRect().height ?? 0) > 0,
+      downloadsShown:
+        (document.getElementById("set-about-downloads")?.getBoundingClientRect().height ?? 0) > 0,
+      downloadsExpanded: downloads?.getAttribute("aria-expanded") ?? "",
+      downloadsHint: downloads?.querySelector(".set-sec-hint")?.textContent?.trim() ?? "",
+    };
+  });
+  check(
+    "点「关于」标题展开：只展开介绍，下载块仍收起",
+    opened.expanded === "true" &&
+      opened.hint === "收起" &&
+      opened.introShown &&
+      !opened.downloadsShown &&
+      opened.downloadsExpanded === "false" &&
+      opened.downloadsHint === "展开",
+    JSON.stringify(opened),
+  );
+
   // 「关于」是按实际功能写的介绍：应用名 / 一句话定位 / 功能与特色两份清单 /
   // 版本号（浏览器预览拿不到 Tauri 的版本，这里显示的是兜底值，同样带 v）
   //
@@ -3020,16 +3111,18 @@ try {
       list: [...(sec?.querySelectorAll(".about-list li") ?? [])].map((n) =>
         (n.textContent ?? "").trim(),
       ),
-      ver: document.getElementById("set-ver")?.textContent?.trim() ?? "",
+      ver: document.getElementById("set-about-ver")?.textContent?.trim() ?? "",
+      title: document.getElementById("set-about-head")?.textContent?.trim() ?? "",
     };
   });
   check(
-    "关于：应用名 / 定位 / 功能与特色清单都在（两组各三条）",
+    "关于：应用名 / 定位 / 功能与特色清单都在（两组各三条），版本并在标题里",
     about.name === "Tadado2" &&
       about.lead.length > 10 &&
       about.groups.join("/") === "功能/特色" &&
       about.items === 6 &&
-      /^v\d/.test(about.ver),
+      /^（v\d+\.\d+\.\d+）$/.test(about.ver) &&
+      about.title.startsWith("关于"),
     JSON.stringify(about),
   );
 
@@ -3051,8 +3144,36 @@ try {
     JSON.stringify(updateRow),
   );
 
-  // 下载渠道与联系方式：渠道按**能不能打开**排序（阿里云盘在前，GitHub 在后），
-  // 且必须写明「无需提取码」—— 看见网盘链接的人第一反应就是找提取码
+  // 「下载与反馈」有**自己的**展开 / 收起，不与「关于」共用开关：想知道去哪下载的
+  // 人，不该先展开一段产品简介
+  await page.click("#set-downloads-head");
+  await sleep(200);
+  const downloadsOpenState = await page.evaluate(() => {
+    const head = document.getElementById("set-downloads-head");
+    const aboutHead = document.getElementById("set-about-head");
+    return {
+      expanded: head?.getAttribute("aria-expanded") ?? "",
+      hint: head?.querySelector(".set-sec-hint")?.textContent?.trim() ?? "",
+      shown:
+        (document.getElementById("set-about-downloads")?.getBoundingClientRect().height ?? 0) > 0,
+      aboutExpanded: aboutHead?.getAttribute("aria-expanded") ?? "",
+      aboutShown:
+        (document.getElementById("set-about-intro")?.getBoundingClientRect().height ?? 0) > 0,
+    };
+  });
+  check(
+    "下载与反馈能独立展开：渠道可见，「关于」状态不变",
+    downloadsOpenState.expanded === "true" &&
+      downloadsOpenState.hint === "收起" &&
+      downloadsOpenState.shown &&
+      downloadsOpenState.aboutExpanded === "true" &&
+      downloadsOpenState.aboutShown,
+    JSON.stringify(downloadsOpenState),
+  );
+
+  // 下载渠道与联系方式：渠道按**能不能打开**排序（阿里云盘在前，GitHub 在后）。
+  // 2026-10-17 撤掉渠道下方那行解释小字（「无需提取码…」）：它压在本就折叠着的
+  // 区块里只会让这一块更长，而渠道名本身已经说清楚去哪下载
   const aboutFoot = await page.evaluate(() => {
     const sec = [...document.querySelectorAll("#set-body .set-sec")].find((node) =>
       node.querySelector(".about"),
@@ -3071,16 +3192,45 @@ try {
   check(
     "关于：下载渠道国内优先（阿里云盘第一、GitHub Releases 备选）",
     aboutFoot.channels.length === 2 &&
-      aboutFoot.channels[0].url.includes("alipan.com") &&
-      aboutFoot.channels[0].text.includes("国内") &&
+      aboutFoot.channels[0].url === "https://www.alipan.com/s/E2FBppaMPZj" &&
+      aboutFoot.channels[0].text === "阿里云盘(国内推荐)" &&
       aboutFoot.channels[1].url === "https://github.com/HananxR/Tadado/releases",
     JSON.stringify(aboutFoot.channels),
   );
+
+  // 云盘链接的退路：一句话 + 两个行内动作。**不是**探测结果，所以它常驻；
+  // 长度卡在 40 字内，防止又写回一段解释
+  const tip = await page.evaluate(() => {
+    const node = document.getElementById("about-tip");
+    return {
+      shown: (node?.getBoundingClientRect().height ?? 0) > 0,
+      text: (node?.textContent ?? "").trim(),
+      links: [...(node?.querySelectorAll(".about-tip-link") ?? [])].map((n) => ({
+        id: n.id,
+        text: (n.textContent ?? "").trim(),
+        url: n.getAttribute("data-url") ?? "",
+      })),
+      buttons: node?.closest(".about-foot")?.querySelectorAll(".about-links .btn").length ?? 0,
+    };
+  });
   check(
-    "关于：联系方式含公众号与仓库，且写明无需提取码",
+    "云盘失效提示：一句话给出 GitHub 与公众号两条后路",
+    tip.shown &&
+      tip.text.includes("失效") &&
+      tip.text.length <= 40 &&
+      tip.links.length === 2 &&
+      tip.links[0].id === "about-tip-github" &&
+      tip.links[0].url === "https://github.com/HananxR/Tadado/releases" &&
+      tip.links[1].id === "about-tip-wechat" &&
+      tip.links[1].text === "Pyvan" &&
+      tip.buttons === 2,
+    JSON.stringify(tip),
+  );
+  check(
+    "关于：联系方式含公众号与仓库（渠道说明小字已撤）",
     aboutFoot.groups.join("/") === "下载渠道/反馈与联系" &&
       aboutFoot.text.includes("Pyvan") &&
-      aboutFoot.text.includes("无需提取码") &&
+      !aboutFoot.text.includes("无需提取码") &&
       aboutFoot.repo === "https://github.com/HananxR/Tadado",
     `${aboutFoot.groups.join("/")} · repo=${aboutFoot.repo}`,
   );
@@ -3097,6 +3247,144 @@ try {
       about.list.some((text) => text.includes("创建 → 截止")),
     about.list.join(" | ").slice(0, 160),
   );
+
+  // 再点「下载与反馈」收起：只收它自己，「关于」介绍仍开着
+  await page.click("#set-downloads-head");
+  await sleep(150);
+  const downloadsClosedState = await page.evaluate(() => {
+    const head = document.getElementById("set-downloads-head");
+    return {
+      expanded: head?.getAttribute("aria-expanded") ?? "",
+      hint: head?.querySelector(".set-sec-hint")?.textContent?.trim() ?? "",
+      shown:
+        (document.getElementById("set-about-downloads")?.getBoundingClientRect().height ?? 0) > 0,
+      aboutShown:
+        (document.getElementById("set-about-intro")?.getBoundingClientRect().height ?? 0) > 0,
+      tipShown: (document.getElementById("about-tip")?.getBoundingClientRect().height ?? 0) > 0,
+    };
+  });
+  check(
+    "再点「下载与反馈」收起：只是它自己收，关于介绍仍开着",
+    downloadsClosedState.expanded === "false" &&
+      downloadsClosedState.hint === "展开" &&
+      !downloadsClosedState.shown &&
+      !downloadsClosedState.tipShown &&
+      downloadsClosedState.aboutShown,
+    JSON.stringify(downloadsClosedState),
+  );
+
+  // 帮助文档是**常驻动作**：关于 / 下载行四种开合组合下都不能消失 ——
+  // 否则说明文档就成了「得先展开关于」才能找到的东西
+  const helpVisible = async () =>
+    page.evaluate(
+      () => (document.getElementById("set-help")?.getBoundingClientRect().height ?? 0) > 0,
+    );
+
+  const helpStates = [await helpVisible()]; // 关于开 / 下载收
+  await page.click("#set-about-head");
+  await sleep(150);
+  helpStates.push(await helpVisible()); // 关于收 / 下载收
+  await page.click("#set-downloads-head");
+  await sleep(150);
+  helpStates.push(await helpVisible()); // 关于收 / 下载开
+  await page.click("#set-about-head");
+  await sleep(150);
+  helpStates.push(await helpVisible()); // 关于开 / 下载开
+  check(
+    "帮助文档常驻：关于 / 下载行任意开合都不影响它",
+    helpStates.length === 4 && helpStates.every(Boolean),
+    JSON.stringify(helpStates),
+  );
+
+  // 浏览器预览里没有 Tauri 宿主：点它要给一句提示，不能静默失败
+  await page.click("#set-help");
+  await sleep(150);
+  const helpToast = await page.evaluate(() => {
+    const node = document.getElementById("toast");
+    return {
+      shown: node?.classList.contains("show") === true,
+      text: node?.textContent?.trim() ?? "",
+    };
+  });
+  check(
+    "帮助文档：预览环境点开给一句提示",
+    helpToast.shown && helpToast.text.includes("桌面版") && helpToast.text.includes("帮助文档"),
+    JSON.stringify(helpToast),
+  );
+
+  // 两个折叠块都收起，记忆测试从默认态出发
+  const collapseFolds = async () => {
+    const open = await page.evaluate(() => ({
+      about: document.getElementById("set-about-head")?.getAttribute("aria-expanded") === "true",
+      downloads:
+        document.getElementById("set-downloads-head")?.getAttribute("aria-expanded") === "true",
+    }));
+    if (open.about) await page.click("#set-about-head");
+    if (open.downloads) await page.click("#set-downloads-head");
+    await sleep(300);
+  };
+  await collapseFolds();
+
+  // 状态记忆：展开「关于」→ 写进本地设置 → 重载后仍是展开，下载行回到默认收起。
+  // 浏览器预览走 localStorage（Tauri 下是 SQLite 的 kv 表，同一套 loadSetting/saveSetting）
+  await page.click("#set-about-head");
+  await sleep(300);
+  const storedAbout = await page.evaluate(() => localStorage.getItem("tadado.kv.settings.aboutOpen"));
+  check("关于的折叠状态写进本地设置", storedAbout === "true", `settings.aboutOpen = ${storedAbout}`);
+
+  // 等写入落定再重载（saveSetting 是异步的，Tauri 下还要走一次 SQLite）
+  await sleep(400);
+  await page.reload();
+  await page.waitForSelector(".rail-btn");
+  await page.click("#set-btn");
+  await page.waitForSelector("#set-drawer.open");
+  await sleep(400);
+  const restoredAbout = await page.evaluate(() => ({
+    about: document.getElementById("set-about-head")?.getAttribute("aria-expanded") ?? "",
+    introShown:
+      (document.getElementById("set-about-intro")?.getBoundingClientRect().height ?? 0) > 0,
+    downloads: document.getElementById("set-downloads-head")?.getAttribute("aria-expanded") ?? "",
+  }));
+  check(
+    "重启后「关于」仍是展开，下载块仍是收起（互不影响）",
+    restoredAbout.about === "true" && restoredAbout.introShown && restoredAbout.downloads === "false",
+    JSON.stringify(restoredAbout),
+  );
+
+  // 下载行的状态**单独**记忆：展开它之后重载，两个各复各位
+  await page.click("#set-downloads-head");
+  await sleep(300);
+  const storedDownloads = await page.evaluate(() =>
+    localStorage.getItem("tadado.kv.settings.downloadsOpen"),
+  );
+  check(
+    "下载与反馈的折叠状态独立记进本地设置",
+    storedDownloads === "true",
+    `settings.downloadsOpen = ${storedDownloads}`,
+  );
+
+  await sleep(400);
+  await page.reload();
+  await page.waitForSelector(".rail-btn");
+  await page.click("#set-btn");
+  await page.waitForSelector("#set-drawer.open");
+  await sleep(400);
+  const restoredDownloads = await page.evaluate(() => ({
+    about: document.getElementById("set-about-head")?.getAttribute("aria-expanded") ?? "",
+    downloads: document.getElementById("set-downloads-head")?.getAttribute("aria-expanded") ?? "",
+    downloadsShown:
+      (document.getElementById("set-about-downloads")?.getBoundingClientRect().height ?? 0) > 0,
+  }));
+  check(
+    "重启后下载行仍是展开，关于保留自己的状态",
+    restoredDownloads.about === "true" &&
+      restoredDownloads.downloads === "true" &&
+      restoredDownloads.downloadsShown,
+    JSON.stringify(restoredDownloads),
+  );
+
+  // 复原成默认：两个都收起，后面的用例按默认态继续
+  await collapseFolds();
 
   // 开机自启动：浏览器预览里问不到系统（autostart 插件不在），那一行要标成不可用 ——
   // 而不是摆一个点了没反应的开关

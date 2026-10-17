@@ -18,7 +18,7 @@ description: |
 
 | # | 做什么 | 能不能跳 |
 |:--:|---|---|
-| 1 | **验收**：`npm run e2e` | 动过 `desktop/` 或 `resources/skill/**` 就不能跳 |
+| 1 | **验收**：`npm run e2e`（+ 动过帮助文档时 `npm run check:help`） | 动过 `desktop/` 或 `resources/skill/**` 就不能跳 |
 | 2 | **打包**：`npm run tauri build` + 便携 zip + 迁移 skill 的 zip | 同上；没动代码可以跳 |
 | 3 | **提交**：`git add` + **一次** commit | 不能（有改动就得提交） |
 | 4 | **推送**：`git push`、tag、`gh release create` | **用户明确说推才推** ← 见铁律 |
@@ -48,11 +48,16 @@ description: |
 cd desktop
 npx tsc --noEmit          # 几秒，先把编译错误挡在前面
 npm run e2e               # 构建 + 真浏览器冒烟，约 100–110s
+npm run check:help        # 改过功能 / 关于分组 / 内置操作说明时必跑
 ```
 
 - **e2e 必须全绿**（`全部通过`，末尾没有 `FAIL` 行）。红了就先修，不要带着红去打包。
 - 顺手记下通过条数（`OK: N` 行数）—— 它突然少了说明有断言没被跑到，值得看一眼。
 - **不要**为了「快点」只跑 `tsc` 就往下走：这个仓库栽过好几次「类型合法、点下去没反应」。
+- **改了功能就同步帮助文档**：`desktop/src-tauri/resources/help/index.html` 随程序分发，
+  是用户手上那份「帮助文档」。页面名、快捷键、功能清单、当前版本任一变化都要改它，
+  再跑 `npm run check:help`（它会拦住过期文案与已撤掉的能力）。截图重跑
+  `node resources/screenshots.mjs`，且只允许来自演示空间样例。
 
 ## 步骤 2：打包
 

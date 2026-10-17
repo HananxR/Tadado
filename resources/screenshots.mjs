@@ -6,7 +6,10 @@
 //   cd desktop && npm run build && cd ..      # 先有 dist/
 //   node resources/screenshots.mjs
 //
-// 产出：resources/screenshots/*.png，README 直接引用这些文件。
+// 产出：
+//   · resources/screenshots/*.png —— README 直接引用（2x，1180×760 视口）
+//   · desktop/src-tauri/resources/help/img/*.jpg —— 随程序嵌入的本地操作说明
+//     （1x JPEG：嵌进 exe 的每 100 KB 都是安装包体积）
 //
 // 三处刻意的设定：
 //   · 视口 1180×760 —— 正是应用窗口的默认尺寸（见 DESIGN.md 的窗口形态）。
@@ -23,7 +26,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -164,6 +176,95 @@ try {
     await page.click("#tb-theme");
     await goPage("overview");
   });
+
+  // ── 帮助文档用截图（1x JPEG，编译期嵌进 exe）────────────────────────────
+  // 另一套浏览器上下文：localStorage 为空 → 应用自己装载 data/mock.ts 的演示空间，
+  // 不碰本机 SQLite 与 %APPDATA%。拍之前先断言手工样例真的在，防止将来某次改动
+  // 让预览连上真实库，把用户的任务拍进随程序分发的文档里。
+  const HELP_IMG = join(DESKTOP, "src-tauri", "resources", "help", "img");
+  mkdirSync(HELP_IMG, { recursive: true });
+
+  const helpContext = await browser.newContext({
+    viewport: { width: WIDTH, height: HEIGHT },
+    deviceScaleFactor: 1,
+    colorScheme: "light",
+    reducedMotion: "reduce",
+  });
+  const help = await helpContext.newPage();
+  await help.goto(PREVIEW, { waitUntil: "networkidle" });
+  await help.waitForSelector(".rail-btn", { timeout: 15000 });
+
+  const goHelpPage = (id) => help.locator(`.rail-btn[data-page="${id}"]`).click();
+
+  await goHelpPage("tasks");
+  await help.waitForSelector(".tt-row", { timeout: 15000 });
+  await help.locator("#page-tasks .tools input").fill("优化列表页性能");
+  await sleep(500);
+  const demoRows = await help
+    .locator(".tt-row")
+    .filter({ has: help.locator(".lt1 .t", { hasText: /^优化列表页性能$/ }) })
+    .count();
+  if (demoRows < 1) {
+    throw new Error(
+      "帮助截图自检失败：演示样例「优化列表页性能」不在列表里，可能连到了真实数据库。已中止，避免拍到本地任务。",
+    );
+  }
+  console.log(`     （帮助截图只用演示空间样例：命中「优化列表页性能」${demoRows} 条）`);
+  await help.locator("#page-tasks .tools input").fill("");
+  await sleep(400);
+
+  const helpShot = async (name, action) => {
+    if (action) await action();
+    await sleep(420);
+    await help.screenshot({
+      path: join(HELP_IMG, `${name}.jpg`),
+      type: "jpeg",
+      quality: 80,
+    });
+    console.log(`OK   help/img/${name}.jpg`);
+  };
+
+  await helpShot("overview", () => goHelpPage("overview"));
+  await helpShot("tasks", () => goHelpPage("tasks"));
+  await helpShot("drawer", async () => {
+    await goHelpPage("tasks");
+    await help.waitForSelector(".tt-row");
+    await help.locator("#page-tasks .tools input").fill("优化列表页性能");
+    await sleep(420);
+    await help
+      .locator(".tt-row")
+      .filter({ has: help.locator(".lt1 .t", { hasText: /^优化列表页性能$/ }) })
+      .first()
+      .dblclick();
+    await help.waitForSelector("#task-drawer.open");
+    // 这里只能用 fill：抽屉「点面板外就收起」，而搜索框在面板外
+    await help.locator("#page-tasks .tools input").fill("");
+  });
+  await help.keyboard.press("Escape");
+  await sleep(300);
+
+  await helpShot("graph", () => goHelpPage("graph"));
+  await helpShot("activity", () => goHelpPage("activity"));
+  await helpShot("manage", () => goHelpPage("manage"));
+  await helpShot("task-form", async () => {
+    await goHelpPage("tasks");
+    await help.click('#page-tasks .ph button:has-text("＋ 新建任务")');
+    await help.waitForSelector(".modal-card.wide");
+  });
+  await help.keyboard.press("Escape");
+  await sleep(250);
+
+  await helpShot("settings-about", async () => {
+    await help.click("#set-btn");
+    await help.waitForSelector("#set-drawer.open");
+  });
+
+  const helpSizes = readdirSync(HELP_IMG)
+    .filter((file) => file.endsWith(".jpg"))
+    .map((file) => `${file} ${Math.round(statSync(join(HELP_IMG, file)).size / 1024)}KB`);
+  console.log(`OK   帮助截图 ${helpSizes.length} 张：${helpSizes.join(" · ")}`);
+
+  await helpContext.close();
 
   // ── 仓库的社交预览图（GitHub 设置里上传的那张，1280×640）──────────────
   // 用 HTML 现拼一张：品牌 + tagline + 一张缩小的真实界面。拼完才截图，

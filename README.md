@@ -67,6 +67,15 @@
 五个页面都**撑满窗口**：固定的块留在原地，会长的那一块（表格 / 列表）在卡片内部滚。
 翻页与筛选时，页头、工具栏、分页器都不会被滚走 —— 目光不用离开手上的操作。
 
+## 帮助文档
+
+装好后从 **设置 → 关于 → 帮助文档** 打开：一份**离线**的中文手册，随程序一起分发
+（便携版那个单文件 exe 里也有），包含目录、各模块的定位与操作、FAQ、版本更新简述与备份说明。
+
+手册的源文件在仓库里：[`desktop/src-tauri/resources/help/index.html`](desktop/src-tauri/resources/help/index.html)
+—— 单文件 HTML + 本地截图，无脚本、无外部资源。GitHub 上打开看到的是源码，
+下载后双击即可在浏览器里阅读（与程序内打开的是同一份）。
+
 ## 数据与隐私
 
 - **数据是你的**：本地一个 SQLite 文件 —— `%APPDATA%\com.tadado.app\tadado.data`。
@@ -78,26 +87,26 @@
 - **分区**是数据的隔离边界：可以给某个分区单独设口令、空闲几分钟自动重锁。
   但口令**是隐私屏风，不是加密保险箱** —— 它挡的是路过的人瞄一眼，不防能拿到数据文件的人。
   所以忘了口令没有「找回」，直接重设即可。这句话写在设置里，不藏着。
-- **单文件、无依赖**：安装包 2.6 MB，不需要 Python、Node 或任何运行库 —— 不是把一个浏览器塞进安装包里。
+- **单文件、无依赖**：安装包 4.2 MB（含随程序分发的离线帮助文档与截图），不需要 Python、Node 或任何运行库 —— 不是把一个浏览器塞进安装包里。
 
 ## 安装
 
 | 方式 | 说明 |
 |---|---|
-| Windows 安装包 | Releases 下载 `Tadado2_1.0.0_x64-setup.exe`（2.6 MB），双击即装 |
-| MSI | `Tadado2_1.0.0_x64_en-US.msi`（3.6 MB），适合静默 / 企业分发 |
-| 便携版 | `Tadado2-portable.zip`（3.3 MB），解压即用、放在哪都能跑（WebView2 由 Win10/11 自带） |
+| Windows 安装包 | Releases 下载 `Tadado2_1.0.1_x64-setup.exe`（4.2 MB），双击即装 |
+| MSI | `Tadado2_1.0.1_x64_en-US.msi`（5.6 MB），适合静默 / 企业分发 |
+| 便携版 | `Tadado2-portable.zip`（5.3 MB），解压即用、放在哪都能跑（WebView2 由 Win10/11 自带） |
 | 从源码构建 | `cd desktop && npm install && npm run tauri build` |
 
-> **国内下载**（不用访问 GitHub）：阿里云盘 <https://www.alipan.com/s/S6kDK8xJGVt>
-> —— **公开分享，无需提取码**，打开就能看。
-> 这是**整个下载目录**的分享链接，能一直用下去，不必每次发版回来换。
+> **国内下载**（不用访问 GitHub）：阿里云盘(国内推荐) <https://www.alipan.com/s/E2FBppaMPZj>
+> —— **公开分享，无需提取码**，打开就能看，里面是整个下载目录。
+> 链接失效？换 [GitHub Releases](https://github.com/HananxR/Tadado/releases)，或公众号 **Pyvan** 留言。
 >
-> 进去认准 **`Tadado2_setup_v1.0.0.exe`**（2.6 MB）。目录里那些 `Tadado_setup_v0.x.x.exe`、
+> 进去认准 **`Tadado2_setup_v1.0.1.exe`**（4.2 MB）。目录里那些 `Tadado_setup_v0.x.x.exe`、
 > `Tadado_v0.x.x_portable.zip` 是**初版（v0.x，基于 PySide6）**的历史包，**已停止更新** ——
 > 只有要翻旧版本时才需要它们。
 >
-> 新版与 Releases 上的文件完全相同 —— 安装包 SHA256 `C8741BC0DBB3860875741DD17C7D819A77CDFE7CBCBFBA27CC31194256CB5AD6`，
+> 新版与 Releases 上的文件完全相同 —— 安装包 SHA256 `7D3C0AD171C181CBF115F5F924D2276B6967862C8FC6C164BCC2C2A25B32361E`，
 > 下完可以自己核一下（`Get-FileHash <文件> -Algorithm SHA256`）。
 
 首次运行可能弹 SmartScreen 提示 —— 这个安装包**没有买代码签名证书**，与它的内容无关，
@@ -110,8 +119,8 @@
 
 | 你要做的事 | 数据会怎样 |
 |---|---|
-| 覆盖安装 / 升级（同一个位置或换个位置都行） | **原样保留** —— 升级流程里根本不删数据 |
-| 卸载 | **默认保留**。卸载界面上那个「删除应用数据」的勾选，是**唯一**会清掉它的开关 |
+| 覆盖安装 / 升级（同一个位置或换个位置都行） | **原样保留** —— 1.0.1 起升级页默认勾选推荐项「原地升级」（不执行旧卸载器），也可改选「先卸载再安装」 |
+| 卸载 | **默认保留**。卸载界面上那个「删除应用数据」的勾选，是**唯一**会清掉它的开关；勾上后会先弹一次确认（默认「否」） |
 | 从安装包换成便携版，或者反过来 | **共用同一份数据** —— 两者都按应用标识找 `%APPDATA%\com.tadado.app\` |
 | 换一台机器 | 不会自己过去。把 `tadado.data` 这**一个文件**拷过去即可 |
 
@@ -171,6 +180,7 @@ node scripts/migrate-activity.mjs <活动清单.md> --apply     # 对账通过�
 ## 文档
 
 - 详细设计：[DESIGN.md](DESIGN.md)
+- 帮助文档（随程序内嵌）：[`desktop/src-tauri/resources/help/index.html`](desktop/src-tauri/resources/help/index.html)
 - 桌面端开发说明：[`desktop/README.md`](desktop/README.md)
 - 旧数据迁移工具（兼 AI 手册）：[`resources/skill/tadado-activity-import/SKILL.md`](resources/skill/tadado-activity-import/SKILL.md)
 - 发布流程（兼 AI 手册）：[`resources/skill/tadado-release/SKILL.md`](resources/skill/tadado-release/SKILL.md)

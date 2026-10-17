@@ -16,7 +16,7 @@ import { isTauri } from "@tauri-apps/api/core";
  * 阿里云盘：**整个下载目录**的公开分享，长期有效、无需提取码。
  * 排在国内用户第一顺位（GitHub Releases 在国内经常打不开）。
  */
-export const ALIYUN_URL = "https://www.alipan.com/s/S6kDK8xJGVt";
+export const ALIYUN_URL = "https://www.alipan.com/s/E2FBppaMPZj";
 
 /** GitHub Releases：备选下载渠道，也是「检查更新」的版本来源。 */
 export const RELEASES_URL = "https://github.com/HananxR/Tadado/releases";

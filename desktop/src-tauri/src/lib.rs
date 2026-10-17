@@ -5,6 +5,7 @@ use tauri::{
 };
 use tauri_plugin_fs::FsExt;
 
+mod help;
 mod update;
 
 /// 退出应用。托盘菜单的「退出 Tadado」走这里 —— 前端只调 `getCurrentWindow()`
@@ -155,6 +156,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_exit,
             allow_save_path,
+            help::open_help,
             update::check_update
         ])
         .setup(|app| build_tray(app.handle()).map_err(|e| e.into()))

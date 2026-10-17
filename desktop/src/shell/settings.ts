@@ -21,7 +21,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { getVersion } from "@tauri-apps/api/app";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { autostartEnabled, setAutostart } from "./autostart";
+import { loadSetting, saveSetting } from "../data/db";
 import { TASKS } from "../data/mock";
 import {
   PARTITIONS,
@@ -68,13 +70,7 @@ import { subscribePages } from "./router";
 import { seg } from "./seg";
 import { toast } from "./toast";
 import { getThemeMode, setThemeMode, type ThemeMode } from "./theme";
-import {
-  UPDATE_ERRORS,
-  UPDATE_UNSUPPORTED,
-  checkForUpdate,
-  dateOf,
-  type UpdateState,
-} from "./update";
+import { UPDATE_UNSUPPORTED, checkForUpdate, dateOf, type UpdateState } from "./update";
 
 interface SettingRow {
   label: string;
@@ -82,8 +78,16 @@ interface SettingRow {
   value?: string;
   /** 自定义控件，优先于 value。 */
   control?: () => HTMLElement;
-  /** 给只读值一个 id，供事后填真实值（版本号要等 Tauri 回话）。 */
+  /** 给只读值 / 整行按钮一个 id，供事后填真实值或 e2e 定位。 */
   id?: string;
+  /**
+   * 整行就是一个动作（目前只有「帮助文档」）。
+   *
+   * 它**不参与任何折叠**：帮助是常驻入口，跟着「关于」的展开状态一起消失，等于
+   * 把说明书锁在抽屉里。右侧只写一个「打开 ↗」，不做成主按钮 —— 它旁边就是
+   * 「检查更新」，两枚主按钮并排会让人以为它们是一组同样的操作。
+   */
+  action?: { hint: string; run: () => void };
 }
 
 interface SettingGroup {
@@ -93,9 +97,25 @@ interface SettingGroup {
   intro?: () => HTMLElement;
   /** 行下面的一段自定义内容（「关于」的下载渠道与联系方式）。 */
   footer?: () => HTMLElement;
+  /**
+   * 有值 = 这一组的 intro / footer 可以各自收起，值是**介绍块**记状态的设置键。
+   *
+   * 只给「关于」用：它的介绍与渠道块压在抽屉最下面、常显只会把上面几组设置挤走，
+   * 而「帮助文档 / 检查更新」两行是日常要看的，必须一直露在外面。
+   */
+  collapsibleKey?: string;
+  /** 版本号的 id：有值就把版本写进组标题，形如「关于（v1.0.1）」。 */
+  versionId?: string;
+  /** 尾部折叠块自己的标题（「下载与反馈」），缺省时随组名。 */
+  footerTitle?: string;
+  /** 尾部折叠块的状态键：与介绍块**互不联动**。 */
+  footerKey?: string;
 }
 
 const PLACEHOLDER = "—";
+
+/** 版本号兜底：`getVersion()` 拿不到时（浏览器预览）显示这个。 */
+const VERSION_FALLBACK = "v1.0.1";
 
 function themeControl(): HTMLElement {
   const modes: { id: ThemeMode; label: string }[] = [
@@ -566,7 +586,7 @@ function updateControl(): HTMLElement {
   return el("div", { class: "about-upd" }, [state, button]);
 }
 
-/** 把四种状态渲染成一句话；发现新版时顺带把下载渠道点亮。 */
+/** 把三种状态渲染成一句话；发现新版时顺带把下载行展开并点亮渠道。 */
 function showUpdateResult(result: UpdateState): void {
   const state = document.getElementById("set-upd");
   if (!state) return;
@@ -578,51 +598,60 @@ function showUpdateResult(result: UpdateState): void {
     return;
   }
 
-  if (result.kind === "latest") {
-    state.className = "about-state done";
-    // Tauri 回话给的是纯数字，前面的 v 是给这一行看的（念作「已是最新 v1.0.0」）
-    state.textContent = `已是最新 v${result.current}`;
-    return;
-  }
-
-  if (result.kind === "unsupported") {
+  if (result.kind === "none") {
+    // 「已是最新 / 网络不通 / 超时」在结论上是同一件事：这次没查到新版。
+    // 用中性色，不套 .error —— 失败不是用户做错了什么。
     state.className = "about-state";
-    state.textContent = UPDATE_UNSUPPORTED;
+    state.textContent = "没有查到新版本";
+    clearNewRelease();
     return;
   }
 
-  state.className = "about-state error";
-  state.textContent = UPDATE_ERRORS[result.reason];
+  state.className = "about-state";
+  state.textContent = UPDATE_UNSUPPORTED;
 }
 
 /**
- * 发现新版时的两个动作：在渠道块里补一行「哪一版、什么时候发的」，并把阿里云盘
- * 那一枚点亮（`.on` 只是一圈描边，不动布局）。
+ * 发现新版时的动作：展开**下载与反馈**这一行、打上「有新版本」标记，并在渠道块
+ * 里补一行「哪一版、什么时候发的」。
  *
- * 不在这里另给下载按钮：下面常驻的渠道块就是干这个的，摆两份只会让人犹豫点哪个。
- * 检测失败时也一样 —— 渠道块常驻，那条「去云盘比对文件名里的版本号」的路永远在。
+ * 只展开下载行（`persist = false`）：这是这次检查的结果，看完就该能收起来；也不去
+ * 动「关于」的介绍块 —— 用户点的是检查更新，不是想读产品简介。
  */
 function markNewRelease(release: Extract<UpdateState, { kind: "newer" }>): void {
+  applyDownloadsOpen(true, false);
+
+  document.getElementById("set-new-badge")?.removeAttribute("hidden");
   document.getElementById("about-aliyun")?.classList.add("on");
 
   const note = document.getElementById("about-note");
   if (!note) return;
 
+  const date = dateOf(release.publishedAt);
   const detail = el("button", { class: "about-note-link", text: "查看更新说明 ↗" });
-  detail.addEventListener("click", () => void openLink(release.url));
+  // 链接兜底：Rust 侧补详情失败时 release_url 仍会拼成 tag 页，这里再兜一次
+  detail.addEventListener("click", () => void openLink(release.url || RELEASES_URL));
   note.replaceChildren(
-    el("span", { text: `${dateOf(release.publishedAt)} 已发布 v${release.latest}` }),
+    el("span", { text: date ? `${date} 已发布 v${release.latest}` : `已发布 v${release.latest}` }),
     detail,
   );
+}
+
+/** 回到「没有查到」：清掉上一次留下的徽标、日期与渠道高亮，别让它继续骗人。 */
+function clearNewRelease(): void {
+  document.getElementById("set-new-badge")?.setAttribute("hidden", "");
+  document.getElementById("about-note")?.replaceChildren();
+  document.getElementById("about-aliyun")?.classList.remove("on");
 }
 
 // ─── 下载渠道与联系方式 ──────────────────────────────────────────────────────
 
 /**
- * 「关于」的尾部：下载渠道 + 联系方式。
+ * 「下载与反馈」：下载渠道 + 联系方式。
  *
- * **常驻**，不随检查结果增减：一是「检测失败」时它仍是用户唯一的出口，二是按钮
- * 忽隐忽现会让抽屉每检查一次就抖一下。
+ * 它有自己的折叠头与状态（默认收起），不跟「关于」的介绍块联动 —— 想知道去哪下载
+ * 的人，不该先展开一段产品简介。内容**不随检查结果增减**：检测失败时它仍是用户
+ * 唯一的出口，按钮也不忽隐忽现。
  *
  * 渠道顺序按**能不能打开**排，不按官方不官方：阿里云盘在国内可直达，GitHub
  * Releases 经常打不开。链接与公众号都从 shell/links.ts 取，这里不写字面量。
@@ -631,13 +660,10 @@ function aboutFooter(): HTMLElement {
   return el("div", { class: "about-foot" }, [
     el("div", { class: "about-h", text: "下载渠道" }),
     el("div", { class: "about-links" }, [
-      channelButton("阿里云盘 · 国内推荐", ALIYUN_URL, "about-aliyun", "btn primary"),
+      channelButton("阿里云盘(国内推荐)", ALIYUN_URL, "about-aliyun", "btn primary"),
       channelButton("GitHub Releases", RELEASES_URL, undefined, "btn"),
     ]),
-    el("p", {
-      class: "about-tip",
-      text: "阿里云盘是国内可直达的公开分享、无需提取码，认准文件名里带版本号的那个安装包；GitHub 打不开时用它。",
-    }),
+    downloadTip(),
     el("div", { class: "about-note", id: "about-note" }),
 
     el("div", { class: "about-h", text: "反馈与联系" }),
@@ -647,6 +673,45 @@ function aboutFooter(): HTMLElement {
       linkValue("HananxR/Tadado", REPO_URL),
     ]),
     el("p", { class: "about-lic", text: "MIT License © HananxR" }),
+  ]);
+}
+
+/**
+ * 云盘链接的退路：一句话 + 两个行内动作，**不做探测**。
+ *
+ * 阿里云盘对失效分享同样返回 200，分享页又全靠脚本渲染，客户端拿不到「死没死」
+ * 的判据；探测只会多一次联网、一次延迟，还容易误报。所以这里只把后路摆出来：
+ * 换 GitHub Releases，或去公众号找作者要新链接。
+ */
+function downloadTip(): HTMLElement {
+  const github = el("button", {
+    class: "about-tip-link",
+    type: "button",
+    id: "about-tip-github",
+    "data-url": RELEASES_URL,
+    text: "GitHub Releases",
+  });
+  github.addEventListener("click", () => void openLink(RELEASES_URL));
+
+  const wechat = el("button", {
+    class: "about-tip-link",
+    type: "button",
+    id: "about-tip-wechat",
+    title: "点击复制公众号",
+    text: WECHAT,
+  });
+  wechat.addEventListener("click", () => {
+    void copyText(WECHAT).then((ok) => {
+      toast(ok ? `已复制公众号：${WECHAT}` : "复制失败，请手动记下 Pyvan");
+    });
+  });
+
+  return el("p", { class: "about-tip", id: "about-tip" }, [
+    el("span", { text: "链接失效？换 " }),
+    github,
+    el("span", { text: "，或公众号 " }),
+    wechat,
+    el("span", { text: " 留言。" }),
   ]);
 }
 
@@ -687,22 +752,105 @@ function linkValue(label: string, url: string): HTMLElement {
   return button;
 }
 
+/** 「关于」介绍块的开关（true = 展开）；记进 kv，重启后保持上次的选择。 */
+const KEY_ABOUT_OPEN = "settings.aboutOpen";
+
+/** 「下载与反馈」的开关：**独立记忆**，与介绍块互不影响。 */
+const KEY_DOWNLOADS_OPEN = "settings.downloadsOpen";
+
+/** 读回来之前先按默认（收起）渲染 —— 抽屉启动时是关着的，不会看到切换过程。 */
+let aboutOpen = false;
+let downloadsOpen = false;
+
+/** 折叠头的可见状态：`aria-expanded` + 右侧那两个字（只转箭头不够醒目）。 */
+function paintHead(head: HTMLElement | null, open: boolean): void {
+  if (!head) return;
+  head.setAttribute("aria-expanded", String(open));
+  const hint = head.querySelector<HTMLElement>(".set-sec-hint");
+  if (hint) hint.textContent = open ? "收起" : "展开";
+}
+
+/**
+ * 应用「关于」介绍块的折叠状态。
+ *
+ * 只切 `hidden` 与属性，不重建 DOM：版本号的异步回填、检查更新的状态节点都挂在
+ * 同一棵树里，重建会把它们手里的引用全部作废。
+ */
+function applyAboutOpen(open: boolean, persist: boolean): void {
+  aboutOpen = open;
+  paintHead(document.getElementById("set-about-head"), open);
+
+  const intro = document.getElementById("set-about-intro");
+  if (intro) intro.hidden = !open;
+
+  // 设置不是高频操作，立刻写、不防抖；失败就按默认收起，不必打断交互
+  if (persist) void saveSetting(KEY_ABOUT_OPEN, open);
+}
+
+/** 应用「下载与反馈」的折叠状态。与「关于」各管各的：查完更新只动这一块。 */
+function applyDownloadsOpen(open: boolean, persist: boolean): void {
+  downloadsOpen = open;
+  paintHead(document.getElementById("set-downloads-head"), open);
+
+  const block = document.getElementById("set-about-downloads");
+  if (block) block.hidden = !open;
+
+  if (persist) void saveSetting(KEY_DOWNLOADS_OPEN, open);
+}
+
+/**
+ * 帮助文档：整行一个动作，**常驻**、不参与任何折叠。
+ *
+ * 文档（HTML + 截图）嵌在可执行文件里（`src-tauri/src/help.rs`），打开时落盘到
+ * 缓存目录再交给默认浏览器 —— 便携版只有一个 exe，也能离线看。
+ */
+async function openHelp(): Promise<void> {
+  if (!isTauri()) {
+    toast("请使用桌面版打开帮助文档");
+    return;
+  }
+  try {
+    await invoke("open_help");
+  } catch {
+    toast("打不开帮助文档，请稍后重试");
+  }
+}
+
 const ABOUT: SettingGroup = {
   title: "关于",
   intro: aboutIntro,
+  collapsibleKey: KEY_ABOUT_OPEN,
+  // 版本号只留这一处：启动时由 Tauri 填真实值（见 mountSettings），这里写的是拿不到
+  // 时的兜底（浏览器预览），与 package.json / tauri.conf.json 保持一致
+  versionId: "set-about-ver",
+  // 顺序固定：帮助文档 → 检查更新 → 下载与反馈（折叠头）。
+  // 帮助是常驻动作，不塞进折叠块；检查更新单独一行 —— 和版本号混在一行里，那个
+  // 版本号看着就像个能点的按钮
   rows: [
-    // 版本号启动时由 Tauri 填真实值（见 mountSettings）；这里写的是拿不到时的
-    // 兜底（浏览器预览），与 package.json / tauri.conf.json 保持一致
-    { label: "版本", value: "v1.0.0", id: "set-ver" },
-    { label: "运行环境", value: "Windows 桌面应用" },
-    // 检查更新单独一行，不塞进版本行右侧：版本行回答「我是什么版本」，而检查是一个
-    // 动作 —— 混在一行里，那个版本号看着就像个能点的按钮
+    {
+      label: "帮助文档",
+      id: "set-help",
+      action: { hint: "打开 ↗", run: () => void openHelp() },
+    },
     { label: "检查更新", control: updateControl },
   ],
   footer: aboutFooter,
+  footerTitle: "下载与反馈",
+  footerKey: KEY_DOWNLOADS_OPEN,
 };
 
 function renderRow(row: SettingRow): HTMLElement {
+  // 整行动作（帮助文档）：用 button 承载，键盘可达，焦点环沿用全局样式
+  if (row.action) {
+    const button = el("button", { class: "set-row set-row-link", type: "button" }, [
+      el("span", { text: row.label }),
+      el("span", { class: "set-hint", text: row.action.hint }),
+    ]);
+    if (row.id) button.id = row.id;
+    button.addEventListener("click", row.action.run);
+    return button;
+  }
+
   const control = row.control?.();
 
   const right =
@@ -719,13 +867,100 @@ function renderRow(row: SettingRow): HTMLElement {
   ]);
 }
 
+/** 一个折叠头：标题 +（可选）附加内容 + 「展开 / 收起」+ 箭头。整行可点。 */
+function foldHead(
+  id: string,
+  controls: string,
+  title: HTMLElement,
+  extra: HTMLElement[] = [],
+): HTMLElement {
+  return el(
+    "button",
+    {
+      class: "set-sec-head",
+      id,
+      type: "button",
+      "aria-expanded": "false",
+      "aria-controls": controls,
+    },
+    [
+      title,
+      ...extra,
+      el("span", { class: "set-sec-hint", text: "展开" }),
+      el("span", { class: "set-sec-arrow", "aria-hidden": "true", text: "▸" }),
+    ],
+  );
+}
+
 function renderGroup(group: SettingGroup): HTMLElement {
-  return el("div", { class: "set-sec" }, [
-    el("div", { class: "set-sec-t", text: group.title }),
-    ...(group.intro ? [group.intro()] : []),
-    ...group.rows.map(renderRow),
-    ...(group.footer ? [group.footer()] : []),
-  ]);
+  const collapsible = group.collapsibleKey !== undefined;
+
+  // 可折叠的分组：整行是开关，与下面的 .set-row 同一字号/行高 ——「关于」和它的
+  // 几行是平级条目，不是一个小标签。
+  const title = el("span", { class: "set-sec-t", text: group.title });
+  // 版本号并进组标题：「关于（v1.0.1）」。单独一行「版本」既占地方，又和检查更新
+  // 挨在一起，看着像两个都能点的东西
+  const version = group.versionId
+    ? el("span", {
+        class: "set-sec-ver",
+        id: group.versionId,
+        text: `（${VERSION_FALLBACK}）`,
+      })
+    : null;
+
+  const head = collapsible
+    ? foldHead("set-about-head", "set-about-intro", title, version ? [version] : [])
+    : null;
+
+  // 「下载与反馈」自带一个折叠头：它和「关于」介绍块是两件事，共用一个开关时，
+  // 想看渠道得先展开一段产品简介
+  const downloadsHead =
+    collapsible && group.footer
+      ? foldHead(
+          "set-downloads-head",
+          "set-about-downloads",
+          el("span", { class: "set-sec-t", text: group.footerTitle ?? group.title }),
+          [
+            el("span", {
+              class: "set-new-badge",
+              id: "set-new-badge",
+              hidden: true,
+              text: "有新版本",
+            }),
+          ],
+        )
+      : null;
+
+  // 两个折叠块被若干行隔开，包不进一个 details，所以各自一个容器、各自的开关
+  const more = (node: HTMLElement, id: string, key?: string): HTMLElement =>
+    el("div", { class: "set-more", id, hidden: true, "data-collapsible": key }, [node]);
+
+  const section = el(
+    "div",
+    collapsible
+      ? { class: "set-sec", "data-collapsible": group.collapsibleKey }
+      : { class: "set-sec" },
+    [
+      head ?? title,
+      ...(group.intro
+        ? [collapsible ? more(group.intro(), "set-about-intro", group.collapsibleKey) : group.intro()]
+        : []),
+      ...group.rows.map(renderRow),
+      ...(downloadsHead ? [downloadsHead] : []),
+      ...(group.footer
+        ? [
+            collapsible
+              ? more(group.footer(), "set-about-downloads", group.footerKey ?? group.collapsibleKey)
+              : group.footer(),
+          ]
+        : []),
+    ],
+  );
+
+  head?.addEventListener("click", () => applyAboutOpen(!aboutOpen, true));
+  downloadsHead?.addEventListener("click", () => applyDownloadsOpen(!downloadsOpen, true));
+
+  return section;
 }
 
 // ─── 装配 ────────────────────────────────────────────────────────────────────
@@ -762,14 +997,26 @@ export function mountSettings(): void {
     renderGroup(ABOUT),
   );
 
+  // 两个折叠状态各自读回来：默认都收起，只有明确记着「展开」才打开。
+  // 设置抽屉启动时是关着的，这次异步回填不会让人看见闪一下
+  void loadSetting<boolean>(KEY_ABOUT_OPEN)
+    .then((saved) => {
+      if (saved === true) applyAboutOpen(true, false);
+    })
+    .catch(() => {});
+  void loadSetting<boolean>(KEY_DOWNLOADS_OPEN)
+    .then((saved) => {
+      if (saved === true) applyDownloadsOpen(true, false);
+    })
+    .catch(() => {});
+
   // 版本号等 Tauri 回话再写进去（标题栏那个徽章撤了，这里是唯一一处）。
   // 浏览器预览 / 拿不到就保留 ABOUT 里写死的那个，不为版本号卡住外壳
   void getVersion()
     .then((version) => {
-      const node = document.getElementById("set-ver");
-      // 前面的 v 是给版本号看的：这一行念作「版本 v1.0.0」，
-      // 而 Tauri 回话给的是纯数字
-      if (node) node.textContent = `v${version}`;
+      const node = document.getElementById("set-about-ver");
+      // 括号与 v 都是给标题看的：念作「关于 v1.0.1」，而 Tauri 回话给的是纯数字
+      if (node) node.textContent = `（v${version}）`;
     })
     .catch(() => {});
 
