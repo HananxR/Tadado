@@ -136,13 +136,20 @@ type LogActivity = Extract<Activity, { kind: "log" }>;
  * 任务页列表里消失，而抽屉背后那一行也没了。一句解释都没有的话，那看起来就是「任务被我
  * 弄丢了」。四种落点里第二种正是用户报的那类现象（「明明做完了、却没进归档」）。
  *
- * 调用方传**改动前**的状态，没变就返回空串。
+ * 调用方传**改动前**的状态与归档位，状态没变就返回空串。
+ *
+ * `wasArchived` 非空并且现在不再是归档 ⇒ 补一句「已从归档放回任务页」（2026-10-17）：
+ * 已归档的任务被重新打开时会离开归档（见 store 的 refreshReopened），这一下同样是
+ * 「背后的行不见了」—— 不说清楚就会被当成任务丢了。
  */
-function progressShiftNote(task: Task, before: TaskStatus): string {
+function progressShiftNote(task: Task, before: TaskStatus, wasArchived: boolean): string {
   if (before === task.status) return "";
 
   // 退回那一头（已完成 → 进行中；结束日已过的话紧接着被系统标成「逾期」）
-  if (task.status !== "done") return ` · 状态已退回「${STATUS_LABEL[task.status]}」`;
+  if (task.status !== "done") {
+    const back = wasArchived && !task.archived ? " · 已从归档放回任务页" : "";
+    return ` · 状态已退回「${STATUS_LABEL[task.status]}」${back}`;
+  }
 
   if (task.archived) return " · 已标记为已完成，并按归档设置收进归档";
   if (isKeptActive(task.id)) {
@@ -176,6 +183,7 @@ function entryOps(
   edit.addEventListener("click", () => startEdit(task, index, activity, card));
   remove.addEventListener("click", () => {
     const before = task.status;
+    const wasArchived = task.archived;
     // 删掉的是**最新**那条进度记录时，任务的当前进度跟着退回它的起点 ——
     // 否则任务还停在一个已经不存在的记录上（时间线里也没有任何一条能解释这个数）。
     // 走唯一入口：进度退回去，状态也得跟着退（不然双向口径会在这次 dataChanged 里
@@ -188,7 +196,7 @@ function entryOps(
     dataChanged();
     toast(
       activity.kind === "progress"
-        ? `已删除这条进度记录${progressShiftNote(task, before)}`
+        ? `已删除这条进度记录${progressShiftNote(task, before, wasArchived)}`
         : "已删除这条记录",
     );
   });
@@ -284,6 +292,7 @@ function startEdit(
         return;
       }
       const before = task.status;
+      const wasArchived = task.archived;
       const changed = activity.to !== to;
       activity.to = to;
       activity.text = next;
@@ -299,7 +308,7 @@ function startEdit(
         else setProgress(task, to);
       }
       dataChanged();
-      toast(`已更新这条进度记录${progressShiftNote(task, before)}`);
+      toast(`已更新这条进度记录${progressShiftNote(task, before, wasArchived)}`);
       return;
     }
 
@@ -471,8 +480,14 @@ function build(task: Task): Drawer {
     // 进度不在这一区了：它搬到了下面的活动时间线（见 .tl-prog）
     withProgress: false,
     onEdit: () => dataChanged(),
-    onStatusChange: (next: TaskStatus) =>
-      toast(`状态已改为「${STATUS_LABEL[next]}」· 全局视图已联动`),
+    onStatusChange: (next: TaskStatus, wasArchived: boolean) =>
+      toast(
+        // 已归档的任务被改回「进行中」时会离开归档（见 store 的 refreshReopened）——
+        // 这一次「背后的行」也会跟着回到列表里，说清楚它去了哪
+        wasArchived && !task.archived
+          ? `状态已改为「${STATUS_LABEL[next]}」· 已从归档放回任务页`
+          : `状态已改为「${STATUS_LABEL[next]}」· 全局视图已联动`,
+      ),
   });
 
   const timeline = el("div", { class: "tl-list" });
@@ -513,9 +528,11 @@ function build(task: Task): Drawer {
     }
     if (!text) return;
 
-    // 改动前的状态：进度满会**自动**把它标成已完成（见 data/status.ts），
-    // 下面那句 toast 得能解释这个变化（尤其是随之而来的归档）
+    // 改动前的状态与归档位：进度满会**自动**把它标成已完成、可能当场归档；
+    // 从 100% 退回来则会**离开归档**（见 data/status.ts / store 的 refreshReopened）——
+    // 下面那句 toast 得能解释这两种落点
     const before = current.status;
+    const wasArchived = current.archived;
     const recorded = progress.commit(text);
     if (!recorded) current.activities.unshift({ at: nowStamp(), text, kind: "log" });
 
@@ -530,7 +547,7 @@ function build(task: Task): Drawer {
     // 让人以为还得再点一次什么才算存上
     toast(
       recorded
-        ? `已记下 ${recorded.from}% → ${recorded.to}%${progressShiftNote(current, before)}`
+        ? `已记下 ${recorded.from}% → ${recorded.to}%${progressShiftNote(current, before, wasArchived)}`
         : "已保存到活动时间线",
     );
   }
@@ -602,6 +619,7 @@ function build(task: Task): Drawer {
     }
 
     const before = current.status;
+    const wasArchived = current.archived;
     current.title = draft.title;
     current.tags = draft.tags;
     // 进度走唯一入口：md 里的 `:: 100%` 会**顺带**把状态置成已完成（见 data/status.ts）。
@@ -632,7 +650,7 @@ function build(task: Task): Drawer {
     paint(current);
     // 状态没变就照旧说「保持」；变了（进度满 ⇒ 已完成，可能顺带归档）由 progressShiftNote
     // 说清落到哪 —— 两句话都写的话，同一个变化会被说两遍
-    const shift = progressShiftNote(current, before);
+    const shift = progressShiftNote(current, before, wasArchived);
     toast(
       dueInverted
         ? `已按 md 更新「${draft.title}」· 截止 ${monthDayText(mdEndDay)} 早于开始 ${monthDayText(startDay)}，这条没写回${shift}`

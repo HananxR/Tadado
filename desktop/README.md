@@ -50,7 +50,8 @@ src/shell/              外壳能力（25 个模块，常打交道的几个）
 src/data/               数据层，见「数据层」一节（12 个模块）
   db.ts                 SQLite 连接与「读不出来不降级」
   schema.ts             PRAGMA user_version + 线性迁移链
-  store.ts              变更广播（dataChanged / onDataChange）+ 启动装配
+  store.ts              变更广播（dataChanged / onDataChange）+ 启动装配 + 自洽扫描
+                        （逾期 / 进度与状态 / 完成后归档 / 重新打开即回到工作面）
   markdown.ts           任务行写法：parseTasks（入）/ taskToMarkdown（出）
   time.ts               时间口径：TODAY / nowStamp / 天数与分钟互转（**日期一律走这里**）
   timeline.ts           时间轴档位与窗口算数（**只剩总览的焦点时间轴在用**）；partitions.ts / tags.ts 领域规则

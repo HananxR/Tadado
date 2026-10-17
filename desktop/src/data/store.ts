@@ -23,7 +23,7 @@ import {
 import { asArchiveRecord } from "./schema";
 import { FULL_PROGRESS, syncStatusForProgress } from "./status";
 import { TODAY, dayNumber, dayOfStamp, nowStamp, stampOf } from "./time";
-import type { Task } from "./types";
+import type { Task, TaskStatus } from "./types";
 
 type Listener = () => void;
 
@@ -49,6 +49,59 @@ function refreshOverdue(tasks: Task[]): void {
     if (dayNumber(task.end) < TODAY) task.status = "overdue";
     else if (task.status === "overdue") task.status = "doing";
   }
+}
+
+/**
+ * 上一次广播时各任务的状态。只活在内存里，用途见 `refreshReopened`。
+ *
+ * 为什么需要它：识别「**这一次**广播里刚被重新打开」的任务，靠的是「上一刻是 done、这一刻不是」。
+ * 换成扫描活动时间线（「最新一条 status 活动是不是 done」）会错在「先重新打开、过一阵又手动归档」
+ * 那条路上 —— 它的最新活动仍是退回，于是每次广播都会被误放回来。
+ */
+const lastStatus = new Map<string, TaskStatus>();
+
+/**
+ * 重新打开一条**已归档**的任务 ⇒ 它回到工作面（2026-10-17 用户报的「两处都找不到」）。
+ *
+ * 现象：进度拖满 ⇒ `done` ⇒ 按档位（默认「立即」）收进归档；之后在抽屉里点「进行中」
+ * 或把进度退回 100% 以下，状态与进度都变了，**归档位却没人清** —— 任务页只读
+ * `activeTasks()`（滤掉归档）列不出它，管理页又常停在「已完成 / 进行中」那档（状态已变成
+ * 进行中或逾期）也筛不出它，用户看到的就是「任务丢了」。数据其实一直在库里。
+ *
+ * 判据为什么是「状态快照」而不是「`archived && status !== done`」：归档与状态是**正交**的
+ * 两个字段（DESIGN §4.1），管理页允许把**任何状态**手动归档（那批里本来就有进行中的任务）。
+ * 写成「非 done 就取消归档」，下次随便一次 `dataChanged` 就会把用户亲手收走的东西偷偷放回来。
+ * 这里只认**这一次广播里发生的 `done → 非 done`**：`refreshOverdue` 只豁免 done、从不把它
+ * 挪走，所以这个跃迁必定来自用户改状态 / 退回进度。
+ *
+ * 也**不记 `restored`**：重新打开之后状态已不是 done，`refreshArchive` 本就不会收它；
+ * 若用户又把它拖满 100%，仍应按分区档位（立即 / N 天）当场归档 —— 那是设置该有的效果。
+ *
+ * 启动后第一次广播时快照是空的，历史归档一条都不会被翻动（延续「不翻动已归档记录」的口径）。
+ */
+function refreshReopened(tasks: Task[]): number {
+  let reopened = 0;
+  let seenNew = false;
+
+  for (const task of tasks) {
+    const before = lastStatus.get(task.id);
+    if (before === undefined) seenNew = true;
+    if (task.archived && before === "done" && task.status !== "done") {
+      task.archived = false;
+      reopened += 1;
+    }
+    lastStatus.set(task.id, task.status);
+  }
+
+  // 删掉的任务别在快照里越积越多。不再用「有任务消失」当唯一信号：同一次广播里
+  // 删一条、建一条时条数不变，但快照里那条已删的 id 还留着 —— 所以新建过也清一遍。
+  // 常态（没有新建 / 删除）不分配任何东西。
+  if (seenNew || lastStatus.size > tasks.length) {
+    const alive = new Set(tasks.map((task) => task.id));
+    for (const id of lastStatus.keys()) if (!alive.has(id)) lastStatus.delete(id);
+  }
+
+  return reopened;
 }
 
 /** 自愈扫描的结果（id 而不是条数：归档之后还要回头数有多少条真被收走了）。 */
@@ -384,6 +437,11 @@ export function dataChanged(): void {
   // 每次变更都重算一遍逾期：改了截止（往前挪到今天之前）要立刻看出来，
   // 把截止挪回未来则要退回待办。一百条数据扫一遍不值一提
   refreshOverdue(TASKS);
+  // 重新打开一条已归档的任务 ⇒ 放回工作面（2026-10-17 用户报的「改成进行中后两处都找不到」）。
+  // **必须排在归档判定之前**：先认出「这一次从 done 退下来了」，再把归档位撤掉；否则
+  // 「已归档 + 非 done」会一直挂在归档里，而 refreshArchive 只收不还。逾期已经先判过，
+  // 所以 `done → overdue`（结束日已过）也算一次重新打开
+  refreshReopened(TASKS);
   // 自动归档**同理**（2026-09-21 用户报的「已完成没有立马归档」）：判据是「已完成 +
   // 结束日已过 N 天」，而这两件事都会在对话里被改掉 —— 把一条结束日早就过去了的老任务
   // 标记完成、或者把它的截止往前挪，都该**当场**收走。以前只在**启动**与**改归档天数**

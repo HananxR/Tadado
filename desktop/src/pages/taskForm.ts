@@ -39,8 +39,14 @@ export interface TaskFormOptions {
   task: Task;
   /** 任一字段改完调用。调用方负责落库与刷新（时间线、列表、图谱）。 */
   onEdit: (field: "title" | "tags" | "start" | "end" | "status" | "urgency" | "progress") => void;
-  /** 抽屉里给状态变更额外提示用；对话框里不需要。 */
-  onStatusChange?: (next: TaskStatus) => void;
+  /**
+   * 抽屉里给状态变更额外提示用；对话框里不需要。
+   *
+   * `wasArchived` 是**点之前**的归档位：`setTaskStatus` 之后 `dataChanged()` 会把
+   * 「重新打开即回到工作面」跑掉（见 store 的 refreshReopened），再读 `task.archived`
+   * 就已经是 false 了 —— 提示里那句「已从归档放回任务页」只能靠这个参数说得出来。
+   */
+  onStatusChange?: (next: TaskStatus, wasArchived: boolean) => void;
   /**
    * 要不要带上「进度」这一行，默认带。
    *
@@ -356,11 +362,14 @@ export function taskForm(options: TaskFormOptions): TaskForm {
       text: STATUS_LABEL[status],
     });
     button.addEventListener("click", () => {
+      // 改动前的归档位：下面那次 dataChanged 会把已归档的重新打开任务放回工作面，
+      // 之后再读 task.archived 就看不到「原来它在归档里」这件事了
+      const wasArchived = task.archived;
       // 走 setTaskStatus：状态改动要留一条活动，否则「什么时候完成的」没有任何记录
       setTaskStatus(task, status);
       paint(task);
       options.onEdit("status");
-      options.onStatusChange?.(status);
+      options.onStatusChange?.(status, wasArchived);
     });
     statusRow.append(button);
     return { status, button };

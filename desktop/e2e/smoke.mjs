@@ -4657,7 +4657,94 @@ try {
     `拖满后 ${refullStored?.status}/${refullStored?.progress}% → 点「进行中」后 ${undoneStored?.status}/${undoneStored?.progress}%`,
   );
 
-  // ④ 新建分区的归档档位默认「立即」，而且要**落盘**：只靠读取兜底的话，设置面板上那个
+  // ④ 重新打开一条**已归档**的任务 ⇒ 它得回到工作面（2026-10-17 用户报的「任务丢了」）。
+  //    用户那一步是：进度 100% ⇒ 已完成 ⇒ 按「立即」当场归档；随后在管理页点进这条
+  //    （行点击 = 跳任务页 + 开抽屉）改成「进行中」，进度跟着退 —— 状态与进度都变了，
+  //    归档位却没人清，于是任务页（只列未归档）列不出它、管理页又停在「已完成 / 进行中」
+  //    那档（状态已变成逾期）也筛不出它，两处都没有。
+  //    档位拨回「立即」，让这条在标记完成的那一刻就进归档（复现用户那一步）
+  await setArchiveFor("立即");
+  const reopenedTitle = back?.title ?? "";
+  const openedReopen = await openTaskDrawer(reopenedTitle);
+  await page.click("#task-drawer .tf-row .chip:has-text('已完成')");
+  await sleep(520);
+  const doneArchived = await storedOf(reopenedTitle);
+  const listedWhenArchived = await listedRows(reopenedTitle);
+  check(
+    "已归档样本：「立即」档下标记完成即离开任务页（归档位 true）",
+    openedReopen === 1 &&
+      doneArchived?.status === "done" &&
+      doneArchived.archived === true &&
+      listedWhenArchived === 0,
+    `打开 ${openedReopen} 行 → 状态 ${doneArchived?.status} · 归档 ${doneArchived?.archived} · 列表 ${listedWhenArchived} 行`,
+  );
+  // 抽屉还开着（任务不在列表里也照常能改）—— 点「进行中」，正是用户报的那一步
+  await page.click("#task-drawer .tf-row .chip:has-text('进行中')");
+  await sleep(540);
+  const reopenedAfter = await storedOf(reopenedTitle);
+  const reopenToast = await page.evaluate(
+    () => document.querySelector("#toast")?.textContent?.trim() ?? "",
+  );
+  check(
+    "已归档 → 改回「进行中」：归档位被撤掉，状态与进度照常退",
+    reopenedAfter?.archived === false &&
+      reopenedAfter.status === "overdue" &&
+      reopenedAfter.progress === 60 &&
+      // 落点必须说出来 —— 任务页那一行会重新出现，不说就是又一次「任务被我弄丢了」
+      reopenToast.includes("已从归档放回任务页"),
+    `状态 ${reopenedAfter?.status} · 进度 ${reopenedAfter?.progress}% · 归档 ${reopenedAfter?.archived} · 「${reopenToast}」`,
+  );
+  await page.click("#task-drawer .dr-close");
+  await sleep(380);
+  const listedAfterReopen = await listedRows(reopenedTitle);
+  check(
+    "回到任务页：重新打开的那条又列出来了（不必再去管理页手动取消归档）",
+    listedAfterReopen === 1,
+    `列表 ${listedAfterReopen} 行`,
+  );
+
+  // ⑤ 反向：**手动归档**的未完成任务不该被这套逻辑放回来（归档与状态是正交的，DESIGN §4.1：
+  //    管理页允许把任何状态收进归档）。判据若写成「非 done 就取消归档」，同一次 dataChanged
+  //    （批量归档的 applyToSelected 正是在归档之后收口）就会把用户刚收走的东西当场还回来 ——
+  //    所以这里归档完立刻查，样本取管理页第一行（跳过刚放回的那条）
+  await page.locator('.rail-btn[data-page="manage"]').click();
+  await sleep(340);
+  await page.locator("#page-manage .chip:has-text('未归档')").click();
+  await sleep(320);
+  // 样本要**未完成**：本次会话里手动恢复过的那批可能「已完成 + 未归档」（restored 挡着
+  // 自动归档），拿它当样本等于测了个空 —— 那种行的状态没离开 done，本来就不该被放回
+  const manualTitle = await page.evaluate((skip) => {
+    const rows = [...document.querySelectorAll("#page-manage .mrow")];
+    const hit = rows.find((row) => {
+      const title = (row.querySelector(".tt")?.textContent ?? "").trim();
+      const badge = (row.querySelector(".st")?.textContent ?? "").trim();
+      return title !== "" && title !== skip && badge !== "已完成";
+    });
+    if (!hit) return "";
+    hit.querySelector(".ckb")?.click();
+    return (hit.querySelector(".tt")?.textContent ?? "").trim();
+  }, reopenedTitle);
+  await sleep(280);
+  const manualBefore = await storedOf(manualTitle);
+  // 正则锚定整词：批量栏里「归档」与「取消归档」两枚都在，子串匹配会同时命中
+  await page.locator("#page-manage .batchbar button", { hasText: /^归档$/ }).click();
+  await sleep(540);
+  const manualArchived = await storedOf(manualTitle);
+  check(
+    "反向：手动归档的未完成任务仍留在归档（不被「非 done 即放回」误伤）",
+    manualTitle !== "" &&
+      manualBefore?.archived === false &&
+      manualBefore.status !== "done" &&
+      manualArchived?.archived === true,
+    `${manualTitle}：归档前 ${manualBefore?.status}/${manualBefore?.archived} → 归档后 ${manualArchived?.status}/${manualArchived?.archived}`,
+  );
+  // 复位到「全部状态」与任务页，别把这一档筛选留给下面的用例
+  await page.locator("#page-manage .chip:has-text('全部状态')").click();
+  await sleep(260);
+  await page.locator('.rail-btn[data-page="tasks"]').click();
+  await sleep(300);
+
+  // ⑥ 新建分区的归档档位默认「立即」，而且要**落盘**：只靠读取兜底的话，设置面板上那个
   //    值没有出处（2026-10-16 用户提的「各分区默认立即归档」）
   await page.click("#set-btn");
   await page.waitForSelector("#set-drawer.open");
@@ -4726,7 +4813,7 @@ try {
   await page.click("#set-close");
   await sleep(250);
 
-  // ⑤ 幂等：自愈只该在**第一次**动手。连着重启两次，存档不再变化 —— 少了这条，
+  // ⑦ 幂等：自愈只该在**第一次**动手。连着重启两次，存档不再变化 —— 少了这条，
   //    一个「每次启动都重写一遍」的实现也能让上面全绿。同时直接查「进度与状态打架」
   //    的组合（满格却不是已完成 / 已完成却不满格），那正是这套口径要消灭的东西
   await setArchiveFor("立即");
