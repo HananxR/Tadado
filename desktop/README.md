@@ -40,7 +40,7 @@ src/shell/              外壳能力（25 个模块，常打交道的几个）
   lock.ts               分区口令与空闲锁定（隐私屏风，不是加密保险箱）
   partition.ts          分区切换（rail 底部）
   settings.ts           设置面板
-  update.ts / links.ts  「关于」里的检查更新（Rust 命令的门面）、外链与复制（下载渠道常量都在这儿）
+  update.ts / links.ts  「关于」里的应用内更新（检查 / 下载安装的门面，走 tauri-plugin-updater）、外链与复制（下载渠道常量都在这儿）
   trayBridge.ts         托盘事件（Rust 叫前端）；托盘 / 热键另见 hotkey.ts、autostart.ts
   menu.ts / seg.ts      下拉与分段控件（无状态，所以外部改数据后必须 setValue 回写）
   dateTime.ts           日期 + 时分输入（开始 / 结束两栏同源）；**起止边界也在这里**（见 DESIGN §4.6）
@@ -82,7 +82,7 @@ src/pages/*.ts          五个页面 + 维护抽屉（taskDrawer / taskForm）+ 
 - 托盘常驻（左键切换显隐）、全局热键 `Ctrl+Shift+Space`、开机自启（设置里可关）
 - 分区口令与空闲锁定（`shell/lock.ts`）：口令按分区设，切过去挡一层锁屏，空闲若干分钟无输入自动重锁。它是**隐私屏风不是加密保险箱** —— 挡的是路过的人瞄一眼，不防拿到数据文件的人，所以忘了口令没有找回入口
 - 跨日：`TODAY` 是一个常量，跨过本地零点由 `shell/rollover.ts` 整页重载（见 DESIGN.md §5.4）
-- 检查更新（设置 → 关于）：点一下才联网，读 GitHub `releases/latest` 的 302 跳转拿到最新 tag（常规点击不消耗 API 配额；只有发现新版才补一次详情）。结果只有「发现新版本 vX」「没有查到新版本」两种，最长 20 秒；**不下载、不安装**，也不在启动时偷偷发请求（`shell/update.ts` + `src-tauri/src/update.rs`，走 `reqwest`/rustls 并跟随系统代理）
+- 应用内更新（设置 → 关于 → 检查更新）：只在点击时联网，**两步** —— 先查 GitHub 上的 `latest.json`，发现新版显示「发现新版本 vX」并把按钮换成「下载并安装」；再点才下载（状态行显示百分比），下载完应用被安装器退出、装完自动重启进新版。更新包必须通过签名校验（`tauri-plugin-updater` + `plugins.updater.pubkey`），失败时回退「下载与反馈」手动下载。清单由 `npm run updater:manifest` 生成，与 `*.nsis.zip` 一起随 Release 上传；口径与边界见 DESIGN §4.11 / §7.2。**只有安装版支持**，便携版手动换包
 - 关于面板里的「下载渠道」与「反馈与联系」：阿里云盘(国内推荐)（公开分享、无需提取码）排在 GitHub Releases 前面 —— 顺序按**能不能打开**排，不按官方不官方。外链与复制都收在 `shell/links.ts`，换渠道只改那一处。介绍与「下载与反馈」是**两个独立折叠**（`settings.aboutOpen` / `settings.downloadsOpen` 各记各的），默认收起；「帮助文档」「检查更新」两行常显 —— 折叠的是长内容，不是整个分组。云盘按钮下还有一句失效提示「链接失效？换 GitHub Releases，或公众号 Pyvan 留言。」，**不做链接探测**（阿里云盘对失效分享同样返回正常页面，客户端判不出来）
 - Markdown 源实时预览（抽屉里）：敲 md 就地渲染成标题 / 标签 / 截止 / 进度，点「按 md 更新任务」才写回；这条写回路径**不采纳状态**（`[x]` 在这个框里不生效）、起点也不在写法里，所以这两样保持原值；md 里的截止日**早于这条任务的开始日**时，那条截止也不写回（其余照旧，toast 说清两个日期，2026-10-16）
 - 数据迁入（任务管理页，`pages/tasks.ts` 的 `openImportDialog`）：选一个 md 文件解析成任务，认不出的行、同名任务、以及**起点被按截止日修正过**的（2026-10-16 加：md 只写截止日，起点与创建日是解析器推断的，推断出的起点晚于截止日时两者落到截止日）都逐条列出来等你决定。任务页的「批量新建」吃**同一套写法**、但走粘贴框 —— 那边当场就看得见解析出几条
@@ -155,6 +155,8 @@ npm run build          # tsc + vite build，产物在 dist/
 npm run e2e            # 构建 + 真浏览器冒烟（唯一的验证闸门，约 2–3 分钟）
 npm run tauri dev      # 真实窗口（首次需编译 Rust，约 1–2 分钟）
 npm run tauri build    # 出安装包：NSIS + MSI → src-tauri/target/release/bundle/
+                       # ⚠️ 先设 TAURI_SIGNING_PRIVATE_KEY / _PASSWORD（应用内更新要签名）
+npm run updater:manifest  # 生成 bundle/latest.json（发布时与签名过的 setup.exe 一起上传）
 ```
 
 NSIS 安装包用的是仓库里的定制模板：`src-tauri/windows/installer.nsi`

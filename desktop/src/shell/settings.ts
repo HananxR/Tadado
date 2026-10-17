@@ -70,7 +70,13 @@ import { subscribePages } from "./router";
 import { seg } from "./seg";
 import { toast } from "./toast";
 import { getThemeMode, setThemeMode, type ThemeMode } from "./theme";
-import { UPDATE_UNSUPPORTED, checkForUpdate, dateOf, type UpdateState } from "./update";
+import {
+  UPDATE_UNSUPPORTED,
+  checkForUpdate,
+  dateOf,
+  installUpdate,
+  type UpdateState,
+} from "./update";
 
 interface SettingRow {
   label: string;
@@ -558,57 +564,117 @@ function aboutIntro(): HTMLElement {
 // 理由每次启动都偷偷发一个请求出去。版本比较在 Rust 侧（`src/update.rs`），
 // 这里只把结果落成一句话。
 
+/** 这一行当前处在哪一步。按钮文字与禁用态都由它推出来。 */
+type UpdatePhase =
+  | "idle"
+  | "checking"
+  | "available"
+  | "downloading"
+  | "installing"
+  | "none"
+  | "failed"
+  | "unsupported";
+
 /**
  * 「检查更新」行右侧：一句状态 + 一枚按钮。
  *
+ * **两步**（2026-10-17 定的）：第一次点击只查有没有新版，按钮换成「下载并安装」；
+ * 用户再点一次才真的下载。4 MB 虽不大，但「什么时候占带宽、什么时候退出重启」
+ * 该由用户决定 —— 检查不该被读成「立即更新」。下载完成后应用会被安装器退出并
+ * 自动拉起新版，所以没有「重启」这一步。
+ *
  * 结果**内联**在按钮左边，不另开弹窗、也不用底部提示条 —— 提示条 2.2 秒就没了，
- * 而「发现新版本」是要用户去下载的，得留在界面上直到他做完这件事。
+ * 而「发现新版本」「下载到哪了」是要留在界面上直到这件事做完的。
  */
 function updateControl(): HTMLElement {
   const state = el("span", { class: "about-state", id: "set-upd" });
   const button = el("button", { class: "btn sm", text: "检查更新" });
+  let phase: UpdatePhase = "idle";
+  let available: Extract<UpdateState, { kind: "available" }> | null = null;
+
+  const paint = (
+    next: UpdatePhase,
+    text: string,
+    label: string,
+    tone: "" | "newer" | "done" | "error",
+  ): void => {
+    phase = next;
+    state.className = tone ? `about-state ${tone}` : "about-state";
+    state.textContent = text;
+    button.textContent = label;
+    button.disabled = next === "checking" || next === "downloading" || next === "installing";
+  };
+
+  const runCheck = (): void => {
+    paint("checking", "正在查询…", "检查中…", "");
+    void checkForUpdate()
+      .then((result) => {
+        if (result.kind === "available") {
+          available = result;
+          const date = dateOf(result.date);
+          paint(
+            "available",
+            `发现新版本 v${result.version}${date ? ` · ${date}` : ""}`,
+            "下载并安装",
+            "newer",
+          );
+          // 同时展开下载渠道：GitHub 下载不通时，那是最近的替代出口
+          markNewRelease(result);
+          return;
+        }
+
+        available = null;
+        if (result.kind === "none") {
+          // 「已是最新 / 网络不通 / 超时」在结论上是同一件事：这次没查到新版。
+          // 用中性色，不套 .error —— 失败不是用户做错了什么。
+          paint("none", "已是最新版本", "检查更新", "");
+          clearNewRelease();
+          return;
+        }
+
+        paint("unsupported", UPDATE_UNSUPPORTED, "检查更新", "");
+      })
+      .catch(() => {
+        // 理论上到不了（门面里已经收口）；真冒出来也别把按钮永远钉在「检查中…」
+        paint("none", "已是最新版本", "检查更新", "");
+      });
+  };
+
+  const runInstall = (): void => {
+    paint("downloading", "下载中…", "下载中…", "");
+    void installUpdate((percent) => {
+      if (percent === null) {
+        paint("downloading", "下载中…", "下载中…", "");
+        return;
+      }
+      if (percent >= 100) {
+        // 下载完就轮到安装器：应用即将退出，重启由安装器负责
+        paint("installing", "正在安装 · 应用会自动重启", "安装中…", "");
+        return;
+      }
+      paint("downloading", `下载中 ${percent}%`, "下载中…", "");
+    })
+      .then(() => {
+        // Windows 上通常回不到这里（应用已被安装器接管）；真回来了也别让界面停在「下载中」
+        paint("installing", "正在安装 · 应用会自动重启", "安装中…", "");
+      })
+      .catch(() => {
+        // 用户已经表达过更新意图，静默吞掉才是误导。保留展开的渠道，手动下载仍走得通
+        paint("failed", "更新失败 · 可手动下载", "重试", "error");
+        if (available) markNewRelease(available);
+      });
+  };
 
   button.addEventListener("click", () => {
-    if (button.disabled) return;
-    button.disabled = true;
-    button.textContent = "检查中…";
-    state.className = "about-state";
-    state.textContent = "";
-
-    void checkForUpdate()
-      .then(showUpdateResult)
-      .finally(() => {
-        button.disabled = false;
-        button.textContent = "检查更新";
-      });
+    if (phase === "available") {
+      runInstall();
+      return;
+    }
+    if (phase === "downloading" || phase === "installing") return;
+    runCheck();
   });
 
   return el("div", { class: "about-upd" }, [state, button]);
-}
-
-/** 把三种状态渲染成一句话；发现新版时顺带把下载行展开并点亮渠道。 */
-function showUpdateResult(result: UpdateState): void {
-  const state = document.getElementById("set-upd");
-  if (!state) return;
-
-  if (result.kind === "newer") {
-    state.className = "about-state newer";
-    state.textContent = `发现新版本 v${result.latest}`;
-    markNewRelease(result);
-    return;
-  }
-
-  if (result.kind === "none") {
-    // 「已是最新 / 网络不通 / 超时」在结论上是同一件事：这次没查到新版。
-    // 用中性色，不套 .error —— 失败不是用户做错了什么。
-    state.className = "about-state";
-    state.textContent = "没有查到新版本";
-    clearNewRelease();
-    return;
-  }
-
-  state.className = "about-state";
-  state.textContent = UPDATE_UNSUPPORTED;
 }
 
 /**
@@ -618,7 +684,7 @@ function showUpdateResult(result: UpdateState): void {
  * 只展开下载行（`persist = false`）：这是这次检查的结果，看完就该能收起来；也不去
  * 动「关于」的介绍块 —— 用户点的是检查更新，不是想读产品简介。
  */
-function markNewRelease(release: Extract<UpdateState, { kind: "newer" }>): void {
+function markNewRelease(release: Extract<UpdateState, { kind: "available" }>): void {
   applyDownloadsOpen(true, false);
 
   document.getElementById("set-new-badge")?.removeAttribute("hidden");
@@ -627,12 +693,12 @@ function markNewRelease(release: Extract<UpdateState, { kind: "newer" }>): void 
   const note = document.getElementById("about-note");
   if (!note) return;
 
-  const date = dateOf(release.publishedAt);
+  const date = dateOf(release.date);
   const detail = el("button", { class: "about-note-link", text: "查看更新说明 ↗" });
-  // 链接兜底：Rust 侧补详情失败时 release_url 仍会拼成 tag 页，这里再兜一次
-  detail.addEventListener("click", () => void openLink(release.url || RELEASES_URL));
+  // 更新说明统一去 Releases 看：`latest.json` 里的 notes 只用于状态行，不在这里铺全文
+  detail.addEventListener("click", () => void openLink(RELEASES_URL));
   note.replaceChildren(
-    el("span", { text: date ? `${date} 已发布 v${release.latest}` : `已发布 v${release.latest}` }),
+    el("span", { text: date ? `${date} 已发布 v${release.version}` : `已发布 v${release.version}` }),
     detail,
   );
 }

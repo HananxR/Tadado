@@ -6,7 +6,6 @@ use tauri::{
 use tauri_plugin_fs::FsExt;
 
 mod help;
-mod update;
 
 /// 退出应用。托盘菜单的「退出 Tadado」走这里 —— 前端只调 `getCurrentWindow()`
 /// 的话只会关掉窗口，常驻进程还在。
@@ -151,13 +150,16 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // 应用内更新（2026-10-17 起）：检查 / 下载 / 验签 / 安装都交给官方插件。
+        // 端点在 tauri.conf.json 的 `plugins.updater.endpoints`，公钥也在那儿 ——
+        // 公钥写错或换成另一把，已装的旧版就会拒绝新包（这是签名机制的意义）。
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // persisted-scope 必须排在拥有 scope 的插件之后。
         .plugin(tauri_plugin_persisted_scope::init())
         .invoke_handler(tauri::generate_handler![
             app_exit,
             allow_save_path,
-            help::open_help,
-            update::check_update
+            help::open_help
         ])
         .setup(|app| build_tray(app.handle()).map_err(|e| e.into()))
         .run(tauri::generate_context!())

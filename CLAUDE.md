@@ -78,6 +78,11 @@ npm run check:help   # 核对内置帮助文档：目录锚点 / 页面名 / 快
                      # 改过 src-tauri/resources/help/ 或设置 → 关于时，发版前跑一次
 npm run tauri dev    # 真实窗口（首次需编译 Rust）
 npm run tauri build  # 出安装包：NSIS + MSI → src-tauri/target/release/bundle/
+                     # ⚠️ 现在必须先设签名环境变量（bundle.createUpdaterArtifacts = true）：
+                     #   $env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\tadado.key"
+                     #   $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = <同目录 tadado.key.password 的内容>
+                     # 缺私钥会直接构建失败 —— 这是护栏，别改成「跳过签名」
+npm run updater:manifest  # 构建后生成 bundle/latest.json（应用内更新的清单，发布时随包上传）
                      # 便携版不在 bundler 的目标里，两步手工：把 target/release/desktop.exe
                      # 拷成 bundle/portable/Tadado2.exe，再压成 bundle/portable/Tadado2-portable.zip
                      # 第四份是给用户的迁移 skill 包（不在构建流程里，要手工压一次）：

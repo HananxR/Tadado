@@ -22,12 +22,6 @@ tauri = { version = "2", features = ["tray-icon", "image-png", "image-ico"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# 「检查更新」用的 HTTP 客户端（见 src/update.rs）。
-#
-# 保留默认 features：0.13 的默认 TLS 已经是 rustls（不依赖系统的
-# OpenSSL/SChannel，交叉编译与分发少一层变量），另外默认还带 http2 与
-# **system-proxy** —— 国内用户常挂着代理，走系统设置比我们自己去猜代理强。
-reqwest = { version = "0.13", features = ["json"] }
 tauri-plugin-fs = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-persisted-scope = "2"
@@ -35,6 +29,11 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
+# 应用内更新：检查 latest.json、下载、验签、跑 NSIS 安装包（见 src/lib.rs 的注册）。
+# 版本比较与签名校验都由插件负责，仓库里不再自己算。
+# Windows 上 `downloadAndInstall` 会在安装器启动后退出应用，安装器装完自动把
+# 新版拉起来（`restartAfterInstall` 默认 true），所以不需要额外的 process 插件。
+tauri-plugin-updater = "2"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

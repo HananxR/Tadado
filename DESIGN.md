@@ -76,7 +76,7 @@ src/shell/                 外壳能力（跨页面、不认识业务）
   nav.ts / router.ts       rail 渲染与页面挂载、页面切换状态
   partition.ts             分区切换器
   settings.ts              设置抽屉
-  update.ts / links.ts     检查更新（Rust 命令的门面）、外链与复制（下载渠道常量都在这儿）
+  update.ts / links.ts     应用内更新（检查 / 下载安装的门面，走 tauri-plugin-updater）、外链与复制（下载渠道常量都在这儿）
   lock.ts                  分区口令与空闲锁定
   hotkey.ts / trayBridge.ts / autostart.ts   全局热键、托盘事件、开机自启
   rollover.ts              跨日续跑：托盘常驻过了午夜，让「今天」重新算一遍（重载）
@@ -95,10 +95,12 @@ src/pages/                 页面层
   pager.ts                 分页器（三张表共用）
 
 src-tauri/
-  src/lib.rs               插件注册、托盘、app_exit 命令、单实例
+  src/lib.rs               插件注册（含 updater）、托盘、app_exit 命令、单实例
   src/main.rs              只调 desktop_lib::run()
-  tauri.conf.json          窗口与打包配置
+  tauri.conf.json          窗口、打包与 updater（endpoints / pubkey / passive）配置
   capabilities/default.json 权限清单（白名单，逐项授予）
+  windows/installer.nsi    定制 NSIS 模板（升级页 + 被动模式原地升级）
+scripts/updater-manifest.mjs 构建后生成 latest.json（发布用；缺包或缺签名即失败）
 ```
 
 **依赖方向是单向的**：`data ← shell ← pages`。`data/` 不许碰 DOM，`shell/` 不认识业务对象，
@@ -1145,10 +1147,13 @@ CREATE TABLE IF NOT EXISTS kv (
 - **两个折叠头各管一块**：`#set-about-head` 只控制介绍块（`#set-about-intro`），`#set-about-downloads` 由 `#set-downloads-head` 单独控制；状态分别记在 `settings.aboutOpen` / `settings.downloadsOpen`，箭头按**自己那个头**的 `aria-expanded` 旋转。默认都收起。介绍块里是**下载渠道**（阿里云盘(国内推荐) 在前，GitHub Releases 备选，与 README「国内下载」同源）与**反馈与联系**（微信公众号 `Pyvan` 点击复制、GitHub 仓库点击开系统浏览器）。渠道顺序按**能不能打开**排，不按官方不官方。
 - **「帮助文档」是常驻行**：`button.set-row.set-row-link#set-help`，整行可点、右侧「打开 ↗」，不随「关于」或下载行的开合变化。点击走 Rust 命令 `open_help`，用系统默认浏览器打开随程序嵌入的帮助文档（见下）。
 - **云盘按钮下面有一行补救小字**（`#about-tip`，11.5px）：`链接失效？换 GitHub Releases，或公众号 Pyvan 留言。` 两个行内动作分别走 `openExternal` 与 `copyText`。**不做链接探测**：实测阿里云盘对失效分享同样返回 200、响应体只有十几字节（脚本渲染 + 反爬），没有可靠判据；探测只会多一次联网、一次延迟和误报。也**不做警告色 / 背景块** —— 链接多数时候是好的，常驻一块警示色反而像下载坏了；文案只有一句，e2e 卡 40 字上限防止又长回去。
-- **检查更新**是独立一行，**只有点它才联网**（不做启动时的静默检查：一个本地优先、无账号的工具，没有任何理由每次启动都偷偷发一个请求）。结果**只有两种**：强调色「发现新版本 vX」与中性色「没有查到新版本」；已是最新、网络失败、超时、GitHub 异常都归入后者 —— 用户不需要判断错误码。检查期间按钮禁用并显示「检查中…」，**最长 20 秒**必出结果。
-- 发现新版本时：只把**下载与反馈**那一行展开（不写 `settings.downloadsOpen`，看完可收起）、打上「有新版本」标记，并在渠道块里补一行「发布日期 + 版本号 + 查看更新说明 ↗」，把国内渠道点亮（只变色、不动几何）。结果回到「没有查到」时清掉标记、日期与高亮。**不展开「关于」介绍块** —— 用户点的是检查更新，不是想读产品简介。
-- **检测走 GitHub 网页重定向**（`src-tauri/src/update.rs`）：`GET /releases/latest` 返回 302，只读 `Location` 里的 tag（`redirect::Policy::none()`，不下载 HTML），常规点击**不消耗 API 配额**。只有确实发现新版本时，才补一次 Releases API 取发布日期与说明，补不到也不影响结论（链接用 `releases/tag/vX` 拼出）。**不用官方自动更新**（`tauri-plugin-updater`）：那要生成签名密钥、把公钥写进配置、每次发布再签名并上传一份 `latest.json`，而本仓库发布是本地手动的（没有 CI），为省用户点一次「下载」不值当。**阿里云盘不能当检测源**：它没有官方 API、分享页是 JS 渲染的；v0.x 是靠调**作者本机**的 `aliyunpan` CLI 去 `ls` 解析文件名 —— 普通用户机器上没有那个 CLI，所以它每次都悄悄回落 GitHub，别再把这个做法搬过来。
-- **版本比较只留一处**（Rust 侧算完直接给结论，前端不重算）。判据容忍 `v` 前缀与 3 / 4 段 —— v0.x 栽过：按 3 段截断把 `0.1.2.4` 读成 `0.1.2`，于是「明明发了新版却说自己是最新的」；缺的段按 0 补，所以 `1.0.0` 与 `1.0.0.0` 相等。
+- **检查更新**是独立一行，**只有点它才联网**（不做启动时的静默检查：一个本地优先、无账号的工具，没有任何理由每次启动都偷偷发一个请求）。2026-10-17 起它升级成**应用内更新**（官方 `tauri-plugin-updater`），交互固定**两步**：第一次点击查 `latest.json`，显示强调色「发现新版本 vX · 日期」，按钮换成「下载并安装」；**再点一次**才下载（状态行写百分比），下载完应用被安装器退出、装完自动拉起新版。**检查失败只有一种出口**（「已是最新版本」，网络不通 / 404 / 清单损坏都算），**下载失败**才明确说「更新失败 · 可手动下载」并展开「下载与反馈」—— 用户已经表达过更新意图，静默吞掉才是误导。
+- 发现新版本时：只把**下载与反馈**那一行展开（不写 `settings.downloadsOpen`，看完可收起）、打上「有新版本」标记，并在渠道块里补一行「发布日期 + 版本号 + 查看更新说明 ↗」，把国内渠道点亮（只变色、不动几何）。结果回到「已是最新」时清掉标记、日期与高亮。**不展开「关于」介绍块** —— 用户点的是检查更新，不是想读产品简介。
+- **更新源只走 GitHub**：`https://github.com/HananxR/Tadado/releases/latest/download/latest.json`。清单由 `npm run updater:manifest`（`desktop/scripts/updater-manifest.mjs`）在构建后生成，含版本、说明、`pub_date` 与 `windows-x86_64` 的 `signature` / `url`：`signature` 直接取安装器签名文件（当前是 `*-setup.exe.sig`；若改用 v1 兼容产物则是 `*.nsis.zip.sig`）的内容，`url` 指向同一个 Release 上的那个安装器。**清单与包必须同属「最新正式 Release」**，否则 `releases/latest` 取不到。阿里云盘不再是更新源（分享页是脚本渲染的、没有可用 API），只在下载失败时充当手动出口。
+- **签名校验是硬门槛**：公钥写在 `tauri.conf.json` 的 `plugins.updater.pubkey`；私钥 `tauri signer generate` 生成、**不进仓库**（本机在 `%USERPROFILE%\.tauri\tadado.key`，口令在同目录的 `tadado.key.password`，另存密码管理器 + 离线备份）。换密钥 / 用错密钥时，已装旧版会拒绝新包 —— 这是机制本身，不是配置错误。**丢失兜底**：手动下载渠道永远在，让用户手动装一次新正式版（新版带新公钥）即可恢复自动更新。
+- **安装走 `installMode: "passive"`**：本地定制的 `windows/installer.nsi` 所有页面都带 `SkipIfPassive`，`PageLeaveReinstall` 也写明「被动模式没有界面，升级按推荐项（原地升级）处理」—— 更新不会卡在维护页，默认原地升级、`%APPDATA%` 里的数据不动。
+- **版本比较交给插件**（`tauri-plugin-updater` 内部按 semver 比，前端不重算）。v0.x 那段「按 3 段截断把 `0.1.2.4` 读成 `0.1.2`」的历史随 `src-tauri/src/update.rs` 一起删掉了；`shell/update.ts` 只剩「检查 / 下载安装 / 进度」三段门面，浏览器里仍老实回「仅桌面版可检查更新」。
+- **适用范围**：只有**安装版（setup.exe）**能应用内更新；便携版没有安装目录与卸载项，updater 只会去跑 NSIS 安装器（等于装一份新副本），所以文档口径统一为「推荐安装版」，便携版仍手动下载。**1.0.2 及更早的版本没有 updater**，第一个带更新能力的版本必须手动装一次，之后才有应用内更新。
 - 外链一律走 `shell/links.ts`（桌面端 `plugin-opener`，纯网页预览回落 `window.open`）：地址只在那一处，换渠道不必满仓库找旧链接。
 - 「窗口置顶」不在设置里重复一份：标题栏的图钉是唯一入口。
 - 启动组：开机自启、全局热键。
@@ -1235,6 +1240,16 @@ npm run build          # tsc + vite build，产物在 dist/
 npm run e2e            # 构建 + 真浏览器冒烟（唯一的验证闸门，约 2–3 分钟）
 npm run tauri dev      # 真实窗口（首次需编译 Rust，约 1–2 分钟）
 npm run tauri build    # 出安装包：NSIS + MSI → src-tauri/target/release/bundle/
+npm run updater:manifest  # 构建后生成 bundle/latest.json（缺包或缺签名会非零退出）
+```
+
+**打包必须先设签名环境变量**（`bundle.createUpdaterArtifacts = true` 之后没有私钥会直接失败，
+这是有意的护栏 —— 免得发出一个「能下载、装不上」的更新包）：
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\tadado.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = [System.IO.File]::ReadAllText("$env:USERPROFILE\.tauri\tadado.key.password")
+cd desktop; npm run tauri build; npm run updater:manifest
 ```
 
 `npm run e2e` 的第一件事是 `tsc && vite build` —— 构建不过直接停在那里，所以它同时是
@@ -1380,7 +1395,9 @@ v1.x **任务管理页 →「数据迁入」** 导入。**人手写的活动时�
   已完成多少由生成器决定，写死就会一改生成逻辑就红。
 - **三个产物**（`npm run tauri build`）：`bundle.targets = "all"` 在 Windows 上给的是 **NSIS +
   MSI** 两个 —— `nsis/Tadado2_<版本>_x64-setup.exe`（约 2.6 MB）、
-  `msi/Tadado2_<版本>_x64_en-US.msi`（约 3.6 MB）。**便携版不在 bundler 的目标里**，两步手工：
+  `msi/Tadado2_<版本>_x64_en-US.msi`（约 3.6 MB）。开了 `createUpdaterArtifacts` 之后，两个安装器
+  各会多出一个签名（`*-setup.exe.sig` / `*.msi.sig`）：**应用内更新用的是 NSIS 那个**，
+  `npm run updater:manifest` 把它的签名与下载地址写进 `latest.json`。**便携版不在 bundler 的目标里**，两步手工：
   ① 把 `target/release/desktop.exe` 复制到 `bundle/portable/Tadado2.exe`（主程序二进制叫
   `desktop`、产品名才叫 Tadado2）；② 压成 `bundle/portable/Tadado2-portable.zip`（约 3.3 MB）。
   **交付出去的是那个 zip，不是裸 exe**：7.7 MB 的 exe 直接发出去，用户拿到的是「一个不知道
@@ -1392,6 +1409,12 @@ v1.x **任务管理页 →「数据迁入」** 导入。**人手写的活动时�
   帮忙搬旧数据，就得有它。压的时候**压目录本身**（`-Path resources\skill\tadado-activity-import`），
   让 zip 里保留 `tadado-activity-import/` 这一层 —— 少了它，解压到 `.claude/skills/` 是加载不到的。
   它不跟 `npm run tauri build` 走，也不在 `bundle/` 里自己出现，**每次发版都要记得手工压一次**。
+- **应用内更新还要一份清单**（2026-10-17）：`latest.json`。它由 `npm run updater:manifest` 生成
+  （版本、说明、`pub_date`、`windows-x86_64` 的签名与下载地址），指向的就是**同一个 Release 上的
+  `*-setup.exe`**（安装器的签名在 `*-setup.exe.sig`）—— 不需要另做一个更新包。
+  **清单必须和安装包进同一个 Release**，且那个 Release 要是「最新的正式版」——
+  `releases/latest/download/latest.json` 才取得到。漏了清单：所有客户端都「检查不到更新」。
+  清单里的签名必须来自**同一次构建**，这是脚本存在的原因。
 - **用户数据不在安装目录里**，所以重装 / 换路径 / 升级都不影响它。这是设计使然，不是碰巧：
   Tauri 按 `identifier` 定位 `app_data_dir`，值就是 `%APPDATA%\com.tadado.app\tadado.data`
   （`db.ts` 里是 `Database.load("sqlite:tadado.data")`）。**这也是 `identifier 不能改` 的
@@ -1402,7 +1425,9 @@ v1.x **任务管理页 →「数据迁入」** 导入。**人手写的活动时�
     （`src-tauri/windows/installer.nsi`，取自 CLI `tauri-cli-v2.11.4` 的官方模板，仅两处改动）：
     ① 升级（检测到旧版本）**仍显示维护页**，推荐项「原地升级（保留任务与分区数据）」放在第一项并
     默认勾选；选它不执行旧卸载器（删数据的代码只在卸载段），选第二项才「先卸载再安装」。
-    同版本重装、降级保持原询问页，MSI/WiX 迁移仍强制先卸载。② 卸载页「删除应用数据」复选框**保留且默认不勾**，
+    同版本重装、降级保持原询问页，MSI/WiX 迁移仍强制先卸载。**应用内更新走被动模式**（`installMode`
+    设成 `passive`）：所有页面带 `SkipIfPassive`，`PageLeaveReinstall` 也写明「被动模式没有界面，
+    升级按推荐项（原地升级）处理」—— 于是更新不会卡在维护页，数据不动。② 卸载页「删除应用数据」复选框**保留且默认不勾**，
     **勾选后二次确认**（说明会永久删除任务/分区/设置且不可恢复，默认按钮「否」，选「否」留在本页）。
     卸载时**只有同时满足两件事**才删数据：勾上「删除应用数据」**且**不是升级（`UpdateMode <> 1`）。
     模板与 CLI 版本绑定：升 `@tauri-apps/cli` 必须按新 tag 重新同步模板并重放两处补丁（失配会在

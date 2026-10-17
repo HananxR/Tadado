@@ -19,7 +19,7 @@ description: |
 | # | 做什么 | 能不能跳 |
 |:--:|---|---|
 | 1 | **验收**：`npm run e2e`（+ 动过帮助文档时 `npm run check:help`） | 动过 `desktop/` 或 `resources/skill/**` 就不能跳 |
-| 2 | **打包**：`npm run tauri build` + 便携 zip + 迁移 skill 的 zip | 同上；没动代码可以跳 |
+| 2 | **打包**：签名环境变量 + `npm run tauri build` + `npm run updater:manifest` + 便携 zip + 迁移 skill 的 zip | 同上；没动代码可以跳 |
 | 3 | **提交**：`git add` + **一次** commit | 不能（有改动就得提交） |
 | 4 | **推送**：`git push`、tag、`gh release create` | **用户明确说推才推** ← 见铁律 |
 | 5 | **同步 skill**：仓库 → 本机 `.claude/skills/` | 动过 `resources/skill/` 就不能跳 |
@@ -61,15 +61,27 @@ npm run check:help        # 改过功能 / 关于分组 / 内置操作说明时�
 
 ## 步骤 2：打包
 
-```bash
+```powershell
 cd desktop
+# ⚠️ 应用内更新需要签名（bundle.createUpdaterArtifacts = true）：缺私钥会直接构建失败
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\tadado.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = [System.IO.File]::ReadAllText("$env:USERPROFILE\.tauri\tadado.key.password")
 npm run tauri build       # release 编译约 3 分钟；内部会先跑 npm run build
+npm run updater:manifest  # 生成 bundle/latest.json（缺安装器签名会非零退出）
 ```
 
 产物在 `desktop/src-tauri/target/release/bundle/`，**两个**由 bundler 产出：
 
 - `nsis/Tadado2_<版本>_x64-setup.exe`
 - `msi/Tadado2_<版本>_x64_en-US.msi`
+
+开了 `createUpdaterArtifacts` 之后，两个安装器各多一个签名（同一趟构建产出）：
+
+- `nsis/Tadado2_<版本>_x64-setup.exe.sig` —— **应用内更新用的就是它**，updater 下载的也是这个 exe
+- `msi/Tadado2_<版本>_x64_en-US.msi.sig` —— MSI 路径用不上，留着不影响
+
+再加上 `bundle/latest.json`（`npm run updater:manifest` 生成：版本、说明、`pub_date`、`windows-x86_64`
+的签名与下载地址；脚本也认 v1 兼容产物 `*.nsis.zip`，有 zip 就优先用它）。
 
 **第三个产物要两步手工补** —— 便携版**不在** bundler 的目标里（`bundle.targets = "all"` 在
 Windows 上只出上面两个）：
@@ -112,18 +124,31 @@ Compress-Archive -Path resources\skill\tadado-activity-import `
 `...\tadado-activity-import\*`）：zip 里必须保留 `tadado-activity-import/` 这一层，用户解压出来
 才能直接放进 `.claude/skills/` —— 少了这层，`.claude/skills/SKILL.md` 是**加载不到**的。
 
-核对四份交付物：
+核对交付物（含应用内更新的清单与包）：
 
 ```powershell
 Get-ChildItem desktop/src-tauri/target/release/bundle -Recurse -File |
-  Where-Object { $_.Extension -in '.msi', '.exe', '.zip' } |
-  ForEach-Object { "{0,-42} {1,7} MB  {2}" -f $_.Name, [math]::Round($_.Length/1MB, 2),
+  Where-Object { $_.Extension -in '.msi', '.exe', '.zip', '.json' } |
+  ForEach-Object { "{0,-46} {1,7} MB  {2}" -f $_.Name, [math]::Round($_.Length/1MB, 2),
                    $_.LastWriteTime.ToString('MM-dd HH:mm') }
 ```
 
-参考体积：安装包 ≈2.59 MB、MSI ≈3.62 MB、便携 zip ≈3.33 MB（里面那个 exe 是 7.68 MB）、
-迁移 skill zip ≈15.6 KB（压缩后；里面三个文件解压出来约 37.7 KB）。
+参考体积：安装包 ≈4.2 MB、MSI ≈5.6 MB、便携 zip ≈5.3 MB（里面那个 exe 是 11.2 MB）、
+迁移 skill zip ≈15.6 KB、`latest.json` ≈1–3 KB、安装器签名 ≈0.4 KB。
 **突然变大**通常意味着打包进了不该进的东西。
+
+### 签名密钥（应用内更新的命门）
+
+- 私钥在 **`%USERPROFILE%\.tauri\tadado.key`**，口令在同目录 **`tadado.key.password`**；
+  另存一份到密码管理器 + 一份离线备份。**两者都不进仓库**。
+- 仓库里只有**公钥**（`tauri.conf.json` 的 `plugins.updater.pubkey`）。当前指纹
+  **4293EDC585A9F3D**（公钥前 16 位十六进制）；换密钥必须同时更新公钥、记下新指纹，
+  并接受「已装旧版拒绝新包」这个事实。
+- 打包前**先看私钥在不在**（`Test-Path "$env:USERPROFILE\.tauri\tadado.key"`）；
+  不在就**停下**，不要改成「跳过签名」—— 那会发出一个装了也验不过的包。
+- **丢了私钥或口令 = 已装用户再也收不到自动更新**。兜底只有一条：让用户手动装一次新的
+  正式版（新版带新公钥），此后恢复自动更新。手动下载渠道（GitHub / 阿里云盘）永远保留，
+  丢钥不影响用户继续用旧版。
 
 ## 步骤 3：提交
 
@@ -178,22 +203,30 @@ git push origin main
 打 tag 与发 Release（`gh` 已装；remote 是 `git@github.com:HananxR/Tadado.git`）：
 
 ```bash
-git tag -a v1.0.0 -m "Tadado2 v1.0.0"
-git push origin v1.0.0
+git tag -a v<版本> -m "Tadado2 v<版本>"
+git push origin v<版本>
 ```
 
 ```bash
 # Release 说明直接用 CHANGELOG 里那一节：先摘出来存成临时文件
-gh release create v1.0.0 --title "Tadado2 v1.0.0" --notes-file RELEASE_NOTES.md \
-  "desktop/src-tauri/target/release/bundle/nsis/Tadado2_1.0.0_x64-setup.exe" \
-  "desktop/src-tauri/target/release/bundle/msi/Tadado2_1.0.0_x64_en-US.msi" \
+gh release create v<版本> --title "Tadado2 v<版本>" --notes-file RELEASE_NOTES.md \
+  "desktop/src-tauri/target/release/bundle/nsis/Tadado2_<版本>_x64-setup.exe" \
+  "desktop/src-tauri/target/release/bundle/msi/Tadado2_<版本>_x64_en-US.msi" \
   "desktop/src-tauri/target/release/bundle/portable/Tadado2-portable.zip" \
-  "desktop/src-tauri/target/release/bundle/tadado-activity-import.zip"
+  "desktop/src-tauri/target/release/bundle/tadado-activity-import.zip" \
+  "desktop/src-tauri/target/release/bundle/latest.json"
 ```
 
-**四份都要传**，包括那个 15.6 KB 的 skill 包 —— 它体积最小，却最容易被漏（它不跟
-`npm run tauri build` 走，`bundle/` 里也不会自己出现）。漏了它，用 AI 助手搬旧数据的用户
-只能回去改仓库 URL。
+**五份都要传**：
+
+- 前四份是给**人**的（安装包 / MSI / 便携 / 迁移 skill）—— skill 包体积最小却最容易被漏
+  （它不跟 `npm run tauri build` 走，`bundle/` 里也不会自己出现）；
+- `latest.json` 是给**程序**的。它指向的就是上面那个 `setup.exe`（安装器自带 `.sig`，不必单独传）。
+  漏了清单 = 所有客户端都「检查不到更新」。
+
+⚠️ `https://github.com/.../releases/latest/download/latest.json` 只认**最新且未标注预发布**
+的 Release：先发成 draft / prerelease 再转正，或先只传了一半，客户端那头都会暂时拿不到清单。
+`gh release create` 一次把**六份**都带上再宣布发版。
 
 发完把 Release 链接给用户。README 里的下载说明指向 Releases，不用改。
 
@@ -230,9 +263,12 @@ Get-ChildItem resources\skill -Directory | ForEach-Object {
 | 工作区是干净的（没有改动） | 跳过步骤 3、4；只做验收 + 打包 + 同步 skill |
 | 只动了文档 / skill，没动 `desktop/` | 可以跳步骤 2 的打包（产物不会变），但 `resources/skill/**` 动了就得跑 e2e（CI 也监听它） |
 | 用户说「重新打包」但没说推送 | 做完 1、2，提交与否**问他**，推送**等他明说** |
-| 打包失败 | 先看是不是 Rust 编译错误（`2m` 那一步）；不要为了绕过去把 `lto` / `strip` 关掉 |
+| 打包失败 | 先看是不是 Rust 编译错误（`2m` 那一步）；不要为了绕过去把 `lto` / `strip` 关掉。**缺签名私钥也会失败**，那不是 bug |
 | e2e 红了但用户催着打包 | **不要**带着红的构建去打包。先修，或者明确告诉他「这是带病的包」并让他定 |
 | 版本号没变却要发 Release | 别发 —— `gh release create` 同 tag 会失败，先确认用户到底要什么 |
+| 版本号没变、只重打包 | 应用内更新**不会提示**（版本号相同 = 已是最新）。这一次只能靠用户手动下载；真要推送更新，先升版本号 |
+| `updater:manifest` 说找不到更新包 / 签名 | 构建时没给签名私钥，或产物被清理过。重设环境变量后**重新构建**，不要手写清单 |
+| 私钥丢了 / 口令忘了 | 无法再为已装用户签名更新。让用户手动装一次新正式版（新版换公钥）后恢复；不要试着换回旧公钥 |
 
 ## 在这台机器上干活：PowerShell 的几个坑
 

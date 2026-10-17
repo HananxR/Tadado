@@ -3126,8 +3126,18 @@ try {
     JSON.stringify(about),
   );
 
-  // 检查更新：浏览器预览里**没有 Tauri 宿主**，那一行必须老实说不可用 ——
-  // 点了没反应、或者假装「已是最新」，都比不做这个功能更误导人
+  // 检查更新（2026-10-17 起是**两步**：检查 → 「下载并安装」）：浏览器预览里
+  // **没有 Tauri 宿主**，那一行必须老实说不可用 —— 点了没反应、或者假装「已是最新」，
+  // 都比不做这个功能更误导人。真实的下载/安装只能在 Windows 上手动演练。
+  const beforeUpdate = await page.evaluate(() => ({
+    state: document.getElementById("set-upd")?.textContent?.trim() ?? "",
+    label: document.querySelector("#set-body .about-upd .btn")?.textContent?.trim() ?? "",
+  }));
+  check(
+    "检查更新：初始是空状态 + 「检查更新」按钮（两步交互的第一步）",
+    beforeUpdate.state === "" && beforeUpdate.label === "检查更新",
+    JSON.stringify(beforeUpdate),
+  );
   await page.click("#set-body .about-upd .btn");
   await sleep(200);
   const updateRow = await page.evaluate(() => {

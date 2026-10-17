@@ -35,6 +35,7 @@
     "fs:allow-write-file",
     "fs:allow-read-dir",
     "fs:allow-exists",
-    "fs:allow-mkdir"
+    "fs:allow-mkdir",
+    "updater:default"
   ]
 }
