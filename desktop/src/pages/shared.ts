@@ -117,10 +117,12 @@ export function matchesStatus(task: Task, filter: TaskStatus | "all"): boolean {
 export function setTaskStatus(task: Task, status: TaskStatus): void {
   if (task.status === status) return;
   const wasDone = task.status === "done";
-  // 进度这一半也走**同一个入口**（`setProgress` 里含「满格 ⇒ 已完成」的同步）：
-  // 置为已完成时它会顺手把状态改好，下面那次 coreSetStatus 就变成空转 —— 不亏，
-  // 换来的是「进度没有第二处写法」。回退那一头必须先退回进度再改状态
-  if (status === "done") setProgress(task, FULL_PROGRESS);
+  // 进度这一半也走**同一个入口**（`setProgress` 里含「满格 ⇒ 已完成」的同步）。
+  // 但这里要传 `false`：这次状态是**人点的**，那条 status 活动必须算真实记录；
+  // 若让 setProgress 先同步，它会写一条 `auto` 的「进行中 → 已完成」，下面这次
+  // coreSetStatus 就成了空转，时间线会把用户亲手做的完成当成系统噪音藏起来。
+  // 回退那一头必须先退回进度再改状态。
+  if (status === "done") setProgress(task, FULL_PROGRESS, false);
   else if (wasDone) rollbackProgressForStatus(task);
   coreSetStatus(task, status);
   dataChanged();

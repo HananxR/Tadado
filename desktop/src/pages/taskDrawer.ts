@@ -356,10 +356,18 @@ function renderTimeline(task: Task): void {
   // 收窄成局部常量：下面在 forEach 回调里用，模块级 let 的收窄传不进闭包
   const host = drawer;
 
-  host.timeline.replaceChildren();
-  host.timelineCount.textContent = `${task.activities.length} 条`;
+  // 由进度**派生**的状态记录（`auto`）不铺：把进度从 100% 退到 90% 时，旁边那条进度
+  // 记录已经把这件事说清楚了，「已完成 → 进行中」再占一行只是噪音（2026-10-17 用户提的）。
+  // 数据仍留着 —— 完成日 `completedOn` 与归档档位都读它，只是不在这里显示。
+  // 展开时保留**原数组下标**：台账的编辑/删除入口按它定位（见下面的 entryOps）。
+  const visible = task.activities
+    .map((activity, index) => ({ activity, index }))
+    .filter(({ activity }) => !(activity.kind === "status" && activity.auto === true));
 
-  if (task.activities.length === 0) {
+  host.timeline.replaceChildren();
+  host.timelineCount.textContent = `${visible.length} 条`;
+
+  if (visible.length === 0) {
     drawer.timeline.append(
       el("div", { class: "dim", text: "暂无记录，可在下方添加第一条进展" }),
     );
@@ -370,7 +378,7 @@ function renderTimeline(task: Task): void {
   // 读到最底下正好接着「记录一条进展」（2026-09-20 用户提的：倒序读起来别扭）。
   // **存储顺序不动**：`activities` 仍然最新在前，导出、统计、以及「后面那条记录」
   // （进度编辑的上界）都按那个约定走，这里只是渲染时反着铺
-  const ordered = task.activities.map((activity, index) => ({ activity, index })).reverse();
+  const ordered = visible.reverse();
 
   for (const { activity, index } of ordered) {
     const icon = el("div", {

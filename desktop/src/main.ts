@@ -53,12 +53,18 @@ async function boot(): Promise<void> {
   // 只在启动扫到东西时才有报告（运行时每次编辑都是 0 条）
   const healed = progressHealReport();
   if (healed !== null) {
-    const parts = [`已把 ${healed.done} 条进度已满的任务标记为已完成`];
+    // 逐条拼：只有「退回」时也别说成「已把 0 条标记为已完成」
+    const parts: string[] = [];
+    if (healed.done > 0) parts.push(`已把 ${healed.done} 条进度已满的任务标记为已完成`);
     if (healed.archived > 0) parts.push(`其中 ${healed.archived} 条按归档设置收进归档`);
     if (healed.rolledBack > 0) {
       parts.push(`${healed.rolledBack} 条「已完成但进度不足 100%」的退回进行中`);
     }
-    toast(parts.join(" · "));
+    // 历史遗留的归位（2026-10-17）：不说的话，用户看到的是「归档里的任务自己回来了」
+    if (healed.restored > 0) {
+      parts.push(`已把 ${healed.restored} 条重新打开过的任务从归档放回`);
+    }
+    if (parts.length > 0) toast(parts.join(" · "));
   }
   // 托盘菜单里的「新建任务 / 设置」要落到前端来做（见 shell/trayBridge.ts）
   mountTrayBridge();

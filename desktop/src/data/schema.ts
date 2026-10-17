@@ -163,7 +163,10 @@ function normalizeActivity(raw: unknown, fallbackStamp: number): { value: Activi
   if (kind === "create") return { value: { at, text: body, kind: "create" }, fixed };
 
   if (kind === "status" && isStatus(raw.from) && isStatus(raw.to)) {
-    return { value: { at, text: body, kind: "status", from: raw.from, to: raw.to }, fixed };
+    // `auto` 是 2026-10-17 才有的字段：这里必须显式带上，否则重建对象时会被丢掉，
+    // 重启一次那些「由进度派生」的记录就又回到时间线里了
+    const auto = raw.auto === true ? { auto: true as const } : {};
+    return { value: { at, text: body, kind: "status", from: raw.from, to: raw.to, ...auto }, fixed };
   }
 
   if (kind === "progress" && typeof raw.from === "number" && typeof raw.to === "number") {

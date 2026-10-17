@@ -51,7 +51,12 @@ export const FULL_PROGRESS = 100;
  * 活动按**时间倒序**插，不是一律 unshift：自愈补的那条时间戳可能早于已有的记录，
  * 无脑 unshift 会让时间线倒着走（先显示 10-15、再显示 10-10）。
  */
-export function coreSetStatus(task: Task, to: TaskStatus, at: number = nowStamp()): boolean {
+export function coreSetStatus(
+  task: Task,
+  to: TaskStatus,
+  at: number = nowStamp(),
+  auto = false,
+): boolean {
   if (task.status === to) return false;
   const from = task.status;
   task.status = to;
@@ -61,6 +66,9 @@ export function coreSetStatus(task: Task, to: TaskStatus, at: number = nowStamp(
     from,
     to,
     text: `${STATUS_LABEL[from]} → ${STATUS_LABEL[to]}`,
+    // `auto` 表示这条是进度派生出来的（见 types.ts 的 Activity 注释）。只有真的时候才写，
+    // 免得存档里每条状态记录都多一个 `"auto": false`
+    ...(auto ? { auto: true as const } : {}),
   });
   return true;
 }
@@ -79,8 +87,10 @@ function insertActivity(task: Task, activity: Activity): void {
  * 紧接着的 refreshOverdue 会把它标成「逾期」—— 那是对的，口径是「逾期 = 未完成 + 过了截止」。
  */
 export function syncStatusForProgress(task: Task, at: number = nowStamp()): boolean {
-  if (task.progress >= FULL_PROGRESS) return coreSetStatus(task, "done", at);
-  if (task.status === "done") return coreSetStatus(task, "doing", at);
+  // 两条都是**进度派生**的（拖满 / 退回），标成 auto：时间线里不再单列一条
+  // 「已完成 → 进行中」，但完成日与归档档位仍读得到它
+  if (task.progress >= FULL_PROGRESS) return coreSetStatus(task, "done", at, true);
+  if (task.status === "done") return coreSetStatus(task, "doing", at, true);
   return false;
 }
 
@@ -123,13 +133,15 @@ export function rollbackProgressForStatus(task: Task): boolean {
  * 钳位为什么收在这里：原来 md 导入、编辑历史进度记录、md 应用三条路各自 `Math.min(100, …)`
  * 一次，迟早分叉；`Number.isNaN` 也在这里兜住（数字框被清空时是 NaN）。
  */
-export function setProgress(task: Task, value: number): boolean {
+export function setProgress(task: Task, value: number, autoStatus = true): boolean {
   const next = Math.max(
     0,
     Math.min(FULL_PROGRESS, Math.round(Number.isNaN(value) ? 0 : value)),
   );
   const moved = task.progress !== next;
   task.progress = next;
-  const synced = syncStatusForProgress(task);
+  // `autoStatus = false` 只给**显式改状态**用（`setTaskStatus` 置「已完成」时要先把
+  // 进度写成 100，再由它自己写一条真实的 status 活动）—— 否则那条会被标成系统记录
+  const synced = autoStatus ? syncStatusForProgress(task) : false;
   return moved || synced;
 }

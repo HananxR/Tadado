@@ -4941,6 +4941,103 @@ try {
   );
   check("归位后补上版本号", afterMigrate.version === "1", `version = ${afterMigrate.version}`);
 
+  // 历史遗留（2026-10-17 用户报的）：1.0.1 上把已归档任务的进度退回 100% 以下，状态变回
+  // 进行中/逾期，归档位却没人清 —— 那条任务于是只在管理页「已归档」里看得见。v1.0.2 的
+  // refreshReopened 只认**当场发生**的跃迁；升级前就卡住的那批要靠启动时的一次性归位捞回来。
+  // 判据收在「最近一条 status 活动正是从已完成退回」，所以从没完成过的手动归档不会被碰。
+  const healKey = "tadado.kv.archive.reopenHealed";
+  const stamp = Date.now();
+  const fixtureTask = (id, title, status, progress, archived, activities) => ({
+    id,
+    title,
+    status,
+    progress,
+    due: null,
+    at: null,
+    start: legacyDay(-3),
+    end: legacyDay(2),
+    created: legacyDay(-5),
+    archived,
+    activities,
+  });
+  await page.evaluate(
+    ({ tasks, taskKey, versionKey, kvKey }) => {
+      localStorage.setItem(taskKey, JSON.stringify(tasks));
+      localStorage.setItem(versionKey, "1");
+      // 前面的用例新建过分区并把它设成了默认，重载后会落在那个空分区里 ——
+      // 这里把默认分区拨回内置的「工作」，夹具任务才在任务页列得出来
+      localStorage.setItem("tadado.kv.partitions.default", JSON.stringify("work"));
+      // 让「一次性归位」重新跑：不清这条标记，测到的就是「本次会话已经跑过了」
+      localStorage.removeItem(kvKey);
+    },
+    {
+      tasks: [
+        fixtureTask("heal-legacy", "升级前卡在归档里的任务", "doing", 90, true, [
+          { at: stamp - 3600_000, kind: "progress", from: 100, to: 90, text: "100% → 90%" },
+          { at: stamp - 7200_000, kind: "status", from: "done", to: "doing", text: "已完成 → 进行中" },
+          { at: stamp - 9000_000, kind: "status", from: "doing", to: "done", text: "进行中 → 已完成" },
+        ]),
+        fixtureTask("heal-manual", "手动归档的未完成任务", "doing", 40, true, [
+          { at: stamp - 3600_000, kind: "log", text: "这条从没完成过" },
+        ]),
+        fixtureTask("auto-hide", "系统记录不入时间线", "doing", 90, false, [
+          { at: stamp - 3600_000, kind: "progress", from: 100, to: 90, text: "100% → 90%" },
+          { at: stamp - 7200_000, kind: "status", from: "done", to: "doing", text: "已完成 → 进行中", auto: true },
+          { at: stamp - 9000_000, kind: "log", text: "一条人手写的进展" },
+        ]),
+      ],
+      taskKey: TASK_KEY,
+      versionKey: VERSION_KEY,
+      kvKey: healKey,
+    },
+  );
+  await page.reload();
+  await page.waitForSelector(".rail-btn");
+  await sleep(700);
+
+  const healedLegacy = await page.evaluate(
+    ({ taskKey, kvKey }) => {
+      const tasks = JSON.parse(localStorage.getItem(taskKey) ?? "[]");
+      const pick = (id) => tasks.find((task) => task.id === id);
+      return {
+        legacy: pick("heal-legacy")?.archived,
+        manual: pick("heal-manual")?.archived,
+        flag: localStorage.getItem(kvKey),
+        toast: document.querySelector("#toast")?.textContent?.trim() ?? "",
+      };
+    },
+    { taskKey: TASK_KEY, kvKey: healKey },
+  );
+  check(
+    "升级前「重新打开却还在归档」的任务：启动时一次性放回（手动归档的不动）",
+    healedLegacy.legacy === false &&
+      healedLegacy.manual === true &&
+      healedLegacy.flag === "true" &&
+      healedLegacy.toast.includes("重新打开过的任务从归档放回"),
+    JSON.stringify(healedLegacy),
+  );
+
+  // 由进度回退派生的状态记录（`auto`）不该在时间线里单列 —— 它和旁边那条进度记录
+  // 说的是同一件事。数据仍留着（完成日 / 归档档位要读它），只是不铺
+  const openedAuto = await openTaskDrawer("系统记录不入时间线");
+  const autoHidden = await page.evaluate(() => ({
+    count: document.querySelector("#task-drawer .dr-tl .sec-h .dim.mono")?.textContent?.trim() ?? "",
+    texts: [...document.querySelectorAll("#task-drawer .tl-card .tt")].map((node) =>
+      (node.textContent ?? "").trim(),
+    ),
+  }));
+  check(
+    "系统派生的「已完成 → 进行中」不铺在时间线里（进度记录与人写进展仍在）",
+    openedAuto === 1 &&
+      autoHidden.count === "2 条" &&
+      !autoHidden.texts.includes("已完成 → 进行中") &&
+      autoHidden.texts.includes("100% → 90%") &&
+      autoHidden.texts.includes("一条人手写的进展"),
+    JSON.stringify(autoHidden),
+  );
+  await page.click("#task-drawer .dr-close");
+  await sleep(320);
+
   // 存档彻底坏掉：不能当空库处理（那等于拿演示数据把用户的存档盖掉），
   // 要原样留着 + 给一句人话提示
   await page.evaluate((key) => localStorage.setItem(key, "{ 这不是 JSON"), TASK_KEY);

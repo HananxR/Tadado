@@ -52,7 +52,15 @@ export type At = number;
  */
 export type Activity =
   | { at: At; text: string; kind: "create" }
-  | { at: At; text: string; kind: "status"; from: StatusName; to: StatusName }
+  /**
+   * 状态变更。`auto: true` 表示这条**不是人手改的**，而是进度回退/拖满时由
+   * `syncStatusForProgress` 派生出来的（例如把进度从 100% 退到 90%）。
+   *
+   * 为什么仍要留痕：完成日 `completedOn` 与「完成后 N 天归档」都读最新一条
+   * `to === "done"` 的状态记录，删掉就只剩结束日可退。但它和旁边那条进度记录说的是
+   * 同一件事，所以渲染时**默认不铺**（见 `taskDrawer` 的 `renderTimeline`）。
+   */
+  | { at: At; text: string; kind: "status"; from: StatusName; to: StatusName; auto?: true }
   | { at: At; text: string; kind: "progress"; from: number; to: number }
   /**
    * 优先级变更。和 status / progress 同类：**系统记的既成事实**，不给编辑入口。

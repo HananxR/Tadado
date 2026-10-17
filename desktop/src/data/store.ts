@@ -104,6 +104,34 @@ function refreshReopened(tasks: Task[]): number {
   return reopened;
 }
 
+/**
+ * 历史遗留的「重新打开后仍留在归档」一次性归位（2026-10-17）。
+ *
+ * `refreshReopened` 只处理**当场发生**的 `done → 非 done`；升级前就用 1.0.1 改出来的
+ * 「已归档 + 进行中/逾期」不会自己好 —— 启动时状态快照是空的，历史状态不算一次跃迁。
+ * 这里把那一批捞回来。
+ *
+ * 判据刻意收紧到「**最近一条 status 活动正是从已完成退回**」（`activities` 最新在前）：
+ *  · 从未完成过的手动归档任务没有这条活动，不会被碰；
+ *  · 代价是「重新打开后又手动归档」的极少数任务会被放回一次 —— 用户 2026-10-17
+ *    明确接受这个取舍（比起「任务看起来丢了」，宁可多还回来一次）。
+ *
+ * 只在启动跑一次（见 `KEY_REOPEN_HEALED`），不做成每次广播的规则。
+ */
+function healLegacyArchived(tasks: Task[]): number {
+  let restored = 0;
+
+  for (const task of tasks) {
+    if (!task.archived || task.status === "done") continue;
+    const latest = task.activities.find((activity) => activity.kind === "status");
+    if (!latest || latest.kind !== "status" || latest.from !== "done") continue;
+    task.archived = false;
+    restored += 1;
+  }
+
+  return restored;
+}
+
 /** 自愈扫描的结果（id 而不是条数：归档之后还要回头数有多少条真被收走了）。 */
 interface HealResult {
   /** 被补成「已完成」的（原来不是已完成） */
@@ -158,12 +186,19 @@ function refreshProgressStatus(tasks: Task[]): HealResult {
  * 已完成、成批从任务页消失 —— 一句都不说，那看起来就是数据坏了。运行时每次编辑触发的
  * 扫描都是 0 条（幂等），没有什么可报的。
  */
-let healReport: { done: number; rolledBack: number; archived: number } | null = null;
+let healReport: {
+  done: number;
+  rolledBack: number;
+  archived: number;
+  /** 一次性归位捞回来的「重新打开却还在归档」的任务数 */
+  restored: number;
+} | null = null;
 
 export function progressHealReport(): {
   done: number;
   rolledBack: number;
   archived: number;
+  restored: number;
 } | null {
   const report = healReport;
   healReport = null;
@@ -198,6 +233,14 @@ function adoptSeedPartitions(tasks: Task[]): number {
 }
 
 const KEY_ARCHIVE = "archive.afterDays";
+
+/**
+ * 「历史遗留的重新打开任务」一次性归位的标记（2026-10-17）。
+ *
+ * 为什么要有它：那条规则只在**升级后第一次启动**该跑 —— 再跑第二次就会把用户
+ * 「重新打开之后又手动归档」的决定再推翻一次。标记落进 kv，跑过就置 true。
+ */
+const KEY_REOPEN_HEALED = "archive.reopenHealed";
 
 /**
  * 完成后多久收进归档（**按分区**设）：
@@ -326,6 +369,15 @@ export async function bootStore(): Promise<void> {
   // 回到演示空间
   if (adoptSeedPartitions(TASKS) > 0) saveTasks(TASKS);
 
+  // 历史遗留的「重新打开后仍留在归档」一次性归位（2026-10-17）。**必须排在下面这次
+  // 口径修正之前**：放回工作面的任务也要跟着过一遍「进度满 = 已完成」。只跑一次 ——
+  // 再跑就会把用户「重新打开之后又手动归档」的决定再推翻一次
+  let restoredLegacy = 0;
+  if ((await loadSetting<boolean>(KEY_REOPEN_HEALED)) !== true) {
+    restoredLegacy = healLegacyArchived(TASKS);
+    await saveSetting(KEY_REOPEN_HEALED, true);
+  }
+
   // 「进度满 = 已完成」先补齐（2026-10-16 口径），**必须排在逾期判定之前** ——
   // 顺序反过来会把「结束日已过 + 进度已满」的这条先标成逾期，再想补成就已完成的归档就要
   // 多绕一步（而且那一帧页面上已经闪出过红色逾期色）。这一步也是升级后「打开即自行适配」
@@ -367,12 +419,13 @@ export async function bootStore(): Promise<void> {
 
   // 自愈报告：补成已完成的那批里，有几条当场按档位被收走了（给外壳提示一次用）。
   // 只报启动这一次 —— 运行时每改一次数据都会扫，但那时是 0 条
-  if (healed.finished.length > 0 || healed.reverted.length > 0) {
+  if (healed.finished.length > 0 || healed.reverted.length > 0 || restoredLegacy > 0) {
     const byId = new Map(TASKS.map((task) => [task.id, task]));
     healReport = {
       done: healed.finished.length,
       rolledBack: healed.reverted.length,
       archived: healed.finished.filter((id) => byId.get(id)?.archived).length,
+      restored: restoredLegacy,
     };
   }
 
