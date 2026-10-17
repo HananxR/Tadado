@@ -503,4 +503,4 @@
   **验证**：`npx tsc --noEmit` 干净；`npm run e2e` 全绿（渠道日志 `阿里云盘(国内推荐) / E2FBppaMPZj`；提示文本「链接失效？换 GitHub Releases，或公众号 Pyvan 留言。」37 字）；`npm run check:help` 38 项全 OK；重跑截图脚本刷新 8 张帮助配图（`settings-about.jpg` 已显示「帮助文档」）。
   **重打包（同版本 1.0.1）**：`npm run tauri build` 4m00s，四份产物 15:28 刷新 —— NSIS 4.24 MB / MSI 5.57 MB / 便携 zip 5.27 MB（内仅根目录 `Tadado2.exe`，11.18 MB）/ skill zip 0.02 MB。`README.md` 安装包 SHA256 更新为 `7D3C0AD171C181CBF115F5F924D2276B6967862C8FC6C164BCC2C2A25B32361E`，体积数字不变。
   ⚠️ 未做：**未提交、未推送**；浏览器预览里点 `Pyvan` 的复制 toast 未在自动化里断言（`copyText` 与「反馈与联系」共用，e2e 只校验 DOM 契约与可见性）。
-
+- [x] **发布 v1.0.2**（`npm run tauri build`，2026-10-17）：内容就是上面那条修复（已归档任务重新打开后回到任务页）+ 版本号 1.0.2 + 帮助文档「本次更新」+ CHANGELOG [1.0.2]。验收：`npx tsc --noEmit` / `node --check e2e/smoke.mjs` / `npm run check:help` / `npm run e2e` 全绿（新增的正反两条断言都在里面）。产物四份：NSIS `Tadado2_1.0.2_x64-setup.exe`（4.24 MB）、MSI `Tadado2_1.0.2_x64_en-US.msi`（5.58 MB）、便携 zip（5.28 MB，内仅根目录 `Tadado2.exe`，11.18 MB、版本资源 1.0.2）、迁移 skill zip（15.6 KB）。tag `v1.0.2` 与 Release 已发：https://github.com/HananxR/Tadado/releases/tag/v1.0.2 。**阿里云盘没传**（`tadado-aliyun` 是单独一步）：README 的国内下载仍指 v1.0.1，等上传后再改；GitHub 安装包名已同步。
