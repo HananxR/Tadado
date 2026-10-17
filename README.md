@@ -93,8 +93,8 @@
 
 | 方式 | 说明 |
 |---|---|
-| Windows 安装包 | Releases 下载 `Tadado2_1.0.1_x64-setup.exe`（4.2 MB），双击即装 |
-| MSI | `Tadado2_1.0.1_x64_en-US.msi`（5.6 MB），适合静默 / 企业分发 |
+| Windows 安装包 | Releases 下载 `Tadado2_1.0.2_x64-setup.exe`（4.2 MB），双击即装 |
+| MSI | `Tadado2_1.0.2_x64_en-US.msi`（5.6 MB），适合静默 / 企业分发 |
 | 便携版 | `Tadado2-portable.zip`（5.3 MB），解压即用、放在哪都能跑（WebView2 由 Win10/11 自带） |
 | 从源码构建 | `cd desktop && npm install && npm run tauri build` |
 
