@@ -102,11 +102,11 @@
 > —— **公开分享，无需提取码**，打开就能看，里面是整个下载目录。
 > 链接失效？换 [GitHub Releases](https://github.com/HananxR/Tadado/releases)，或公众号 **Pyvan** 留言。
 >
-> 进去认准 **`Tadado2_setup_v1.0.1.exe`**（4.2 MB）。目录里那些 `Tadado_setup_v0.x.x.exe`、
-> `Tadado_v0.x.x_portable.zip` 是**初版（v0.x，基于 PySide6）**的历史包，**已停止更新** ——
-> 只有要翻旧版本时才需要它们。
+> 进去认准 **`Tadado2_setup_v1.0.4.exe`**（3.9 MB）。目录里还有 v1.0.2 / v1.0.3 的安装包；
+> 更早的 `Tadado_setup_v0.x.x.exe`、`Tadado_v0.x.x_portable.zip` 是**初版（v0.x，基于 PySide6）**
+> 的历史包，**已停止更新** —— 只有要翻旧版本时才需要它们。
 >
-> 新版与 Releases 上的文件完全相同 —— 安装包 SHA256 `7D3C0AD171C181CBF115F5F924D2276B6967862C8FC6C164BCC2C2A25B32361E`，
+> 新版与 Releases 上的文件完全相同 —— 安装包 SHA256 `1C8F3DA1340B7D3C0290DE81970261CD382D1C84F6F82D1667987088AE48501E`，
 > 下完可以自己核一下（`Get-FileHash <文件> -Algorithm SHA256`）。
 
 > 从带「应用内更新」的版本起，设置 → 关于里的「检查更新」可以直接下载并安装新版本；
