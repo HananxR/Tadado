@@ -27,8 +27,9 @@
 // 见下面 openTask 那一节；「点面板之外就收起」在 shell/panels.ts。
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { loadSetting, saveSetting } from "../data/db";
 import { parseTasks, taskToMarkdown } from "../data/markdown";
-import { byId } from "../data/mock";
+import { TASKS, byId } from "../data/mock";
 import {
   ARCHIVE_NEVER,
   archiveAfterDays,
@@ -97,6 +98,116 @@ export function onTaskOpen(listener: OpenListener): () => void {
   };
 }
 
+// ─── 撰写器草稿 ────────────────────────────────────────────────────────────────
+//
+// 每条任务一句「写了但没提交」的进展说明，跟着 kv 走：写了就在，提交成功才清。
+//
+// 为什么要有（2026-11-03）：撰写器是随手写一句话的地方，而「写了没提交就被别的事情
+// 带走」太容易发生 —— 切到另一条任务、点抽屉外面收起、甚至直接退出应用，这些路径以前
+// 都会把那句话弄丢（用户报的「我给别的任务写的信息出现在了这里」只是最刺眼的一种：
+// 切任务时撰写器没清，那句话被提交进了新任务的时间线）。现在它跟着 kv 走：写了就在，
+// 提交成功才清。
+//
+// 存储走 data/db.ts 的 kv，与设置 / 归档档位 / 分区列表同一套：Tauri 下是
+// tauri-plugin-sql 的真 SQLite kv 表，浏览器预览降级到 localStorage —— 不引入新依赖，
+// 也顺带在打包版里拿到「重启后草稿还在」的桌面应用行为。
+//
+// 键是**任务 id**：草稿只回填到写下它的那条任务，天然串不到别的任务上。这与 showTask
+// 的修复不冲突 —— 那边清的是**界面**（切任务后输入框归零），这边存的是**草稿**
+// （下次打开同一条任务时回填）。
+
+const DRAFT_KEY = "drawer.drafts";
+/** 草稿的落盘防抖：与 db.ts 的写盘防抖同一量级（输入即存，但不每敲一下都写库）。 */
+const DRAFT_DEBOUNCE_MS = 400;
+
+interface Draft {
+  note: string;
+}
+
+type Drafts = Record<string, Draft>;
+
+let drafts: Drafts = {};
+/** kv 读过了没有。没读之前不敢写盘 —— 那会用一份空映射把库里已有的草稿盖掉。 */
+let draftLoaded = false;
+
+/**
+ * 读一次与之后的每次写盘，排在同一条队列上。
+ *
+ * 为什么需要队列：读是异步的，而「切换到另一条任务」可能紧跟着启动就来 —— 直接写
+ * 就会盖掉还没读到的草稿。排队之后先读后写，顺序有保证。
+ */
+let draftQueue: Promise<void> = Promise.resolve();
+
+const ensureDraftLoaded = (): Promise<void> =>
+  (draftQueue = draftQueue.then(async () => {
+    if (draftLoaded) return;
+    drafts = (await loadSetting<Drafts>(DRAFT_KEY)) ?? {};
+    draftLoaded = true;
+  }));
+
+/** 读到手之后改内存、再整份写盘。 */
+const writeDrafts = (mutate: () => void): Promise<void> =>
+  (draftQueue = ensureDraftLoaded().then(() => {
+    mutate();
+    return saveSetting(DRAFT_KEY, drafts);
+  }));
+
+/** 剪掉任务已不在的草稿。返回剪掉几条（> 0 时才值得写盘）。 */
+function pruneDrafts(): number {
+  const alive = new Set(TASKS.map((task) => task.id));
+  let dropped = 0;
+  for (const id of Object.keys(drafts)) {
+    if (alive.has(id)) continue;
+    delete drafts[id];
+    dropped += 1;
+  }
+  return dropped;
+}
+
+/** 存一条草稿。空文字等于「没有草稿」—— 把键删掉，不在库里攒空壳。 */
+function saveDraft(taskId: string, note: string): void {
+  const text = note.trim();
+  if (text === "") {
+    clearDraft(taskId);
+    return;
+  }
+  void writeDrafts(() => {
+    drafts[taskId] = { note: text };
+    pruneDrafts();
+  });
+}
+
+/** 提交成功 / 用户主动清空：这条任务的草稿没有了。 */
+function clearDraft(taskId: string): void {
+  void writeDrafts(() => {
+    delete drafts[taskId];
+  });
+}
+
+/** 打开一条任务时看它有没有没提交的草稿。kv 还没读到时返回 null（首帧之后才会有）。 */
+function draftOf(taskId: string): string | null {
+  return drafts[taskId]?.note ?? null;
+}
+
+// 模块一加载就开始读：应用启动到用户点开抽屉之间有得是时间
+void ensureDraftLoaded();
+
+/**
+ * 启动后剪一次兜底：上次会话留下来、任务已经不在了的草稿。
+ *
+ * 挂在**第一次数据广播**上：bootStore 结尾就是 dataChanged()，那时 TASKS 刚装好，
+ * 而模块加载时它还是空的。只跑一次 —— 运行中的删除由写盘那次剪掉（删任务的每条路
+ * 都覆盖到，不必逐个删除点挂钩）。
+ */
+let draftsPruned = false;
+onDataChange(() => {
+  if (draftsPruned) return;
+  draftsPruned = true;
+  void ensureDraftLoaded().then(() => {
+    if (pruneDrafts() > 0) void saveSetting(DRAFT_KEY, drafts);
+  });
+});
+
 // ─── 节点 ────────────────────────────────────────────────────────────────────
 
 interface Drawer {
@@ -116,6 +227,12 @@ interface Drawer {
   mdSync: () => void;
   /** 换了一条任务：丢掉进度控件里没提交的草稿（它属于上一条任务）。 */
   resetProgress: () => void;
+  /** 立即把撰写器里的文字存成当前任务的草稿（切换 / 收起前调用；防抖那次一并算上）。 */
+  flushDraft: () => void;
+  /** 按 composer 的当前值刷新「未提交」标记。 */
+  syncDraftHint: () => void;
+  /** 提交成功：清空撰写器，连同「未提交」标记和这条任务的草稿。 */
+  clearComposer: () => void;
 }
 
 /** 写一条新进展时的输入框提示。 */
@@ -451,9 +568,13 @@ function paint(task: Task): void {
   drawer.name.textContent = task.title;
   drawer.created.textContent = `创建于 ${pad2(task.created[0])}-${pad2(task.created[1])}`;
 
+  // 时间线**先画**：它第一件事是 replaceChildren 整块重画。放在表单后面的话，表单
+  // 绘制途中一出异常，头部已经是新任务、时间线还留着上一条任务的记录 —— 半张新半张
+  // 旧，读的人只会以为「这条任务的活动记在了别处」。排在前面则任何一步出错，时间线
+  // 也已经是当前任务的了
+  renderTimeline(task);
   drawer.form.paint(task);
   drawer.progress.paint(task);
-  renderTimeline(task);
 
   // md 框同理：正在改 md 的人不该被这里的重画把内容和光标一起带走
   if (document.activeElement !== drawer.markdown) {
@@ -488,15 +609,27 @@ function build(task: Task): Drawer {
     task,
     // 进度不在这一区了：它搬到了下面的活动时间线（见 .tl-prog）
     withProgress: false,
-    onEdit: () => dataChanged(),
-    onStatusChange: (next: TaskStatus, wasArchived: boolean) =>
+    onEdit: (field) => {
+      dataChanged();
+      // 进度拖满 100% 自动完成等路径（走 onEdit("progress")，文字已由 progress.commit
+      // 提交）：任务已被归档就收起抽屉（它已不在左侧列表，没必要还停在它身上）
+      if (field !== "status" && current && current.archived) closeTask();
+    },
+    onStatusChange: (next: TaskStatus, wasArchived: boolean) => {
+      // 写了没提交就点「已完成」：把这句话作为完成说明提交进时间线（连同进度草稿）。
+      // `submit` 是已提升的函数声明，复用「发送」逻辑即可，不必再写一遍提交。
+      if (next === "done" && composer.value.trim() !== "") submit();
+      // 任务已归档（不在列表里），抽屉不必再停在它身上 —— 否则「列表找不到、只剩右侧
+      // 抽屉」，体验割裂。文字若已提交，在归档视图重开任务仍看得到
+      if (current && current.archived) closeTask();
       toast(
         // 已归档的任务被改回「进行中」时会离开归档（见 store 的 refreshReopened）——
         // 这一次「背后的行」也会跟着回到列表里，说清楚它去了哪
         wasArchived && !task.archived
           ? `状态已改为「${STATUS_LABEL[next]}」· 已从归档放回任务页`
           : `状态已改为「${STATUS_LABEL[next]}」· 全局视图已联动`,
-      ),
+      );
+    },
   });
 
   const timeline = el("div", { class: "tl-list" });
@@ -505,6 +638,35 @@ function build(task: Task): Drawer {
   // ── 记录新进展 ──
   const composer = el("input", { placeholder: COMPOSE_HINT });
   const send = el("button", { class: "tl-send", title: "保存", html: SEND_ICON });
+
+  // 「未提交」标记：有字没回车时写在脸上，与进度条那句「待保存 65% → 70%」同一套
+  // 语言（doing 色的琥珀，不是错误色）。它回答「这句话提交了没有」—— 草稿会自动存进
+  // kv（切任务 / 收起 / 退出都不丢），但**提交**是另一回事，两者不能混
+  const draftHint = el("span", { class: "tl-draft-hint", text: "未提交" });
+  const composerRow = el("div", { class: "tl-compose" }, [composer, draftHint, send]);
+
+  const syncDraftHint = (): void => {
+    composerRow.classList.toggle("dirty", composer.value.trim() !== "");
+  };
+  syncDraftHint();
+
+  // 输入即存（防抖）：应用被直接退出（托盘退出 / 关窗）时，写了没提交的那句也还在
+  // kv 里，下次启动回填。切换 / 收起会立刻补存一次（flushDraft），等不到这 400ms
+  let draftTimer = 0;
+  composer.addEventListener("input", () => {
+    syncDraftHint();
+    window.clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(() => {
+      if (current) saveDraft(current.id, composer.value);
+    }, DRAFT_DEBOUNCE_MS);
+  });
+
+  /** 提交成功：清空撰写器，连同「未提交」标记和这条任务的草稿。 */
+  const clearComposer = (): void => {
+    composer.value = "";
+    syncDraftHint();
+    if (current) clearDraft(current.id);
+  };
 
   // ── 进度（就摆在时间线里）──
   // 左边那条是滑杆本身（填充即「现在到哪了」，拖一下就是改），右边数字框负责精确值。
@@ -550,7 +712,8 @@ function build(task: Task): Drawer {
     //   的历史，时间线照旧显示「待办 → 进行中」。）
     dataChanged();
 
-    composer.value = "";
+    // 这句话进了时间线：撰写器连同「未提交」标记和草稿一起清掉
+    clearComposer();
     renderTimeline(current);
     // 「发送」本来就是保存 —— 以前这条已经落库了，只是没有任何反馈，
     // 让人以为还得再点一次什么才算存上
@@ -699,7 +862,7 @@ function build(task: Task): Drawer {
       // 进度就在这一区（2026-09-20 用户提的）：写一句进展、顺手把进度挪到哪 ——
       // 同一行里就能做完，不必再滚回「任务定义」那块找进度，漏维护一处是常态
       el("div", { class: "tl-prog" }, [el("span", { class: "tf-k", text: "进度" }), progress.root]),
-      el("div", { class: "tl-compose" }, [composer, send]),
+      composerRow,
     ]),
     el("section", { class: "dr-sec" }, [markdownBlock]),
   ]);
@@ -720,6 +883,12 @@ function build(task: Task): Drawer {
     markdown,
     mdSync: renderMdPreview,
     resetProgress: () => progress.reset(),
+    flushDraft: () => {
+      window.clearTimeout(draftTimer);
+      if (current) saveDraft(current.id, composer.value);
+    },
+    syncDraftHint,
+    clearComposer,
   };
 }
 
@@ -768,11 +937,22 @@ function waitDrawerLeave(root: HTMLElement, done: () => void): () => void {
 function showTask(task: Task): void {
   if (!drawer) return;
 
+  // 上一条任务里没提交的文字：存成它的草稿再走（kv，重启还在；空文字等于没有草稿）
+  drawer.flushDraft();
   // 换了任务：进度控件里没提交的草稿属于上一条任务，丢掉
   // （否则新任务里会顶着一个来自上一条任务的「待保存 65% → 70%」）
   drawer.resetProgress();
+  // 撰写器同理，而且更要紧：给上一条任务写了一半、没回车的那句话不属于这一条。
+  // 不清空的话它原样留在输入框里（「新打开一个任务，默认的还是那句」），在 B 上
+  // 一回车就被 submit() 写进 B 的时间线 —— 用户看到的是「我给别的任务写的信息
+  // 出现在了这里」（2026-11-03 报的 BUG：活动信息串到了别的任务上）。与上一行
+  // 是同一条理由（未提交的输入态属于写下它的那条任务），只是原来漏了这一处
+  drawer.composer.value = "";
   current = task;
   paint(task);
+  // 这条任务自己有一句没提交的草稿就回填（上次被切换 / 收起 / 退出打断了）
+  drawer.composer.value = draftOf(task.id) ?? "";
+  drawer.syncDraftHint();
   drawer.root.classList.add("open");
   panelOpened("task");
   // 新任务的时间线在下面，滚回顶部才看得到标题与进度
@@ -853,6 +1033,9 @@ export function closeTask(): void {
   // 直接 return 的时候 —— 那会让切换滑到一半自己又滑回来
   cancelSwitch();
   if (!drawer) return;
+  // 收起不是丢弃：没提交的那句存成这条任务的草稿，下次打开还在
+  // （点抽屉外 / Esc / × / 开设置 / 切页都走这里）
+  drawer.flushDraft();
   drawer.root.classList.remove("open");
   current = null;
   panelClosed("task");

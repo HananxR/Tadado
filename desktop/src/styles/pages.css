@@ -2272,6 +2272,30 @@
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* 有字没提交：边框转 doing 的琥珀 + 一枚「未提交」小签 —— 与 .prog-pending 同一套
+   语言（是状态，不是错误）。草稿会自动存进 kv，但**提交**是另一回事，这枚标记说的
+   是后者 */
+.tl-compose.dirty {
+  border-color: var(--doing);
+}
+
+.tl-compose.dirty:focus-within {
+  border-color: var(--doing);
+  box-shadow: none;
+}
+
+.tl-draft-hint {
+  display: none;
+  flex: none;
+  font: 400 10.5px var(--mono);
+  color: var(--doing);
+  white-space: nowrap;
+}
+
+.tl-compose.dirty .tl-draft-hint {
+  display: inline;
+}
+
 .tl-compose input {
   flex: 1;
   border: 0;

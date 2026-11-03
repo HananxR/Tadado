@@ -2465,6 +2465,337 @@ try {
   await page.fill("#page-tasks .searchbox input", "");
   await sleep(300);
 
+  // ── 切任务不串活动信息 + 撰写器草稿（2026-11-03 用户报的 BUG）──────────────────
+  // 两件事一起钉：
+  //   ① 串号 —— showTask() 切任务时漏了清撰写器，给上一条任务写了一半没回车的那句
+  //      会被提交进新任务的时间线；
+  //   ② 丢失 —— 修好①之后（切任务清空界面），写了没提交的文字不能就这么没了：它存进
+  //      kv 草稿（按任务 id），提交成功才清，切任务 / 收起 / 退出都不丢。
+  //
+  // 模拟数据（不碰本地数据库：e2e 跑浏览器后端，写的就是 localStorage 那把键）：
+  // 甲 = 结束日在过去 ⇒ 启动即被 refreshOverdue 标成逾期、自带一条活动；
+  // 乙 = 进度 0、结束日在将来、自带一条活动。追加在队尾，不搅动前面各段挑任务的次序。
+  await page.evaluate(() => {
+    const DAY = 86400000;
+    const md = (offset) => {
+      const d = new Date();
+      d.setDate(d.getDate() + offset);
+      return [d.getMonth() + 1, d.getDate()];
+    };
+    const stamp = (offset, hh, mi) => {
+      const d = new Date();
+      d.setDate(d.getDate() + offset);
+      return Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY) * DAY +
+        (hh * 60 + mi) * 60000;
+    };
+    const seed = (id, title, start, end, progress, note) => ({
+      id,
+      title,
+      status: "doing",
+      tags: ["#工作"],
+      due: `${String(end[0]).padStart(2, "0")}-${String(end[1]).padStart(2, "0")} 09:00`,
+      at: "09:00",
+      start,
+      end,
+      progress,
+      urgency: 2,
+      created: start,
+      archived: false,
+      partition: "demo",
+      related: [],
+      activities: [{ at: stamp(-5, 10, 30), text: note, kind: "log" }],
+    });
+    const raw = JSON.parse(localStorage.getItem("tadado.tasks.v1") ?? "[]");
+    localStorage.setItem(
+      "tadado.tasks.v1",
+      JSON.stringify([
+        ...raw,
+        seed("leak-jia", "串号排查甲", md(-10), md(-10), 30, "甲自己的进展"),
+        seed("leak-yi", "串号排查乙", md(0), md(10), 0, "乙自己的进展"),
+      ]),
+    );
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector(".rail-btn");
+  await sleep(800);
+  // reload 不停页：应用每次都落在第一页（总览，见 nav.ts 的 goPage(PAGES[0])），
+  // 先回任务页才搜得到、才双击得到行
+  await page.locator('.rail-btn[data-page="tasks"]').click();
+  await sleep(320);
+
+  // 一次搜出两条：后面切任务不再碰搜索框 —— 点它是「点在抽屉外」，会把抽屉收掉
+  // （双击任务行才是打开手势，走滑出再滑入的切换，见 shell/panels.ts 的 KEEP_ATTR）
+  await page.fill("#page-tasks .searchbox input", "串号排查");
+  await sleep(430);
+
+  /** 抽屉此刻的时间线条目（只读时间线那一块，别被抽屉别处的日期带偏）。 */
+  const timelineTexts = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("#task-drawer .tl-entry")]
+        .map((node) => (node.textContent ?? "").replace(/\s+/g, " ").trim()),
+    );
+  const composerText = () => page.inputValue("#task-drawer .tl-compose input");
+  /** 「未提交」标记在不在（.tl-compose.dirty）。 */
+  const composerDirty = () =>
+    page.evaluate(
+      () => document.querySelector("#task-drawer .tl-compose")?.classList.contains("dirty") ?? false,
+    );
+  /** kv 里的草稿表（浏览器后端的键 = tadado.kv. + 模块里的 DRAFT_KEY）。 */
+  const storedDrafts = () =>
+    page.evaluate(() => JSON.parse(localStorage.getItem("tadado.kv.drawer.drafts") ?? "{}"));
+  /** 库里某条任务的活动文本。 */
+  const storedActivities = (id) =>
+    page.evaluate((key) => {
+      const task = (JSON.parse(localStorage.getItem("tadado.tasks.v1") ?? "[]")).find(
+        (item) => item.id === key,
+      );
+      return (task?.activities ?? []).map((a) => a.text);
+    }, id);
+  /** 双击某一行打开/切换到它（滑出 340ms + 滑入，留足等待）。 */
+  const openLeakTask = async (title) => {
+    await page.locator("#page-tasks .tt-row").filter({ hasText: title }).first().dblclick();
+    await sleep(700);
+    await page.waitForSelector("#task-drawer.open");
+    await sleep(300);
+  };
+
+  // ① 打开甲，在撰写器里写一句、不提交 —— 用户的原动作
+  await openLeakTask("串号排查甲");
+  const jiaName = ((await page.locator("#task-drawer .dr-name").textContent()) ?? "").trim();
+  const jiaBadge = ((await page.locator("#task-drawer .dr-h1 .st").textContent()) ?? "").trim();
+  check(
+    "样本：抽屉打开在甲上，且甲是逾期（对应用户「之前的任务状态好像是逾期」）",
+    jiaName === "串号排查甲" && jiaBadge === "逾期",
+    `${jiaName} · ${jiaBadge}`,
+  );
+  await page.fill("#task-drawer .tl-compose input", "这是给甲写的进展");
+  check("样本：撰写器里留着没提交的文字", (await composerText()) === "这是给甲写的进展");
+  check("有字没提交时「未提交」标记可见", await composerDirty());
+
+  // ② 输入即存（防抖 400ms）：不导航也该在库里（应用被直接退出时的那句也靠它）
+  await sleep(700);
+  const autoDraft = await storedDrafts();
+  check(
+    "输入即存：写了没提交，草稿已自动落库",
+    autoDraft["leak-jia"]?.note === "这是给甲写的进展",
+    JSON.stringify(autoDraft),
+  );
+
+  // ③ 双击另一行 ⇒ 切换（先滑出 PANEL_LEAVE_MS=340，再滑入）
+  await openLeakTask("串号排查乙");
+  const yiName = ((await page.locator("#task-drawer .dr-name").textContent()) ?? "").trim();
+  check("切到乙后，抽屉跟着换到乙", yiName === "串号排查乙", yiName);
+  check(
+    "切到乙后，撰写器是空的（给甲写的那句不属于乙）★串号 BUG 的修复点",
+    (await composerText()) === "",
+    `「${await composerText()}」`,
+  );
+  const yiTimeline = await timelineTexts();
+  check(
+    "乙的时间线只有乙自己的记录（不带上一条任务的）",
+    yiTimeline.length === 1 &&
+      yiTimeline[0].includes("乙自己的进展") &&
+      !yiTimeline[0].includes("甲"),
+    yiTimeline.join(" | "),
+  );
+  const afterSwitch = await storedDrafts();
+  check(
+    "切换不丢：甲那句存成了甲的草稿（按任务 id，串不到乙身上）",
+    afterSwitch["leak-jia"]?.note === "这是给甲写的进展" && !("leak-yi" in afterSwitch),
+    JSON.stringify(afterSwitch),
+  );
+
+  // ④ 切回甲：草稿回填，且不进时间线（提交才是进时间线）
+  await openLeakTask("串号排查甲");
+  check(
+    "切回甲：撰写器回填了上次没提交的那句",
+    (await composerText()) === "这是给甲写的进展",
+    `「${await composerText()}」`,
+  );
+  check("切回甲：「未提交」标记跟着回来", await composerDirty());
+  const jiaTimeline = await timelineTexts();
+  check(
+    "草稿不进时间线：甲的条目仍只有自己那一条",
+    jiaTimeline.length === 1 && jiaTimeline[0].includes("甲自己的进展"),
+    jiaTimeline.join(" | "),
+  );
+
+  // ⑤ 直接回车 = 提交回填的那句：进时间线，草稿随之清掉
+  await page.locator("#task-drawer .tl-compose input").press("Enter");
+  await sleep(600);
+  check(
+    "提交后：甲的时间线多出这句话",
+    (await timelineTexts()).some((text) => text.includes("这是给甲写的进展")),
+    (await timelineTexts()).join(" | "),
+  );
+  const afterSubmitDraft = await storedDrafts();
+  check(
+    "提交后：甲的草稿被清掉",
+    !("leak-jia" in afterSubmitDraft),
+    JSON.stringify(afterSubmitDraft),
+  );
+  check("提交后：「未提交」标记消失", !(await composerDirty()));
+
+  // ⑥ 收起也不丢：写一句 → Esc 关抽屉 → 重开同一条 ⇒ 回填
+  await page.fill("#task-drawer .tl-compose input", "关了抽屉也别丢");
+  await page.keyboard.press("Escape");
+  await sleep(400);
+  await openLeakTask("串号排查甲");
+  check(
+    "收起不丢：关抽屉前写的那句，重开还在",
+    (await composerText()) === "关了抽屉也别丢",
+    `「${await composerText()}」`,
+  );
+  // 提交它，把现场还原干净（后面几步不再依赖甲还有草稿）
+  await page.locator("#task-drawer .tl-compose input").press("Enter");
+  await sleep(600);
+  check("收起那条提交后草稿也清掉", !("leak-jia" in (await storedDrafts())));
+
+  // ⑦ 乙上走一遍完整动作：改进度 + 写一句 + 回车 —— 甲的活动正好是它自己的三条
+  await openLeakTask("串号排查乙");
+  await page.fill("#task-drawer .pct-input", "20");
+  await page.locator("#task-drawer .pct-input").blur();
+  await sleep(260);
+  const pendingYi = await page.evaluate(
+    () => document.querySelector("#task-drawer .prog-pending")?.textContent?.trim() ?? "",
+  );
+  check("乙上的进度草稿按乙自己的数起（0% → 20%）", pendingYi.includes("0% → 20%"), `「${pendingYi}」`);
+  await page.fill("#task-drawer .tl-compose input", "乙的第二条进展");
+  await page.locator("#task-drawer .tl-compose input").press("Enter");
+  await sleep(600);
+  const jiaActs = await storedActivities("leak-jia");
+  check(
+    "提交后：甲的活动正好是它自己的三条（那句话没有串到甲身上）",
+    jiaActs.length === 3 &&
+      jiaActs.includes("甲自己的进展") &&
+      jiaActs.includes("这是给甲写的进展") &&
+      jiaActs.includes("关了抽屉也别丢"),
+    JSON.stringify(jiaActs),
+  );
+  const yiActs = await storedActivities("leak-yi");
+  check(
+    "提交后：乙多出来的正是自己写的那句（不是甲那句）",
+    yiActs.length === 2 &&
+      yiActs.includes("乙自己的进展") &&
+      yiActs.includes("乙的第二条进展") &&
+      !yiActs.includes("这是给甲写的进展"),
+    JSON.stringify(yiActs),
+  );
+
+  // ⑧ 空撰写器回车不写东西（submit 的既有口径，顺带钉住）
+  await page.locator("#task-drawer .tl-compose input").press("Enter");
+  await sleep(400);
+  check(
+    "空撰写器回车不写记录",
+    (await storedActivities("leak-yi")).length === 2,
+    `${(await storedActivities("leak-yi")).length} 条`,
+  );
+
+  // ⑨ 幽灵草稿：任务已不在的草稿，启动时剪掉（删除任务的每条路都覆盖到）
+  await page.evaluate(() => {
+    const drafts = JSON.parse(localStorage.getItem("tadado.kv.drawer.drafts") ?? "{}");
+    drafts["leak-ghost"] = { note: "任务早就删了" };
+    localStorage.setItem("tadado.kv.drawer.drafts", JSON.stringify(drafts));
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector(".rail-btn");
+  await sleep(900);
+  const afterPrune = await storedDrafts();
+  check(
+    "启动清理：任务已不在的草稿被剪掉",
+    !("leak-ghost" in afterPrune) && !("leak-jia" in afterPrune) && !("leak-yi" in afterPrune),
+    JSON.stringify(afterPrune),
+  );
+  await page.locator('.rail-btn[data-page="tasks"]').click();
+  await sleep(320);
+  await page.fill("#page-tasks .searchbox input", "");
+  await sleep(300);
+
+  // ── 点「已完成」归档：未提交文字转完成说明 + 抽屉收起（2026-11-03 草稿后的割裂修复）──
+  // 场景：撰写器写了没提交就点「已完成」（默认「立即」归档档位下任务当场归档）。修复前：任务从
+  // 列表消失、只剩右侧抽屉卡在已归档任务上，且那句话没进时间线。修复后：那句话作为完成说明
+  // 进时间线，任务归档后抽屉自动收起。全程 localStorage 后端，不访问本地数据库。
+  await page.evaluate(() => {
+    const DAY = 86400000;
+    const md = (offset) => {
+      const d = new Date();
+      d.setDate(d.getDate() + offset);
+      return [d.getMonth() + 1, d.getDate()];
+    };
+    const seed = (id, title) => ({
+      id,
+      title,
+      status: "doing",
+      tags: ["#工作"],
+      due: `${String(md(5)[0]).padStart(2, "0")}-${String(md(5)[1]).padStart(2, "0")} 09:00`,
+      at: "09:00",
+      start: md(-2),
+      end: md(5),
+      progress: 0,
+      urgency: 2,
+      created: md(-2),
+      archived: false,
+      partition: "demo",
+      related: [],
+      activities: [{ at: Math.floor(Date.now() / DAY) * DAY, text: "初始进展", kind: "log" }],
+    });
+    const raw = JSON.parse(localStorage.getItem("tadado.tasks.v1") ?? "[]");
+    localStorage.setItem(
+      "tadado.tasks.v1",
+      JSON.stringify([...raw, seed("arc-1", "归档收尾其一"), seed("arc-2", "归档收尾其二")]),
+    );
+  });
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector(".rail-btn");
+  await sleep(800);
+  await page.locator('.rail-btn[data-page="tasks"]').click();
+  await sleep(320);
+
+  // ① 写了没提交就点「已完成」：文字转完成说明 + 任务归档 + 抽屉收起
+  await page.fill("#page-tasks .searchbox input", "归档收尾其一");
+  await sleep(430);
+  await page.locator("#page-tasks .tt-row").filter({ hasText: "归档收尾其一" }).first().dblclick();
+  await page.waitForSelector("#task-drawer.open");
+  await sleep(340);
+  await page.fill("#task-drawer .tl-compose input", "收尾总结：联调通过");
+  await page.locator("#task-drawer .chip", { hasText: "已完成" }).click();
+  await sleep(600);
+  const arc1 = await page.evaluate((key) => {
+    const t = (JSON.parse(localStorage.getItem(key) ?? "[]")).find((x) => x.id === "arc-1");
+    return { archived: t?.archived, texts: (t?.activities ?? []).map((a) => a.text) };
+  }, "tadado.tasks.v1");
+  check("点「已完成」后任务已归档（不在左侧列表里）", arc1.archived === true, JSON.stringify(arc1));
+  check(
+    "未提交的文字自动作为完成说明进了时间线",
+    arc1.texts.includes("收尾总结：联调通过"),
+    JSON.stringify(arc1.texts),
+  );
+  const arc1Closed = await page.evaluate(
+    () => !document.querySelector("#task-drawer")?.classList.contains("open"),
+  );
+  check("归档后抽屉自动收起（消除割裂）", arc1Closed);
+
+  // ② 没写文字点「已完成」：同样归档且收起
+  await page.fill("#page-tasks .searchbox input", "归档收尾其二");
+  await sleep(430);
+  await page.locator("#page-tasks .tt-row").filter({ hasText: "归档收尾其二" }).first().dblclick();
+  await page.waitForSelector("#task-drawer.open");
+  await sleep(340);
+  await page.locator("#task-drawer .chip", { hasText: "已完成" }).click();
+  await sleep(600);
+  const arc2 = await page.evaluate((key) => {
+    const t = (JSON.parse(localStorage.getItem(key) ?? "[]")).find((x) => x.id === "arc-2");
+    return { archived: t?.archived };
+  }, "tadado.tasks.v1");
+  check("没写文字点「已完成」也归档", arc2.archived === true, JSON.stringify(arc2));
+  const arc2Closed = await page.evaluate(
+    () => !document.querySelector("#task-drawer")?.classList.contains("open"),
+  );
+  check("没写文字点「已完成」抽屉也收起", arc2Closed);
+
+  await page.fill("#page-tasks .searchbox input", "");
+  await sleep(300);
+
   // 当前分区要在 rail 上看得见，**不用悬浮**：那个入口原先只有一个文件夹图标，名字只
   // 在它的 title 里。rail 有 64px，图标下面那一行放得下四五个汉字
   const capBefore = await page.evaluate(() => ({
