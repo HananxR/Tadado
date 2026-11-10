@@ -45,6 +45,7 @@ import {
 
 import { confirmAction } from "./confirm";
 import { el, need } from "./dom";
+import { hotkeyInfo } from "./hotkey";
 import {
   hasPassword,
   idleLimit,
@@ -502,13 +503,17 @@ const TOP_GROUPS: SettingGroup[] = [
     title: "启动",
     rows: [
       { label: "开机自启动", control: autostartControl },
-      // 只读值：这个组合键是 shell/hotkey.ts 里的常量，不是可配项。
-      // 摆成能改的样子、改完才发现不生效，比直接把现实摆出来更气人
+      // 只读值：这个组合键不是可配项 —— 它写在**原生侧**（src-tauri/src/lib.rs 的
+      // HOTKEY 常量，注册用的和这里显示的是同一份），启动后由 mountSettings 回填
+      // 真实值与可用状态。摆成能改的样子、改完才发现不生效，比直接把现实摆出来
+      // 更气人
+      //
+      // 这里写死的那一份只是**兜底**（浏览器预览里没有原生侧），与原生侧保持一致
       //
       // 「窗口置顶」那一行撤了（2026-09-17）：它是标题栏图钉的**第二个入口**，
       // 而图钉就在那儿一键切换 —— 和其他设置项不同，它是「现在就要这个窗口浮
       // 上来」的动作，不是一条需要翻两层菜单去改的偏好
-      { label: "全局热键", value: "Ctrl+Shift+Space" },
+      { label: "全局热键", id: "set-hotkey", value: "Ctrl+Shift+Space" },
     ],
   },
 ];
@@ -553,7 +558,7 @@ function aboutIntro(): HTMLElement {
     list([
       "本地优先：单文件 SQLite，无账号、无云端同步",
       "键盘优先：Ctrl+1–5 切页，Ctrl+Shift+Space 全局唤起",
-      "变更留痕：进度与优先级的改动、手写的进展都留在活动时间线",
+      "变更留痕：进度的改动与手写的进展都留在活动时间线",
     ]),
   ]);
 }
@@ -1085,6 +1090,18 @@ export function mountSettings(): void {
       if (node) node.textContent = `（v${version}）`;
     })
     .catch(() => {});
+
+  // 热键同理：组合键在原生侧注册（见 src-tauri/src/lib.rs 的 HOTKEY），这里如实
+  // 显示它，**并且显示它有没有真的注册上** —— 被别的应用占了同一个组合键时必须
+  // 说实话，否则用户收起窗口后按热键没反应，设置里却写着一切正常。
+  void hotkeyInfo().then((info) => {
+    if (info === null) return;
+    const node = document.getElementById("set-hotkey");
+    if (!node) return;
+    node.textContent = info.registered
+      ? info.accelerator
+      : `${info.accelerator}（已被其他应用占用）`;
+  });
 
   need("#set-close").addEventListener("click", closeSettings);
   need("#set-btn").addEventListener("click", toggleSettings);

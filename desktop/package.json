@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "e2e": "npm run build && node e2e/smoke.mjs",
     "check:help": "node ../resources/help-check.mjs",
+    "check:window-state": "node e2e/window-state.mjs",
     "updater:manifest": "node scripts/updater-manifest.mjs",
     "tauri": "tauri"
   },
@@ -17,7 +18,6 @@
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-dialog": "^2.7.3",
     "@tauri-apps/plugin-fs": "^2.5.2",
-    "@tauri-apps/plugin-global-shortcut": "^2.3.2",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-sql": "^2.4.1",
     "@tauri-apps/plugin-updater": "^2.14.0"

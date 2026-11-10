@@ -9,7 +9,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { storageIssue } from "./data/db";
 import { bootPartitions } from "./data/partitions";
 import { bootStore, progressHealReport } from "./data/store";
-import { setupHotkey } from "./shell/hotkey";
+import { hotkeyInfo } from "./shell/hotkey";
 import { bootLock } from "./shell/lock";
 import { mountNav } from "./shell/nav";
 import { mountPartition } from "./shell/partition";
@@ -21,9 +21,6 @@ import { mountTitlebar } from "./shell/titlebar";
 import { mountTrayBridge } from "./shell/trayBridge";
 import { toast } from "./shell/toast";
 import { initWindowState } from "./shell/window";
-
-const describe = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 async function boot(): Promise<void> {
   initTheme();
@@ -75,11 +72,14 @@ async function boot(): Promise<void> {
   // 纯 vite 预览（浏览器里调样式）没有宿主，托盘和热键无从谈起
   if (!isTauri()) return;
 
-  // 托盘由 Rust 侧在进程启动时创建（与 webview 生命周期解耦，不会随重载重复叠加），
-  // 前端只需管好热键。热键挂了意味着窗口收起后唤不回，必须明确告警。
-  await setupHotkey().catch((error) => {
-    toast(`热键（${describe(error)}）不可用`);
-  });
+  // 热键在**原生侧**注册（见 src-tauri/src/lib.rs 的 build_hotkey）：与界面生命周期
+  // 解耦，跨日续跑重载界面也不会把它弄丢。这里只做启动自检 —— 注册不上（多半是
+  // 被别的应用占了同一个组合键）必须说出来，否则用户收起窗口后按热键没反应，
+  // 却什么提示都没有。
+  const hotkey = await hotkeyInfo();
+  if (hotkey !== null && !hotkey.registered) {
+    toast(`热键（${hotkey.accelerator}）不可用，可能已被其他应用占用`);
+  }
 
   // 跨日续跑：托盘常驻的应用会开着过夜，过了午夜得把「今天」重新算一遍
   // （重载一次，见 shell/rollover.ts 里为什么是这个办法）。

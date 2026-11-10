@@ -159,6 +159,22 @@ export const monthDayText = (day: number): string => {
 };
 
 /**
+ * 月/日写法：`MM/DD`。
+ *
+ * 与 `monthDayText` 是**两套并存的写法**，不是同一份的两种口味：
+ *  · `monthDayText`（`MM-DD`）是应用的通用日期口径 —— 活动时间戳（`MM-DD HH:MM`）、
+ *    md 导出与它的反解（`parseStampText`）都按这个口径，改它等于改数据格式；
+ *  · 这一份（`MM/DD`）只给**区间展示**用：甘特表头那句「我现在看的是哪一段」，
+ *    `10/27~11/27` 比 `10-27 – 11-27` 更像一段日期而不是两个减法。
+ *
+ * 所以它单开一个函数，不去动 `monthDayText`。
+ */
+export const monthDaySlash = (day: number): string => {
+  const date = new Date(day * DAY_MS);
+  return `${pad2(date.getUTCMonth() + 1)}/${pad2(date.getUTCDate())}`;
+};
+
+/**
  * 截止时间的人话文案（列表行上「⏰ …」显示的就是它）。
  *
  * 全应用只此一份：抽屉写截止、列表显示、md 预览都要用它。以前这段拼装在

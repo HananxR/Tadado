@@ -1045,20 +1045,88 @@ try {
   // ── 点面板外收起 · 换一条任务先滑出完再滑入（2026-10-16 加）─────────────────
   // 抽屉没有遮罩，点「面板以外的任何地方」都该收起它；但**打开手势**本身不算「外部」
   // （行上标了 data-panel-keep），否则「同一条再双击一次收起」会当场失效。
+  //
+  // 2026-11-10：点**别的**任务行也算「外面」—— 单击另一行要把抽屉收起来。
+  // 但 pointerdown 早于 dblclick：收起若放在 pointerdown 上，双击的第一下就会抢跑，
+  // 「换一条任务」的切换手势整个废掉。所以任务行上的收起放在 click 里、带一个
+  // 300ms 宽限期（见 tasks.ts 的 scheduleOutsideClose）：单击 → 到点收起；
+  // 双击 → dblclick 撤掉那一记，抽屉全程开着，照旧滑出再滑入。
 
   await page.locator(".tt-row").first().dblclick();
   await page.waitForSelector("#task-drawer.open");
-  // 单击另一行只是「选中」——它落在打开手势的表面上，不该把抽屉带走
-  await page.locator(".tt-row").nth(1).click();
-  await sleep(200);
-  check("单击任务行不收起抽屉", (await page.locator("#task-drawer.open").count()) === 1);
+
+  // 「Markdown 源（规范数据源）」区块已从编辑界面收起来（能力仍在代码里：
+  // 把 taskDrawer 的 SHOW_MD_BLOCK 改回 true 即恢复）
+  check(
+    "编辑界面不再显示 Markdown 源区块",
+    (await page.locator("#task-drawer .md-d:visible").count()) === 0,
+  );
+
+  // 2026-11-10：改优先级**不再**往活动时间线里写一条记录（只改字段本身）。
+  // 断言方式：改完优先级，这条任务 activities 里 kind=urgency 的条数不变。
+  const urgencyActs = () =>
+    page.evaluate(() => {
+      const name = document.querySelector("#task-drawer .dr-name")?.textContent?.trim() ?? "";
+      const all = JSON.parse(localStorage.getItem("tadado.tasks.v1") ?? "[]");
+      const task = all.find((item) => (item.title ?? "").trim() === name);
+      return {
+        found: Boolean(task),
+        count: (task?.activities ?? []).filter((a) => a.kind === "urgency").length,
+        level: task?.urgency ?? -1,
+      };
+    });
+  const urgencyBefore = await urgencyActs();
+  if (urgencyBefore.found && urgencyBefore.level >= 0) {
+    // 点一档**不同于当前**的优先级（抽屉里那排 chip.urg-pick，徽标就是 P0–P3）
+    await page.locator("#task-drawer .urg-pick").nth(urgencyBefore.level === 0 ? 1 : 0).click();
+    await sleep(700); // 落库有 400ms 防抖，等它写完再读
+    const urgencyAfter = await urgencyActs();
+    check(
+      "改优先级不再写活动时间线",
+      urgencyAfter.count === urgencyBefore.count,
+      `urgency 记录 ${urgencyBefore.count} → ${urgencyAfter.count}`,
+    );
+    // 改回去：优先级一变，表格按优先级的排序就换顺序 —— 后面的用例还按原来的行序走，
+    // 这里把优先级还回去，别让这条断言的副作用漏到后面
+    await page.locator("#task-drawer .urg-pick").nth(urgencyBefore.level).click();
+    await sleep(700);
+  }
+
+  // 单击另一行 = 点了外面 → 抽屉要收起来（宽限期 300ms）。
+  // 点哪一行**按名字找**，不按位置找：抽屉里开着哪条是已知的，而表格按优先级排序，
+  // 位置随时会变 —— 按位置点，很可能点的正是抽屉里开着的那条（那是「选它」，不收起）
+  const otherRow = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".tt-row")];
+    const current = document.querySelector("#task-drawer .dr-name")?.textContent?.trim() ?? "";
+    return rows.findIndex(
+      (row) => (row.querySelector(".lt1 .t")?.getAttribute("title") ?? "").trim() !== current,
+    );
+  });
+  await page.locator(".tt-row").nth(otherRow).click();
+  await sleep(900);
+  check("单击另一任务行收起抽屉", (await page.locator("#task-drawer.open").count()) === 0);
+
+  // 下面要验「换一条任务」的切换动画，抽屉得先是开着的 —— 重新打开第一条
+  await page.locator(".tt-row").first().dblclick();
+  await page.waitForSelector("#task-drawer.open");
+  // 等这一次的**滑入**动画走完：滑入还没停就反向滑出，transitionend 会在半程触发，
+  // 量出来的「滑出到滑入之间空多久」会偏短（看着像切换动画被吞了）
+  await sleep(400);
 
   // 换一条：整块滑出 → 换成新内容 → 滑入。不是原地 replaceChildren。
   // 光看「结束时开着、内容是新的」验不出两段动画——原来那版原地换内容也长这样，
   // 所以这里用 MutationObserver 把 `.open` 的进出场时间线记下来，量中间空了多久。
   const titleA = ((await page.locator("#task-drawer .dr-name").textContent()) ?? "").trim();
+  // 目标行：与抽屉里开着的那条**不同**的一行（按名字找，不按位置找 —— 排序会变）
+  const switchRow = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll(".tt-row")];
+    const current = document.querySelector("#task-drawer .dr-name")?.textContent?.trim() ?? "";
+    return rows.findIndex(
+      (row) => (row.querySelector(".lt1 .t")?.getAttribute("title") ?? "").trim() !== current,
+    );
+  });
   const titleB =
-    (await page.locator(".tt-row").nth(1).locator(".lt1 .t").getAttribute("title")) ?? "";
+    (await page.locator(".tt-row").nth(switchRow).locator(".lt1 .t").getAttribute("title")) ?? "";
   await page.evaluate(() => {
     window.__phase = [];
     const drawer = document.querySelector("#task-drawer");
@@ -1068,7 +1136,7 @@ try {
       window.__phase.push({ at: performance.now(), open: drawer.classList.contains("open") });
     }).observe(drawer, { attributes: true, attributeFilter: ["class"] });
   });
-  await page.locator(".tt-row").nth(1).dblclick();
+  await page.locator(".tt-row").nth(switchRow).dblclick();
   // 300ms 滑出 + 300ms 滑入，再留一点余量（滑出期间的判定靠上面那份时间线，不靠这里）
   await sleep(700);
   await page.waitForSelector("#task-drawer.open");
@@ -1315,6 +1383,16 @@ try {
 
   // Markdown 源：以前能打字、后面没接任何东西（敲了没反应，看着像坏了）。
   // 现在边敲边渲染，写回要显式点按钮；状态不进 md，写回时不许被 md 改掉。
+  //
+  // 2026-11-10：这个区块已从**界面**上收起来了（写回能力仍在代码里，见
+  // taskDrawer 的 SHOW_MD_BLOCK）。这里临时把它放出来，好让下面这套写回断言
+  // 继续有覆盖 —— 测的是**代码能力**，不是界面。哪天把区块放回界面上，
+  // 这句临时的解除就可以去掉了。
+  await page.evaluate(() => {
+    document.querySelectorAll("#task-drawer .dr-sec[hidden]").forEach((node) => {
+      node.hidden = false;
+    });
+  });
   await page.click("#task-drawer details.md-d summary");
   await sleep(200);
   await page.fill("#task-drawer textarea.md", "- [ ] md 改过的名字 #md ⏰09-30 :: 60%");

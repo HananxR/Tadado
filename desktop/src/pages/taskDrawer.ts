@@ -18,7 +18,7 @@
 //      删除走列表行的右键菜单与任务管理页（两处都有二次确认）。
 //
 // 另外：活动时间线上人手写的记录（kind: log）现在可改可删，改过会标「已编辑」；
-// 系统记录（创建 / 改状态 / 改进度 / 改优先级）不给编辑入口 —— 它们是既成事实。
+// 系统记录（创建 / 改状态 / 改进度）不给编辑入口 —— 它们是既成事实。
 //
 // 它属于「页面层」而不是「外壳层」：抽屉的内容完全跟着任务域走，
 // 外壳不该知道什么是「优先级」。
@@ -56,6 +56,19 @@ import {
   statusVar,
 } from "./shared";
 import { progressControl, taskForm, type ProgressActivity, type ProgressControl } from "./taskForm";
+
+/**
+ * 「Markdown 源（规范数据源）」区块是否显示在界面上。
+ *
+ * 2026-11-10：编辑界面里这个区块的实际用途不大（多数时候只是预览一眼），先从
+ * **界面上**收起来。
+ *
+ * 但**代码与写回能力全部保留**：区块节点仍然在 DOM 里（只是带 `hidden`），
+ * 「按 md 更新任务」的写回逻辑、`paint()` 里的 md 同步、rollover.ts 的跨日
+ * 未提交检测都还指着它 —— 删掉节点会让那几处一起失效。想恢复把这个常量改回
+ * true 即可，一行的事。
+ */
+const SHOW_MD_BLOCK = false;
 
 // ─── 图标 ────────────────────────────────────────────────────────────────────
 
@@ -864,7 +877,7 @@ function build(task: Task): Drawer {
       el("div", { class: "tl-prog" }, [el("span", { class: "tf-k", text: "进度" }), progress.root]),
       composerRow,
     ]),
-    el("section", { class: "dr-sec" }, [markdownBlock]),
+    el("section", { class: "dr-sec", hidden: !SHOW_MD_BLOCK }, [markdownBlock]),
   ]);
 
   // 没有页脚：删除与保存都撤了（见文件头注释）

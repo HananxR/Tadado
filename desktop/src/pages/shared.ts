@@ -37,6 +37,7 @@ export {
   isWeekend,
   isoDay,
   minuteOfStamp,
+  monthDaySlash,
   monthDayText,
   nowMinutes,
   nowStamp,

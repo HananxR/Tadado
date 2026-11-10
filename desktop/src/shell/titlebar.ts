@@ -6,7 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { el, need } from "./dom";
-import { HOTKEY_KEYS } from "./hotkey";
+import { hotkeyInfo } from "./hotkey";
 import { resolveTheme, setThemeMode, onThemeChange, type ResolvedTheme } from "./theme";
 import { toast } from "./toast";
 import {
@@ -18,12 +18,20 @@ import {
   togglePinned,
 } from "./window";
 
-/** 用注册表里的热键常量重建提示，避免和实际注册的加速键漂移。 */
-function renderHotkeyHint(): void {
+/**
+ * 键帽提示：组合键从**原生侧**取（那才是注册用的真值，见 shell/hotkey.ts）。
+ *
+ * 拿不到就**不动** index.html 里的静态首帧 —— 浏览器预览里没有宿主，而那里写的
+ * 正是同一个组合键；抹成空反而少了一句话。
+ */
+async function renderHotkeyHint(): Promise<void> {
+  const info = await hotkeyInfo();
+  if (info === null) return;
+
   const hint = need(".hint");
   const nodes: Node[] = [];
 
-  HOTKEY_KEYS.forEach((key, index) => {
+  info.keys.forEach((key, index) => {
     if (index > 0) nodes.push(document.createTextNode("+"));
     nodes.push(el("kbd", { text: key }));
   });
@@ -82,7 +90,9 @@ function bindWindowButtons(): void {
 }
 
 export function mountTitlebar(): void {
-  renderHotkeyHint();
+  // 键帽要问原生侧要（一次 IPC），所以不等它 —— 首帧那几枚静态键帽先顶着，
+  // 内容一样，不会闪。
+  void renderHotkeyHint();
   bindPin();
   bindTheme();
   bindWindowButtons();

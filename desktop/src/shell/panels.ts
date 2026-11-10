@@ -49,6 +49,12 @@ const KEEP_SELECTOR = ".mask, .lock-screen, .ctx-menu";
  * 值必须是它服务的那块面板的 **PanelId**（`data-panel-keep="task"` / `"settings"`）：
  * 只有「当前开的正是它」时才豁免。写成裸属性（等于空串）不豁免 —— 任务行对设置抽屉
  * 来说不是打开手势，设置开着时点一行，那就是真的「点了外面」，该收起来。
+ *
+ * ⚠️ 2026-11-10：任务行的豁免**只覆盖 pointerdown 这一层**。「点别的任务行 → 收起
+ * 抽屉」没有放在这里，而是放在 tasks.ts 的 click 里（带一个宽限期）：pointerdown 早于
+ * click / dblclick，这一层无法区分「单击别的行」与「双击另一行切换内容」—— 在这里
+ * 直接收，双击的第一下就会把抽屉关掉，那条切换手势整个废掉（当初给行打这个豁免，
+ * 正是为了救它）。所以这里继续豁免行，收起交给任务页自己判。
  */
 const KEEP_ATTR = "data-panel-keep";
 

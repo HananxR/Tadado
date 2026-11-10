@@ -1,37 +1,37 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// 全局热键：唤起／收起主窗口。
+// 全局热键：只读状态门面。
 //
-// 文案与加速键放一起导出，标题栏的 kbd 提示从这里取 —— 两处写死必然漂移。
+// **热键在原生侧注册**（`src-tauri/src/lib.rs` 的 `build_hotkey`），不在前端。
+// 曾经放在前端（JS 的 `register`，回调要绕 webview 的 IPC 通道才回到 JS）：跨日
+// 续跑会重载 webview，通道随之消失，而系统层的热键还挂着 —— 那时按下去没人接，
+// 就是「有时候唤不回来」。原生侧注册与界面生命周期解耦，界面活着死了都不影响。
+//
+// 前端这一层只做两件事：把「注册上了没有、是什么键」如实报给界面，以及给标题栏
+// 提供键帽文案。加速键**只有原生侧那一份定义**，这里取的是它的副本 —— 两处写死
+// 必然漂移，漂了就是「按的键和看到的键对不上」。
+//
+// 浏览器预览里没有宿主：返回 null 表示「不可用」（沿用 `shell/autostart.ts` 的范式）。
 // ─────────────────────────────────────────────────────────────────────────────
 
-import {
-  isRegistered,
-  register as registerHotkey,
-  unregister as unregisterHotkey,
-} from "@tauri-apps/plugin-global-shortcut";
-import { toggleWindow } from "./window";
+import { invoke } from "@tauri-apps/api/core";
 
-/** Tauri 加速键语法。 */
-export const HOTKEY_ACCELERATOR = "Control+Shift+Space";
-
-/** 展示用文案，供标题栏提示渲染。 */
-export const HOTKEY_KEYS = ["Ctrl", "Shift", "Space"] as const;
-
-export async function setupHotkey(): Promise<string> {
-  // 先摘掉可能还挂着的那一份。**重载之后 Rust 侧的注册仍然在**（托盘与热键都由
-  // Rust 侧持有，与 webview 生命周期解耦 —— 见 main.ts 开头那段），直接再 register
-  // 会以「已注册」失败，于是每次重载都弹一句「热键不可用」，而热键其实是好用的。
-  // 跨日自动重载（见 shell/rollover.ts）会让这条路成为常态，所以这里必须是幂等的。
-  if (await isRegistered(HOTKEY_ACCELERATOR).catch(() => false)) await teardownHotkey();
-
-  await registerHotkey(HOTKEY_ACCELERATOR, (event) => {
-    if (event.state === "Pressed") void toggleWindow();
-  });
-
-  const ok = await isRegistered(HOTKEY_ACCELERATOR);
-  return `register(${HOTKEY_ACCELERATOR}) 成功，isRegistered=${ok}`;
+/** 原生侧报回来的热键信息。 */
+export interface HotkeyInfo {
+  /** 组合键本身（"Ctrl+Shift+Space"）。 */
+  accelerator: string;
+  /** 标题栏那几枚键帽（["Ctrl", "Shift", "Space"]）。 */
+  keys: string[];
+  /** 真的注册上了吗（被别的应用占用 → false）。 */
+  registered: boolean;
 }
 
-export async function teardownHotkey(): Promise<void> {
-  await unregisterHotkey(HOTKEY_ACCELERATOR).catch(() => {});
+/**
+ * 读热键状态。浏览器预览 / 命令失败 → null（不可用）。
+ */
+export async function hotkeyInfo(): Promise<HotkeyInfo | null> {
+  try {
+    return await invoke<HotkeyInfo>("hotkey_info");
+  } catch {
+    return null;
+  }
 }

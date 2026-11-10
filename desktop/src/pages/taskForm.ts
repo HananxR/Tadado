@@ -388,18 +388,12 @@ export function taskForm(options: TaskFormOptions): TaskForm {
     button.addEventListener("click", () => {
       const from = task.urgency;
       const to = level as Urgency;
-      // 点当前那一档 = 没改，不留记录（否则时间线会被「关注 → 关注」刷屏）
+      // 点当前那一档 = 没改，不动它
       if (from === to) return;
       task.urgency = to;
-      // 与状态同一套处理：改优先级也是一次决定，时间线要记得住。
-      // 「关于」面板里那句「改优先级也会写进活动时间线」就是对这条的承诺
-      task.activities.unshift({
-        at: nowStamp(),
-        kind: "urgency",
-        from,
-        to,
-        text: `${URGENCY_LABEL[from]} → ${URGENCY_LABEL[to]}`,
-      });
+      // 不再往活动时间线里写「优先级变更」：改优先级只是一次字段调整，
+      // 不是任务身上发生的事，写进去会让活动页被这类记录刷屏。
+      // 时间线里**已有的**这类记录照旧显示（历史数据照常读），只是不再新增。
       paint(task);
       options.onEdit("urgency");
     });

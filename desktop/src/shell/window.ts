@@ -10,6 +10,13 @@
 // 宿主探测：不在 Tauri 里时（纯 vite 预览）窗口调用降级为本地状态切换 ——
 // 这样外壳能在浏览器里直接调样式，不必每次都编译 Rust。@tauri-apps/api 的
 // getCurrentWindow() 在非 Tauri 环境会抛，所以必须惰性获取。
+//
+// **「把窗口叫回来」不归这一层**：全局热键、托盘左键、托盘菜单「显示窗口」、
+// 单实例第二次启动，全都在原生侧（src-tauri/src/lib.rs）走同一套「显示 → 还原
+// → 聚焦」。这么分是因为那几个入口**不能依赖界面活着** —— 跨日续跑会重载
+// webview（见 shell/rollover.ts），界面也可能卡住；那时候热键必须照样能把窗口
+// 叫回来，而界面上的按钮按不动就是按不动。
+// 于是这一层只留「收起来」的动作（标题栏的关闭 / 最小化）。
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { isTauri } from "@tauri-apps/api/core";
@@ -79,23 +86,6 @@ export async function toggleMaximizeWindow(): Promise<void> {
 /** 收起到托盘的唯一入口，将来接「最小化到托盘」配置也只改这里。 */
 export async function hideWindow(): Promise<void> {
   await appWindow()?.hide();
-}
-
-export async function showWindow(): Promise<void> {
-  const win = appWindow();
-  if (!win) return;
-  await win.show();
-  await win.setFocus();
-}
-
-export async function toggleWindow(): Promise<void> {
-  const win = appWindow();
-  if (!win) return;
-
-  // 以窗口的**真实可见性**为准，不能只信 JS 侧状态：窗口可能被外部隐藏
-  // （Win+D 显示桌面、DWM 最小化），状态不同步的症状是「按热键没反应」。
-  if (await win.isVisible()) await hideWindow();
-  else await showWindow();
 }
 
 async function syncMaximized(): Promise<void> {

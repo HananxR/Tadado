@@ -25,6 +25,7 @@ import { dataChanged, onDataChange } from "../data/store";
 import type { Task, Urgency } from "../data/types";
 import { el } from "../shell/dom";
 import { dropdown } from "../shell/menu";
+import { openedPanel } from "../shell/panels";
 import { subscribePages } from "../shell/router";
 import { toast } from "../shell/toast";
 import {
@@ -41,6 +42,7 @@ import {
   dayNumber,
   isDueToday,
   matchesStatus,
+  monthDaySlash,
   monthDayText,
   nowStamp,
   removeTask,
@@ -680,6 +682,51 @@ function progressDot(task: Task): HTMLElement {
   return node;
 }
 
+/**
+ * 「点别的任务行就收起抽屉」的宽限期（ms）。
+ *
+ * 为什么需要它：shell/panels.ts 的「点面板外就收起」按 **pointerdown** 判断，而
+ * pointerdown 早于 click / dblclick —— 双击的第一下就被当成「点了外面」，抽屉当场
+ * 收起，「双击另一条任务 → 滑出再滑入切换内容」这条手势整个废掉（那正是当初给每行
+ * 打 data-panel-keep 的原因，见 renderRow 里的注释）。
+ *
+ * 所以任务行上的收起不在 pointerdown 上做，挪到这里：单击点别的行 → 排一次收起，
+ * 到点才生效；双击时两次 click 各自把它往后推，dblclick 再撤掉 —— 抽屉全程开着，
+ * 走 openTask 原有的切换分支。
+ *
+ * 300ms 是两次点击的常见间隔：比它长，双击会被拆成两次单击（抽屉刚收起又打开）；
+ * 比它短，单击还没等来第二下就收走了。
+ */
+const OUTSIDE_CLOSE_GRACE_MS = 300;
+
+/** 待执行的「收起抽屉」定时器（模块级只留一个：重复点击先清再设）。 */
+let outsideCloseTimer: number | null = null;
+
+/** 撤掉待执行的收起（双击、抽屉被别处打开、切页……都要撤）。 */
+function cancelOutsideClose(): void {
+  if (outsideCloseTimer === null) return;
+  window.clearTimeout(outsideCloseTimer);
+  outsideCloseTimer = null;
+}
+
+/**
+ * 单击了别的任务行 → 排一次「收起抽屉」。
+ *
+ * 只在「抽屉正开着、而点的是**另一条**任务」时才排：点当前开着的那一条是「选它」，
+ * 双击它才是「收起它」（见 renderRow 的 dblclick）。
+ */
+function scheduleOutsideClose(taskId: string): void {
+  cancelOutsideClose();
+  if (openedPanel() !== "task") return;
+  if (isTaskOpen(taskId)) return;
+  outsideCloseTimer = window.setTimeout(() => {
+    outsideCloseTimer = null;
+    // 到点时再确认一次：这段时间里抽屉可能已被别处关掉、或换成了另一条任务
+    if (openedPanel() !== "task") return;
+    closeTask();
+  }, OUTSIDE_CLOSE_GRACE_MS);
+}
+
 function renderRow(
   task: Task,
   win: TimelineWin,
@@ -841,7 +888,12 @@ function renderRow(
   // data-panel-keep="task"：这一行是任务抽屉的**打开手势**，而抽屉现在「点面板外就
   // 收起」（shell/panels.ts）。不标这一下，下面那个「同一条再双击一次收起」会当场
   // 失效——双击的第一下先把抽屉关掉，第二下 isTaskOpen 已经是 false，于是又打开，
-  // 净效果是闪一下、抽屉还开着。换一条任务不走这条路：openTask 自己会先滑出再滑入。
+  // 净效果是闪一下、抽屉还开着。
+  //
+  // 2026-11-10：用户要的是「点**别的**任务行就把抽屉收起来」。可这个豁免原本把
+  // 「点任何一行」都算成打开手势（它只比面板 id，不比任务 id），于是点哪儿都不收。
+  // 现在「点别的行收起」由下面的 click 宽限期接管（scheduleOutsideClose）；pointerdown
+  // 这一层仍要豁免，否则双击的第一下就会被抢跑、把切换手势废掉。
   // 值写 `task` 而不是裸属性：设置抽屉开着时点一行，那不是它的打开手势，该收起来
   const row = el(
     "div",
@@ -856,11 +908,15 @@ function renderRow(
   row.addEventListener("click", () => {
     selectedId = task.id;
     paintSelection();
+    // 点别的任务行 → 收起抽屉（宽限期与取舍见 scheduleOutsideClose）
+    scheduleOutsideClose(task.id);
   });
 
   // 双击才是「打开」，单击留给选中 —— 表格里误触打开抽屉，回来还得重新找那一行。
   // 同一条上再双击一次就收起：双击是唯一的打开手势，没有反手势就只能去够右上角。
   row.addEventListener("dblclick", () => {
+    // 双击不算「点了外面」：撤掉待执行的收起，抽屉留着走 openTask 的切换分支
+    cancelOutsideClose();
     if (isTaskOpen(task.id)) closeTask();
     else openTask(task.id);
   });
@@ -1289,8 +1345,8 @@ export function mount(host: HTMLElement): void {
     const rangeText = el("span", {
       class: `mono tt-range ${todayVisible ? "dim" : "off"}`,
       text: todayVisible
-        ? `${monthDayText(win.start)} – ${monthDayText(winEnd)}`
-        : `↺ 回到今天（${monthDayText(win.start)} – ${monthDayText(winEnd)}）`,
+        ? `${monthDaySlash(win.start)}~${monthDaySlash(winEnd)}`
+        : `↺ 回到今天（${monthDaySlash(win.start)}~${monthDaySlash(winEnd)}）`,
       title: "窗口固定 32 天 · 在表格上按住拖动可左右平移 · 点这里回到今天",
     });
     rangeText.addEventListener("click", () => {
@@ -1363,6 +1419,9 @@ export function mount(host: HTMLElement): void {
 
   // 抽屉打开时同步选中态；关闭时保留上一次的选中（和表格里点一下的行为一致）
   onTaskOpen((task) => {
+    // 抽屉被别处打开（右键菜单、图谱跳过来）时，撤掉「点别的行就收起」的待执行定时器：
+    // 否则宽限期里刚打开的抽屉会被那一记旧定时器收走
+    cancelOutsideClose();
     if (!task) return;
     selectedId = task.id;
     paintSelection();

@@ -516,6 +516,13 @@
   margin-bottom: 16px;
 }
 
+/* 被开关收起的分区（如抽屉底部的「Markdown 源」区块，hidden 由 taskDrawer 的
+   SHOW_MD_BLOCK 控制）：hidden 属性本身就藏得住，这条只是兜底 —— 将来谁给
+   .dr-sec 加了 display，不会把收起来的区块顶出来。 */
+.dr-sec[hidden] {
+  display: none;
+}
+
 .dr-sec .lbl {
   font: 500 10.5px var(--font);
   color: var(--text-3);
