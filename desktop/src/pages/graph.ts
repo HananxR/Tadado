@@ -16,6 +16,30 @@
 //
 // 数据变更时整页重建：节点集合、位置、连线、统计都得跟着换，增量改的代码比
 // 重建还多。代价是缩放和拖动会被重置 —— 数据都变了，布局本来就该重排。
+//
+// ── 版式（2026-11-10 重构）────────────────────────────────────────────────
+// 以前「图谱」和「这个节点是什么」挤在同一块画布里：详情卡浮在右上、统计卡浮在
+// 左上、分区角标也浮在右上 —— 三块浮层压在节点上，用户说的「视觉重叠」就是它们。
+// 现在改成**左图右明细**（8:2）：左栏整块留给图谱，右栏是常驻的任务明细面板，
+// 两者物理隔离，浮层全部撤掉（只剩缩放控件留在画布内）。
+//
+// 工具行也从「图例 + 四枚散落胶囊 + 一串计数」重排为「筛选（贴左顶格） + 留白 +
+// 右端读数」：
+//   · 图例撤了 ——「⬤分区 ◯标签 ●●●任务」在工具行里占掉约 140px 横宽，太占地方。
+//     节点类型改由**自身记法**识别：标签节点带 `#`、任务节点悬停时浮出带 Px 的
+//     名签，分区节点只留名字。
+//   · 分区名不再显性标识 —— rail 上有分区选择器，这一页再标一遍是重复标识
+//     （2026-11-10 用户提的）。
+//   · 「节点 N · 关联 M」恢复成工具行右端的一行弱化小字（2026-11-10 用户说图上
+//     少了它）。它不做成独立控件：节点数是「1 分区 + N 标签 + M 任务」，能推导；
+//     关联数是边数、在图上没法用眼睛核对 —— 可它到底是「这张图有多大」的一种
+//     说法，作为旁注留着比做成要读数的东西合适。
+//   · 真正有用的计数（当前对象的任务数、进行中 / 已完成 / 逾期构成）在右栏头部
+//     —— 数字和它描述的对象待在同一个地方。
+//
+// 工具行是**通栏**的（挂在 .page-body 这一层，不在左栏里）：这样左栏只剩画布、
+// 右栏是明细面板，两者的上边缘齐平 —— 早先是右栏从工具行那一层起，比图谱区
+// 高出一截。
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { partitionTasks } from "../data/mock";
@@ -27,7 +51,7 @@ import { el } from "../shell/dom";
 import { subscribePages } from "../shell/router";
 import { toast } from "../shell/toast";
 import { jumpToTask } from "./focus";
-import { STATUS_LABEL, dayNumber, matchesStatus, monthDayText, statusVar } from "./shared";
+import { STATUS_LABEL, matchesStatus, pad2, statusVar, urgencyBadge } from "./shared";
 
 /** 组内任务的角间距。0.125 是「7 个任务不出组」的上界附近。 */
 const TASK_SPREAD = 0.125;
@@ -40,6 +64,18 @@ const ICON = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>',
   reset:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 4.5V10h5.5"/></svg>',
+};
+
+/** 空态那枚线性图标：一个被框住的节点 + 一条引线（表示「还没选中任何东西」）。 */
+const ICON_EMPTY =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="12" r="3.2"/><path d="M11.2 12h8.6"/><circle cx="19.8" cy="12" r="1.6"/></svg>';
+
+/** 面板头部的类型标。分区 / 标签 / 任务 —— 与图上三类节点一一对应。
+ *  分区那一档写「全部」而不是「分区」：分区名 rail 上有，这一页不必再标。 */
+const KIND_LABEL: Record<Exclude<PanelView["kind"], null>, string> = {
+  partition: "全部",
+  tag: "标签",
+  task: "任务",
 };
 
 type NodeKind = "partition" | "tag" | "task";
@@ -92,11 +128,65 @@ function linkedTags(task: Task, liveTags: string[]): string[] {
   return own.length > 0 ? own : [UNTAGGED];
 }
 
-function legendDot(background: string, border?: string): HTMLElement {
-  const node = el("span", { class: "d" });
-  node.style.background = background;
-  if (border) node.style.border = border;
-  return node;
+// ─── 右栏面板的数据模型 ──────────────────────────────────────────────────────
+
+/**
+ * 右栏面板要显示什么。
+ *
+ * 面板的渲染函数（`renderPanel`）只认这个结构，**不关心数据从哪来** ——
+ * 分区视图、标签视图、任务视图都先折成它再交给渲染。这条界线是「两阶段拆分
+ * 不返工」的关键：面板内部长什么样，先定下来；之后换的只是喂进来的数据。
+ */
+interface PanelView {
+  /** 选中对象的类型；null = 未选中（空态）。 */
+  kind: "partition" | "tag" | "task" | null;
+  /** 头部主标题：分区名 / 标签名 / 任务名。 */
+  title: string;
+  /** 头部副标题：如「8 个任务」。 */
+  subtitle: string;
+  /** 头部状态构成：数字前带同色圆点，颜色取 `statusVar()`。 */
+  stats: { label: string; value: number; color: string }[];
+  /** 列表条目。 */
+  tasks: Task[];
+  /**
+   * 可选：头部下方的详情块。
+   *
+   * 只有「任务」这一档用得到（起止 / 截止 / 标签 / 打开维护抽屉）；分区与标签两档
+   * 不给这个字段，面板就只画头部与列表。
+   *
+   * 为什么不让任务视图也「退化成一行」：那行就是这条任务自己，而面板存在的意义
+   * 是**看清它** —— 状态、进度、什么时候到期、挂在哪些标签下。这几件事挤进副标题
+   * 一行里没人读得下去。
+   */
+  detail?: HTMLElement;
+}
+
+/**
+ * 状态构成的三档计数。
+ *
+ * 口径与别处同源：`matchesStatus` 是四个页面共用的那个谓词（总览卡 / 任务页
+ * chip / 管理页筛选 / 图谱过滤），这里也走它 —— 同一件事只写一处。
+ *
+ * ⚠️ 「待办」这一档在 2026-09-21 已经删掉（见 data/types.ts），老数据在读入口
+ * 归一到「进行中」，所以界面上只剩三档。
+ */
+function statusBreakdown(tasks: Task[]): PanelView["stats"] {
+  return [
+    { label: STATUS_LABEL.doing, value: tasks.filter((task) => matchesStatus(task, "doing")).length, color: statusVar("doing") },
+    { label: STATUS_LABEL.done, value: tasks.filter((task) => matchesStatus(task, "done")).length, color: statusVar("done") },
+    { label: STATUS_LABEL.overdue, value: tasks.filter((task) => matchesStatus(task, "overdue")).length, color: statusVar("overdue") },
+  ];
+}
+
+/**
+ * 列表的排序：优先级在前，同级按截止日。
+ *
+ * 与任务页的默认排序（`pages/tasks.ts` 的 `urgency`）同一口径 —— 两处列表排
+ * 出来的先后一致，用户从一处看到「P0 在最前」，到另一处也该是这样。
+ */
+function byPriorityThenDue(a: Task, b: Task): number {
+  if (a.urgency !== b.urgency) return a.urgency - b.urgency;
+  return a.end[0] * 100 + a.end[1] - (b.end[0] * 100 + b.end[1]);
 }
 
 // ─── 挂载 ────────────────────────────────────────────────────────────────────
@@ -113,37 +203,65 @@ export function mount(target: HTMLElement): void {
   // 页面隐藏时量不到（display:none 下是 0），兜一组够用的尺寸，切回前台会重画
   // 一次（见文件末尾的 subscribePages）。
   //
-  // 工具行必须比舞台先落地：它在舞台上方占一段高度（约 34px + 14px 间距），
+  // 工具行必须比舞台先落地：它在舞台上方占一段高度（约 34px + 间距），
   // 先量后加工具行的话，量到的高度里有它的份，画布就会比容器高一截，底下照旧被切。
-  const nodeCount = el("span", { class: "dim mono" });
-  const toolbar = el("div", { class: "gbar" }, [
-    el("div", { class: "glegend" }, [
-      el("span", { class: "it" }, [legendDot("var(--accent)"), "分区"]),
-      el("span", { class: "it" }, [legendDot("transparent", "1.5px solid var(--accent)"), "标签"]),
-      el("span", { class: "it" }, [legendDot("var(--doing)"), "任务（颜色表示状态）"]),
-    ]),
-    el("span", { class: "grow" }),
-    el("div", { class: "gfilters" }, FILTERS.map((value) => {
-      const chip = el("button", {
-        class: `chip ${filter === value ? "on" : ""}`,
-        type: "button",
-        text: value,
-      });
-      chip.addEventListener("click", () => {
-        if (filter === value) return;
-        filter = value;
-        remount();
-      });
-      return chip;
-    })),
-    // 计数要等节点数出来才写得出来，那时工具行已经在 DOM 里了（只改文字，不再影响布局）
-    nodeCount,
+  const filters = el("div", { class: "seg hug" }, FILTERS.map((value) => {
+    const button = el("button", {
+      class: filter === value ? "on" : "",
+      type: "button",
+      text: value,
+    });
+    button.addEventListener("click", () => {
+      if (filter === value) return;
+      filter = value;
+      remount();
+    });
+    return button;
+  }));
+
+  // 工具行右端的读数：这一批任务的条数 + 图的规模（节点 / 关联）。
+  //
+  // 分区名不在这儿写了 —— rail 上有分区选择器，这一页再标一遍是重复标识
+  // （2026-11-10 用户提的：「最左侧分区已经有了，图谱界面不需要再显性标识」）。
+  //
+  // 「节点 N · 关联 M」回来了，但只做一行弱化小字：关联数在图上没法用眼睛核对
+  // （它是边数），可它是**规模**的一种说法 —— 想知道这张图有多大时，那行字够了。
+  const taskCount = el("span", { class: "num mono" });
+  const scale = el("span", { class: "scale mono" });
+  // 中间那个「·」：两组读数挨在一起时，「100 任务107 节点」粘成一句读不通的话
+  const meta = el("div", { class: "gmeta" }, [
+    taskCount,
+    el("span", { class: "sep", text: "·" }),
+    scale,
   ]);
 
+  const toolbar = el("div", { class: "gbar" }, [filters, el("span", { class: "grow" }), meta]);
+
   const stage = el("div", { class: "gwrap" });
-  target.append(toolbar, stage);
-  const stageW = Math.max(720, (stage.clientWidth || 1080) - 24);
-  const stageH = Math.max(360, (stage.clientHeight || 420) - 14);
+
+  // 右栏面板：卡片式，头部常驻，列表区自己滚。
+  //
+  // 它是**常驻的一栏**，不是浮层 —— 浮层天生压在节点上，这正是要撤掉的东西。
+  const panelHead = el("div", { class: "gpanel-h" });
+  const panelBody = el("div", { class: "gpanel-body" });
+  const panel = el("div", { class: "gpanel" }, [panelHead, panelBody]);
+  const side = el("div", { class: "gside" }, [panel]);
+
+  // 工具行提到 .page-body 这一层（通栏），不放左栏里面 ——
+  // 这样左栏只剩 .gwrap、右栏是 .gpanel，两者顶端就齐了（2026-11-10 用户提的：
+  // 右侧表格上边缘要和图谱显示区域的上边缘一致）。放在左栏里的话，右栏从工具
+  // 行那一层起，比图谱区高一截。
+  const main = el("div", { class: "gmain" }, [stage]);
+  target.append(toolbar, el("div", { class: "gpage" }, [main, side]));
+
+  // 量画布：宽度下限必须**跟着左栏的实际宽度走**。
+  //
+  // 以前写死 720 是因为图谱独占整块主区；现在左栏是 8 分，右栏还要占掉 264px，
+  // 窗口最小 1050 时左栏只剩约 650px —— 720 的下限会让画布比容器还宽，
+  // .gwrap 的 overflow:hidden 就把边缘那圈节点裁掉了（e2e 那条「节点都在框内」
+  // 会当场红）。所以下限改成自适应值，只留一个「别小到没法看」的兜底。
+  const stageW = Math.max(320, (stage.clientWidth || 1080) - 24);
+  const stageH = Math.max(260, (stage.clientHeight || 420) - 14);
   const centerX = stageW / 2;
   const centerY = stageH / 2;
 
@@ -159,9 +277,11 @@ export function mount(target: HTMLElement): void {
   // ⚠️ **含归档**（2026-09-21 用户报的「图谱只显示进行中、已完成的都不见了」）：
   // 默认「完成后归档＝立即」（§4.10）之下，做完的任务**当场**就离开 `activeTasks()` ——
   // 于是图谱上永远只剩「进行中」，那张图看起来像坏了。归档只该影响**任务页**（那页的
-  // 定位就是「手上的活儿」，`activeTasks` 也是为它写的）；其余模块都是**看全貌**的：
+  // 定位是「手上的活儿」，`activeTasks` 也是为它写的）；其余模块都是**看全貌**的：
   // 活动分析与管理页本来就含归档，图谱跟上（总览那张「已归档」卡也是这个意思）。
   const tasks = partitionTasks().filter(passesFilter);
+
+  taskCount.textContent = `${tasks.length} 任务`;
 
   // 标签集合按数据现算：预置的在前，用户在表单里写出来的新标签接在后面
   const liveTags = tagsInUse(tasks);
@@ -347,17 +467,21 @@ export function mount(target: HTMLElement): void {
     element.style.animationDelay = `${Math.min(reach / 1200, 0.34).toFixed(3)}s`;
 
     if (node.kind === "task" && node.task) {
-      element.style.background = statusVar(node.task.status);
-      // 只有紧急与重要才常驻名签：27 个节点全挂上标签就成了一张文字地毯
-      if (node.task.urgency <= 1) element.append(el("span", { class: "nl", text: node.label }));
+      const task = node.task;
+      element.style.background = statusVar(task.status);
+      // 名签：`Px + 标题`。名字与优先级一起看，才是「这条任务是什么、又多急」。
+      //
+      // 默认隐藏、悬停/选中才浮出 —— 全挂上常驻的话，几十个节点就是一张文字
+      // 地毯（演示数据里一半是 P0/P1，常驻等于满屏小字）。最急的那一档（P0）
+      // 另用一圈红晕标出（`.hot`），不占文字位置。
+      element.append(el("span", { class: "nl" }, [urgencyBadge(task.urgency), node.label]));
+      if (task.urgency === 0) element.classList.add("hot");
       element.title = `${node.label} · 双击直达任务`;
     } else if (node.kind === "partition") {
-      // 名字下面挂一枚「分区」小签：分区名与标签名可能一字不差（工作 / #工作），
-      // 只靠有没有 `#` 区分，扫一眼还是会读成同一个东西
-      element.append(
-        el("span", { class: "pn", text: node.label }),
-        el("span", { class: "pk", text: "分区" }),
-      );
+      // 名字下面原来挂一枚「分区」小签（分区名与标签名可能一字不差：工作 / #工作）。
+      // 现在撤了 —— rail 上有分区选择器，这一页不必再显性标识「这是分区」
+      // （2026-11-10 用户提的：「最左侧分区已经有了」）。节点只留名字。
+      element.append(el("span", { class: "pn", text: node.label }));
       element.title = `${node.label} · 分区（数据的隔离边界）`;
     } else {
       element.textContent = node.label;
@@ -380,91 +504,227 @@ export function mount(target: HTMLElement): void {
     canvas.append(element);
   }
 
-  // ── 4. 浮层 ───────────────────────────────────────────────────────────────
-  const detail = el("div", { class: "gdetail" });
-  const stats = el("div", { class: "gstats" });
+  // ── 4. 右栏面板 ───────────────────────────────────────────────────────────
 
   /**
-   * 详情卡的初始态：什么都没选。
+   * 面板的一行任务。
    *
-   * 抽成函数是因为它有两个消费者 —— 首次装配，以及「点画布空白把卡片收起来」
-   * （2026-10-16 加，见下面 stage 的 click）。两处各抄一份，改文案时必然只改一处。
+   * 行首那枚圆点是**状态色**（不是优先级）—— 优先级在行尾那枚 `P0`–`P3` 徽标上。
+   * 一左一右两个通道分开摆：颜色说状态，文字说优先级，不用去猜（与任务页
+   * 行首「进度饼」+ 行尾「Px 徽标」是同一条规矩，见 pages/shared.ts 的说明）。
    */
-  const emptyDetail = (): HTMLElement[] => [
-    el("div", { class: "dn", text: "选择一个节点" }),
-    el("div", { class: "ds", text: "悬停高亮相邻关系 · 双击任务直达维护抽屉" }),
+  const taskRow = (task: Task): HTMLElement => {
+    const dot = el("span", { class: "gdot" });
+    dot.style.background = statusVar(task.status);
+
+    const title = el("span", { class: "t", text: task.title, title: task.title });
+
+    const second = el("div", { class: "gt2" });
+    for (const tag of task.tags) second.append(el("span", { class: "tag", text: tag }));
+    second.append(
+      el("span", {
+        class: "due mono",
+        text: task.due ? `⏰ ${task.due}` : "无截止",
+      }),
+    );
+
+    const row = el("div", { class: "gtask" }, [
+      dot,
+      el("div", { class: "gcol" }, [
+        el("div", { class: "gt1" }, [title, urgencyBadge(task.urgency)]),
+        second,
+      ]),
+    ]);
+    // 点一行 = 打开这条任务的维护抽屉（与图上双击同一件事）
+    row.title = "打开维护抽屉";
+    row.addEventListener("click", () => jumpToTask(task.id));
+    return row;
+  };
+
+  /**
+   * 面板的空态：什么都没选。
+   *
+   * 抽成函数是因为它有两个消费者 —— 首次装配，以及「点画布空白把面板收空」
+   * （第二阶段接上）。两处各抄一份，改文案时必然只改一处。
+   */
+  const panelEmpty = (): HTMLElement[] => [
+    el("div", { class: "gpanel-empty" }, [
+      el("div", { class: "ic", html: ICON_EMPTY }),
+      el("div", { class: "t", text: "未选择节点" }),
+      el("div", { class: "d", text: "点击图上的标签或任务，这里显示它的任务明细" }),
+    ]),
   ];
 
+  /**
+   * 填右栏。
+   *
+   * 面板的渲染只认 `PanelView` —— 它不关心数据是分区来的、标签来的还是任务来的。
+   * 头部常驻、列表区自己滚；换一组内容时滚动位置归零（否则会停在上一次的位置，
+   * 看着像少了内容）。
+   */
+  const renderPanel = (view: PanelView): void => {
+    panelHead.replaceChildren();
+    panelBody.replaceChildren();
+
+    if (view.kind === null) {
+      panelBody.append(...panelEmpty());
+      return;
+    }
+
+    panelHead.append(
+      el("div", { class: "gpanel-kind", text: KIND_LABEL[view.kind] }),
+      el("div", { class: "gpanel-title", text: view.title }),
+      el("div", { class: "gpanel-sub", text: view.subtitle }),
+    );
+
+    // 状态构成：数字前带一枚同色圆点 —— 这行也是「颜色 = 状态」的对照表，
+    // 与列表行首那枚圆点同源（图上不再另设图例解释颜色）。
+    const stats = el("div", { class: "gpanel-stats" });
+    for (const item of view.stats) {
+      const dot = el("span", { class: "d" });
+      dot.style.background = item.color;
+      stats.append(
+        el("div", { class: "st" }, [dot, el("b", { text: String(item.value) }), item.label]),
+      );
+    }
+    panelHead.append(stats);
+
+    // 任务视图才有的详情块（起止 / 截止 / 标签 / 打开抽屉）
+    if (view.detail) panelHead.append(view.detail);
+
+    if (view.tasks.length === 0) {
+      panelBody.append(
+        el("div", { class: "gpanel-empty" }, [
+          el("div", { class: "t", text: "这一组没有任务" }),
+          el("div", { class: "d", text: "换个标签或节点看看" }),
+        ]),
+      );
+      return;
+    }
+
+    // 一次性构建再插入：逐条 append 会触发多次重排
+    const fragment = document.createDocumentFragment();
+    for (const task of view.tasks) fragment.append(taskRow(task));
+    panelBody.append(fragment);
+    panelBody.scrollTop = 0;
+  };
+
+  /**
+   * 任务视图的详情块：这条任务自己的事。
+   *
+   * 起止用 `MonthDay`（月、日两个数）自己拼 —— `monthDayText` 接受的是「天数」，
+   * 那是另一套基准（见 data/time.ts），用错会显示成完全不相干的日子。
+   */
+  const taskDetail = (task: Task): HTMLElement => {
+    const row = (key: string, value: HTMLElement | string): HTMLElement => {
+      const v = typeof value === "string" ? el("span", { class: "v", text: value }) : value;
+      return el("div", { class: "dr" }, [el("span", { class: "k", text: key }), v]);
+    };
+
+    const tags = el("span", { class: "v vt" });
+    for (const tag of task.tags) tags.append(el("span", { class: "tag", text: tag }));
+
+    const open = el("button", { class: "btn sm", type: "button", text: "打开维护抽屉" });
+    open.addEventListener("click", (event) => {
+      event.stopPropagation();
+      jumpToTask(task.id);
+    });
+
+    return el("div", { class: "gpanel-detail" }, [
+      row("起止", el("span", { class: "v mono", text: `${pad2(task.start[0])}/${pad2(task.start[1])} → ${pad2(task.end[0])}/${pad2(task.end[1])}` })),
+      row("截止", task.due ?? "无截止"),
+      row("标签", task.tags.length > 0 ? tags : el("span", { class: "v", text: "无标签" })),
+      open,
+    ]);
+  };
+
+  /**
+   * 按节点类型构造右栏要显示的内容。
+   *
+   * 三种节点三种口径：
+   *  · **分区** → 这一批任务的全部（分区是数据的隔离边界，「这一区有哪些任务」）；
+   *  · **标签** → **拥有**这条标签的全部任务（`byTagAll`，不是只含锚点的 `byTag`）。
+   *    多标签任务的锚点只画在第一条标签上，但它的关系是**每一条**标签都该算 ——
+   *    只用 `byTag` 的话，「锚在别处、却挂着这条标签」的任务就漏了，而那正是
+   *    「点标签看它的任务」最该看到的那批；
+   *  · **任务** → 这条任务自己的详情 + 同组任务（同一锚点标签下的其他任务）。
+   */
+  function viewFor(node: GraphNode): PanelView {
+    if (node.kind === "partition") {
+      const list = [...tasks].sort(byPriorityThenDue);
+      return {
+        kind: "partition",
+        title: "全部任务",
+        subtitle: `共 ${list.length} 个任务`,
+        stats: statusBreakdown(list),
+        tasks: list,
+      };
+    }
+
+    if (node.kind === "tag") {
+      const list = [...(byTagAll.get(node.id) ?? [])].sort(byPriorityThenDue);
+      return {
+        kind: "tag",
+        title: node.label,
+        subtitle: `共 ${list.length} 个任务`,
+        stats: statusBreakdown(list),
+        tasks: list,
+      };
+    }
+
+    const task = node.task;
+    if (!task) {
+      return { kind: null, title: "", subtitle: "", stats: [], tasks: [] };
+    }
+    // 同组 = 同一个锚点标签下的其他任务（不含它自己）
+    const anchor = linkedTags(task, liveTags)[0];
+    const group = [...(byTagAll.get(anchor) ?? [])]
+      .filter((item) => item.id !== task.id)
+      .sort(byPriorityThenDue);
+    return {
+      kind: "task",
+      title: task.title,
+      subtitle: `${STATUS_LABEL[task.status]} · 进度 ${Math.round(task.progress)}%`,
+      stats: statusBreakdown(group),
+      tasks: group,
+      detail: taskDetail(task),
+    };
+  }
+
+  /**
+   * 选中一个节点：高亮它，并把右栏换成它那一组。
+   */
   function select(node: GraphNode): void {
     for (const [id, element] of elements) {
       element.classList.toggle("selected", id === node.id);
     }
-    showDetail(node);
-  }
-
-  function showDetail(node: GraphNode): void {
-    detail.replaceChildren(el("div", { class: "dn", text: node.label }));
-
-    if (node.kind === "partition") {
-      detail.append(
-        el("div", { class: "ds", text: `${tasks.length} 个任务 · ${liveTags.length} 个标签` }),
-        // 「根节点」是图的术语，对用户没有信息量；图例里它就叫「分区」
-        el("div", { class: "meta" }, [el("span", { class: "tag", text: "分区" })]),
-      );
-      return;
-    }
-
-    if (node.kind === "tag") {
-      // 用 byTagAll：拥有这个标签的都算，不只是锚在这里的那些
-      const group = byTagAll.get(node.id) ?? [];
-      const wrap = el("div", { class: "meta" });
-      for (const task of group) {
-        const chip = el("span", { class: "tag", text: task.title });
-        chip.style.cursor = "pointer";
-        chip.title = "点击打开维护抽屉";
-        chip.addEventListener("click", () => jumpToTask(task.id));
-        wrap.append(chip);
-      }
-      detail.append(
-        el("div", {
-          class: "ds",
-          text:
-            node.label === UNTAGGED ? `${group.length} 个没有标签的任务` : `${group.length} 个任务`,
-        }),
-        wrap,
-      );
-      return;
-    }
-
-    const task = node.task as Task;
-    detail.append(
-      el("div", { class: "ds", text: `${STATUS_LABEL[task.status]} · 进度 ${task.progress}%` }),
-      el("div", {
-        class: "ds mono",
-        text: `${monthDayText(dayNumber(task.start))} → ${monthDayText(dayNumber(task.end))}`,
-      }),
-      el("div", { class: "meta" }, task.tags.map((tag) => el("span", { class: "tag", text: tag }))),
-    );
-
-    const open = el("button", { class: "btn primary", text: "打开维护抽屉" });
-    open.style.marginTop = "10px";
-    open.addEventListener("click", () => jumpToTask(task.id));
-    detail.append(open);
+    renderPanel(viewFor(node));
   }
 
   /**
-   * 收起详情卡：节点高亮一起清掉，卡片退回初始提示。
+   * 取消选中：右栏回到空态。
    *
-   * 为什么卡片自己管这一手、不放进 shell/panels.ts：它不是从右侧滑出的抽屉，
-   * 也不参与「同一时刻最多一块」那条互斥 —— 它是画布右上角一块跟着**选中**走的
-   * 浮层。塞进面板层只会让那一层多认识一个概念。
+   * 空态不是「没有数据」，是「还没选东西」—— 两者要分得清：没选东西时给一句
+   * 引导（点这里），没有任务时也给一句（换个节点看看），混成一句话就会有一半
+   * 情况在骗人。
    */
-  function clearDetail(): void {
+  function clearSelection(): void {
     for (const element of elements.values()) element.classList.remove("selected");
-    detail.replaceChildren(...emptyDetail());
+    renderPanel({ kind: null, title: "", subtitle: "", stats: [], tasks: [] });
   }
 
-  detail.append(...emptyDetail());
+  /**
+   * 点画布空白：把选中清掉。
+   *
+   * 节点自己的 click 已经 stopPropagation（选中即展示，不能同一次点击里又被清掉），
+   * 所以冒泡到这里的就是「空白」。缩放按钮要豁免 —— 点它不该把选中清掉。
+   */
+  stage.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest(".gzoom")) return;
+    clearSelection();
+  });
 
   // ── 5. 工具行与缩放 ───────────────────────────────────────────────────────
   const applyZoom = (): void => {
@@ -477,26 +737,9 @@ export function mount(target: HTMLElement): void {
     return button;
   };
 
-  nodeCount.textContent = `节点 ${nodes.length} · 关联 ${edges.length}`;
-
-  const doneCount = tasks.filter((task) => task.status === "done").length;
-  stats.append(
-    el("div", { text: `节点 ${nodes.length}` }),
-    el("div", { text: `关联 ${edges.length}` }),
-    el("div", {}, ["已完成 ", el("b", { text: String(doneCount) })]),
-  );
-
   // 尺寸量的是这个容器自己，所以这里不能重新建一个 —— 用上面已经落地的那个
   stage.append(
     canvas,
-    // 整张图都按分区铺开的，所以分区标注只写一次，放在右上角；
-    // 给每个节点都挂一个「属于哪个分区」的标签，在只有一个分区的时候纯属噪音
-    el("div", { class: "gpart" }, [
-      el("span", { text: "当前分区" }),
-      el("b", { text: activePartition().name }),
-    ]),
-    stats,
-    detail,
     el("div", { class: "gzoom" }, [
       zoomButton(ICON.plus, "放大", () => {
         zoom = Math.min(1.8, zoom + 0.15);
@@ -523,20 +766,18 @@ export function mount(target: HTMLElement): void {
     ]),
   );
 
-  /**
-   * 点画布空白处收起详情卡（2026-10-16 加）。
-   *
-   * 节点自己的 click 已经 `stopPropagation`（选中即展示，不能同一次点击里又被清掉），
-   * 所以冒泡到这里的就是「空白」。右上角那几块浮动件必须豁免：点缩放按钮、读统计、
-   * 点卡片里的标签 chip 都不该把选中清掉 —— 尤其 `.gzoom`，它就在卡片正下方，
-   * 是最容易被误伤的一个。
-   */
-  stage.addEventListener("click", (event) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    if (target.closest(".gdetail, .gstats, .gpart, .gzoom")) return;
-    clearDetail();
-  });
+  // 默认选中中心那个分区节点（2026-11-10 用户定的方案 A）：进页面右栏就有内容，
+  // 不用先点一下才知道这页是干什么的。点画布空白仍然可以清空回空态。
+  //
+  // `nodes[0]` 就是中心分区节点（它是第一个 push 进 nodes 的）。
+  select(nodes[0]);
+
+  // 图的规模读数：节点数（1 分区 + N 标签 + M 任务）与关联数（边数）。
+  //
+  // 这两个数第一阶段按「冗余」撤掉了 —— 节点数能推导，关联数在图上没法用眼睛
+  // 核对。2026-11-10 用户说图上少了这两个读数，于是恢复成工具行右端的一行
+  // 弱化小字：不是控件，是一句「这张图有多大」的旁注。
+  scale.textContent = `${nodes.length} 节点 · ${edges.length} 关联`;
 
   paintEdges();
 }

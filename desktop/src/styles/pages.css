@@ -1145,37 +1145,85 @@
   min-height: 0;
 }
 
+/* ── 左图右明细：两栏 ────────────────────────────────────────────────────────
+   比例 8:2。右栏有最小宽（264px）兜底：窗口最小 1050 时左栏只剩约 650px，
+   再压下去图谱就没法看了 —— 上限 400px 则免得宽窗口把明细拉成一条长卷。 */
+.gpage {
+  display: flex;
+  gap: 14px;
+  flex: 1 1 auto;
+  /* min-height:0 不能省：这一层不缩，.gmain / .gside 里的内容就会把整页顶高，
+     「一屏到底」当场破掉 */
+  min-height: 0;
+  align-items: stretch;
+}
+
+.gmain {
+  flex: 8 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.gside {
+  flex: 2 1 0;
+  min-width: 264px;
+  max-width: 400px;
+  min-height: 0;
+  display: flex;
+}
+
+/* ── 工具行：筛选（贴左顶格） · 留白 · 右端读数 ────────────────────────────
+   以前这里是「图例 + 四枚散落胶囊 + 一串计数」，三段挤在一行、各自还会换行，
+   越看越随意。现在只剩两段：左端一枚分段控件，右端一行读数，中间留白。
+
+   图例撤了（占地方）：三类节点靠自身记法认 —— 标签节点带 `#`、任务节点悬停时
+   浮出带 Px 的名签、分区节点只留名字。
+   分区名不在这儿标了：rail 上有分区选择器，这一页再标一遍是重复标识。
+   「节点 N · 关联 M」做成右端一行弱化小字（旁注，不是控件）。 */
+/* 工具行是**通栏**的（挂在 .page-body 这一层），所以它自己不需要下边距 ——
+   与下方内容区的间距由 .page-body 的 gap（14px）统一给。 */
 .gbar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 2px 4px 12px;
-  flex-wrap: wrap;
+  gap: 12px;
+  flex: none;
 }
 
-.glegend {
+/* 分段控件按内容宽度收缩：.seg 的 button 默认 flex:1（占满容器），放进
+   工具行会把整组拉成一条，选中段变成一大块。 */
+.seg.hug button {
+  flex: none;
+}
+
+/* 右端读数：任务条数 + 图的规模（节点 / 关联） */
+.gmeta {
+  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex: none;
   font-size: 11px;
   color: var(--text-2);
 }
 
-.glegend .it {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+/* 两组读数之间的分隔点 */
+.gmeta .sep {
+  color: var(--border-2);
 }
 
-.glegend .d {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+/* 规模读数：一句旁注，不是控件 —— 所以弱化到 tertiary，不加边框不加底 */
+.gmeta .scale {
+  font: 400 10.5px var(--mono);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 
-.gfilters {
-  display: flex;
-  gap: 5px;
+.gmeta .num {
+  font: 500 11px var(--mono);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 
 .gwrap {
@@ -1305,29 +1353,6 @@
   box-shadow: 0 0 0 4px var(--accent-soft);
 }
 
-/* 分区标注：整张图都按分区呈现，写在右上角一次就好，
-   比给每个节点都挂一个「属于哪个分区」的标签省事，也不会变成文字地毯 */
-.gpart {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  z-index: 5;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 11px;
-  border: 1px dashed var(--border-2);
-  border-radius: 999px;
-  background: var(--surface);
-  font: 500 11.5px var(--font);
-  color: var(--text-2);
-}
-
-.gpart b {
-  color: var(--accent);
-  font-weight: 600;
-}
-
 .node.partition {
   width: 64px;
   height: 64px;
@@ -1336,8 +1361,10 @@
   font: 600 13px var(--font);
   box-shadow: 0 0 0 8px var(--accent-soft);
   z-index: 3;
-  /* 名字 + 「分区」小签两行：分区名与标签名可能一字不差，得在节点上就分开。
-     两行都要居中：`.node` 的 place-items 只覆盖**交叉轴**，换成 flex 列之后
+  /* 节点里只剩名字一行：原来下面还挂一枚「分区」小签，用来把「工作 / #工作」
+     这类同名的东西分开。现在撤了 —— rail 上有分区选择器，这一页不必再显性
+     标识「这是分区」（2026-11-10 用户提的）。
+     一行也要居中：`.node` 的 place-items 只覆盖**交叉轴**，换成 flex 列之后
      主轴（垂直）用的是 justify-content，默认 normal = 顶对齐 —— 少了这一行，
      文字会贴着圆顶排（实测偏上 19px）。 */
   display: flex;
@@ -1347,12 +1374,6 @@
   gap: 1px;
   line-height: 1.1;
   text-align: center;
-}
-
-.node.partition .pk {
-  font: 500 8.5px var(--font);
-  opacity: 0.78;
-  letter-spacing: 0.5px;
 }
 
 .node.tag {
@@ -1406,16 +1427,38 @@
   outline-offset: 3px;
 }
 
+/* P0（最急的那一档）标一圈红晕。
+   以前这里没有规则 —— 名签常驻是「哪些最急」的唯一提示，满屏小字；现在名签
+   改成悬停才浮出，紧急度就靠这圈晕标（不占文字位置）。
+
+   用 outline 而不是 box-shadow：hover 的靛青光环走的是 box-shadow，两者
+   写同一个属性会互相覆盖（后写的赢），红晕会盖掉 hover 的反馈。 */
 .node.task.hot {
-  box-shadow: 0 0 0 3px var(--danger-soft);
+  outline: 2px solid color-mix(in srgb, var(--danger) 58%, transparent);
+  /* offset 0：环紧贴节点（13px 的点 + 2px 环 = 17px），留白会让点显得更小 */
+  outline-offset: 0;
 }
 
-/* 紧急任务的常驻名签：不用悬停也看得出是哪个任务 */
+/* 任务节点的名签：`Px + 标题`。
+   默认隐藏、悬停/选中才显 —— 全挂上常驻的话，几十个节点就是一张文字地毯。
+
+   工具行不再设图例（占地方），「这个小点是任务」这件事靠这个名签说明：悬停
+   任一任务节点，它是什么、多急、叫什么，一起浮出来。 */
 .node.task .nl {
   position: absolute;
   left: 15px;
   top: 50%;
-  transform: translateY(-50%);
+  /* 垂直居中用 margin 而不是 translateY(-50%)：transform 留给 scale 用，
+     名签才能整体抵消父节点悬停时的放大（见下）。 */
+  margin-top: -9px;
+  /* 抵消父节点悬停时的 1.9 倍放大 —— 父级 scale 会把整棵子树一起放大，
+     名签里再写一个反向 scale，字才仍是 9.5px 的观感。
+     origin 取 left center：缩放时左边缘不动，名签不会往节点身上贴。 */
+  transform: scale(0.53);
+  transform-origin: left center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font: 400 9.5px var(--font);
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -1426,59 +1469,256 @@
   pointer-events: none;
   z-index: 2;
   line-height: 16px;
+  opacity: 0;
+  transition: opacity 0.15s;
 }
 
-.gstats {
-  position: absolute;
-  left: 14px;
-  top: 14px;
-  z-index: 5;
-  background: var(--surface-2);
+/* 名签显现。**必须排在上面那条之后** —— 两条特异性相同（都是三个 class），
+   后写的赢；写反了 `.nl` 里的 opacity:0 会把这里的 opacity:1 盖掉，
+   名签就永远不出现。 */
+.node.task:hover .nl,
+.node.task.selected .nl {
+  opacity: 1;
+}
+
+/* 浮在画布左上角那块统计卡（节点 / 关联 / 已完成）撤了 ——
+   ① 内容冗余：「节点 N · 关联 M」的数字推导得出来，关联数在图上也没法核对；
+   ② 它压在节点上，正是用户说的「视觉重叠」。
+   真正有用的计数改成右栏面板头部的「状态构成」（进行中 / 已完成 / 逾期），
+   数字和它描述的对象待在同一个地方。 */
+
+/* ── 右栏：任务明细面板 ─────────────────────────────────────────────────────
+   常驻的一栏，不是浮层。它分两段：头部常驻（类型标 / 标题 / 计数 / 状态构成），
+   列表区自己滚 —— 条数多时只在面板内部滚，页面本身不滚（守「一屏到底」）。 */
+.gpanel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
-  padding: 10px 13px;
-  font-size: 11px;
-  color: var(--text-2);
-  line-height: 1.85;
-  min-width: 150px;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-.gstats b {
-  font: 600 13px var(--disp);
+.gpanel-h {
+  flex: none;
+  padding: 12px 14px 11px;
+  border-bottom: 1px solid var(--border);
+}
+
+.gpanel-kind {
+  font: 500 10px var(--font);
+  letter-spacing: 0.8px;
+  color: var(--text-3);
+}
+
+.gpanel-title {
+  font: 600 14px var(--disp);
   color: var(--text);
-  font-variant-numeric: tabular-nums;
-  margin-left: 4px;
+  margin-top: 3px;
+  /* 标签名可能很长，不折行会顶破面板 */
+  word-break: break-word;
 }
 
-.gdetail {
-  position: absolute;
-  right: 14px;
-  top: 14px;
-  width: 224px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  box-shadow: var(--shadow);
-  padding: 13px 14px;
-  z-index: 5;
-}
-
-.gdetail .dn {
-  font: 600 13.5px var(--font);
-}
-
-.gdetail .ds {
+.gpanel-sub {
   font-size: 11.5px;
   color: var(--text-2);
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
-.gdetail .meta {
+/* 状态构成：数字前带一枚同色圆点 —— 这行也是「颜色 = 状态」的对照表，
+   与列表行首那枚圆点同源（图上不再另设图例解释颜色）。
+
+   用 grid 三列而不是 flex：三档各占一格，右栏窄的时候也不会排成「2 + 1」
+   的 unbalanced 两行 —— 那一行孤零零地挂着，看着像漏了东西。 */
+.gpanel-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px 8px;
+  margin-top: 9px;
+}
+
+.gpanel-stats .st {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.gpanel-stats .st b {
+  font: 600 11.5px var(--disp);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.gpanel-stats .d {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  align-self: center;
+  flex: none;
+}
+
+.gpanel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 空态：没选中任何节点时 */
+.gpanel-empty {
+  padding: 34px 18px;
+  text-align: center;
+  color: var(--text-3);
+}
+
+.gpanel-empty .ic {
+  width: 26px;
+  height: 26px;
+  margin: 0 auto 9px;
+  opacity: 0.5;
+}
+
+.gpanel-empty .ic svg {
+  width: 100%;
+  height: 100%;
+}
+
+.gpanel-empty .t {
+  font: 500 12px var(--font);
+  color: var(--text-2);
+}
+
+.gpanel-empty .d {
+  font-size: 11px;
+  line-height: 1.7;
+  margin-top: 5px;
+}
+
+/* 任务视图的详情块：起止 / 截止 / 标签 / 打开抽屉。
+   它在**头部**里（常驻），不随列表滚走 —— 选中的是哪一条任务，得一直看得见；
+   下面那串「同组任务」才是会滚的那部分。 */
+.gpanel-detail {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.gpanel-detail .dr {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 10.5px;
+  min-width: 0;
+}
+
+.gpanel-detail .k {
+  flex: none;
+  width: 26px;
+  color: var(--text-3);
+}
+
+.gpanel-detail .v {
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 标签那一行允许多换行 —— 三个标签挤在一行会互相挤掉 */
+.gpanel-detail .vt {
   display: flex;
   flex-wrap: wrap;
+  gap: 4px;
+  white-space: normal;
+}
+
+.gpanel-detail .btn {
+  align-self: flex-start;
+  margin-top: 3px;
+}
+
+/* ── 面板里的一行任务 ───────────────────────────────────────────────────────
+   行首那枚圆点是**状态色**，行尾那枚 `P0`–`P3` 才是优先级 —— 一左一右两个
+   通道分开摆：颜色说状态，文字说优先级，不用去猜（与任务页行首「进度饼」+
+   行尾「Px 徽标」同一条规矩，见 pages/shared.ts 的说明）。 */
+.gtask {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.12s;
+}
+
+.gtask:hover {
+  background: var(--hover);
+}
+
+.gtask .gdot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  margin-top: 5px;
+}
+
+.gtask .gcol {
+  flex: 1;
+  min-width: 0;
+}
+
+.gtask .gt1 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gtask .gt1 .t {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 副行：标签 + 截止。标签是短记号，标题才是这一行的主语。 */
+.gtask .gt2 {
+  display: flex;
+  align-items: center;
   gap: 6px;
-  margin-top: 9px;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.gtask .gt2 .tag {
+  font-size: 9.5px;
+  padding: 0 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gtask .gt2 .due {
+  flex: none;
+  font: 400 9.5px var(--mono);
 }
 
 .gzoom {

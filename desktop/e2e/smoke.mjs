@@ -1195,25 +1195,50 @@ try {
     (await page.locator("#set-drawer.open").count()) === 0,
   );
 
-  // 图谱：点画布空白收起右上角的详情卡，节点高亮一起清掉
+  // 图谱：点画布空白收起右栏明细，节点高亮一起清掉
   await page.locator('.rail-btn[data-page="graph"]').click();
   await page.waitForSelector(".gcanvas .node");
-  await page.locator(".gcanvas .node").first().click();
-  await sleep(200);
-  const picked = ((await page.locator(".gdetail .dn").textContent()) ?? "").trim();
-  // 空白点取右下角：左上角压着 `.gstats`（统计小卡）、右上角是 `.gpart` 与详情卡本身、
-  // 左下角是 `.gzoom` —— 那几块都是豁免区，点它们按设计**不**收起卡片
-  const gwrap = await page.locator(".gwrap").boundingBox();
-  await page.mouse.click(gwrap.x + gwrap.width - 40, gwrap.y + gwrap.height - 40);
-  await sleep(200);
-  const cleared = await page.evaluate(() => ({
-    head: (document.querySelector(".gdetail .dn")?.textContent ?? "").trim(),
+  await sleep(400);
+  // 默认选中中心那个分区节点 → 右栏进页面就有内容（2026-11-10 用户定的方案 A）
+  const graphDefault = await page.evaluate(() => ({
+    title: (document.querySelector(".gpanel-title")?.textContent ?? "").trim(),
+    rows: document.querySelectorAll(".gpanel-body .gtask").length,
+    badges: document.querySelectorAll(".gpanel-body .gtask .urg").length,
+    firstBadge: (document.querySelector(".gpanel-body .gtask .urg")?.textContent ?? "").trim(),
+    scrollable: (() => {
+      const body = document.querySelector(".gpanel-body");
+      return body ? body.scrollHeight > body.clientHeight + 1 : false;
+    })(),
     selected: document.querySelectorAll(".node.selected").length,
   }));
   check(
-    "点图谱空白收起详情卡",
-    picked !== "选择一个节点" && cleared.head === "选择一个节点" && cleared.selected === 0,
-    `选中「${picked}」→ 收起后「${cleared.head}」· 高亮 ${cleared.selected}`,
+    "右栏默认列出这一批任务，行带 Px 徽标，条数多时列表自己滚",
+    graphDefault.title !== "" &&
+      graphDefault.rows > 0 &&
+      graphDefault.badges === graphDefault.rows &&
+      /^P[0-3]$/.test(graphDefault.firstBadge) &&
+      graphDefault.scrollable &&
+      graphDefault.selected === 1,
+    `「${graphDefault.title}」${graphDefault.rows} 行 · 首行徽标 ${graphDefault.firstBadge} · 可滚 ${graphDefault.scrollable}`,
+  );
+
+  await page.locator(".gcanvas .node.tag").first().click();
+  await sleep(250);
+  const picked = ((await page.locator(".gpanel-title").textContent()) ?? "").trim();
+  // 空白点取右下角：左下角压着 `.gzoom`（缩放控件）—— 那是豁免区，点它按设计
+  // **不**收起明细；右下角离任务节点最远（任务点铺在椭圆上，右端不到 0.9 宽）
+  const gwrap = await page.locator(".gwrap").boundingBox();
+  await page.mouse.click(gwrap.x + gwrap.width - 14, gwrap.y + gwrap.height - 14);
+  await sleep(250);
+  const cleared = await page.evaluate(() => ({
+    empty: !!document.querySelector(".gpanel-body .gpanel-empty"),
+    title: (document.querySelector(".gpanel-title")?.textContent ?? "").trim(),
+    selected: document.querySelectorAll(".node.selected").length,
+  }));
+  check(
+    "点图谱空白收起右栏明细",
+    picked !== graphDefault.title && cleared.empty && cleared.title === "" && cleared.selected === 0,
+    `默认「${graphDefault.title}」→ 选中「${picked}」→ 收起后空态 ${cleared.empty} · 高亮 ${cleared.selected}`,
   );
   await page.locator('.rail-btn[data-page="tasks"]').click();
   await sleep(250);
@@ -2286,49 +2311,68 @@ try {
     (await page.locator(".gcanvas .node.tag").allTextContents()).join(" "),
   );
 
-  // 分区名和标签名可能一字不差（分区「工作」、标签「#工作」）：中心节点必须自带
-  // 「分区」小签，标签节点必须带 `#` —— 两者靠记法分开，不靠读者去比字
+  // 分区名和标签名可能一字不差（分区「工作」、标签「#工作」）。区分靠**记法**：
+  // 标签节点一律带 `#`，而中心那个唯一的分区节点不带 —— 这一页不再给分区挂
+  // 「分区」小签（rail 上有分区选择器，不必重复标识）
   const graphNames = await page.evaluate(() => ({
     core: document.querySelector(".gcanvas .node.partition")?.textContent ?? "",
+    cores: document.querySelectorAll(".gcanvas .node.partition").length,
     tags: [...document.querySelectorAll(".gcanvas .node.tag")].map((n) => n.textContent ?? ""),
   }));
   check(
     "分区节点与标签节点不混淆",
-    graphNames.core.includes("分区") &&
+    graphNames.cores === 1 &&
+      !graphNames.core.includes("#") &&
       graphNames.tags.every((tag) => tag.startsWith("#") || tag === "未分类"),
     `中心「${graphNames.core}」· 标签 ${graphNames.tags.join(" ")}`,
   );
 
-  // 中心节点那两行文字要真的在圆心：`.node` 只给了 place-items（交叉轴），
+  // 中心节点那行文字要真的在圆心：`.node` 只给了 place-items（交叉轴），
   // 分区节点换成 flex 列之后主轴要靠 justify-content —— 少那一行，文字会贴着圆顶
   // 排（实测偏上 19px），而这类偏差肉眼只会觉得「有点怪」
   const centered = await page.evaluate(() => {
     const node = document.querySelector(".gcanvas .node.partition");
-    const spans = [...node.querySelectorAll("span")];
+    const span = node.querySelector("span");
     const r = node.getBoundingClientRect();
-    const first = spans[0].getBoundingClientRect();
-    const last = spans[spans.length - 1].getBoundingClientRect();
-    const cx = r.x + r.width / 2;
-    const cy = r.y + r.height / 2;
+    const s = span.getBoundingClientRect();
     return {
-      dxName: Math.round(Math.abs(first.x + first.width / 2 - cx)),
-      dxBadge: Math.round(Math.abs(last.x + last.width / 2 - cx)),
-      dyBlock: Math.round(Math.abs((first.y + last.bottom) / 2 - cy)),
+      dx: Math.round(Math.abs(s.x + s.width / 2 - (r.x + r.width / 2))),
+      dy: Math.round(Math.abs(s.y + s.height / 2 - (r.y + r.height / 2))),
     };
   });
   check(
-    "中心节点的名称与「分区」签居中",
-    centered.dxName <= 1 && centered.dxBadge <= 1 && centered.dyBlock <= 1,
+    "中心节点的名称居中",
+    centered.dx <= 1 && centered.dy <= 1,
     JSON.stringify(centered),
   );
 
   await newTagNode.first().click();
   await sleep(300);
+  const panelText = ((await page.locator(".gpanel").textContent()) ?? "").trim();
   check(
     "点标签节点能看到挂在它下面的任务（含锚在别处的多标签任务）",
-    ((await page.locator(".gdetail").textContent()) ?? "").includes("多标签任务"),
-    ((await page.locator(".gdetail").textContent()) ?? "").trim().slice(0, 60),
+    panelText.includes("多标签任务"),
+    panelText.slice(0, 60),
   );
+
+  // 筛选改的是**任务集合**，图与右栏必须一起变 —— 否则会出现「图上画着的那几条
+  // 不在列表里」，两处对不上
+  await page.click('.gbar .seg button:has-text("高优先级")');
+  await sleep(700);
+  const graphFiltered = await page.evaluate(() => ({
+    rows: document.querySelectorAll(".gpanel-body .gtask").length,
+    badges: [
+      ...new Set([...document.querySelectorAll(".gpanel-body .gtask .urg")].map((n) => n.textContent)),
+    ],
+  }));
+  check(
+    "切筛选后右栏跟着变（列表里只剩高优先级）",
+    graphFiltered.rows > 0 &&
+      graphFiltered.badges.every((badge) => badge === "P0" || badge === "P1"),
+    JSON.stringify(graphFiltered),
+  );
+  await page.click('.gbar .seg button:has-text("全部")');
+  await sleep(500);
 
   await page.locator('.rail-btn[data-page="tasks"]').click();
   await page.waitForSelector(".tt-row");
