@@ -127,7 +127,16 @@ fn present_main_window(app: &tauri::AppHandle) {
         return;
     }
     let _ = window.set_always_on_top(true);
-    let _ = window.set_always_on_top(false);
+    // 置顶与取消**不能挨太近**：tao 的 SetWindowPos 是异步投递的
+    // （SWP_ASYNCWINDOWPOS），两个改动会一起落地，等于没抬过。所以让「置顶」真
+    // 的落到 Z 序上，隔一帧再取消。
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(60));
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+            let _ = window.set_always_on_top(false);
+        }
+    });
     let _ = window.set_focus();
 }
 
