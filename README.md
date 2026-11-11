@@ -72,7 +72,7 @@ Markdown 仅作为数据交换格式使用，不参与存储与日常编辑，�
 | 便携版 | `Tadado2-portable.zip`（4.81 MB），解压即可运行，使用系统自带 WebView2 |
 | 源码构建 | `cd desktop && npm install && npm run tauri dev` 可预览界面；正式打包还需签名私钥与更新清单，见 [`desktop/README.md`](desktop/README.md) 与[发布流程](resources/skill/tadado-release/SKILL.md) |
 
-> **国内下载**：阿里云盘（国内推荐）<https://www.alipan.com/s/E2FBppaMPZj>，公开分享、无需提取码。
+> **国内下载**：阿里云盘（国内推荐）<https://www.alipan.com/s/GHLF84V9n2L>，公开分享、无需提取码。
 > 链接不可用时可改用 [GitHub Releases](https://github.com/HananxR/Tadado/releases)，或通过公众号 **Pyvan** 反馈。
 > 目录中 `Tadado2_setup_v<版本>.exe` 为 v1.x 安装包；更早的 `Tadado_*` 属于
 > v0.x（PySide6）历史包，已停止更新。网盘文件未签名，可使用
