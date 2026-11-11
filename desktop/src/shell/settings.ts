@@ -122,7 +122,7 @@ interface SettingGroup {
 const PLACEHOLDER = "—";
 
 /** 版本号兜底：`getVersion()` 拿不到时（浏览器预览）显示这个。 */
-const VERSION_FALLBACK = "v1.0.5";
+const VERSION_FALLBACK = "v1.0.6";
 
 function themeControl(): HTMLElement {
   const modes: { id: ThemeMode; label: string }[] = [
