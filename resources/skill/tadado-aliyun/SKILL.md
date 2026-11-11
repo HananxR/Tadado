@@ -89,12 +89,19 @@ cd <aliyunpan 所在目录>
 ## 步骤 3：生成分享链接（**分享文件夹，不是单个文件**）
 
 ```powershell
-.\aliyunpan.exe share set -mode 1 /Tadado
-# → 链接：https://www.alipan.com/s/xxxxxxxx   （设了提取码的话会一并打印）
+.\aliyunpan.exe share set -mode 2 /Tadado
+# → 链接：https://www.alipan.com/s/xxxxxxxx
 ```
 
-两种模式：`-mode 1` 普通分享（**只支持少数文件类型**，`.exe` 与文件夹实测都可以）、
-`-mode 3` 快传链接（支持大部分文件，zip 之类走这条）。**先试 `-mode 1`**，失败再换 `-mode 3`。
+**三种模式，别混**（`share set --help` 的原文）：`-mode 1` **私密分享**（带提取码）、
+`-mode 2` **公开分享**（无提取码）、`-mode 3` 快传链接（默认，支持大部分文件，zip 之类走这条）。
+
+**要哪一档，取决于 README 怎么写**：README 写「公开分享、无需提取码」就用 `-mode 2`；
+要用 `-mode 1`，链接会连提取码一起打印，**务必把提取码抄进 README**。
+`--time 0` 是默认值 = **永久有效**（1 = 1 天，2 = 7 天）—— 别让链接过了期。
+
+> ⚠️ 这三种模式的名字容易记混：`-mode 1` 看着像「第一种、最基础的那个」，实际是**私密**（要提取码）；
+> `-mode 2` 才是公开。写 README 前先确认自己发的是哪一种。
 
 ### ⚠️ 一定要分享**文件夹**，别分享那个 exe
 
