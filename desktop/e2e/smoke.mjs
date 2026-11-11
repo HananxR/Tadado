@@ -787,6 +787,12 @@ try {
         rangeOff: rangeText?.classList.contains("off") ?? false,
       };
     });
+  // 跨页请求（从总览点「逾期 N」进来）会把窗口**对准那批任务**的跨度居中 —— 那是设计要的。
+  // 下面量的是**默认窗口**（今天前 16 天 + 今天 + 后 15 天），所以先点表头的「回到今天」
+  // 把窗口归位再量；否则这条断言量到的是「被跨页请求挪走后的窗口」。
+  // ⚠️ 这条断言天生怕「今天」漂出种子数据的跨度（种子日期写死在那几天，窗口居中后就不再
+  // 包含今天了）—— 归位之后就与日期无关了。
+  await page.locator("#page-tasks .tt-range").click();
   const ganttStart = await ganttShape();
   // 窗口恒 32 天、首尾接得上，且**今天落在这 32 天里**（默认窗口就是「今天前 16 天」）。
   // 档位撤了之后，「窗口对准哪批任务」只在跨页请求进来时发生（另有断言守着那一条）
@@ -869,10 +875,41 @@ try {
   );
 
   // 逾期：条的右端**渲染**延长到「今天」，数据里的结束日不动（2026-09-21 用户提的）
+  //
+  // ⚠️ 前提**自己保证**：原结束日必须落在窗口内、且不是窗口末列 —— 原结束日在窗口外的
+  // 逾期条按设计**不画**竖记（画了是一条飘在条外的灰线，见 tasks.ts 里 late-mark 那段）。
+  // 所以不能取「第一条逾期的条」来断言：它可能整段都在窗口左侧之外，于是这条断言变成
+  // 一条与日期赛跑的假红（种子数据的日期是写死的，「今天」一漂出那个跨度就会红）。
+  // 这里按**数据**挑那条：结束日落在窗口内的逾期条，它必须同时具备警示段与竖记。
   const overdueBar = await page.evaluate(() => {
-    const bar = document.querySelector("#page-tasks .tt-bar.st-overdue");
-    if (!bar) return null;
     const today = document.querySelector("#page-tasks .tt-date.today");
+    const dates = [...document.querySelectorAll("#page-tasks .tt-date")];
+    const winStart = Number(dates[0]?.getAttribute("data-day"));
+    const winEnd = Number(dates[dates.length - 1]?.getAttribute("data-day"));
+    const tasks = JSON.parse(localStorage.getItem("tadado.tasks.v1") ?? "[]");
+    const byId = new Map(tasks.map((task) => [task.id, task]));
+    // [月, 日] → 绝对天数，口径与应用一致（data/time.ts 的 dayNumber：取离今天最近的年份）
+    const todayAnchor = Math.floor(
+      Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()) / 86400000,
+    );
+    const toDay = ([month, day]) => {
+      const year = new Date(todayAnchor * 86400000).getUTCFullYear();
+      let best = Math.floor(Date.UTC(year, month - 1, day) / 86400000);
+      for (const candidate of [year - 1, year + 1]) {
+        const value = Math.floor(Date.UTC(candidate, month - 1, day) / 86400000);
+        if (Math.abs(value - todayAnchor) < Math.abs(best - todayAnchor)) best = value;
+      }
+      return best;
+    };
+    const bars = [...document.querySelectorAll("#page-tasks .tt-bar.st-overdue")];
+    const bar = bars.find((node) => {
+      const task = byId.get(node.getAttribute("data-task"));
+      if (!task?.end) return false;
+      const end = toDay(task.end);
+      // 末列不行：真实结束日的右边界会落到条外（竖记按「落在条内」才画）
+      return end >= winStart && end <= winEnd - 1;
+    });
+    if (!bar) return null;
     return {
       status: "overdue",
       late: bar.querySelectorAll(".seg-late").length,
@@ -1688,6 +1725,17 @@ try {
     `徽标 ${badgeBefore}→${statusBadge} · 数据留痕 ${statusRecorded} · ${entries.length} 条 · ${entries.slice(0, 3).join(" / ").slice(0, 70)}`,
   );
 
+  // 点「已完成」→ 任务归档 → **抽屉自动收起**（2026-11-03 的修复，见 taskDrawer 的
+  // onStatusChange；本文件后面「归档收尾」那组用例也断言了这条行为）。
+  //
+  // 抽屉的 DOM 还在（只是收起），元素也仍能被 Playwright 填字、按回车 —— 于是后面
+  // 那几条用例会继续在一个**已经收起的抽屉**上写东西：submit() 里 `current` 已是 null，
+  // 什么都不发生，断言全红（而且红得看不出真实原因）。所以这里先把抽屉重新打开，
+  // 并换一条**没归档**的任务：后面的用例（进度、撰写器）要在这条任务上跑。
+  await page.locator(".tt-row").first().dblclick();
+  await page.waitForSelector("#task-drawer.open");
+  await sleep(300);
+
   // 进度与优先级也要留痕 —— 「关于」面板里那句「状态、进度、优先级的每一次改动都写进
   // 活动时间线」是给用户的承诺，少一条它就是假的。
   //
@@ -1739,7 +1787,11 @@ try {
   check(
     "写说明后回车：说明与进度落在同一条记录上，且只有一条",
     progressHits.length === 1,
-    progressHits[0]?.slice(0, 80) ?? "（没找到那条记录）",
+    progressHits[0]?.slice(0, 80) ??
+      `（没找到那条记录）· 共 ${afterProgress.length} 条 · ${afterProgress
+        .map((text) => text.slice(0, 50))
+        .join(" / ")
+        .slice(0, 240)}`,
   );
 
   // 「保存好的进度」可以**再次编辑**（2026-09-20 用户报的第二个 bug：带说明的进度记录
@@ -1812,10 +1864,23 @@ try {
       (n.textContent ?? "").trim(),
     ),
   );
+  // 改优先级**不再**往活动时间线里写记录（2026-11-10 起）：优先级只是一次字段调整，
+  // 不是任务身上发生的事 —— 写进去会让活动页被这类记录刷屏（CHANGELOG 1.0.6）。
+  // 断言改成钉住**新行为**：优先级确实改上去了，而时间线条数一条没多。
+  const urgencyOn = await page.evaluate(
+    (index) =>
+      document.querySelectorAll("#task-drawer .urg-pick")[index]?.classList.contains("on") === true,
+    altUrgency.index,
+  );
   check(
-    "改优先级会留一条活动记录",
-    afterUrgency.some((text) => text.includes(`→ ${altUrgency.label}`)),
-    `${altUrgency.label} · ${afterUrgency.slice(0, 3).join(" / ").slice(0, 70)}`,
+    "改优先级不再往活动时间线里写记录（它只是一次字段调整）",
+    urgencyOn &&
+      afterUrgency.length === applied.entries.length &&
+      !afterUrgency.some((text) => text.includes(`→ ${altUrgency.label}`)),
+    `已切到 ${altUrgency.label} · 时间线 ${applied.entries.length} → ${afterUrgency.length} 条 · ${afterUrgency
+      .slice(0, 3)
+      .join(" / ")
+      .slice(0, 70)}`,
   );
 
   // 底部那两个按钮随即时保存一起撤了：所有字段本来就是改完即存，
@@ -5032,6 +5097,33 @@ try {
     return found;
   };
 
+  /**
+   * 从**管理页**的「已归档」那一档点开一条已归档任务的抽屉。
+   *
+   * 任务页只列未归档的 —— 已归档的任务只能从管理页进去（行点击 = 跳任务页 + 开抽屉，
+   * 见 manage.ts 的 jumpToTask）。返回搜到几行（0 = 没找到，抽屉没开，后面几条会空跑）。
+   */
+  const openArchivedDrawer = async (title) => {
+    await page.locator('.rail-btn[data-page="manage"]').click();
+    await sleep(340);
+    // 每页调到 100 条：归档任务全在一页里，不必翻页去找
+    await page.locator("#page-manage .pager .dd-btn").click();
+    await sleep(220);
+    await page.locator("#page-manage .pager .menu-item", { hasText: "100/页" }).click();
+    await sleep(400);
+    await page.locator("#page-manage .chip:has-text('已归档')").click();
+    await sleep(320);
+    const row = page.locator("#page-manage .mrow").filter({ hasText: title }).first();
+    const found = await row.count();
+    if (found === 0) return 0;
+    await row.click();
+    await sleep(520);
+    // 抽屉没开就如实返回 0（不在这儿超时）：调用方会把「没找到」与「没开抽屉」一起报出来
+    if ((await page.locator("#task-drawer.open").count()) === 0) return 0;
+    await sleep(300);
+    return found;
+  };
+
   /** 抽屉里改进度 + 写一句说明回车（抽屉是 deferred：不点发送不落库）。 */
   const pushProgress = async (value, note) => {
     await page.fill("#task-drawer .pct-input", String(value));
@@ -5157,7 +5249,18 @@ try {
       listedWhenArchived === 0,
     `打开 ${openedReopen} 行 → 状态 ${doneArchived?.status} · 归档 ${doneArchived?.archived} · 列表 ${listedWhenArchived} 行`,
   );
-  // 抽屉还开着（任务不在列表里也照常能改）—— 点「进行中」，正是用户报的那一步
+  // ⚠️ 标记完成 → 归档 → **抽屉自动收起**（2026-11-03 起的行为，见 taskDrawer 的
+  // onStatusChange；本文件「归档收尾」那组用例也断言了它）。抽屉的 DOM 还在，但已被
+  // 移出视口 —— 直接点它会超时。任务页只列未归档的，所以要把抽屉重新打开只能走
+  // **管理页**的「已归档」那一档（行点击 = 跳任务页 + 开抽屉，见 manage.ts 的
+  // jumpToTask）—— 而这正是用户当年那一步。
+  const reopenedAgain = await openArchivedDrawer(reopenedTitle);
+  check(
+    "归档之后：能从管理页的「已归档」那一档重新打开它",
+    reopenedAgain === 1,
+    `打开 ${reopenedAgain} 行`,
+  );
+  // 抽屉开着（任务不在列表里也照常能改）—— 点「进行中」，正是用户报的那一步
   await page.click("#task-drawer .tf-row .chip:has-text('进行中')");
   await sleep(540);
   const reopenedAfter = await storedOf(reopenedTitle);
